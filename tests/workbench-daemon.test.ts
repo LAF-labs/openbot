@@ -44,8 +44,8 @@ import {
   SCRIPT_PART,
   WORKBENCH_LIMITS,
 } from "../shared/workbench/protocol";
-import type { WorkbenchLimits } from "../shared/workbench/run";
-import { bunTypeScript } from "../shared/workbench/runner";
+import { runScript, type WorkbenchLimits } from "../shared/workbench/run";
+import { bunTypeScript, type Runner } from "../shared/workbench/runner";
 
 const repository = join(import.meta.dir, "..");
 
@@ -886,4 +886,41 @@ test("a daemon told to leave takes what is beside its socket with it, mid-run or
   expect(readdirSync(dirname(socketPath))).toEqual([]);
   // Whoever was waiting is told there is no run; nothing is left hanging on a socket that is gone.
   expect((await running).ok).toBe(false);
+});
+
+test("a caller that gives up while a run's files are being placed ends the run there, not at its time", async () => {
+  const workRoot = mkdtempSync(join(tmpdir(), "wb-"));
+  started.push({ daemon: { stop: async () => {} }, root: workRoot });
+  const gaveUp = new AbortController();
+  // Gives up after the first check of the signal and before the script is started: the gap in
+  // which, until 2026-10-06, nothing was listening.
+  const slow: Runner = {
+    ...runner,
+    async prepare(directory) {
+      await runner.prepare(directory);
+      gaveUp.abort();
+    },
+  };
+  let swept = 0;
+  const began = performance.now();
+  const outcome = await runScript(
+    { script: "await Bun.sleep(30_000)", files: [], timeoutMs: 3_000 },
+    {
+      workRoot,
+      runner: slow,
+      limits: WORKBENCH_LIMITS,
+      sweep: async () => {
+        swept += 1;
+      },
+      signal: gaveUp.signal,
+    },
+  ).then(
+    (ran) => `ran: ${ran.report.ending}`,
+    (error: unknown) => (error instanceof Error ? error.name : "?"),
+  );
+  expect(outcome).toBe("RunAbandonedError");
+  expect(performance.now() - began).toBeLessThan(1_500);
+  // Nothing was started, so there was nothing to sweep — and nothing is left where it would have run.
+  expect(swept).toBe(0);
+  expect(readdirSync(workRoot)).toEqual([]);
 });

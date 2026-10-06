@@ -756,3 +756,26 @@ test("the signal a run ended by is a signal's name or the answer is not passed o
     ).toEqual({ ok: false, failure: "malformed" });
   }
 });
+
+test("a caller that gives up while waiting its turn is told at once, and its run is never sent", async () => {
+  const { socketPath, asked } = fakeDaemon(async () => {
+    await Bun.sleep(600);
+    return honest();
+  });
+  const workbench = createWorkbench({ socketPath, log: quiet });
+  const first = workbench.run({ script, files: [] });
+  const gaveUp = new AbortController();
+  const started = performance.now();
+  const second = workbench.run({ script, files: [] }, gaveUp.signal);
+  setTimeout(() => gaveUp.abort(), 50);
+  expect(await second).toEqual({ ok: false, failure: "stopped" });
+  // Told when it stopped, not when the run ahead of it ended.
+  expect(performance.now() - started).toBeLessThan(400);
+  expect((await first).ok).toBe(true);
+  // And its place in the queue is given back: five more are taken, as when nothing was waiting.
+  const more = await Promise.all(
+    Array.from({ length: 5 }, () => workbench.run({ script, files: [] })),
+  );
+  expect(more.every((answer) => answer.ok)).toBe(true);
+  expect(asked()).toBe(6);
+});

@@ -341,6 +341,20 @@ export async function runScript(
 ): Promise<RunOutcome> {
   const { runner, limits, signal } = options;
   if (signal?.aborted) throw new RunAbandonedError();
+  /*
+   * LISTENED FOR FROM HERE, not from when the script starts. An abort is an event, and one that
+   * fires with nobody listening is not heard later: until 2026-10-06 the listener was added after
+   * the files had been placed, so a caller that gave up while they were — the largest request is
+   * twenty megabytes onto a tmpfs — had its run go on to its timeout (measured: a three-second
+   * run, abandoned before it started, ran its three seconds and reported `timed_out`).
+   */
+  let abandoned = false;
+  let endRun: (() => void) | null = null;
+  const onAbort = () => {
+    abandoned = true;
+    endRun?.();
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
   const memoryOf = options.memoryOf ?? residentBytes;
   // Resolved once, now, while nothing but the daemon has touched it: every path below is the real
   // one, so that what is read after the run can be held to it (`collect`).
@@ -360,6 +374,8 @@ export async function runScript(
     const scriptPath = join(scriptDirectory, runner.scriptName);
     await writeFile(scriptPath, job.script);
     await place(files, job.files, [OUT, ...runner.reserved]);
+    // Given up on before anything was started: nothing to end, nothing to sweep.
+    if (abandoned) throw new RunAbandonedError();
 
     const started = performance.now();
     const child = Bun.spawn(runner.command(scriptPath), {
@@ -370,16 +386,15 @@ export async function runScript(
       stderr: "pipe",
     });
     let ending: RunEnding = "exited";
-    let abandoned = false;
     let over = false;
-    const end = (why: "timed_out" | "out_of_memory" | "abandoned") => {
+    const end = (why: "timed_out" | "out_of_memory") => {
       if (over) return;
-      if (why === "abandoned") abandoned = true;
-      else if (ending === "exited") ending = why;
+      if (ending === "exited") ending = why;
       child.kill("SIGKILL");
     };
-    const onAbort = () => end("abandoned");
-    signal?.addEventListener("abort", onAbort, { once: true });
+    endRun = () => {
+      if (!over) child.kill("SIGKILL");
+    };
     const timer = setTimeout(() => end("timed_out"), job.timeoutMs);
     // Read from outside, because code in a tight loop never yields to a timer of its own.
     const watcher = setInterval(() => {
@@ -396,7 +411,6 @@ export async function runScript(
       over = true;
       clearTimeout(timer);
       clearInterval(watcher);
-      signal?.removeEventListener("abort", onAbort);
     }
     const ms = Math.round(performance.now() - started);
 
@@ -438,6 +452,7 @@ export async function runScript(
       products: collected.products.map((product) => product.bytes),
     };
   } finally {
+    signal?.removeEventListener("abort", onAbort);
     await removeTree(directory);
   }
 }

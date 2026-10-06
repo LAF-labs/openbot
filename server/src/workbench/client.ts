@@ -465,16 +465,46 @@ export function createWorkbench(options: {
       }
       if (held > WAITING)
         return Promise.resolve({ ok: false, failure: "busy" });
+      const stopped: WorkbenchAnswer = { ok: false, failure: "stopped" };
+      if (signal?.aborted) return Promise.resolve(stopped);
       held += 1;
+      let released = false;
+      const release = () => {
+        if (released) return;
+        released = true;
+        held -= 1;
+      };
+      /** Whether this run's turn has come. Before it, giving up is leaving a queue; after, ending a run. */
+      let begun = false;
+      let gone = false;
       const mine = last.then(async () => {
+        begun = true;
         try {
-          return await send(request, signal);
+          return gone ? stopped : await send(request, signal);
         } finally {
-          held -= 1;
+          release();
         }
       });
       last = mine.catch(() => undefined);
-      return mine;
+      if (!signal) return mine;
+      /*
+       * A caller that gives up while it WAITS is told now and gives its place back now — not when
+       * the run ahead of it ends, which is when it used to learn it (2026-10-06: 602 ms behind a
+       * 600 ms run). Its turn still comes and sends nothing. Once its run has begun, giving up is
+       * the request's own signal's business: the daemon ends the script and `send` says `stopped`.
+       */
+      return new Promise<WorkbenchAnswer>((resolve, reject) => {
+        const onAbort = () => {
+          if (begun) return;
+          gone = true;
+          release();
+          resolve(stopped);
+        };
+        signal.addEventListener("abort", onAbort, { once: true });
+        mine.then(resolve, reject).finally(() => {
+          signal.removeEventListener("abort", onAbort);
+        });
+      });
     },
   };
 }
