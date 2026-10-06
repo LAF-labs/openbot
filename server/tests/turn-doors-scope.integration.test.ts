@@ -3,9 +3,16 @@
  *
  * One VM belongs to one person, but an account from before 2026-09-24 can still share it — so
  * "signed in" must never be the whole check standing between one person and another's conversation
- * with their Bot. Every door a window uses on a turn (`turns/routes.ts`) reads whose conversation it
- * is from `channel_threads`, the row the server itself wrote when the conversation was made, and
- * answers anybody else as it answers a thread that is not there.
+ * with their Bot. Six of the seven doors a window uses on a turn (`turns/routes.ts`) name a
+ * conversation, and each reads whose it is from `channel_threads`, the row the server itself wrote
+ * when the conversation was made, and answers anybody else as it answers a thread that is not there.
+ *
+ * THE SEVENTH NAMES NO CONVERSATION. 건너뛰기 (`POST /api/turns/skips`) is handed a Bot and a call,
+ * so there is no `channel_threads` row for it to read: what it asks is whose the Bot is — the rule
+ * every door that names a Bot asks (`mayDriveBot`, read from `agent_profiles`) — and it answers
+ * somebody else's Bot as it answers one that is not there. That is all it asks, and all that is
+ * held for it here: the skip is then filed under the call's id alone (`turns/people.ts`), so the
+ * door holds whose Bot was named, not that the call is that Bot's.
  *
  * These facts were held for the doors a window-driven turn used — the CopilotKit runtime's thread
  * routes, primed by the runner — until those went with the run door (2026-10-06). The doors a turn
@@ -17,9 +24,15 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { inArray } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
-import type { AppVariables } from "../src/auth/guards";
+import {
+  type AppVariables,
+  actorMayDriveBot,
+  lookupBotOwner,
+} from "../src/auth/guards";
 import { createDatabase } from "../src/db/client";
 import {
+  agentProfiles,
+  agents,
   channels,
   channelThreads,
   lafThreadMessages,
@@ -48,6 +61,9 @@ describeDb("whose conversation a turn's doors open", () => {
   const staffChannel = `turn-scope-staff-channel-${run}`;
   /** Rows, and nobody's: no `channel_threads` row says whose this is. */
   const orphan = `turn-scope-orphan-${run}`;
+  /** The owner's Bot, by the row that says so, and an id no row answers to. */
+  const ownerBot = `turn-scope-owner-bot-${run}`;
+  const noSuchBot = `turn-scope-no-such-bot-${run}`;
 
   const said = (id: string) =>
     ({ id, role: "user", content: id }) as unknown as StoredMessage;
@@ -57,6 +73,18 @@ describeDb("whose conversation a turn's doors open", () => {
       { id: OWNER, email: `${OWNER}@laf.test`, name: "Owner" },
       { id: STAFF, email: `${STAFF}@laf.test`, name: "Staff" },
     ]);
+    await database.insert(agents).values({
+      id: ownerBot,
+      name: "Owner's Bot",
+      type: "remote_ag_ui",
+      configuration: {},
+    });
+    await database.insert(agentProfiles).values({
+      agentId: ownerBot,
+      ownerUserId: OWNER,
+      roleDescription: "Answers its owner.",
+      avatarSeed: ownerBot,
+    });
     await database.insert(channels).values([
       { id: ownerChannel, name: "Owner", description: "owner" },
       { id: staffChannel, name: "Staff", description: "staff" },
@@ -70,8 +98,10 @@ describeDb("whose conversation a turn's doors open", () => {
     await appendMessages(database, orphan, [said("nobody-said-this")]);
   });
 
-  // Only what this file made: two users, two channels, three threads, by identity.
+  // Only what this file made: two users, a Bot, two channels, three threads, by identity.
   afterAll(async () => {
+    // The Bot's profile goes with its row.
+    await database.delete(agents).where(inArray(agents.id, [ownerBot]));
     await database
       .delete(lafThreadMessages)
       .where(
@@ -87,8 +117,16 @@ describeDb("whose conversation a turn's doors open", () => {
     await database.$client.close();
   });
 
-  /** The doors as one person reaches them, over an engine that keeps what it was asked. */
-  function doorsAs(person: string) {
+  /**
+   * The doors as one person reaches them, over an engine that keeps what it was asked.
+   *
+   * Every Bot is theirs to drive unless a test says whose it is: on the doors that name a
+   * conversation, the conversation's row is then the only thing standing between two people.
+   */
+  function doorsAs(
+    person: string,
+    mayDriveBot: (botId: string) => Promise<boolean> = async () => true,
+  ) {
     const reached: string[] = [];
     const engine = {
       send: async () => {
@@ -137,7 +175,7 @@ describeDb("whose conversation a turn's doors open", () => {
         email: `${person}@laf.test`,
         role: "user",
       });
-      context.set("mayDriveBot", async () => true);
+      context.set("mayDriveBot", mayDriveBot);
       await next();
     };
     const app = new Hono().route(
@@ -235,5 +273,41 @@ describeDb("whose conversation a turn's doors open", () => {
       ]);
     }
     expect(reached).toEqual([]);
+  });
+
+  test("건너뛰기 is pressed for a Bot the person may drive: somebody else's is not there, and nothing is skipped", async () => {
+    /** Whose a Bot is, as `requireUser` puts it beside the actor: the rule, over the row. */
+    const mayDriveAs =
+      (person: string) =>
+      async (botId: string): Promise<boolean> =>
+        actorMayDriveBot(
+          { id: person, role: "user" },
+          await lookupBotOwner(database, botId),
+        );
+    const skip = (botId: string): [string, string, unknown] => [
+      "POST",
+      "/api/turns/skips",
+      { botId, toolCallId: "call-1" },
+    ];
+
+    const staff = doorsAs(STAFF, mayDriveAs(STAFF));
+    // The same answer for a Bot that is the owner's and for one that is nobody's row at all.
+    for (const botId of [ownerBot, noSuchBot]) {
+      const response = await press(staff.app, skip(botId));
+      expect([botId, response.status, await response.json()]).toEqual([
+        botId,
+        404,
+        { error: "laf:bot_not_found", code: "laf:bot_not_found" },
+      ]);
+    }
+    expect(staff.reached).toEqual([]);
+
+    const owner = doorsAs(OWNER, mayDriveAs(OWNER));
+    const response = await press(owner.app, skip(ownerBot));
+    expect([response.status, await response.json()]).toEqual([
+      200,
+      { skipped: true },
+    ]);
+    expect(owner.reached).toEqual(["people.skip"]);
   });
 });

@@ -1333,12 +1333,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * engine's listing of itself taken out, the one file that ran a real engine and the one that
  * pressed the door both still passed.
  *
+ * RAISED 2026-10-06 with it, `server` from 3590 to 3591, by exactly one more in
+ * `turn-doors-scope.integration.test.ts`, for the seventh of a turn's doors: 건너뛰기 names a Bot
+ * and no conversation, so it is held by whose Bot it is — somebody else's, and one that is not
+ * there, answer alike and skip nothing; the owner's own is skipped. The three raised first hold
+ * the six doors that name a conversation, and the file's header said "every door".
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3590, roots: ["server"] },
+  { name: "server", floor: 3591, roots: ["server"] },
   { name: "app", floor: 2109, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 718, roots: ["tests", "agent-bot"] },
