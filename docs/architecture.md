@@ -74,7 +74,10 @@ Policy rules can inspect:
 - `element.ref`, `element.role`, `element.name`, `element.type`
 - `key`
 - `submit`, true when a type call will press Enter when it has finished
-- `file.path`, `file.name`, `file.extension`
+- `file.path`, `file.name`, `file.extension` — of the path as the Bot's computer reads it, not as
+  it was written: the ends trimmed, and `.` segments, doubled slashes and a trailing slash gone, so
+  `./private/pay.csv `, `private//pay.csv` and `private/pay.csv/.` are all `private/pay.csv` to a
+  rule, as they are one file to the computer
 - `mcp.server`, `mcp.tool`, `mcp.effect`
 - `repeat.count`
 
