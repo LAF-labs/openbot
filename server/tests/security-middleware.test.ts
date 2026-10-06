@@ -2,7 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { ATTACHMENT_UPLOAD_MAX_BYTES } from "../../shared/attachments";
 import { createApp } from "../src/app";
+import type { AttachmentService } from "../src/attachments/service";
 import type { AuthService } from "../src/auth/guards";
+import type { AgentChannel, ChannelStore } from "../src/channels/types";
 import { loadConfig } from "../src/config";
 import {
   API_CSP,
@@ -286,48 +288,102 @@ describe("a body has a ceiling", () => {
   });
 
   test("a file somebody signed in attaches is read whole — and an anonymous one is refused without a byte of it read", async () => {
-    // The shape app.ts has: this middleware, then the door's own session guard, then the door.
-    const door = new Hono();
-    door.use("*", createSecurityMiddleware());
-    let read = 0;
-    door.post(
-      "/api/channels/:channelId/attachments",
-      async (context, next) => {
-        if (!context.req.header("cookie")) {
-          return context.json({ error: "laf:unauthenticated" }, 401);
-        }
-        return next();
+    /*
+     * THE REAL DOOR IN THE REAL APP, in the order `app.ts` puts them: this middleware, the origin
+     * check, the upload door's own session guard, its own ceiling, and only then the body. A
+     * stand-in held this once (a cookie stub and a reader stub behind the middleware), and would
+     * have stayed green had the real door begun reading before it asked who was sending.
+     */
+    const received: number[] = [];
+    const service: AttachmentService = {
+      imagesAccepted: true,
+      async receive(input) {
+        received.push(input.bytes.byteLength);
+        return {
+          ok: true,
+          attachment: {
+            id: "11111111-1111-4111-8111-111111111111",
+            name: input.claimedName,
+            mimeType: "text/csv",
+            kind: "sheet",
+            bytes: input.bytes.byteLength,
+          },
+        };
       },
-      async (context) => {
-        read = (await context.req.arrayBuffer()).byteLength;
-        return context.json({ ok: true });
+      async file() {
+        return null;
       },
-    );
-    const file = "f".repeat(5_000_000);
+      async forModel() {
+        return new Map();
+      },
+    };
+    const channel: AgentChannel = {
+      id: "c-1",
+      name: "Bot",
+      agentIds: ["bot-1"],
+      threadId: "thread-1",
+      active: true,
+    };
+    const withTheDoor = (auth: AuthService) =>
+      createApp({
+        config,
+        auth,
+        roleRepository: { rolesForUser: async () => ["user"] },
+        attachments: service,
+        channelStore: {
+          get: async (_actor: unknown, id: string) =>
+            id === channel.id ? channel : null,
+        } as unknown as ChannelStore,
+      });
+    const FILE_BYTES = 1_600_000;
+    // As a browser sends it: a multipart body that declares its length.
+    const upload = async (application: ReturnType<typeof withTheDoor>) => {
+      const form = new FormData();
+      form.append(
+        "file",
+        new File([new Uint8Array(FILE_BYTES).fill(0x61)], "매출.csv", {
+          type: "text/csv",
+        }),
+      );
+      const built = new Request("http://laf.local/", {
+        method: "POST",
+        body: form,
+      });
+      // Read before the body: read after it, Bun writes a boundary the body does not have.
+      const type = built.headers.get("content-type") ?? "";
+      const body = new Uint8Array(await built.arrayBuffer());
+      const request = new Request(`${ORIGIN}/api/channels/c-1/attachments`, {
+        method: "POST",
+        headers: {
+          origin: ORIGIN,
+          "content-type": type,
+          "content-length": String(body.byteLength),
+        },
+        body,
+      });
+      return { request, response: await application.fetch(request) };
+    };
 
-    const signedInUpload = await door.request("/api/channels/c-1/attachments", {
-      method: "POST",
-      ...declaring(file, {
-        "content-type": "multipart/form-data; boundary=x",
-        cookie: "better-auth.session_token=S",
-      }),
-    });
-    expect(signedInUpload.status).toBe(200);
-    expect(read).toBe(file.length);
+    const sent = await upload(withTheDoor(signedIn));
+    expect(sent.response.status).toBe(201);
+    expect(received).toEqual([FILE_BYTES]);
+    expect(sent.request.bodyUsed).toBe(true);
 
-    read = 0;
-    const anonymous = await door.request("/api/channels/c-1/attachments", {
-      method: "POST",
-      ...declaring(file, { "content-type": "multipart/form-data; boundary=x" }),
-    });
-    // 401, not 413, and not a byte of it read to find that out.
-    expect(anonymous.status).toBe(401);
-    expect(read).toBe(0);
+    const nobody: AuthService = {
+      handler: () => new Response(null, { status: 204 }),
+      api: { getSession: async () => null },
+    };
+    const anonymous = await upload(withTheDoor(nobody));
+    // 401, not 413; the service never saw it; and the body was not read to find that out.
+    expect(anonymous.response.status).toBe(401);
+    expect(received).toEqual([FILE_BYTES]);
+    expect(anonymous.request.bodyUsed).toBe(false);
   });
 
   test("the runtime's doors closed, and their 32 MB went with them: a megabyte there like anywhere", async () => {
-    // A window posted its whole thread to `agent/:id/run` until 2026-10-06, and was allowed 32 MB
-    // for it. Nothing is read there now, so nothing is allowed there.
+    // A window posted its whole thread to `agent/:id/run` until it left the app on 2026-10-05, and
+    // was allowed 32 MB for it; the door closed the day after. Nothing is read there now, so
+    // nothing is allowed there.
     for (const path of [
       "/api/copilotkit/agent/bot-1/run",
       "/api/copilotkit/agent/bot-1/connect",

@@ -567,11 +567,12 @@ The API refuses a body over a megabyte with `413 laf:body_too_large` before any
 route reads it — a file a person attaches is allowed ten megabytes and its
 multipart envelope, only for a body that declares its length. (A conversation
 turn had 32 MB while a window posted the whole thread with every run; a turn
-the server owns is handed one message.) Three doors answer
-`429 laf:rate_limited` with `Retry-After` past a minute's allowance: starting a
-sign-in (20 per address), a message (60 per session, 240 per address) and the
-routine trigger webhook (30 per token, 60 per address). The counts are in the one API process's
-memory, which on a one-VM deployment is all of them, and a restart zeroes them.
+the server owns is handed the message and never the thread.) Three doors
+answer `429 laf:rate_limited` with `Retry-After` past a minute's allowance:
+starting a sign-in (20 per address), a message (60 per session, 240 per
+address) and the routine trigger webhook (30 per token, 60 per address). The
+counts are in the one API process's memory, which on a one-VM deployment is all
+of them, and a restart zeroes them.
 
 ## Upgrading
 
