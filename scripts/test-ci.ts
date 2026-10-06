@@ -1325,12 +1325,20 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * among them — is a path nothing is mounted on and reaches no Bot; a path the runtime does not
  * know is still its own answer.
  *
+ * RAISED 2026-10-06 after that change's review, `server` from 3589 to 3590, by exactly the one of
+ * the new `stop-all-turn.integration.test.ts`: one press of 모두 멈추기 stops a turn in flight on a
+ * real engine, and the turn ends as one the person stopped. The paragraph above names
+ * `stop-all.test.ts` for a turn's stop, and that file presses doubles; `chat-stop` had held the
+ * press reaching real work for the window's runner, and nothing held it for a turn — with the
+ * engine's listing of itself taken out, the one file that ran a real engine and the one that
+ * pressed the door both still passed.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3589, roots: ["server"] },
+  { name: "server", floor: 3590, roots: ["server"] },
   { name: "app", floor: 2109, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 718, roots: ["tests", "agent-bot"] },
