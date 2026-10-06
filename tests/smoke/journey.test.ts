@@ -41,8 +41,10 @@ const suppliedBot = process.env.LAF_SMOKE_BOT;
  * The computer runs in a container and `localhost` there is the container. `host.docker.internal`
  * is Docker's name for the machine outside it. The navigation guard refuses it by NAME — `.internal`
  * is one of the suffixes `net/host-verdict` calls not publicly routable — so the server this run
- * talks to must have `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true` (`smoke.yml` sets it; measured on
- * 2026-09-06: without it the Bot is told the address is inside the deployment and gives up). A
+ * talks to AND the computer it drives must both have `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true`
+ * (`smoke.yml` writes it to the one `.env` both read). Measured twice: on 2026-09-06, without it
+ * the Bot is told the address is inside the deployment and gives up; on 2026-10-06, with only the
+ * server told, the computer's own floor refused every navigation (`laf:navigation_refused`). A
  * deployment that runs the computer some other way sets this.
  */
 const FIXTURE_HOST =
@@ -165,7 +167,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   fixture?.stop(true);
-  // Its own seat back. An account has five, and a smoke run per deploy would eat them all.
+  // Its own seat back. An account has one, and a smoke run that kept it would leave none.
   if (!createdBotId) return;
   await api(`/api/agents/${createdBotId}`, { method: "DELETE" }).catch(
     () => null,

@@ -1,6 +1,7 @@
 name: Smoke
 
-# The four containers, driven together, once a night.
+# A deployment's parts, driven together, once a night: the database, the Bot's browser and the Bot's
+# endpoint in their containers, and the API beside them on the runner.
 #
 # `checks.yml` proves each decision in isolation against a database and nothing else. Everything it
 # cannot see lives in the joins: the server reaching the account's computer, the gateway deciding
@@ -14,7 +15,9 @@ name: Smoke
 
 on:
   schedule:
-    # 02:40 UTC, which is mid-morning in Seoul: a failure is read the same working day.
+    # Asked for at 02:40 UTC, mid-morning in Seoul. GitHub starts a scheduled run when it has room:
+    # every one of this job's first thirty-four started between 07:06 and 09:36 UTC, which is late
+    # afternoon there. A failure is still read the same day; it is not read in the morning.
     - cron: "40 2 * * *"
   workflow_dispatch:
 
@@ -44,19 +47,24 @@ jobs:
         with:
           persist-credentials: false
 
-      # THE KEY DECIDES WHETHER THIS RUNS AT ALL, and it is checked first so a FORK, which has no
-      # key and cannot be given one, reports "not configured" in one green step rather than fifteen
-      # minutes of container builds ending in a red cross nobody can act on. The secret is
-      # referenced, never created here.
+      # THE KEY DECIDES WHETHER THIS RUNS AT ALL, and it is checked first so a FORK, which starts
+      # with no key, reports "not configured" in one green step rather than minutes of container
+      # builds ending in a red cross its owner did not ask for. The secret is referenced, never
+      # created here.
       #
       # IN THIS REPOSITORY A MISSING KEY IS A FAILURE. Read from the run history on 2026-10-06: the
       # secret had never been set, and on every scheduled night since this workflow was added on
-      # 2026-09-03 — thirty-four of them — the job skipped every step below and reported success.
+      # 2026-09-03 — thirty-three of them — the job skipped every step below and reported success.
       # The one end-to-end check of a deployment, green by not running, which is exactly what it
       # exists to prevent ("say only what you measured"). Nobody was told, because nothing was red;
-      # and behind the skip four things had gone stale that the first real runs then found one at
-      # a time (this file's notes on the model, the token key and private hosts, and the journey's
-      # on the snapshot). Where the job is meant to run, not being able to run is the news.
+      # and behind the skip five things had gone stale, which the first real runs then found one
+      # at a time (this file's notes on the model, the token key and private hosts, the optional
+      # variable, and the journey's on the snapshot). Where the job is meant to run, not being able
+      # to run is the news.
+      #
+      # WHICH REPOSITORY, BY ITS NUMBER AND NOT ITS NAME. A rename or a transfer changes
+      # `GITHUB_REPOSITORY`, and a comparison of names would then quietly put this job back to
+      # skipping green — the same silence by another road. The id does not change.
       - name: Is a model key configured
         id: key
         env:
@@ -64,7 +72,7 @@ jobs:
         run: |
           if [ -n "$OPENAI_API_KEY" ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
-          elif [ "$GITHUB_REPOSITORY" = "LAF-labs/openbot" ]; then
+          elif [ "$GITHUB_REPOSITORY_ID" = "1340203409" ]; then
             echo "::error title=Smoke did not run::No OPENAI_API_KEY secret is set in this repository, so the nightly journey ran nothing. Add the secret (Settings, Secrets and variables, Actions) and run this workflow again."
             exit 1
           else
@@ -98,10 +106,21 @@ jobs:
           # restarted for two minutes and the journey never began.
           model="$BOT_MODEL"
           if [ -z "$model" ]; then
-            model="$(sed -n 's/^ *default_model: *\${BOT_MODEL:-\([^}]*\)}.*$/\1/p' tenant/laf/model.yaml)"
+            # The first such line only: two would make a value of two lines, and a second line in
+            # `.env` that is nobody's variable.
+            model="$(sed -n 's/^ *default_model: *\${BOT_MODEL:-\([^}]*\)}.*$/\1/p' tenant/laf/model.yaml | head -n 1)"
           fi
           if [ -z "$model" ]; then
-            echo "::error title=Smoke did not run::tenant/laf/model.yaml names no default model, and no BOT_MODEL variable does either."
+            echo "::error title=Smoke did not run::No BOT_MODEL variable is set, and tenant/laf/model.yaml has no line of the shape this job reads (default_model: \${BOT_MODEL:-a/model})."
+            exit 1
+          fi
+          # THE KEY GOES TO THE ADDRESS IT BELONGS TO, OR NOWHERE. With no base URL both agent-bot
+          # and the server send to api.openai.com. This repository's key is another provider's:
+          # with the variable deleted and the secret kept, the fleet's key would be presented to
+          # OpenAI every night, and the red that followed would read as a provider failing. A fork
+          # with an OpenAI key and no variable is the ordinary case and is left alone.
+          if [ -z "$OPENAI_BASE_URL" ] && [ "$GITHUB_REPOSITORY_ID" = "1340203409" ]; then
+            echo "::error title=Smoke did not run::No OPENAI_BASE_URL variable is set in this repository. Its key is not OpenAI's, and without the address it would be sent there. Set the variable (Settings, Secrets and variables, Actions, Variables) and run this workflow again."
             exit 1
           fi
           {
@@ -212,7 +231,18 @@ jobs:
           LAF_SMOKE: "1"
           LAF_API_URL: http://localhost:3001
           LAF_SMOKE_FIXTURE_HOST: ${{ steps.route.outputs.gateway }}
-        run: bun test tests/smoke
+        run: |
+          set -o pipefail
+          bun test tests/smoke 2>&1 | tee "$RUNNER_TEMP/journey.log"
+          # THE JOURNEY'S OWN FLOOR. Its tests skip themselves where they cannot run (no LAF_SMOKE,
+          # no model), and a run in which every one of them skipped exits 0 — green by not running,
+          # one level down from the key. Seven is the journey as it stands; raise it with the journey.
+          passed="$(sed -n 's/^ *\([0-9][0-9]*\) pass$/\1/p' "$RUNNER_TEMP/journey.log" | tail -n 1)"
+          skipped="$(sed -n 's/^ *\([0-9][0-9]*\) skip$/\1/p' "$RUNNER_TEMP/journey.log" | tail -n 1)"
+          if [ "${passed:-0}" -lt 7 ] || [ "${skipped:-0}" -ne 0 ]; then
+            echo "::error title=Smoke ran short::The journey passed ${passed:-0} and skipped ${skipped:-0}; all seven have to run."
+            exit 1
+          fi
 
       # What the run actually did, for a failure that says only "expected 409".
       - name: What the deployment logged

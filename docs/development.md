@@ -174,9 +174,9 @@ admitting it, which locally means `LAF_DEV_NO_AUTH=true`.
 | ------------------------- | ----------------------- | -------------------------------------------------------------------------------------------- |
 | `LAF_SMOKE`               | unset                   | `1` runs it. `bun run test:smoke` sets it; without it every test skips, so `bun run test` stays honest on a machine with nothing running. |
 | `LAF_API_URL`             | `http://localhost:3001` | The deployment to drive.                                                                   |
-| `LAF_SMOKE_BOT`           | unset                   | An existing Bot to act as. Unset, the run **makes its own** in `beforeAll` and deletes it in `afterAll` — an account has five seats and a smoke run per deploy would eat them all. |
+| `LAF_SMOKE_BOT`           | unset                   | An existing Bot to act as. Unset, the run **makes its own** in `beforeAll` and deletes it in `afterAll` — an account has one seat, and a run that kept its Bot would leave none. |
 | `LAF_SMOKE_MODEL`         | unset                   | `0` skips the routine turn, for a deployment with no model key. Everything else still runs. |
-| `LAF_SMOKE_FIXTURE_HOST`  | `host.docker.internal`  | How the Bot's browser reaches the machine serving the fixture page. Docker Desktop provides that name; on Linux there is none, so pass the gateway of the computer's own network (`docker inspect <container> --format '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}'`) and start the server with `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true`, because a gateway address is private and the navigation guard refuses those by default — as it should on anything hosted. |
+| `LAF_SMOKE_FIXTURE_HOST`  | `host.docker.internal`  | How the Bot's browser reaches the machine serving the fixture page. Docker Desktop provides that name; on Linux there is none, so pass the gateway of the computer's own network (`docker inspect <container> --format '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}'`) and start **both the server and the computer** with `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true` (in `.env`, which compose hands to the computer), because a gateway address is private and the navigation guard — the server's, and the computer's own — refuses those by default, as it should on anything hosted. With only the server told, every navigation is refused by the computer (`laf:navigation_refused`). |
 
 It used to drive `risk-analyst`, a Bot the tenant package shipped, and `example.com` for a page.
 The package ships no Bot — a Bot starts with nothing set and belongs to the person who made it —
@@ -185,15 +185,19 @@ are what keep the test about the joins it is checking.
 
 ### Nightly
 
-`.github/workflows/smoke.yml` runs the same journey against `docker compose`, at 02:40 UTC and on
+`.github/workflows/smoke.yml` runs the same journey against `docker compose`, asked for at 02:40
+UTC (GitHub has started it between 07:06 and 09:36 UTC every night so far) and on
 `workflow_dispatch`. It builds `agent-computer` rather than pulling `:stable`, so a nightly reports
 on the branch it ran from rather than on the last release, and it runs the API on the runner the
 way `scripts/start.sh` does so the fixture page is reachable from both sides.
 
-**It needs an `OPENAI_API_KEY` secret and skips cleanly without one**, saying so in a notice rather
-than failing: a red cross a fork cannot act on teaches people to ignore the job. `OPENAI_BASE_URL`
-and `BOT_MODEL` are read from repository variables when set, so the nightly can be pointed at the
-same provider a deployment uses.
+**It needs an `OPENAI_API_KEY` secret.** In a fork without one it skips cleanly, saying so in a
+notice: a red cross a fork did not ask for teaches people to ignore the job. **In this repository
+a missing key fails the job**, and so does a missing `OPENAI_BASE_URL` variable (the key is not
+OpenAI's, and without the address it would be sent there): until 2026-10-06 the key had never been
+set, and the job reported success on thirty-three nights without running the journey once. The
+model is the package's default (`tenant/laf/model.yaml`) unless a `BOT_MODEL` variable names
+another, and a run in which fewer than all seven of the journey's tests ran is a failure too.
 
 ## Contribution checklist
 
