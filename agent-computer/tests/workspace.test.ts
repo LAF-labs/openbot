@@ -1,7 +1,17 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ATTACHMENT_MAX_BYTES } from "../../shared/attachments";
 import {
   createWorkspace,
   RANGE_CHARS,
@@ -436,6 +446,308 @@ describe("handing a file to the person", () => {
       bytes: 5_000_001,
       limit: 5_000_000,
     });
+  });
+});
+
+/*
+ * A FILE THE SERVER TAKES WHOLE, AND BYTES IT PUTS WHERE NOTHING IS (2026-10-06). `read` and `write`
+ * are a Bot's: text, a megabyte, and a write that replaces. These two are the server's own — the
+ * whole of a file as it is on disk, and a new file that can never be an old one overwritten — and
+ * they go through the same three layers as everything above, tried with the same escapes.
+ */
+describe("a file taken whole, for the server", () => {
+  /** Every byte value, a NUL among them, and no valid UTF-8: what `read` would turn into `�`. */
+  const BINARY = Uint8Array.from({ length: 512 }, (_, index) => index % 256);
+
+  test("the bytes come back exactly as they are on disk, under a bound of its own", async () => {
+    const ws = createWorkspace(root, {
+      readBytes: 1000,
+      writeBytes: 1000,
+      listEntries: 500,
+      downloadBytes: 8,
+      wholeBytes: 600,
+    });
+    await writeFile(join(root, "sheet.xlsx"), BINARY);
+
+    // More than a person's download hands over, and well within what the server may hold.
+    const refused = await ws
+      .download("sheet.xlsx")
+      .catch((error: unknown) => error);
+    expect((refused as WorkspaceFileError).facts).toEqual({
+      bytes: 512,
+      limit: 8,
+    });
+    const file = await ws.whole("sheet.xlsx");
+    expect(file.path).toBe("sheet.xlsx");
+    expect(new Uint8Array(file.bytes)).toEqual(BINARY);
+
+    await writeFile(join(root, "over.bin"), Buffer.alloc(601, 1));
+    const over = await ws.whole("over.bin").catch((error: unknown) => error);
+    expect(over).toBeInstanceOf(WorkspaceFileError);
+    expect((over as WorkspaceFileError).code).toBe("laf:file_too_large");
+    expect((over as WorkspaceFileError).facts).toEqual({
+      bytes: 601,
+      limit: 600,
+    });
+  });
+
+  test("the bound a caller leaves out is the largest file a person may attach", async () => {
+    // Over what a download hands over: the file a card would draw no button under is still taken.
+    await writeFile(join(root, "big.bin"), Buffer.alloc(5_000_001, 7));
+    expect((await workspace().whole("big.bin")).bytes.byteLength).toBe(
+      5_000_001,
+    );
+
+    await writeFile(
+      join(root, "huge.bin"),
+      Buffer.alloc(ATTACHMENT_MAX_BYTES + 1),
+    );
+    const refused = await workspace()
+      .whole("huge.bin")
+      .catch((error: unknown) => error);
+    expect((refused as WorkspaceFileError).facts).toEqual({
+      bytes: ATTACHMENT_MAX_BYTES + 1,
+      limit: ATTACHMENT_MAX_BYTES,
+    });
+  });
+
+  test("is refused as every other reading is: a folder, an empty place, a path or a link out", async () => {
+    const ws = workspace();
+    await ws.write("reports/one.txt", "1");
+    await symlink(join(outside, "secret.txt"), join(root, "innocent.txt"));
+
+    const folder = await ws.whole("reports").catch((error: unknown) => error);
+    expect((folder as WorkspaceFileError).code).toBe("laf:file_wrong_kind");
+    const nothing = await ws.whole("nope.bin").catch((error: unknown) => error);
+    expect((nothing as WorkspaceFileError).code).toBe("laf:file_not_found");
+    for (const path of [
+      "../outside/secret.txt",
+      "reports/../../outside/secret.txt",
+      "/etc/passwd",
+      "..\\outside\\secret.txt",
+      "innocent.txt",
+      "   ",
+    ]) {
+      const refused = await ws.whole(path).catch((error: unknown) => error);
+      expect({ path, refused: refused instanceof WorkspacePathError }).toEqual({
+        path,
+        refused: true,
+      });
+    }
+  });
+});
+
+describe("bytes put where nothing is", () => {
+  const BINARY = Uint8Array.from({ length: 512 }, (_, index) => index % 256);
+
+  /** A body in pieces, counting how many of them were asked for. */
+  function pieces(...chunks: Uint8Array[]) {
+    const asked = { count: 0 };
+    async function* body() {
+      for (const chunk of chunks) {
+        asked.count += 1;
+        yield chunk;
+      }
+    }
+    return { body: body(), asked };
+  }
+
+  test("land exactly as they were given, in folders made on the way, and are answered as facts", async () => {
+    const ws = workspace();
+    const { body } = pieces(BINARY.subarray(0, 100), BINARY.subarray(100));
+
+    expect(
+      await ws.put("made/2026-10-06-1a2b3c4d/요일별 매출.xlsx", body),
+    ).toEqual({
+      path: "made/2026-10-06-1a2b3c4d/요일별 매출.xlsx",
+      kind: "file",
+      bytes: 512,
+    });
+    expect(
+      new Uint8Array(
+        await readFile(join(root, "made/2026-10-06-1a2b3c4d/요일별 매출.xlsx")),
+      ),
+    ).toEqual(BINARY);
+    // And it is a file like any other from then on.
+    expect(await ws.stat("made/2026-10-06-1a2b3c4d/요일별 매출.xlsx")).toEqual({
+      path: "made/2026-10-06-1a2b3c4d/요일별 매출.xlsx",
+      kind: "file",
+      bytes: 512,
+    });
+  });
+
+  test("a body of nothing is a file of nothing", async () => {
+    const ws = workspace();
+    expect(await ws.put("empty.bin", pieces().body)).toEqual({
+      path: "empty.bin",
+      kind: "file",
+      bytes: 0,
+    });
+    expect((await readFile(join(root, "empty.bin"))).byteLength).toBe(0);
+  });
+
+  test("never over anything: a file, a folder and a link are each left exactly as they were", async () => {
+    const ws = workspace();
+    await ws.write("uploads/2026-10-06-1a2b3c4d-매출.csv", "날짜,매출\n");
+    await mkdir(join(root, "reports"), { recursive: true });
+    // A link out, and a link to nowhere: created-or-refused never follows either.
+    await symlink(join(outside, "secret.txt"), join(root, "innocent.txt"));
+    await symlink(join(outside, "not-there.txt"), join(root, "dangling.txt"));
+
+    for (const path of [
+      "uploads/2026-10-06-1a2b3c4d-매출.csv",
+      "reports",
+      "innocent.txt",
+      "dangling.txt",
+    ]) {
+      const { body } = pieces(BINARY);
+      const refused = await ws.put(path, body).catch((error: unknown) => error);
+      expect({
+        path,
+        code: refused instanceof WorkspaceFileError ? refused.code : refused,
+      }).toEqual({ path, code: "laf:file_exists" });
+    }
+
+    expect(
+      await readFile(
+        join(root, "uploads/2026-10-06-1a2b3c4d-매출.csv"),
+        "utf8",
+      ),
+    ).toBe("날짜,매출\n");
+    expect(await readdir(join(root, "reports"))).toEqual([]);
+    expect(await readFile(join(outside, "secret.txt"), "utf8")).toBe(
+      "a private key",
+    );
+    expect(await readdir(outside)).toEqual(["secret.txt"]);
+    expect((await lstat(join(root, "dangling.txt"))).isSymbolicLink()).toBe(
+      true,
+    );
+  });
+
+  test("more than its bound is refused by what was declared, before a byte of the body is asked for", async () => {
+    const ws = createWorkspace(root, {
+      readBytes: 1000,
+      writeBytes: 1000,
+      listEntries: 500,
+      putBytes: 8,
+    });
+    const { body, asked } = pieces(Buffer.from("123456789"));
+
+    const refused = await ws
+      .put("over.bin", body, 9)
+      .catch((error: unknown) => error);
+    expect((refused as WorkspaceFileError).code).toBe("laf:file_too_large");
+    expect((refused as WorkspaceFileError).facts).toEqual({
+      bytes: 9,
+      limit: 8,
+    });
+    expect(asked.count).toBe(0);
+    expect(await readdir(root)).toEqual([]);
+  });
+
+  test("a body that says nothing, or less than it sends, is read one piece past the bound and no further", async () => {
+    const ws = createWorkspace(root, {
+      readBytes: 1000,
+      writeBytes: 1000,
+      listEntries: 500,
+      putBytes: 8,
+    });
+    for (const declared of [undefined, 4]) {
+      const { body, asked } = pieces(
+        Buffer.from("1234"),
+        Buffer.from("5678"),
+        Buffer.from("9"),
+        Buffer.from("never asked for"),
+      );
+      const refused = await ws
+        .put("over.bin", body, declared)
+        .catch((error: unknown) => error);
+      expect((refused as WorkspaceFileError).facts).toEqual({
+        bytes: 9,
+        limit: 8,
+      });
+      expect(asked.count).toBe(3);
+      expect(await readdir(root)).toEqual([]);
+    }
+
+    // At the bound is not over it.
+    const exact = pieces(Buffer.from("1234"), Buffer.from("5678"));
+    expect((await ws.put("exact.bin", exact.body)).bytes).toBe(8);
+  });
+
+  test("the bound a caller leaves out is what a download hands over, not what a Bot may write", async () => {
+    const ws = workspace();
+    // Over the megabyte a Bot's own write is held to: a workbook routinely is.
+    const workbook = Buffer.alloc(1_000_001, 7);
+    expect(
+      (await ws.put("made/a/정산.xlsx", pieces(workbook).body)).bytes,
+    ).toBe(1_000_001);
+    // And what was put can be handed to a person, which is why the two bounds are one number.
+    expect((await ws.download("made/a/정산.xlsx")).bytes.byteLength).toBe(
+      1_000_001,
+    );
+
+    const refused = await ws
+      .put("made/a/huge.bin", pieces(Buffer.alloc(5_000_001)).body)
+      .catch((error: unknown) => error);
+    expect((refused as WorkspaceFileError).facts).toEqual({
+      bytes: 5_000_001,
+      limit: 5_000_000,
+    });
+    expect(await readdir(join(root, "made/a"))).toEqual(["정산.xlsx"]);
+  });
+
+  test.each([
+    ["parent traversal", "../outside/owned.bin"],
+    ["traversal in the middle", "made/../../outside/owned.bin"],
+    ["absolute path", "/tmp/owned.bin"],
+    ["backslash traversal", "..\\outside\\owned.bin"],
+    ["bare parent", ".."],
+    ["a blank path", "   "],
+  ])("refuses %s, and asks for none of the body", async (_label, path) => {
+    const { body, asked } = pieces(BINARY);
+    await expect(workspace().put(path, body)).rejects.toThrow(
+      WorkspacePathError,
+    );
+    expect(asked.count).toBe(0);
+    expect(await readdir(outside)).toEqual(["secret.txt"]);
+  });
+
+  test("refuses to put THROUGH a symlinked folder that points outside", async () => {
+    await symlink(outside, join(root, "escape"));
+    const { body, asked } = pieces(BINARY);
+    await expect(workspace().put("escape/owned.bin", body)).rejects.toThrow(
+      WorkspacePathError,
+    );
+    expect(asked.count).toBe(0);
+    expect(await readdir(outside)).toEqual(["secret.txt"]);
+  });
+
+  test("a file where a folder of the path has to be is the request's mistake, not the disk's", async () => {
+    const ws = workspace();
+    await ws.write("notes.md", "memo");
+    const refused = await ws
+      .put("notes.md/inside.bin", pieces(BINARY).body)
+      .catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(WorkspaceFileError);
+    expect((refused as WorkspaceFileError).code).toBe("laf:file_wrong_kind");
+    expect(await readFile(join(root, "notes.md"), "utf8")).toBe("memo");
+  });
+
+  test("a body that breaks off leaves nothing at the path, so the next put is not refused by half a file", async () => {
+    const ws = workspace();
+    async function* broken() {
+      yield BINARY.subarray(0, 100);
+      throw new Error("the connection went");
+    }
+    await expect(ws.put("made/b/report.xlsx", broken())).rejects.toThrow(
+      "the connection went",
+    );
+    expect(await readdir(root)).toEqual([]);
+
+    expect(
+      (await ws.put("made/b/report.xlsx", pieces(BINARY).body)).bytes,
+    ).toBe(512);
   });
 });
 

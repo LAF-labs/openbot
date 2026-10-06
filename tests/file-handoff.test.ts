@@ -1,5 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Server } from "bun";
@@ -56,6 +64,8 @@ let container: ReturnType<typeof Bun.serve>;
 /** The server's own routes, asked as the app asks them. Hono is the server's, not this suite's. */
 let app: ReturnType<typeof createComputerRoutes>;
 let gateway: ReturnType<typeof createComputerGateway>;
+/** The server's real client, for the two calls that are the server's own and no route's. */
+let computerClient: ReturnType<typeof createComputerClient>;
 const rows: AuditEventInput[] = [];
 /** What reached the container's door, so a test can say what did NOT. */
 const reached: string[] = [];
@@ -102,6 +112,7 @@ beforeAll(async () => {
     token: TOKEN,
     allowPrivateHosts: true,
   });
+  computerClient = client;
   const policy = { deny: [], ask: [], allow: ["true"] };
   gateway = createComputerGateway({
     client,
@@ -373,5 +384,96 @@ describe("the Bot's file card, against the real folder", () => {
     expect(
       await tools.execute("showFile", { path: "innocent.txt" }, call),
     ).toMatchObject({ ok: false, code: "laf:file_path_refused" });
+  });
+});
+
+/*
+ * THE SERVER'S OWN TWO CALLS, ACROSS THE SAME REAL WIRE (2026-10-06). A file taken whole and bytes
+ * put where nothing is have no route of the server's in front of them and no Bot tool behind them
+ * yet: what there is to hold is the wire itself — the path in a header on the way in, the body as
+ * bytes both ways, the container's confinement and its refusal to replace, and each fact arriving
+ * in the client as the container said it.
+ */
+describe("the server's own file calls, against the real folder", () => {
+  const failureOf = (promise: Promise<unknown>) =>
+    promise.then(
+      () => {
+        throw new Error("expected the call to fail");
+      },
+      (error: Error) => error,
+    );
+
+  test("bytes put under a Korean path land as they were sent, and are taken whole again", async () => {
+    reached.length = 0;
+    const path = "made/2026-10-06-1a2b3c4d/요일별 매출.xlsx";
+    const bot = computerClient.forBot("bot-1");
+
+    expect(await bot.putFile(path, BINARY)).toEqual({
+      path,
+      kind: "file",
+      bytes: BINARY.byteLength,
+    });
+    expect(new Uint8Array(await readFile(join(root, path)))).toEqual(BINARY);
+    expect(await bot.fileBytes(path)).toEqual(BINARY);
+    expect(reached).toEqual(["POST /files/put", "POST /files/bytes"]);
+  });
+
+  test("a put never replaces: a taken path is refused as that, and the first file is as it was", async () => {
+    const bot = computerClient.forBot("bot-1");
+    await bot.putFile("made/once.bin", BINARY);
+
+    const again = await failureOf(
+      bot.putFile("made/once.bin", new Uint8Array([9, 9, 9])),
+    );
+    expect([again.name, again.message]).toEqual([
+      "WorkspaceRequestError",
+      "laf:file_exists",
+    ]);
+    expect(await bot.fileBytes("made/once.bin")).toEqual(BINARY);
+
+    // A file the person's Bot already had, and a link that leads out of the folder.
+    for (const taken of ["보고서/9월 정산내역 (2).csv", "innocent.txt"]) {
+      expect(
+        (await failureOf(bot.putFile(taken, new Uint8Array([9])))).message,
+      ).toBe("laf:file_exists");
+    }
+    expect(
+      await readFile(join(root, "보고서/9월 정산내역 (2).csv"), "utf8"),
+    ).toBe(SHEET);
+    expect(await readFile(join(base, "outside/secret.txt"), "utf8")).toBe(
+      "a private key",
+    );
+  });
+
+  test("a file too large for a person's download is still taken whole by the server", async () => {
+    // Five megabytes and a byte: the download door's own refusal is held above.
+    const whole = await computerClient.forBot("bot-1").fileBytes("huge.bin");
+    expect(whole.byteLength).toBe(5_000_001);
+    expect(whole[5_000_000]).toBe(1);
+  });
+
+  test("neither leaves the folder, and neither is answered without the Bot being named", async () => {
+    const bot = computerClient.forBot("bot-1");
+    for (const path of ["../outside/owned.bin", "/tmp/owned.bin"]) {
+      expect((await failureOf(bot.putFile(path, BINARY))).message).toBe(
+        "laf:file_path_refused",
+      );
+      expect((await failureOf(bot.fileBytes(path))).message).toBe(
+        "laf:file_path_refused",
+      );
+    }
+    expect((await failureOf(bot.fileBytes("innocent.txt"))).message).toBe(
+      "laf:file_path_refused",
+    );
+    expect(await readdir(join(base, "outside"))).toEqual(["secret.txt"]);
+
+    // The client as nobody in particular: the container asks which Bot, and gets no answer.
+    expect(
+      (await failureOf(computerClient.fileBytes("chart.png"))).message,
+    ).toBe("laf:bot_header_missing");
+    expect(
+      (await failureOf(computerClient.putFile("made/nobody.bin", BINARY)))
+        .message,
+    ).toBe("laf:bot_header_missing");
   });
 });
