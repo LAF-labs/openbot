@@ -60,8 +60,9 @@ export const BODY_LIMIT_BYTES = 1_000_000;
  * WHAT IS NOT HERE ANY MORE, so nobody puts it back. A conversation turn had 32 MB until
  * 2026-10-06, because a window drove the turn then and CopilotKit posted the whole transcript it
  * held with every run — a thread is one thread for good (A5 §2), so that body grew with the
- * conversation. A turn the server owns is handed one message and references to its files, and
- * reads the thread from its own store: its body is small, the run door is closed, and the
+ * conversation. A turn the server owns is handed the message, what the window had kept unsent,
+ * its skills and its list of tools — files by reference, and never the thread, which it reads from
+ * its own store: that body does not grow with the conversation, the run door is closed, and the
  * megabyte is right for it. A Bot's file write had 2.5 MB for a door that closed the same week.
  */
 export const LARGER_BODIES: ReadonlyArray<{
