@@ -425,6 +425,40 @@ test("only plain, visible files directly in out/ go back, and never through a li
   expect(answer.run.skipped).toBe(4);
 });
 
+/*
+ * A NAME THE SERVER'S POLICY AND THE BOT'S COMPUTER WOULD READ DIFFERENTLY IS NOT HANDED BACK (the
+ * independent read of 2026-10-07). A file's name becomes the end of a path a rule judges as
+ * written and the computer trims: `"tool2.exe "` was not an exe to a rule and was `tool2.exe` on
+ * the disk, and a name of spaces was written as a file where its run's folder belongs. Nor a name
+ * that draws as another. Each is left where the script put it and counted, like a hidden one.
+ */
+test("a file named with a space at its end, with nothing but spaces, or to draw as another name is skipped, not handed back", async () => {
+  const { workbench } = bench();
+  const answer = ran(
+    await workbench.run({
+      script: `
+        import { writeFileSync } from "node:fs";
+        writeFileSync("out/kept v1.2.csv", "kept");
+        writeFileSync("out/tool2.exe ", "MZ");
+        writeFileSync("out/ lead.csv", "x");
+        writeFileSync("out/   ", "x");
+        writeFileSync("out/tab.csv\t", "x");
+        writeFileSync("out/invoice\u202efdp.exe", "MZ");
+        writeFileSync("out/to\u200btals.csv", "x");
+      `,
+      files: [],
+    }),
+  );
+  expect(
+    answer.products.map((product) => [
+      product.name,
+      new TextDecoder().decode(product.bytes),
+    ]),
+  ).toEqual([["kept v1.2.csv", "kept"]]);
+  expect(answer.run.skipped).toBe(6);
+  expect(answer.run.exitCode).toBe(0);
+});
+
 test("an out/ that a script swapped for a link hands back nothing from where it points", async () => {
   const { workbench } = bench();
   const answer = ran(
@@ -526,6 +560,14 @@ test("the daemon holds a request to every bound itself, whatever sent it", async
   const one = (path: unknown) => ({ files: [{ path, part: filePart(0) }] });
   // A path that leaves, in each of the ways one can.
   for (const path of ["../x", "/etc/x", "a/../../x", "a//b", "", "a\\b", 7]) {
+    expect(
+      await refusedFor(rawRun(socketPath, one(path), { file0: "x" })),
+    ).toEqual(invalid("files"));
+  }
+  // And a path a trim would change: the server's policy judged it as written and the Bot's
+  // computer read it trimmed, so it is not one path to both (the read of 2026-10-07). Held here
+  // too, whatever sent it.
+  for (const path of ["a ", " a", "a\n", "a\t", "d/a\u00a0", "\u3000a", " "]) {
     expect(
       await refusedFor(rawRun(socketPath, one(path), { file0: "x" })),
     ).toEqual(invalid("files"));
