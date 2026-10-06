@@ -31,7 +31,7 @@
  * (`server/src/attachments/converter-daemon.ts`); what is said over it is `./protocol.ts`.
  */
 import { randomBytes } from "node:crypto";
-import { chmodSync, rmSync } from "node:fs";
+import { lstatSync } from "node:fs";
 import { chmod } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 import { createLogger, type Logger } from "../log";
@@ -47,6 +47,8 @@ import {
 } from "./protocol";
 import {
   emptyDirectory,
+  emptyDirectorySync,
+  removeTreeSync,
   RunAbandonedError,
   type RunInput,
   type RunJob,
@@ -64,7 +66,28 @@ export type QuitReason =
   | "cleanup_failed"
   | "socket_replaced";
 
-export type WorkbenchDaemon = { stop(): Promise<void> };
+export type WorkbenchDaemon = {
+  stop(): Promise<void>;
+  /**
+   * The service's own way out, for a signal it takes: stop listening and take everything beside the
+   * socket along, the socket included — synchronously, because the process is ended on the line
+   * after. Whatever a run in progress wrote into its work root goes with the container.
+   */
+  leave(): void;
+};
+
+/**
+ * Why a daemon would not start: the one place a script's leavings outlive a container could not be
+ * made empty. Named, so the loop compose shows says what to look at.
+ */
+export class DaemonStartError extends Error {
+  constructor(
+    readonly reason: "socket_directory_unclean" | "work_root_unclean",
+  ) {
+    super(reason);
+    this.name = "DaemonStartError";
+  }
+}
 
 const refusal = (
   code: WorkbenchRefusal,
@@ -250,7 +273,13 @@ export function startWorkbenchDaemon(options: {
         await chmod(own, 0o700).catch(() => {});
       }
       await emptyDirectory(options.workRoot);
-      await emptyDirectory(socketDirectory, [socketName]);
+      // The socket's NAME is kept only while a socket is what it names: a script can put a file or
+      // a whole directory there, and that is removed like anything else it left.
+      const there = lstatSync(options.socketPath, { throwIfNoEntry: false });
+      await emptyDirectory(
+        socketDirectory,
+        there?.isSocket() ? [socketName] : [],
+      );
       for (const place of options.scratch ?? []) await emptyDirectory(place);
     } catch (error) {
       log.error("workbench_cleanup_failed", failureFacts(error));
@@ -326,14 +355,31 @@ export function startWorkbenchDaemon(options: {
     }
   };
 
-  // The directory may have been closed by the last script a daemon before this one ran.
-  try {
-    chmodSync(socketDirectory, 0o700);
-  } catch {
-    // Not this user's to change: then it was not a script's to close either.
+  /*
+   * A DAEMON STARTS WITH NOTHING BESIDE ITS SOCKET, WHATEVER IS THERE. The socket's volume is the
+   * one place a script can write that outlives the container (the server mounts it too), and the
+   * daemon does not always get to clean up after a run: a script can end process 1 with a signal
+   * it takes, and the engine can end it for memory. So everything in that directory is a previous
+   * life's — a stale socket, a note for the next run, a directory where the socket belongs, all of
+   * it closed to its own user — and goes before anything is bound.
+   *
+   * Until 2026-10-06 this was `rmSync(socketPath, { force: true })`, which removes a file. A
+   * script that left a DIRECTORY there was answered once, the daemon stopped as it should, and
+   * every daemon compose started after it threw on that line — a loop that only removing the
+   * volume by hand would have ended (the independent read; reproduced in
+   * `tests/workbench-daemon.test.ts`). The work root is emptied the same way: in the service it is
+   * a tmpfs as new as the container, and elsewhere it costs a listing.
+   */
+  for (const [place, reason] of [
+    [socketDirectory, "socket_directory_unclean"],
+    [options.workRoot, "work_root_unclean"],
+  ] as const) {
+    try {
+      emptyDirectorySync(place);
+    } catch {
+      throw new DaemonStartError(reason);
+    }
   }
-  // A socket left by a daemon that was killed refuses the bind; nothing else lives at this path.
-  rmSync(options.socketPath, { force: true });
   const server = Bun.serve({
     unix: options.socketPath,
     // The files, the script, and room for the form around them. Bun refuses more by itself.
@@ -362,7 +408,16 @@ export function startWorkbenchDaemon(options: {
   return {
     async stop() {
       await server.stop(true);
-      rmSync(options.socketPath, { force: true });
+      removeTreeSync(options.socketPath);
+    },
+    leave() {
+      quitting = true;
+      void server.stop(true);
+      try {
+        emptyDirectorySync(socketDirectory);
+      } catch {
+        // The next daemon empties it before it binds, or says it could not.
+      }
     },
   };
 }

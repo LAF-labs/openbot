@@ -18,7 +18,7 @@
  * as it is, and the daemon stops taking runs: a service that could not clean up after one script
  * is not one to hand the next person's file to.
  */
-import { constants } from "node:fs";
+import { chmodSync, constants, lstatSync, readdirSync, rmSync } from "node:fs";
 import {
   chmod,
   lstat,
@@ -178,6 +178,64 @@ export async function removeTree(path: string): Promise<void> {
     await unlock(path);
   }
   await rm(path, { recursive: true, force: true });
+}
+
+/** {@link unlock}, for the two moments nothing may be awaited: a daemon starting, a daemon leaving. */
+function unlockSync(directory: string): void {
+  try {
+    chmodSync(directory, 0o700);
+  } catch {
+    // Not this user's to open; the removal after this says so.
+  }
+  const entries = (() => {
+    try {
+      return readdirSync(directory, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+  })();
+  for (const entry of entries) {
+    if (entry.isDirectory()) unlockSync(join(directory, entry.name));
+  }
+}
+
+/** {@link removeTree}, synchronously. Whatever is at the path — a file, a socket, a link, a tree. */
+export function removeTreeSync(path: string): void {
+  try {
+    rmSync(path, { recursive: true, force: true });
+    return;
+  } catch {
+    // A link is removed as a link: only what is still a directory is opened up.
+    if (lstatSync(path, { throwIfNoEntry: false })?.isDirectory()) {
+      unlockSync(path);
+    }
+  }
+  rmSync(path, { recursive: true, force: true });
+}
+
+/**
+ * {@link emptyDirectory}, synchronously, and taking the directory back first: a script may have
+ * closed it. Throws when something is still there afterwards.
+ */
+export function emptyDirectorySync(
+  directory: string,
+  keep: readonly string[] = [],
+): void {
+  try {
+    chmodSync(directory, 0o700);
+  } catch {
+    // Not there, or not this user's: the listing below says which.
+  }
+  let names: string[];
+  try {
+    names = readdirSync(directory);
+  } catch (error) {
+    if (errnoOf(error) === "ENOENT") return;
+    throw error;
+  }
+  for (const name of names) {
+    if (!keep.includes(name)) removeTreeSync(join(directory, name));
+  }
 }
 
 /** Remove everything in a directory but the names given. A directory that is not there is empty. */

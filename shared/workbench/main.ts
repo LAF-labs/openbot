@@ -18,7 +18,12 @@
 import { dirname } from "node:path";
 import { createLogger, reportCrashes } from "../log";
 import { residentBytes } from "../resident-bytes";
-import { type QuitReason, startWorkbenchDaemon } from "./daemon";
+import {
+  DaemonStartError,
+  type QuitReason,
+  startWorkbenchDaemon,
+  type WorkbenchDaemon,
+} from "./daemon";
 import { WORKBENCH_LIMITS } from "./protocol";
 import { RUNNER } from "./runner";
 import {
@@ -79,19 +84,37 @@ async function main(): Promise<void> {
     log.error("workbench_refused", { reason: "runner_incomplete", missing });
     process.exit(1);
   }
-  // Process 1 is sent only what it has a handler for, and `docker stop` sends this.
-  process.on("SIGTERM", () => process.exit(0));
-  startWorkbenchDaemon({
-    socketPath,
-    workRoot: WORK_ROOT,
-    runner: RUNNER,
-    problems: () => sandboxProblems(readSandboxFacts(WORK_ROOT)),
-    sweep: createSweep(WORK_ROOT),
-    scratch: SCRATCH.filter((place) => place !== dirname(socketPath)),
-    worn: isWorn,
-    memoryOf: residentBytesOfTheRun,
-    log,
-    quit: (reason: QuitReason) => process.exit(reason === "retired" ? 0 : 1),
+  let daemon: WorkbenchDaemon;
+  try {
+    daemon = startWorkbenchDaemon({
+      socketPath,
+      workRoot: WORK_ROOT,
+      runner: RUNNER,
+      problems: () => sandboxProblems(readSandboxFacts(WORK_ROOT)),
+      sweep: createSweep(WORK_ROOT),
+      scratch: SCRATCH.filter((place) => place !== dirname(socketPath)),
+      worn: isWorn,
+      memoryOf: residentBytesOfTheRun,
+      log,
+      quit: (reason: QuitReason) => process.exit(reason === "retired" ? 0 : 1),
+    });
+  } catch (error) {
+    if (!(error instanceof DaemonStartError)) throw error;
+    // What a previous life left beside the socket would not go. Not bound, so nothing is served
+    // beside it; the loop is what `docker compose ps` shows, and this line says where to look.
+    log.error("workbench_refused", { reason: error.reason });
+    process.exit(1);
+  }
+  /*
+   * Process 1 is sent only what it has a handler for, and `docker stop` sends this. A script can
+   * send it too — it is the daemon's own user — and that ends the container under its own run,
+   * with no sweep and nothing emptied. The work root and the processes go with the container; the
+   * socket's directory does not, so it is emptied on the way out here and again by whichever
+   * daemon starts next (`./daemon.ts`).
+   */
+  process.on("SIGTERM", () => {
+    daemon.leave();
+    process.exit(0);
   });
   log.info("workbench_listening", {
     // Which of the two keeps a script out of this process's memory, for whoever reads the log.
