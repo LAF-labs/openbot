@@ -87,10 +87,17 @@ const idle = () => Response.json({ status: "ok", busy: false, boot: "fake" });
 function fakeDaemon(
   answer: (request: Request) => Response | Promise<Response>,
   health: (request: Request) => Response | Promise<Response> = idle,
-  options: { key?: string | null; bare?: ("run" | "health")[] } = {},
+  options: {
+    key?: string | null;
+    bare?: ("run" | "health")[];
+    /** Where to listen, when it is a path a client already knows; a directory of its own otherwise. */
+    at?: string;
+  } = {},
 ) {
-  const root = mkdtempSync(join(tmpdir(), "wc-"));
-  const socketPath = join(root, "w.sock");
+  const root = options.at
+    ? join(options.at, "..")
+    : mkdtempSync(join(tmpdir(), "wc-"));
+  const socketPath = options.at ?? join(root, "w.sock");
   const key = options.key === undefined ? KEY : options.key;
   let asked = 0;
   const said = async (
@@ -564,6 +571,7 @@ test("no socket, or nobody behind it, is `unavailable` — the service is not ru
     key: KEY,
     socketPath: join(root, "none.sock"),
     log: quiet,
+    absentMs: 60,
   });
   expect(await missing.run({ script, files: [] })).toEqual({
     ok: false,
@@ -577,6 +585,7 @@ test("no socket, or nobody behind it, is `unavailable` — the service is not ru
       key: KEY,
       socketPath: join(root, "stale.sock"),
       log: quiet,
+      absentMs: 60,
     }).run({ script, files: [] }),
   ).toEqual({ ok: false, failure: "unavailable" });
 });
@@ -1612,4 +1621,103 @@ test("one path has one key: a second client for it with another is a mistake, sa
   expect(() =>
     createWorkbench({ key: `${KEY}-another`, socketPath, log: quiet }),
   ).toThrow("one key");
+});
+
+/*
+ * NOTHING AT THE PATH IS A DAEMON BETWEEN TWO LIVES, FOR A FEW SECONDS (the third read, LOW 1). A
+ * daemon that retired, or stopped because a script had been at its socket, is back in a quarter of
+ * a second to a second; "nobody there" used to be `unavailable` at once, which is what the run
+ * behind an abandoned one was told every time, and any run that met a restart.
+ */
+test("a daemon back within a few seconds is used; one that is not is `unavailable`, and the wait has an end", async () => {
+  const root = mkdtempSync(join(tmpdir(), "wc-"));
+  opened.push({ stop: () => {}, root });
+  const socketPath = join(root, "back.sock");
+  // A socket's file with nobody behind it: what a daemon that has just gone leaves at its path.
+  writeFileSync(socketPath, "");
+  const workbench = createWorkbench({
+    key: KEY,
+    socketPath,
+    log: quiet,
+    absentMs: 2_000,
+  });
+  const began = performance.now();
+  const waiting = workbench.run({ script, files: [next] });
+  await Bun.sleep(300);
+  // The next daemon: it clears what was at its path and binds.
+  rmSync(socketPath);
+  const back = fakeDaemon(
+    () => honest({ stdout: "the daemon that came back" }),
+    idle,
+    {
+      at: socketPath,
+    },
+  );
+  const answer = await waiting;
+  expect(answer.ok && answer.run.stdout).toBe("the daemon that came back");
+  expect(performance.now() - began).toBeGreaterThanOrEqual(290);
+  expect(back.asked()).toBe(1);
+
+  // And one that does not come back: `unavailable`, when the few seconds are up and not before.
+  const gone = join(root, "gone.sock");
+  const { log, events } = recorded();
+  const at = performance.now();
+  expect(
+    await createWorkbench({
+      key: KEY,
+      socketPath: gone,
+      log,
+      absentMs: 250,
+    }).run({ script, files: [next] }),
+  ).toEqual({ ok: false, failure: "unavailable" });
+  const waited = performance.now() - at;
+  expect(waited).toBeGreaterThanOrEqual(240);
+  expect(waited).toBeLessThan(1_500);
+  expect(events).toEqual([
+    ["workbench_unreachable", { failure: "unavailable", reason: "nobody" }],
+  ]);
+});
+
+test("whatever is at the path, and however it changes, a caller is answered within the two waits together", async () => {
+  const root = mkdtempSync(join(tmpdir(), "wc-"));
+  opened.push({ stop: () => {}, root });
+  const socketPath = join(root, "flap.sock");
+  // A stranger that comes and goes: there (and proving nothing) for 60 ms, gone for 60 ms, for ever.
+  let stopped = false;
+  let sent = 0;
+  const flapping = (async () => {
+    while (!stopped) {
+      const stranger = Bun.serve({
+        unix: socketPath,
+        async fetch(request) {
+          if (new URL(request.url).pathname !== "/health") {
+            sent += (await request.arrayBuffer()).byteLength;
+          }
+          return idle();
+        },
+      });
+      await Bun.sleep(60);
+      await stranger.stop(true);
+      rmSync(socketPath, { force: true });
+      await Bun.sleep(60);
+    }
+  })();
+  try {
+    const began = performance.now();
+    expect(
+      await createWorkbench({
+        key: KEY,
+        socketPath,
+        log: quiet,
+        marginMs: 300,
+        absentMs: 200,
+      }).run({ script, files: [next] }),
+    ).toEqual({ ok: false, failure: "unavailable" });
+    // 300 ms of something there and 200 ms of nothing, at the very most — and a knock in hand.
+    expect(performance.now() - began).toBeLessThan(300 + 200 + 1_000);
+    expect(sent).toBe(0);
+  } finally {
+    stopped = true;
+    await flapping;
+  }
 });

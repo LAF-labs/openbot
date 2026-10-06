@@ -139,7 +139,14 @@ function bench(
   started.push({ daemon, root });
   return {
     daemon,
-    workbench: createWorkbench({ socketPath, key: KEY, limits, log: quiet }),
+    // Nothing at the path is waited for a quarter of a second here, where a server waits four.
+    workbench: createWorkbench({
+      socketPath,
+      key: KEY,
+      limits,
+      log: quiet,
+      absentMs: 250,
+    }),
     socketPath,
     workRoot,
     scratch,
