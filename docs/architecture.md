@@ -243,5 +243,5 @@ behind it, so all three files are gone.
 - `KEY_ENCRYPTION_KEY` must be a base64-encoded 32-byte value. The example key is refused with `NODE_ENV=production`.
 - Credential plaintext is encrypted at rest, never returned by APIs, and redacted from audit events.
 - Browser navigation allows `http` and `https`; cloud metadata addresses are refused under every configuration.
-- `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true` is for local development only.
+- `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true` is for local development only, and the server refuses to start with it under `NODE_ENV=production`.
 - `COMPUTER_TOKEN` must be a long random value outside local development.

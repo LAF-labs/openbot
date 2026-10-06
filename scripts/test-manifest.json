@@ -465,6 +465,7 @@
   "server/tests/plugin-transport-shipped.test.ts",
   "server/tests/plugin-user-credential.integration.test.ts",
   "server/tests/policy-durability.integration.test.ts",
+  "server/tests/private-hosts-refusal.test.ts",
   "server/tests/profile-text.test.ts",
   "server/tests/public-data-rest.test.ts",
   "server/tests/read-file-range.test.ts",

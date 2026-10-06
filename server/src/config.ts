@@ -826,9 +826,43 @@ function signInLock(
   return enforced;
 }
 
+/**
+ * The private-host opt-in, or a refusal to start with it in production.
+ *
+ * It was only read. That was enough while all it did was let a laptop's Bot browse the laptop; since
+ * 2026-10-06 it is also what says "a developer's stack", and where it is set a Bot may be pointed at
+ * a server somebody hosts themselves, is dialled where its row says with the key stored for it, and
+ * whatever that server says is filed as this deployment's fact. The one lock was that compose never
+ * hands this process the variable — true of every deployment compose starts, and of nothing else: a
+ * development `.env` carried to a machine, or an override somebody wrote, opened all of it with
+ * nothing saying so.
+ *
+ * So it REFUSES, like `LAF_DEV_NO_AUTH` and `LAF_CLOCK_OFFSET_MS` beside it and for their reason: a
+ * server that believes it is hosted when it is not is worse than one that will not boot, because only
+ * one of the two gets noticed. Nothing that runs this server legitimately does so in production with
+ * the line — compose, the release rehearsal and a VM never hand it over; the nightly smoke and a
+ * laptop set it and are not production.
+ *
+ * `agent-computer` reads the same variable for its own floor and is no part of this: compose does
+ * hand it that one.
+ */
+function privateHostsAllowed(environment: Environment): boolean {
+  const allowed =
+    optional(environment, "AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS") === "true";
+  if (allowed && environment.NODE_ENV === "production") {
+    throw new Error(
+      "AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true cannot be used with NODE_ENV=production: it marks a developer's stack, where a Bot may be pointed at a server of somebody's own and this server may reach addresses inside its own network. Refusing to start — take the line out of this server's environment.",
+    );
+  }
+  return allowed;
+}
+
 function computerConfig(
   environment: Environment,
 ): DeploymentConfig["computer"] {
+  // Before the computer's address is asked for: the line is refused in production whether or not
+  // there is a computer for it to open anything on yet.
+  const allowPrivateHosts = privateHostsAllowed(environment);
   const baseUrl = url(environment, "AGENT_COMPUTER_URL");
   if (!baseUrl) {
     return undefined;
@@ -843,8 +877,7 @@ function computerConfig(
   const repeatWindowMs = milliseconds(environment, "COMPUTER_REPEAT_WINDOW_MS");
   return {
     baseUrl,
-    allowPrivateHosts:
-      optional(environment, "AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS") === "true",
+    allowPrivateHosts,
     ownAddresses: ownAddressesFrom(environment),
     ...(policy ? { policy } : {}),
     ...(repeatWindowMs ? { repeatWindowMs } : {}),
