@@ -85,5 +85,6 @@ export const OUTCOME_LABELS: Record<string, string> = {
   "laf:file_wrong_kind":
     "A folder where a file was meant, or the other way round",
   "laf:file_too_large": "Too large for the workspace",
+  "laf:file_exists": "Something was already at that path",
   "laf:file_failed": "The workspace could not do it",
 };

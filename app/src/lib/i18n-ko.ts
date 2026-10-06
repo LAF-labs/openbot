@@ -2205,6 +2205,7 @@ export const ko: Record<string, string> = {
   "A folder where a file was meant, or the other way round":
     "파일과 폴더를 바꿔 가리킴",
   "Too large for the workspace": "봇 폴더에 넣기엔 너무 큼",
+  "Something was already at that path": "그 경로에 이미 무언가 있었음",
   "The workspace could not do it": "봇 폴더에서 실패함",
   // 로그인이 거절됐을 때 로그인 화면이 하는 말 — better-auth의 영어 대신, 코드마다 한 문장.
   "Too many sign-in attempts in a row. Wait a few seconds and try again.":

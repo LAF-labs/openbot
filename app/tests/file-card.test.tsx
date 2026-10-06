@@ -394,16 +394,27 @@ describe("the card's words", () => {
      * The computer's workspace answers (`agent-computer/src/codes.ts`) are a Bot's by the table's
      * own word, and the person meets them here. The disk failing is the one left to the general
      * sentence: nothing about the file was learned, and asking again may work.
+     *
+     * AND ONE IS NO ANSWER TO ANYTHING A CARD ASKS. A card asks whether a file is there and asks
+     * for it; `laf:file_exists` is what a put is told about a path that is taken, and no screen
+     * puts a file. A sentence for it here would be one nobody could be shown — named, like the
+     * disk's, so that the next workspace answer still has to be decided on this line.
      */
+    const NOT_THE_CARDS = ["laf:file_failed", "laf:file_exists"];
     const WORKSPACE = Object.keys(COMPUTER_CODES).filter((code) =>
       code.startsWith("laf:file_"),
     );
     expect(WORKSPACE.length).toBeGreaterThanOrEqual(5);
     expect(
       WORKSPACE.filter(
-        (code) => code !== "laf:file_failed" && !(code in FILE_CARD_SAID),
+        (code) => !NOT_THE_CARDS.includes(code) && !(code in FILE_CARD_SAID),
       ),
     ).toEqual([]);
+    // Each of the two is still something the computer sends, and neither has crept into the table.
+    expect(NOT_THE_CARDS.filter((code) => !WORKSPACE.includes(code))).toEqual(
+      [],
+    );
+    expect(NOT_THE_CARDS.filter((code) => code in FILE_CARD_SAID)).toEqual([]);
     // And the table names nothing the computer does not send.
     expect(
       Object.keys(FILE_CARD_SAID).filter((code) => !WORKSPACE.includes(code)),

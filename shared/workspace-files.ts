@@ -22,6 +22,14 @@
  */
 export const HANDOFF_MAX_BYTES = 5_000_000;
 
+/**
+ * The header a file's path travels in when the body of the request is the file itself (the
+ * computer's `/files/put`), percent-encoded: a path in the Bot's folder is Korean more often than
+ * not, and a header carries only ASCII. Never in the address — a path there would have to survive
+ * whatever normalised the URL first, `..` included.
+ */
+export const FILE_PATH_HEADER = "x-openbot-file-path";
+
 /** A file's name: the last part of its path. Empty for a path that names nothing. */
 export function fileNameOf(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? "";
