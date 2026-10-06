@@ -14,8 +14,13 @@
  * to become another — so it may signal the daemon. Process 1 is the one process the kernel will
  * not let its own namespace stop or kill: a SIGSTOP or SIGKILL sent from inside is dropped. Under
  * an init, a script could stop the daemon and then outlive its time with nobody left to end it.
- * Every other signal either has no handler here and is dropped the same way, or has one that ends
- * the daemon — and process 1 ending is the container ending, every process in it with it.
+ * A signal process 1 has no handler for is dropped the same way. One it HAS a handler for reaches
+ * it, and what the handler does is the runtime's: this file installs one (SIGTERM, which ends the
+ * daemon and so the container, every process in it with it), and the runtime installs its own.
+ * Which those are, and what each does when a script sends it, is not argued here — it was, until
+ * the independent read of 2026-10-06 asked what it rested on. The rehearsal reads process 1's
+ * `SigCgt` and has a script send every signal in it (`scripts/workbench-probe.ts`); the claim is
+ * the one that check holds: none of them leaves the daemon neither running nor ended.
  *
  * What that costs: an orphan the sweep kills is handed to process 1, which is not an init and
  * waits for nobody, so it stays as a dead entry in the process table. They hold nothing but a
