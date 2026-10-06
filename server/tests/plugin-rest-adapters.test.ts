@@ -1023,8 +1023,12 @@ describe("Google Calendar", () => {
    */
   const TODAY = "[본 기간: 2026-10-05 00:00 ~ 2026-10-06 00:00 Asia/Seoul(KST)";
   const NOTHING = "이 기간에 캘린더에 잡힌 일정이 없습니다.";
-  const THE_NEAREST =
-    "[그 뒤 7일 안의 가장 가까운 일정 1건 — 그날의 전체 일정은 아님]";
+  /** The nearest day with anything on it, told whole: its date and how many it holds. */
+  const nearestDay = (date: string, count: number) =>
+    `[그 뒤 7일 안에서 일정이 있는 가장 가까운 날: ${date} · 일정 ${count}건]`;
+  /** One event of a day whose list is not known to be whole. No count: a count gets said back. */
+  const ONE_AND_MAYBE_MORE =
+    "[그 뒤 7일 안의 가장 가까운 일정 — 그날 일정이 더 있을 수 있음]";
   const NOTHING_AFTER = "그 뒤 7일 안에도 잡힌 일정이 없습니다.";
   /** The person's whole day at nine in the evening, and seven of their days past its end. */
   const THE_DAY_AND_A_WEEK = {
@@ -1063,11 +1067,27 @@ describe("Google Calendar", () => {
     expect(asked).toHaveLength(1);
   });
 
-  test("an empty stretch with something after it names the nearest one, and says it is not that day's list", async () => {
+  /*
+   * THE NEAREST DAY, WHOLE — NOT ONE EVENT OF IT (2026-10-07, the second read). The first version
+   * told one event under "가장 가까운 일정 1건 — 그날의 전체 일정은 아님", and of the sixteen
+   * answers that told it, eight said "내일 … 하나 있어요": the count was said back and the caveat
+   * was not. Had that day held three, the person would have been told something false. So an empty
+   * stretch goes on with the nearest day that has anything on it and EVERYTHING the same answer
+   * holds for it, counted — where that list is known to be whole.
+   */
+  test("an empty stretch goes on with the nearest day that has anything, whole: its date, its count and every event on it", async () => {
+    const stocktake = timed(
+      "e12",
+      "마감 재고 실사",
+      "2026-10-06T23:40:00+09:00",
+      "2026-10-06T23:55:00+09:00",
+    );
     reply = () =>
       json({
+        timeZone: "Asia/Seoul",
         items: [
           TOMORROW_NIGHT,
+          stocktake,
           timed(
             "e10",
             "세무사 상담",
@@ -1089,12 +1109,15 @@ describe("Google Calendar", () => {
     expect(today.text.split("\n")).toEqual([
       `${TODAY} · 일정 0건]`,
       NOTHING,
-      THE_NEAREST,
-      // One event, in the line a listing writes — the id included, so it can be acted on.
+      nearestDay("2026-10-06", 2),
+      // In the line a listing writes — the id included, so each can be acted on.
       "- 2026-10-06 23:00 ~ 2026-10-06 23:30 · 한빛상사 납품 미팅 · 장소: 성수동 사무실 · id: e9",
+      "- 2026-10-06 23:40 ~ 2026-10-06 23:55 · 마감 재고 실사 · id: e12",
+      // And nothing of the 8th: a later day is not what comes next.
     ]);
 
-    // And "from this minute on", which is how the Bot's own model asks: nine to nine is empty too.
+    // And "from this minute on", which is how the Bot's own model asks: nine to nine is empty,
+    // and what is left of the 6th after nine is the whole of what the 6th still holds.
     const fromNow = await calendar.callTool(
       seoul,
       "list_events",
@@ -1110,8 +1133,263 @@ describe("Google Calendar", () => {
     expect(fromNow.text.split("\n")).toEqual([
       "[본 기간: 2026-10-05 21:00 ~ 2026-10-06 21:00 Asia/Seoul(KST) · 일정 0건]",
       NOTHING,
-      THE_NEAREST,
+      nearestDay("2026-10-06", 2),
       "- 2026-10-06 23:00 ~ 2026-10-06 23:30 · 한빛상사 납품 미팅 · 장소: 성수동 사무실 · id: e9",
+      "- 2026-10-06 23:40 ~ 2026-10-06 23:55 · 마감 재고 실사 · id: e12",
+    ]);
+  });
+
+  test("a day is the person's own: an event before their midnight and one after it are on two days", async () => {
+    const newYork = { ...connection, timeZone: "America/New_York" };
+    reply = () =>
+      json({
+        timeZone: "America/New_York",
+        items: [
+          // 23:30 on the 6th and 00:30 on the 7th in New York — both on the 7th by UTC's date.
+          timed(
+            "d1",
+            "Late call",
+            "2026-10-07T03:30:00Z",
+            "2026-10-07T03:50:00Z",
+          ),
+          timed(
+            "d2",
+            "After midnight",
+            "2026-10-07T04:30:00Z",
+            "2026-10-07T05:00:00Z",
+          ),
+        ],
+      });
+
+    const result = await calendar.callTool(
+      newYork,
+      "list_events",
+      { day: "today" },
+      () => new Date("2026-10-05T16:00:00Z"),
+    );
+
+    expect(result.text.split("\n").slice(2)).toEqual([
+      nearestDay("2026-10-06", 1),
+      "- 2026-10-06 23:30 ~ 2026-10-06 23:50 · Late call · id: d1",
+    ]);
+  });
+
+  test("an all-day event is on the date it names, beside that day's events with hours — whatever zone the calendar is kept in", async () => {
+    // A calendar kept where the person is: the 6th holds both.
+    reply = () =>
+      json({
+        timeZone: "Asia/Seoul",
+        items: [
+          allDay("h1", "부가세 신고 마감", "2026-10-06", "2026-10-07"),
+          TOMORROW_NIGHT,
+        ],
+      });
+    const same = await calendar.callTool(
+      seoul,
+      "list_events",
+      { day: "today" },
+      NINE_PM_SEOUL,
+    );
+    expect(same.text.split("\n").slice(2)).toEqual([
+      nearestDay("2026-10-06", 2),
+      "- 2026-10-06 (종일) ~ 2026-10-07 (종일) · 부가세 신고 마감 · id: h1",
+      "- 2026-10-06 23:00 ~ 2026-10-06 23:30 · 한빛상사 납품 미팅 · 장소: 성수동 사무실 · id: e9",
+    ]);
+
+    // A device in New York, a calendar kept in Seoul. The 7th begins in Seoul at eleven in the
+    // morning of New York's 6th, so Google puts it first — and it is still the 7th's, as its own
+    // line says. New York's 6th holds the dinner and nothing else.
+    reply = () =>
+      json({
+        timeZone: "Asia/Seoul",
+        items: [
+          allDay("h2", "부가세 신고 마감", "2026-10-07", "2026-10-08"),
+          timed(
+            "h3",
+            "Dinner",
+            "2026-10-06T20:00:00-04:00",
+            "2026-10-06T21:00:00-04:00",
+          ),
+        ],
+      });
+    const apart = await calendar.callTool(
+      { ...connection, timeZone: "America/New_York" },
+      "list_events",
+      { day: "today" },
+      () => new Date("2026-10-05T16:00:00Z"),
+    );
+    expect(apart.text.split("\n").slice(2)).toEqual([
+      nearestDay("2026-10-06", 1),
+      "- 2026-10-06 20:00 ~ 2026-10-06 21:00 · Dinner · id: h3",
+    ]);
+  });
+
+  test("a day whose list is not known to be whole is told by one event, and said to hold perhaps more", async () => {
+    const stocktake = timed(
+      "e12",
+      "마감 재고 실사",
+      "2026-10-06T23:40:00+09:00",
+      "2026-10-06T23:55:00+09:00",
+    );
+    const one = [
+      ONE_AND_MAYBE_MORE,
+      "- 2026-10-06 23:00 ~ 2026-10-06 23:30 · 한빛상사 납품 미팅 · 장소: 성수동 사무실 · id: e9",
+    ];
+
+    // A full page: two were asked for and two came. A third on that day would not have.
+    reply = () =>
+      json({ timeZone: "Asia/Seoul", items: [TOMORROW_NIGHT, stocktake] });
+    const full = await calendar.callTool(
+      seoul,
+      "list_events",
+      { day: "today", max: 2 },
+      NINE_PM_SEOUL,
+    );
+    expect(full.text.split("\n").slice(2)).toEqual(one);
+
+    // The same two with room to spare are the day, whole.
+    const roomy = await calendar.callTool(
+      seoul,
+      "list_events",
+      { day: "today", max: 3 },
+      NINE_PM_SEOUL,
+    );
+    expect(roomy.text.split("\n")[2]).toBe(nearestDay("2026-10-06", 2));
+
+    // A stretch that ends partway through a day: nine in the evening to nine, and seven days
+    // on. The 13th is looked at until nine and no later, so an event that morning is one of a
+    // day nobody saw the evening of.
+    reply = () =>
+      json({
+        timeZone: "Asia/Seoul",
+        items: [
+          timed(
+            "e13",
+            "분기 결산",
+            "2026-10-13T10:00:00+09:00",
+            "2026-10-13T11:00:00+09:00",
+          ),
+        ],
+      });
+    const farDay = await calendar.callTool(
+      seoul,
+      "list_events",
+      { days: 1 },
+      NINE_PM_SEOUL,
+    );
+    expect(farDay.text.split("\n").slice(2)).toEqual([
+      ONE_AND_MAYBE_MORE,
+      "- 2026-10-13 10:00 ~ 2026-10-13 11:00 · 분기 결산 · id: e13",
+    ]);
+
+    // Asked for a day, the seven days after are seven whole days: the last of them, the 12th,
+    // is looked at to its own midnight — the person's midnight, wherever the calendar is kept
+    // (New York's 12th ends thirteen hours after Seoul's, and is not the day that was told).
+    for (const calendarZone of ["Asia/Seoul", "America/New_York"]) {
+      reply = () =>
+        json({
+          timeZone: calendarZone,
+          items: [
+            timed(
+              "e14",
+              "월간 회의",
+              "2026-10-12T22:00:00+09:00",
+              "2026-10-12T23:00:00+09:00",
+            ),
+          ],
+        });
+      const lastDay = await calendar.callTool(
+        seoul,
+        "list_events",
+        { day: "today" },
+        NINE_PM_SEOUL,
+      );
+      expect(lastDay.text.split("\n").slice(2)).toEqual([
+        nearestDay("2026-10-12", 1),
+        "- 2026-10-12 22:00 ~ 2026-10-12 23:00 · 월간 회의 · id: e14",
+      ]);
+    }
+
+    // Unless the calendar is kept a day's width west of the person. Kiritimati is fourteen
+    // hours ahead of Greenwich and Pago Pago eleven behind: the 12th begins in Pago Pago an hour
+    // after Kiritimati's 12th has ended, and the request with it. An all-day event of the 12th
+    // would not be in the answer, so the 12th is not known whole.
+    const kiritimati = { ...connection, timeZone: "Pacific/Kiritimati" };
+    const morning = timed(
+      "e15",
+      "Boat",
+      "2026-10-11T19:00:00Z",
+      "2026-10-11T20:00:00Z",
+    );
+    const farWest = async (calendarZone: string) => {
+      reply = () => json({ timeZone: calendarZone, items: [morning] });
+      const result = await calendar.callTool(
+        kiritimati,
+        "list_events",
+        { day: "today" },
+        // Two in the afternoon of the 5th there.
+        () => new Date("2026-10-05T00:00:00Z"),
+      );
+      return result.text.split("\n").slice(2);
+    };
+    expect(await farWest("Pacific/Kiritimati")).toEqual([
+      nearestDay("2026-10-12", 1),
+      "- 2026-10-12 09:00 ~ 2026-10-12 10:00 · Boat · id: e15",
+    ]);
+    expect(await farWest("Pacific/Pago_Pago")).toEqual([
+      ONE_AND_MAYBE_MORE,
+      "- 2026-10-12 09:00 ~ 2026-10-12 10:00 · Boat · id: e15",
+    ]);
+  });
+
+  test("where somebody works is not something they have on: a working-location marker is no day's event after the stretch", async () => {
+    const atHome = {
+      ...allDay("m1", "집", "2026-10-06", "2026-10-07"),
+      eventType: "workingLocation",
+    };
+    const ask = async (items: unknown[], args = { day: "today" }) => {
+      reply = () => json({ timeZone: "Asia/Seoul", items });
+      const result = await calendar.callTool(
+        seoul,
+        "list_events",
+        args,
+        NINE_PM_SEOUL,
+      );
+      return result.text.split("\n");
+    };
+    const consult = timed(
+      "e10",
+      "세무사 상담",
+      "2026-10-08T10:00:00+09:00",
+      "2026-10-08T11:00:00+09:00",
+    );
+
+    // A marker tomorrow and an event the day after: the nearest day with anything on it is the
+    // day after.
+    expect((await ask([atHome, consult])).slice(2)).toEqual([
+      nearestDay("2026-10-08", 1),
+      "- 2026-10-08 10:00 ~ 2026-10-08 11:00 · 세무사 상담 · id: e10",
+    ]);
+    // On the same day as an event it is neither counted nor listed.
+    expect((await ask([atHome, TOMORROW_NIGHT])).slice(2)).toEqual([
+      nearestDay("2026-10-06", 1),
+      "- 2026-10-06 23:00 ~ 2026-10-06 23:30 · 한빛상사 납품 미팅 · 장소: 성수동 사무실 · id: e9",
+    ]);
+    // Markers and nothing else: nothing is on those days.
+    expect(await ask([atHome])).toEqual([
+      `${TODAY} · 일정 0건]`,
+      NOTHING,
+      NOTHING_AFTER,
+    ]);
+    // INSIDE the stretch that was asked for a marker is listed as it always was: what a listing
+    // of a day holds is not this change's to move.
+    const today = {
+      ...allDay("m0", "사무실", "2026-10-05", "2026-10-06"),
+      eventType: "workingLocation",
+    };
+    expect(await ask([today, TOMORROW_NIGHT])).toEqual([
+      `${TODAY} · 일정 1건]`,
+      "- 2026-10-05 (종일) ~ 2026-10-06 (종일) · 사무실 · id: m0",
     ]);
   });
 
@@ -1273,7 +1551,7 @@ describe("Google Calendar", () => {
     expect(empty.text.split("\n")).toEqual([
       `${TODAY} · 일정 0건]`,
       NOTHING,
-      THE_NEAREST,
+      nearestDay("2026-10-06", 1),
       "- 2026-10-06 (종일) ~ 2026-10-07 (종일) · 부가세 신고 마감 · id: a2",
     ]);
 
@@ -1309,7 +1587,7 @@ describe("Google Calendar", () => {
     expect(newYork.text.split("\n")).toEqual([
       "[본 기간: 2026-10-05 00:00 ~ 2026-10-06 00:00 America/New_York · 일정 0건]",
       NOTHING,
-      THE_NEAREST,
+      nearestDay("2026-10-06", 1),
       "- 2026-10-06 (종일) ~ 2026-10-07 (종일) · 부가세 신고 마감 · id: a2",
     ]);
   });
@@ -1557,6 +1835,7 @@ describe("Google Calendar", () => {
     ]);
 
     // An unfinished page with an event on it is in order all the same: what is first is nearest.
+    // But the rest of that day may be on the page nobody fetched, so it is one event and no count.
     reply = () =>
       json({ items: [TOMORROW_NIGHT], nextPageToken: "the-next-page" });
     const nearest = await calendar.callTool(
@@ -1566,7 +1845,7 @@ describe("Google Calendar", () => {
       NINE_PM_SEOUL,
     );
     expect(nearest.text.split("\n").slice(2)).toEqual([
-      THE_NEAREST,
+      ONE_AND_MAYBE_MORE,
       "- 2026-10-06 23:00 ~ 2026-10-06 23:30 · 한빛상사 납품 미팅 · 장소: 성수동 사무실 · id: e9",
     ]);
   });
