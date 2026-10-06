@@ -182,6 +182,12 @@ export const KEY_VARIABLE = "WORKBENCH_KEY";
 /** The fewest characters a key may be: `openssl rand -hex 16` is thirty-two. */
 export const KEY_MIN_LENGTH = 32;
 
+/**
+ * Whether a value may be a key: a string, and long enough. ITS LENGTH IS ALL THAT IS HELD HERE —
+ * not what it is made of. Thirty-two of one letter passes, and would be a key in name only; a key
+ * is as good as whoever minted it, which for a deployment is the fleet's tool and for a laptop is
+ * whoever typed it.
+ */
 export const isKey = (value: unknown): value is string =>
   typeof value === "string" && value.length >= KEY_MIN_LENGTH;
 
