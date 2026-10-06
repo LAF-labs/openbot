@@ -204,24 +204,34 @@ export function areProductNames(names: readonly unknown[]): boolean {
 export const MADE_DIRECTORY = "made";
 
 /**
- * The most `made/` may hold before a run's files are no longer filed there.
+ * The most `made/` may hold, in bytes, before a run's files are no longer filed there — ONE OF THE
+ * TWO BOUNDS THE FOLDER REALLY HAS, AND NOT THE ONE THAT BITES FIRST.
  *
  * THE OWNER'S DECISION OF 2026-10-07: a total that refuses when it is reached, and nothing deleted
  * to make room — a file a person was handed last month is not something to remove behind them.
  * Nothing empties this folder today, by a Bot or by a person, so full is full until somebody with
- * the machine clears it; that is said in the fact (`laf:made_full`) and is the reason the number
- * is generous.
+ * the machine clears it; that is said in the fact (`laf:made_full`).
  *
- * THE NUMBER IS A PROPOSAL, NOT A MEASUREMENT: what a customer's disk has to spare was not known
- * when this was written (the design memo, "what I could not determine"). Two hundred megabytes is
- * twenty of the largest runs there can be (ten megabytes of files each) and years of the usual
- * ones (a sheet of a few hundred kilobytes a day).
+ * THE OTHER BOUND IS HOW IT IS COUNTED, AND IT IS THE SMALLER. The only thing that can say what a
+ * folder holds is the Bot's computer, and it describes a folder in so many entries and says when
+ * there was more (`agent-computer/src/workspace.ts`, `listEntries`: five hundred). A folder it
+ * cannot describe whole has no total anybody can state, and one that cannot be stated is not
+ * known to be under this — so that reads as full too (`madeHeldBy`). Every run is a folder and
+ * its files. MEASURED over the computer's own workspace (the independent read of 2026-10-07, and
+ * `workbench-gateway.test.ts`): a folder of one-file runs takes 251 of them and refuses the
+ * 252nd, at 2,259 bytes — seventy-five kilobytes in the reader's run — of the two hundred
+ * megabytes below. The comment here once said "years". For runs that make one file it is two
+ * hundred and fifty-one runs, whatever their size.
  *
- * AND A SECOND BOUND COMES WITH HOW IT IS COUNTED. The computer describes a folder in at most five
- * hundred entries (`agent-computer/src/workspace.ts`, `listEntries`) and says when there was more.
- * A folder it cannot describe whole is one whose total nobody can state, and a total nobody can
- * state is not known to be under this — so that reads as full too (see `madeHeldBy`). Each run is
- * a folder and its files, so that is reached after some hundreds of runs whatever their size.
+ * WHAT COUNTING IT PROPERLY TAKES, and why it is not here: the computer totalling a folder itself
+ * — a route in `agent-computer`, which is an image and another change — or a way for `made/` to
+ * be emptied. Until one of those, this is not yet the owner's total: it is that total OR the
+ * listing's length, whichever is met first, and whoever offers a run to a Bot has that to settle
+ * before a person's 252nd file is refused for good.
+ *
+ * THE NUMBER ITSELF IS A PROPOSAL, NOT A MEASUREMENT: what a customer's disk has to spare was not
+ * known when it was written. Two hundred megabytes is twenty of the largest runs there can be
+ * (ten megabytes of files each).
  */
 export const MADE_MAX_BYTES = 200 * 1024 * 1024;
 
@@ -248,7 +258,9 @@ export function madeDirectoryFor(at: Date, callId: string | undefined): string {
 
 /**
  * How many bytes `made/` holds, as the Bot's computer describes it — infinity when it cannot be
- * described whole.
+ * described whole. "Truncated" is the computer's own word and this side takes it as said: how
+ * many entries make a listing too long is the computer's to know (`MADE_MAX_BYTES` above has
+ * what that comes to, measured).
  *
  * The runtime checking a fact for a bound of its own, as a turn asks a file's size before it says
  * a card is on screen (`person-files.ts`, `fileFacts`): no row, and not a Bot's listing — nothing
@@ -269,12 +281,16 @@ export async function madeHeldBy(computer: ComputerClient): Promise<number> {
   );
 }
 
-/** A file that was not filed because `made/` is full, with what it would have come to. */
-export function madeFull(held: number, bytes: number): ScriptNotRunError {
+/** A file that was not filed because `made/` holds all it may, with what it would have come to. */
+export function madeFull(
+  held: number,
+  bytes: number,
+  limit: number,
+): ScriptNotRunError {
   return new ScriptNotRunError(MADE_FULL, {
     bytes,
-    limit: MADE_MAX_BYTES,
-    // A folder too large to describe has no figure to give.
+    limit,
+    // A folder that could not be described whole has no figure to give.
     ...(Number.isFinite(held) ? { held } : {}),
   });
 }

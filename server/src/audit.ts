@@ -639,7 +639,12 @@ export const SCRIPT_TOO_LARGE: AuditFactCode = "laf:script_too_large";
  * cannot be one, a file named twice, files too large together, a time it may not ask for.
  */
 export const SCRIPT_INPUTS_INVALID: AuditFactCode = "laf:script_inputs_invalid";
-/** The folder scripts' files are kept in holds all it may. Nothing is deleted to make room. */
+/**
+ * The folder scripts' files are kept in holds all it may: as many bytes as it is allowed, OR more
+ * entries than the Bot's computer will list, so that what it holds cannot be counted — whichever
+ * is met first, and for one-file runs that is the second (`gateway/script-run.ts`,
+ * `MADE_MAX_BYTES`). Nothing is deleted to make room.
+ */
 export const MADE_FULL: AuditFactCode = "laf:made_full";
 
 export type AuditEventInput = {

@@ -1009,8 +1009,10 @@ export const FACTS: Record<string, string> = {
   "laf:script_too_large": "The program was longer than one may be",
   "laf:script_inputs_invalid":
     "The files or the time it asked for were not ones a run takes",
+  // "Holds all it may", not "is full": the bound met first is how many files can be counted
+  // there, and a folder can meet it at a few kilobytes (`server/src/audit.ts`, `MADE_FULL`).
   "laf:made_full":
-    "The folder for files that programs make is full, so the file was not kept",
+    "The folder for files that programs make holds all it may, so the file was not kept",
 };
 
 /**

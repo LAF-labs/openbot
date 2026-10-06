@@ -94,9 +94,30 @@ export function createActs(deps: {
   workbench?: Workbench | undefined;
   /** The clock a run's folder is dated by. A test moves it. */
   now?: () => Date;
+  /** The most `made/` may hold. A test makes it small. */
+  madeMaxBytes?: number;
 }) {
   const { as, govern, auditStore, workbench } = deps;
   const now = deps.now ?? (() => new Date());
+  const madeMaxBytes = deps.madeMaxBytes ?? MADE_MAX_BYTES;
+
+  /**
+   * One call files what its run made at a time.
+   *
+   * What `made/` holds is read once a call, before its first file, and added to as each is
+   * filed. Two calls filing at once each read what was there before the other, and both filed
+   * past what the folder may hold (until 2026-10-07; a run's worth over, each time). In this
+   * process there is one of these and it is a queue: the next call reads the folder after the
+   * one before has finished with it. In memory, which is the whole of it here — one API server
+   * on one VM (docs/laf/deployment-model.md) — and it bounds what RUNS file: a Bot's own
+   * `computer_write_file` into `made/` was never this bound's.
+   */
+  let filing: Promise<unknown> = Promise.resolve();
+  const oneAtATime = <T>(work: () => Promise<T>): Promise<T> => {
+    const mine = filing.then(work, work);
+    filing = mine.catch(() => undefined);
+    return mine;
+  };
 
   return {
     click(
@@ -485,6 +506,23 @@ export function createActs(deps: {
         },
       );
       const { run } = answer;
+      /** What the caller is handed: how it ended, what it printed, and what became of its files. */
+      const ended = (products: ScriptProduct[]): ScriptRun => ({
+        sha256: script.sha256,
+        ending: run.ending,
+        exitCode: run.exitCode,
+        signal: run.signal,
+        ms: run.ms,
+        stdout: run.stdout,
+        stderr: run.stderr,
+        stdoutBytes: run.stdoutBytes,
+        stderrBytes: run.stderrBytes,
+        ...(run.productsRefused
+          ? { productsRefused: run.productsRefused }
+          : {}),
+        skipped: run.skipped,
+        products,
+      });
 
       /*
        * 3. HOW IT ENDED, WRITTEN BEFORE ANY FILE IT MADE IS FILED. A trail that will not take
@@ -524,75 +562,67 @@ export function createActs(deps: {
        * a question, which is a pause the same call comes back from, and the caller's Stop.
        */
       const directory = madeDirectoryFor(now(), actor.toolCallId);
-      /** What `made/` holds, asked once and only when there is something to file. */
-      let held: number | undefined;
-      /** The computer stopped answering: what is left is not tried against it one by one. */
-      let unreachable: string | undefined;
       const products: ScriptProduct[] = [];
-      for (const product of answer.products) {
-        const size = product.bytes.byteLength;
-        if (unreachable) {
-          products.push({
-            name: product.name,
-            bytes: size,
-            unfiled: unreachable,
-          });
-          continue;
-        }
-        const path = `${directory}/${product.name}`;
-        try {
-          await govern(
-            computerId,
-            "computer_write_file",
-            botId,
-            actor,
-            { filePath: path, forScript: script.sha256, ...carried },
-            async () => {
-              held ??= await madeHeldBy(as(botId));
-              if (held + size > MADE_MAX_BYTES) throw madeFull(held, size);
-              const filed = await as(botId).putFile(path, product.bytes);
-              held += filed.bytes;
-              return filed;
-            },
-          );
-          products.push({ name: product.name, bytes: size, path });
-        } catch (error) {
-          if (error instanceof ActionNeedsApprovalError) throw error;
-          if (signal?.aborted) throw error;
-          /*
-           * A fact about THIS file — the rule that refused its name, the folder being full, what
-           * the computer said of it — is said of it, and the next is tried. Anything that is not
-           * a fact is a failure nobody named: a trail that would not take the decision's row, a
-           * bug. That ends the call, rather than being reported as a file the computer declined.
-           */
-          if (!(error instanceof Error && error.message.startsWith("laf:"))) {
-            throw error;
+      // A run that made nothing has nothing to wait its turn for.
+      if (answer.products.length === 0) return ended(products);
+      await oneAtATime(async () => {
+        /** What `made/` holds, asked once and only when there is something to file. */
+        let held: number | undefined;
+        /** The computer stopped answering: what is left is not tried against it one by one. */
+        let unreachable: string | undefined;
+        for (const product of answer.products) {
+          const size = product.bytes.byteLength;
+          if (unreachable) {
+            products.push({
+              name: product.name,
+              bytes: size,
+              unfiled: unreachable,
+            });
+            continue;
           }
-          const unfiled =
-            error instanceof ActionRefusedError
-              ? error.code
-              : factOfError(error);
-          if (error instanceof ComputerUnavailableError) unreachable = unfiled;
-          products.push({ name: product.name, bytes: size, unfiled });
+          const path = `${directory}/${product.name}`;
+          try {
+            await govern(
+              computerId,
+              "computer_write_file",
+              botId,
+              actor,
+              { filePath: path, forScript: script.sha256, ...carried },
+              async () => {
+                held ??= await madeHeldBy(as(botId));
+                if (held + size > madeMaxBytes) {
+                  throw madeFull(held, size, madeMaxBytes);
+                }
+                const filed = await as(botId).putFile(path, product.bytes);
+                held += filed.bytes;
+                return filed;
+              },
+            );
+            products.push({ name: product.name, bytes: size, path });
+          } catch (error) {
+            if (error instanceof ActionNeedsApprovalError) throw error;
+            if (signal?.aborted) throw error;
+            /*
+             * A fact about THIS file — the rule that refused its name, the folder being full, what
+             * the computer said of it — is said of it, and the next is tried. Anything that is not
+             * a fact is a failure nobody named: a trail that would not take the decision's row, a
+             * bug. That ends the call, rather than being reported as a file the computer declined.
+             */
+            if (!(error instanceof Error && error.message.startsWith("laf:"))) {
+              throw error;
+            }
+            const unfiled =
+              error instanceof ActionRefusedError
+                ? error.code
+                : factOfError(error);
+            if (error instanceof ComputerUnavailableError)
+              unreachable = unfiled;
+            products.push({ name: product.name, bytes: size, unfiled });
+          }
         }
-      }
+      });
 
-      return {
-        sha256: script.sha256,
-        ending: run.ending,
-        exitCode: run.exitCode,
-        signal: run.signal,
-        ms: run.ms,
-        stdout: run.stdout,
-        stderr: run.stderr,
-        stdoutBytes: run.stdoutBytes,
-        stderrBytes: run.stderrBytes,
-        ...(run.productsRefused
-          ? { productsRefused: run.productsRefused }
-          : {}),
-        skipped: run.skipped,
-        products,
-      };
+      return ended(products);
     },
   };
 }
