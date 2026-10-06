@@ -32,7 +32,11 @@ import {
   ScriptNotRunError,
 } from "../src/computer/gateway/script-run";
 import type { ActionPolicy } from "../src/computer/policy";
-import { createStandingApprovalStore } from "../src/computer/standing-approvals";
+import {
+  allowanceFor,
+  createStandingApprovalStore,
+  scopeKeyOf,
+} from "../src/computer/standing-approvals";
 import { callFingerprintOf } from "../src/plugins/call";
 import {
   customServerNameRefusal,
@@ -2189,6 +2193,43 @@ describe("a run and a tool of the same name on somebody else's server", () => {
       undefined,
       ours.approvalId,
     );
+  });
+
+  /*
+   * AND "ALWAYS" FOR ONE IS NOT "ALWAYS" FOR THE OTHER — which held before this read, and is held
+   * here because two lists now word an allowance by this key alone (`app/src/lib/approvals.ts`,
+   * `coversRuns`). A call to another server is allowed by its reference, which has a slash in
+   * it; a run by the gateway's name, which has none. Were the call path ever to allow by the name
+   * a tool is OFFERED under, that server's "always" would let every script run.
+   */
+  test("always for that server's tool is kept under another key than always for a run, and does not answer for one", async () => {
+    const theirs = allowanceFor({ tool: REF });
+    expect(scopeKeyOf(theirs)).toBe("tool=workbench/run_script");
+    expect(scopeKeyOf(allowanceFor({ tool: RUN_SCRIPT_TOOL }))).toBe(
+      `tool=${RUN_SCRIPT_TOOL}`,
+    );
+
+    const rule = 'intent == "run_script"';
+    const { gateway, standing, sent } = stack({
+      policy: asking(rule),
+      folder: { "uploads/a.csv": bytes("1") },
+    });
+    await standing.grant({
+      botId: BOT,
+      rule,
+      scope: theirs,
+      subject: {
+        kind: "tool",
+        intent: "call_tool",
+        tool: { server: "workbench", name: "run_script" },
+        reason: "policy_ask",
+      },
+      grantedBy: MANAGER.id,
+    });
+    expect(
+      await failure(gateway.runScript(COMPUTER, BOT, ACTOR, input)),
+    ).toBeInstanceOf(ActionNeedsApprovalError);
+    expect(sent).toEqual([]);
   });
 
   test("whatever a call to another server is called and says, its answer is not one a gateway act can spend", () => {

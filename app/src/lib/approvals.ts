@@ -40,6 +40,35 @@ export type AllowanceScope = {
 };
 
 /**
+ * THE NAME A SMALL PROGRAM'S RUN IS ALLOWED AND RECORDED UNDER: the gateway's own
+ * (`server/src/computer/gateway/intent.ts`, `RUN_SCRIPT_TOOL`). Written once on this side, and
+ * `allowance-words.test.tsx` holds it to the server's, so it cannot be respelled on one of them.
+ */
+export const RUN_SCRIPT_TOOL = "mcp__workbench__run_script";
+
+/**
+ * Whether what was allowed is running small programs, for the lists that say what was allowed.
+ *
+ * A tool's scope was printed as its name, and this one's name is an identifier: the only place a
+ * person can find what they allowed and take it back read "도구 mcp__workbench__run_script" to
+ * somebody who had been asked about "a small program" (the independent read of #123).
+ *
+ * THE NAME ALONE IS ENOUGH HERE, WHICH IT IS NOT ON THE TRAIL. A server somebody added by address
+ * as `workbench`, with a tool `run_script`, is OFFERED to a Bot under this very name, and a trail
+ * row carries the name a tool was offered under — so `audit.tsx` words a row by its target and
+ * never by the name. An allowance is keyed otherwise: a call to another server is allowed by its
+ * reference, `workbench/run_script` (`server/src/plugins/call.ts`), and only the gateway's run by
+ * this name. A reference always has a slash in it and this has none; they cannot be one string,
+ * and `server/tests/workbench-gateway.test.ts` holds the two keys apart.
+ */
+export function coversRuns(
+  kind: AllowanceScope["kind"],
+  value: string,
+): boolean {
+  return kind === "tool" && value === RUN_SCRIPT_TOOL;
+}
+
+/**
  * How long a yes is meant to last, as the buttons on a card say it.
  *
  * `once` is this action. `task` is the job the person set with their newest message — it ends when

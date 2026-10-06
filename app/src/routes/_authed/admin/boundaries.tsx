@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { agentListQueryOptions } from "@/lib/agents/queries";
-import { type AskSubject, describeSubject } from "@/lib/approvals";
+import { type AskSubject, coversRuns, describeSubject } from "@/lib/approvals";
 import { BOUNDARY_REFUSALS, refusalText } from "@/lib/computer/refusals";
 import { ensure } from "@/lib/ensure";
 import { isImeKey } from "@/lib/ime";
@@ -681,10 +681,16 @@ function BoundariesPage() {
                             bot: nameOf(allowance.botId),
                             path: allowance.scopeValue,
                           })
-                        : t("{bot} — the tool {tool}", {
-                            bot: nameOf(allowance.botId),
-                            tool: allowance.scopeValue,
-                          })}
+                        : // A run in the word its card asked in, not the identifier it is
+                          // allowed under; "any", since the tool is every program (`coversRuns`).
+                          coversRuns(allowance.scopeKind, allowance.scopeValue)
+                          ? t("{bot} — running any small program it wrote", {
+                              bot: nameOf(allowance.botId),
+                            })
+                          : t("{bot} — the tool {tool}", {
+                              bot: nameOf(allowance.botId),
+                              tool: allowance.scopeValue,
+                            })}
                   </span>
                   {/*
                    * What the Bot was doing when they granted it, said here rather than sent as a

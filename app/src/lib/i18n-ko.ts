@@ -1176,6 +1176,9 @@ export const ko: Record<string, string> = {
   "{bot} — anything on {site}": "{bot} — {site}에서 하는 모든 것",
   "{bot} — the file {path}": "{bot} — 파일 {path}",
   "{bot} — the tool {tool}": "{bot} — 도구 {tool}",
+  // A run's allowance, which is for the tool and so for every program: "무엇이든" is the width.
+  "{bot} — running any small program it wrote":
+    "{bot} — 직접 짠 작은 프로그램이면 무엇이든 돌리기",
   "Ask me again": "다시 묻게 하기",
   "A person stopped being asked about this": "사람이 이후로 묻지 않도록 함",
   "A person asked to be asked again": "사람이 다시 묻도록 되돌림",
@@ -2799,6 +2802,8 @@ export const ko: Record<string, string> = {
   "Anything on {site}": "{site}에서 하는 모든 일",
   "The file {path}": "파일 {path}",
   "The tool {tool}": "도구 {tool}",
+  "Running any small program it wrote":
+    "직접 짠 작은 프로그램이면 무엇이든 돌리기",
   "Only in one conversation, until {when}": "한 대화에서만 · {when}까지",
   "Allowed on {date}, until you take it back":
     "{date}에 허락함 · 되돌릴 때까지",

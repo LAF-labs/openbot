@@ -10,6 +10,7 @@ import {
 } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { useBotNames } from "@/lib/agents/bot-names";
+import { RUN_SCRIPT_TOOL } from "@/lib/approvals";
 import { auditEventsQueryOptions } from "@/lib/audit/queries";
 import { type AuditRun, dayKeyOf, groupByDay } from "@/lib/audit/rows";
 import { silenceOf } from "@/lib/audit/silence";
@@ -1088,7 +1089,7 @@ export const TOOLS: Record<string, string> = {
   // A program the Bot wrote, run over files it names (`server/src/computer/gateway/intent.ts`,
   // `RUN_SCRIPT_TOOL`). Not in the catalogue either — no Bot is offered it yet — and the gateway
   // writes rows under this name, so `audit-labels.test.ts` holds this entry to the server's name.
-  mcp__workbench__run_script: "Run a small program",
+  [RUN_SCRIPT_TOOL]: "Run a small program",
 };
 
 /**
