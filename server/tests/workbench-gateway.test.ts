@@ -4,11 +4,7 @@ import { REPEAT_RULE } from "../../shared/policy-rules";
 import { WORKBENCH_LIMITS } from "../../shared/workbench/protocol";
 import type { AuditEventInput, AuditFactCode, AuditStore } from "../src/audit";
 import { createApprovalRegistry } from "../src/computer/approvals";
-import {
-  type ComputerClient,
-  ComputerUnavailableError,
-  WorkspaceRequestError,
-} from "../src/computer/client";
+import { ComputerUnavailableError } from "../src/computer/client";
 import {
   ActionNeedsApprovalError,
   ActionRefusedError,
@@ -20,14 +16,16 @@ import {
   ScriptNotRunError,
 } from "../src/computer/gateway/script-run";
 import type { ActionPolicy } from "../src/computer/policy";
-import type { SnapshotResult } from "../src/computer/schema";
 import { createStandingApprovalStore } from "../src/computer/standing-approvals";
 import { outcomeOfError } from "../src/runner/unattended";
-import type {
-  Workbench,
-  WorkbenchAnswer,
-  WorkbenchRequest,
-} from "../src/workbench/client";
+import type { WorkbenchAnswer } from "../src/workbench/client";
+import {
+  bytes,
+  ENDED,
+  fakeComputer,
+  fakeWorkbench,
+  made,
+} from "./support/script-run";
 
 /**
  * A SCRIPT'S RUN AS AN ACT OF THE GATEWAY, with a recording stand-in for the place a script runs
@@ -58,144 +56,10 @@ const asking = (...ask: string[]): ActionPolicy => ({ ...PERMISSIVE, ask });
 const denying = (...deny: string[]): ActionPolicy => ({ ...PERMISSIVE, deny });
 
 const SCRIPT = 'console.log("the total is", 42);';
-const bytes = (text: string) => new TextEncoder().encode(text);
 const sha256 = (text: string) =>
   createHash("sha256").update(text, "utf8").digest("hex");
 const id8 = (callId: string) =>
   createHash("sha256").update(callId).digest("hex").slice(0, 8);
-
-/** A run that ended by itself with 0 and printed a line. */
-const ENDED: Extract<WorkbenchAnswer, { ok: true }>["run"] = {
-  ending: "exited",
-  exitCode: 0,
-  signal: null,
-  ms: 412,
-  stdout: "the total is 42\n",
-  stderr: "",
-  stdoutBytes: 16,
-  stderrBytes: 0,
-  skipped: 0,
-};
-
-const made = (...products: [string, string][]): WorkbenchAnswer => ({
-  ok: true,
-  run: ENDED,
-  products: products.map(([name, text]) => ({ name, bytes: bytes(text) })),
-});
-
-/** The place a script runs, standing in: it records what it was sent and answers as told. */
-function fakeWorkbench(
-  answer: (
-    request: WorkbenchRequest,
-    signal: AbortSignal | undefined,
-  ) => WorkbenchAnswer | Promise<WorkbenchAnswer> = () => made(),
-) {
-  const sent: WorkbenchRequest[] = [];
-  const workbench: Workbench = {
-    health: async () => ({ busy: false, boot: "fake" }),
-    run: async (request, signal) => {
-      sent.push(request);
-      return answer(request, signal);
-    },
-  };
-  return { workbench, sent };
-}
-
-/** The Bot's computer, standing in: a folder in memory, and a record of everything asked of it. */
-function fakeComputer(
-  folder: Record<string, Uint8Array> = {},
-  options: {
-    /** What the page it is parked on is, when a test looks at the screen first. */
-    url?: string;
-    /** What `made/` is said to hold already, in bytes; or that it cannot be described whole. */
-    madeHolds?: number | "more than a listing describes";
-    /** What a put is answered with instead of being taken. */
-    refusePut?: (path: string) => Error | undefined;
-  } = {},
-) {
-  const files = new Map(Object.entries(folder));
-  /** Every call that reached the computer, by method and path, in order. */
-  const asked: string[] = [];
-  /** Which Bot each call was addressed as. */
-  const addressedAs: string[] = [];
-  const snapshot: SnapshotResult = {
-    snapshotId: 1,
-    url: options.url ?? "https://example.com/",
-    title: "A page",
-    truncated: false,
-    elements: [{ ref: "e1", role: "button", name: "Submit order" }],
-  };
-  const client = {
-    snapshot: async () => snapshot,
-    click: async () => {
-      asked.push("click");
-      return { action: "click", url: snapshot.url, elapsedMs: 1 } as never;
-    },
-    async fileBytes(path: string) {
-      asked.push(`fileBytes ${path}`);
-      const found = files.get(path);
-      if (!found) throw new WorkspaceRequestError("laf:file_not_found");
-      return found;
-    },
-    async putFile(path: string, body: Uint8Array) {
-      asked.push(`putFile ${path}`);
-      const refused = options.refusePut?.(path);
-      if (refused) throw refused;
-      if (files.has(path)) throw new WorkspaceRequestError("laf:file_exists");
-      files.set(path, body);
-      return { path, kind: "file" as const, bytes: body.byteLength };
-    },
-    async listFiles(input: { path?: string }) {
-      asked.push(`listFiles ${input.path ?? "."}`);
-      const under = [...files].filter(([path]) =>
-        path.startsWith(`${input.path}/`),
-      );
-      if (options.madeHolds === "more than a listing describes") {
-        return { path: input.path ?? ".", entries: [], truncated: true };
-      }
-      if (typeof options.madeHolds === "number") {
-        return {
-          path: input.path ?? ".",
-          entries: [
-            { path: "made/earlier", kind: "folder" as const },
-            {
-              path: "made/earlier/old.xlsx",
-              kind: "file" as const,
-              bytes: options.madeHolds,
-            },
-          ],
-          truncated: false,
-        };
-      }
-      if (under.length === 0) {
-        throw new WorkspaceRequestError("laf:file_not_found");
-      }
-      return {
-        path: input.path ?? ".",
-        entries: under.map(([path, held]) => ({
-          path,
-          kind: "file" as const,
-          bytes: held.byteLength,
-        })),
-        truncated: false,
-      };
-    },
-    forBot(botId: string) {
-      addressedAs.push(botId);
-      return client;
-    },
-  } as unknown as ComputerClient;
-  return {
-    client,
-    files,
-    asked,
-    addressedAs,
-    /** The browser goes somewhere else; the server sees it at its next look. */
-    moveTo(url: string) {
-      snapshot.url = url;
-    },
-  };
-}
 
 function fakeAudit(refuses: (event: AuditEventInput) => boolean = () => false) {
   const rows: AuditEventInput[] = [];
