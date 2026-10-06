@@ -1,6 +1,7 @@
 import { MADE_SHELVES, MARKDOWN_TABLE, type MadeShelf } from "@shared/made";
 import { infiniteQueryOptions } from "@tanstack/react-query";
 import { t } from "@/lib/i18n";
+import { own } from "@/lib/own";
 import { RequestRefusedError } from "@/lib/refusals";
 
 /**
@@ -127,7 +128,7 @@ async function madeRequest(path: string): Promise<MadePage> {
   > | null;
   if (!response.ok) {
     const code = typeof body?.code === "string" ? body.code : "";
-    const known = MADE_REFUSALS[code];
+    const known = own(MADE_REFUSALS, code);
     throw new RequestRefusedError(
       known ? t(known) : t("What your Bot made could not be read."),
       response.status,

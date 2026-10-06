@@ -1,4 +1,5 @@
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
+import { own } from "@/lib/own";
 import { t } from "../i18n";
 import { type AgentEffort, type AgentProfile, agentKeys } from "./queries";
 
@@ -135,7 +136,7 @@ async function agentRequest(
     const body = (await response.json().catch(() => null)) as {
       code?: string;
     } | null;
-    const known = body?.code ? AGENT_REFUSALS[body.code] : undefined;
+    const known = own(AGENT_REFUSALS, body?.code);
     /*
      * The code, and never the server's `error`. That field carried an English sentence until
      * 2026-09-11 and carries the code now, so reading it as a fallback would print `laf:…` on the

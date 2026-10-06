@@ -1,5 +1,6 @@
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
 import { t } from "@/lib/i18n";
+import { own } from "@/lib/own";
 import { type AgentChannel, channelKeys } from "./queries";
 
 /**
@@ -21,7 +22,7 @@ export const CHANNEL_REFUSALS: Record<string, string> = {
 };
 
 function channelRefusal(code: string | undefined): string {
-  const known = code ? CHANNEL_REFUSALS[code] : undefined;
+  const known = own(CHANNEL_REFUSALS, code);
   return known ? t(known) : t("Could not start a conversation. Try again.");
 }
 

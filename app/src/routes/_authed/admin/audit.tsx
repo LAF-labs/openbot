@@ -18,6 +18,7 @@ import { activeLocale, t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
 import { siteById } from "@/lib/sites/catalogue";
 import { useNow } from "@/lib/use-now";
+import { own } from "@/lib/own";
 
 /**
  * Read surface for policy, computer, component, MCP, and credential audit events.
@@ -806,11 +807,7 @@ function fact(value: string): string {
  * against its list by a test, so a code added to either fails a run rather than reaching a reader.
  */
 function wordsFor(code: string): string | undefined {
-  return Object.hasOwn(FACTS, code)
-    ? FACTS[code]
-    : Object.hasOwn(COMPUTER_FACTS, code)
-      ? COMPUTER_FACTS[code]
-      : undefined;
+  return own(FACTS, code) ?? own(COMPUTER_FACTS, code);
 }
 
 /**

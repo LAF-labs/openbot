@@ -36,8 +36,9 @@ describe("what a tool result says to each of its readers", () => {
       join(import.meta.dir, "../src/lib/computer/browsing.ts"),
       "utf8",
     );
+    // Through the table's one reader (`outcomeLabel`), which finds only what the table was given.
     expect(words).toContain(
-      'import { OUTCOME_LABELS } from "@/lib/computer/outcome-labels";',
+      'import { outcomeLabel } from "@/lib/computer/outcome-labels";',
     );
     const tools = readFileSync(
       join(import.meta.dir, "../src/lib/copilot/computer-tools.tsx"),

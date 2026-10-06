@@ -1,3 +1,5 @@
+import { own } from "@/lib/own";
+
 /**
  * What a refused or failed computer call says on its transcript line, in the person's words.
  *
@@ -88,3 +90,10 @@ export const OUTCOME_LABELS: Record<string, string> = {
   "laf:file_exists": "Something was already at that path",
   "laf:file_failed": "The workspace could not do it",
 };
+
+/** The line for a code, where this table itself holds one (`@/lib/own` says why not `[code]`). */
+export function outcomeLabel(
+  code: string | null | undefined,
+): string | undefined {
+  return own(OUTCOME_LABELS, code);
+}

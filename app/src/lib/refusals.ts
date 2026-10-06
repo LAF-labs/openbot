@@ -1,4 +1,5 @@
 import { t } from "@/lib/i18n";
+import { own } from "@/lib/own";
 
 /**
  * The words for a refused request, where the server sent a code and this surface owns the sentence.
@@ -40,7 +41,7 @@ export function refusalText(
 ): string {
   const known =
     typeof code === "string"
-      ? (table[code] ?? ACCESS_REFUSALS[code])
+      ? (own(table, code) ?? own(ACCESS_REFUSALS, code))
       : undefined;
   return known ? t(known) : fallback;
 }
@@ -117,7 +118,7 @@ export async function requestOrRefusal(
     const code = typeof body?.code === "string" ? body.code : "";
     let known: string | undefined;
     for (const table of tables) {
-      known ??= table[code];
+      known ??= own(table, code);
     }
     throw new RequestRefusedError(
       known ? t(known) : t("That did not go through. Try again."),

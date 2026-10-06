@@ -5,6 +5,7 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import type { PartnerAccount } from "@/lib/connections/queries";
 import { activeLocale, t } from "@/lib/i18n";
+import { own } from "@/lib/own";
 import {
   type AlimtalkStatus,
   confirmAlimtalkCode,
@@ -50,7 +51,8 @@ export const partnerRefusalText = (code: string): string => {
     ),
     "laf:alimtalk_not_connected": t("This is not connected yet."),
   };
-  if (said[code]) return said[code];
+  const known = own(said, code);
+  if (known) return known;
   /*
    * Everything ending `_not_configured` is a 503: this machine was set up without the account
    * behind this row. Nothing the person types fixes it and there is nobody here to send them to,

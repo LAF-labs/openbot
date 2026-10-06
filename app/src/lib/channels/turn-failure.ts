@@ -15,6 +15,7 @@
  */
 import { sittingLabel } from "@/lib/channels/message-time";
 import { activeLocale, t } from "@/lib/i18n";
+import { own } from "@/lib/own";
 
 /**
  * The codes `GET /api/channels/:id/failures` can send. Keep in step with the server's table.
@@ -172,7 +173,8 @@ export const TURN_FAILURE_SENTENCES: Record<string, string> = {
 /** The sentence for a code, falling back to the generic one for anything unrecognised. */
 export function turnFailureSentence(code: string): string {
   return t(
-    TURN_FAILURE_SENTENCES[code] ?? TURN_FAILURE_SENTENCES["laf:turn_failed"],
+    own(TURN_FAILURE_SENTENCES, code) ??
+      TURN_FAILURE_SENTENCES["laf:turn_failed"],
   );
 }
 
