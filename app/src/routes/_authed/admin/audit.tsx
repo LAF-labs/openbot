@@ -643,10 +643,11 @@ export const DECISIONS: Record<string, string> = {
   // stops running until the pair is closed.
   "mcp.tool_definition_changed": "Paused until somebody reviews it",
   "mcp.tool_definition_approved": "Approved as it now is",
-  // Neither of the two above: a definition that is this product's own code changed with a new
-  // version and was taken as it came. Nothing paused and no person approved anything, and a row
-  // that read as either would be claiming a look nobody took.
-  "mcp.tool_definition_shipped": "Changed with a new version, taken as it came",
+  // Neither of the two above: a definition that is this product's own code came with a new version
+  // — changed, new, or one an older build had left waiting — and was taken as it came. Nothing
+  // paused and no person approved anything, and a row that read as either would be claiming a look
+  // nobody took. "Came with", not "changed": one of the three is a tool that was not there before.
+  "mcp.tool_definition_shipped": "Came with a new version, taken as it came",
   // The connector flow's three acts. Written as things PEOPLE did, because that is what they are:
   // the deployment introducing itself to a vendor, and somebody putting their own account behind it.
   "mcp.oauth_client_registered": "This deployment registered itself",
