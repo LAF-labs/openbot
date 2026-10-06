@@ -595,3 +595,164 @@ test("health says whether the service answers and whether it is running somethin
     expect(await workbench.health()).toBeNull();
   }
 });
+
+/*
+ * WHAT THE DAEMON SENDS IS HELD TO A SIZE AS IT ARRIVES (the independent read of 2026-10-06). Every
+ * lie above is a lie of shape; none was a lie of SIZE, and the client read each answer whole before
+ * it looked at any of it. This process is the API server — the one process on the VM — and the
+ * far end is the one container where a stranger's code runs.
+ */
+
+/** A body that never ends: 64 KiB at a time for as long as anybody reads, counting what was handed over. */
+function endless() {
+  let served = 0;
+  const piece = new Uint8Array(64 * 1024);
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      await Bun.sleep(2);
+      served += piece.byteLength;
+      controller.enqueue(piece);
+    },
+  });
+  return {
+    body,
+    served: () => served,
+    /** Whether anybody is still taking it: nothing more handed over across a third of a second. */
+    async letGo() {
+      const before = served;
+      await Bun.sleep(300);
+      return served === before;
+    },
+  };
+}
+
+const MEBIBYTE = 1024 * 1024;
+
+test("an answer that never ends is let go of at the bound: what the daemon served, not what the client kept", async () => {
+  const flood = endless();
+  const began = performance.now();
+  const { socketPath } = fakeDaemon(
+    () =>
+      new Response(flood.body, {
+        headers: { "content-type": "multipart/form-data; boundary=x" },
+      }),
+  );
+  const answer = await createWorkbench({
+    socketPath,
+    log: quiet,
+    limits: {
+      ...WORKBENCH_LIMITS,
+      productBytes: 128 * 1024,
+      productsBytes: 128 * 1024,
+      streamBytes: 4 * 1024,
+    },
+    marginMs: 1_500,
+  }).run({ script, files: [], timeoutMs: 1_500 });
+  expect(answer).toEqual({ ok: false, failure: "malformed" });
+  // Answered when the bound was passed — not three seconds later, when its own time ran out.
+  expect(performance.now() - began).toBeLessThan(1_500);
+  await Bun.sleep(100);
+  /*
+   * 128 KiB of files and a report of two 4 KiB streams: the client reads a few hundred KiB and
+   * lets go. What the fake had handed over by then is that and whatever was already on its way —
+   * a few megabytes sit in a socket's buffers. Read whole, as it was, three seconds of this was
+   * 77 MB held by the client (measured before the bound, 2026-10-06).
+   */
+  expect(flood.served()).toBeLessThan(16 * MEBIBYTE);
+  expect(await flood.letGo()).toBe(true);
+});
+
+test("a refusal that never ends, and a health answer that never ends, are let go of too", async () => {
+  const refusal = endless();
+  const refusing = fakeDaemon(
+    () => new Response(refusal.body, { status: 503 }),
+  );
+  expect(
+    await createWorkbench({
+      socketPath: refusing.socketPath,
+      log: quiet,
+      marginMs: 1_000,
+    }).run({ script, files: [], timeoutMs: 1_000 }),
+  ).toEqual({ ok: false, failure: "failed" });
+  const health = endless();
+  const answering = fakeDaemon(
+    () => honest(),
+    () => new Response(health.body),
+  );
+  expect(
+    await createWorkbench({
+      socketPath: answering.socketPath,
+      log: quiet,
+    }).health(),
+  ).toBeNull();
+  await Bun.sleep(100);
+  // Eight kibibytes are read of each; the rest of what was served never left the socket's buffers.
+  expect(refusal.served()).toBeLessThan(16 * MEBIBYTE);
+  expect(health.served()).toBeLessThan(16 * MEBIBYTE);
+  expect(await refusal.letGo()).toBe(true);
+  expect(await health.letGo()).toBe(true);
+});
+
+test("a redirect is not followed: the socket's answer cannot send this server anywhere else", async () => {
+  let elsewhere = 0;
+  const network = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    fetch() {
+      elsewhere += 1;
+      return honest();
+    },
+  });
+  opened.push({ stop: () => network.stop(true), root: "/nonexistent-nothing" });
+  for (const status of [301, 302, 307, 308]) {
+    const elsewhereOf = () =>
+      new Response(null, {
+        status,
+        headers: { location: `http://127.0.0.1:${network.port}/run` },
+      });
+    const { socketPath, asked } = fakeDaemon(elsewhereOf, elsewhereOf);
+    const workbench = createWorkbench({ socketPath, log: quiet });
+    const answer = await workbench.run({
+      script,
+      files: [{ path: "a", bytes: new Uint8Array([1]) }],
+    });
+    expect(answer.ok, String(status)).toBe(false);
+    expect(await workbench.health()).toBeNull();
+    // Asked once for the run and once for health, and nobody else was asked anything.
+    expect(asked(), String(status)).toBe(1);
+  }
+  expect(elsewhere).toBe(0);
+});
+
+test("the signal a run ended by is a signal's name or the answer is not passed on", async () => {
+  for (const signal of ["SIGKILL", "SIGTERM", "SIGSEGV", "SIGUSR1"]) {
+    const { socketPath } = fakeDaemon(() =>
+      honest({ ending: "timed_out", exitCode: null, signal }),
+    );
+    const answer = await createWorkbench({ socketPath, log: quiet }).run({
+      script,
+      files: [],
+    });
+    expect(answer.ok && answer.run.signal).toBe(signal);
+  }
+  for (const signal of [
+    "owner@example.com",
+    "SIG",
+    "sigkill",
+    "SIGKILL; rm -rf",
+    `SIG${"A".repeat(40)}`,
+    "x".repeat(200_000),
+    "",
+  ]) {
+    const { socketPath } = fakeDaemon(() =>
+      honest({ ending: "timed_out", exitCode: null, signal }),
+    );
+    expect(
+      await createWorkbench({ socketPath, log: quiet }).run({
+        script,
+        files: [],
+      }),
+      signal.slice(0, 20),
+    ).toEqual({ ok: false, failure: "malformed" });
+  }
+});

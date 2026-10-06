@@ -17,6 +17,17 @@
  * file's name is checked again here, and a report that says one thing while its parts say another
  * is `malformed` — never passed on in part.
  *
+ * AND IT IS READ NO FURTHER THAN IT MAY BE LONG. Every lie the tests told at first was a lie of
+ * shape; the independent read of 2026-10-06 pointed out that none was a lie of SIZE, and that the
+ * answer was held whole (`formData()`, `json()`) before any of it was looked at. Measured then: a
+ * fake that never stopped sending had 77 MB taken from it in the three seconds a short run is
+ * given — by the API server, the one process on the VM. So every body is read in pieces against a
+ * bound and let go of one piece past it (`bodyWithin`), as a file from the computer is
+ * (`computer/client.ts`, `bytesWithin`), and only then parsed. And A REDIRECT IS AN ERROR: followed,
+ * as it was — measured the same day, a 301 off the socket was followed to a TCP port and that
+ * port's answer was passed on as the run — it is this server, which has a network, sent wherever
+ * the far side of the wall says, with the files in hand on a 307.
+ *
  * ONE RUN AT A TIME, FROM THIS SIDE TOO. The daemon refuses a second run while one is in progress;
  * this queues a few behind the one in flight so that two callers in one process do not meet that
  * refusal, and so that no request of this server's is ever on its way to the socket while a
@@ -116,6 +127,75 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isCount = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 
+/** A signal's name as the runtime says one (`SIGKILL`), and nothing longer or stranger. */
+const SIGNAL_NAME = /^SIG[A-Z0-9]{2,10}$/;
+
+/** A refusal's body and `/health`'s are a line of JSON. This is room for it and for nothing else. */
+const SMALL_ANSWER_BYTES = 8 * 1024;
+
+/**
+ * The most a run's answer may be: the files, the report — two streams whose every kept byte may be
+ * written as a six-character escape — and the form around them.
+ */
+const answerBytes = (limits: Limits): number =>
+  limits.productsBytes + 12 * limits.streamBytes + 64 * 1024;
+
+/**
+ * A body, read no further than `most` bytes: in pieces, and let go of one piece past the bound.
+ * Null when it was longer — nothing of it is kept — or when it broke off.
+ *
+ * LETTING GO IS HANGING UP (`hangUp`), not only ceasing to read. Measured 2026-10-06: with the
+ * reader cancelled and the request left open, a fake that never stopped sending went on being
+ * taken from — the runtime drains what it no longer hands on. Ending the request itself is what
+ * stops the far side being read.
+ */
+async function bodyWithin(
+  response: Response,
+  most: number,
+  hangUp: () => void,
+): Promise<Uint8Array<ArrayBuffer> | null> {
+  const reader = response.body?.getReader();
+  if (!reader) return new Uint8Array(0);
+  const pieces: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > most) {
+        hangUp();
+        await reader.cancel().catch(() => undefined);
+        return null;
+      }
+      pieces.push(value);
+    }
+  } catch {
+    return null;
+  }
+  const whole = new Uint8Array(total);
+  let at = 0;
+  for (const piece of pieces) {
+    whole.set(piece, at);
+    at += piece.byteLength;
+  }
+  return whole;
+}
+
+/** A small JSON answer, or null when it was not small or not JSON. */
+async function smallJson(
+  response: Response,
+  hangUp: () => void,
+): Promise<unknown> {
+  const bytes = await bodyWithin(response, SMALL_ANSWER_BYTES, hangUp);
+  if (!bytes) return null;
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return null;
+  }
+}
+
 /** The part of a request the daemon would refuse, found before anything is sent. */
 function wrongPartOf(
   request: WorkbenchRequest,
@@ -160,7 +240,12 @@ async function runFrom(
   const { ending, exitCode, signal, stdout, stderr, productsRefused } = report;
   if (!ENDINGS.has(ending)) return null;
   if (exitCode !== null && !Number.isInteger(exitCode)) return null;
-  if (signal !== null && typeof signal !== "string") return null;
+  if (
+    signal !== null &&
+    !(typeof signal === "string" && SIGNAL_NAME.test(signal))
+  ) {
+    return null;
+  }
   if (
     !isCount(report.ms) ||
     !isCount(report.stdoutBytes) ||
@@ -226,8 +311,9 @@ async function runFrom(
 /** What a refusal's body says, as this side's word for it. */
 async function failureFrom(
   response: Response,
+  hangUp: () => void,
 ): Promise<Extract<WorkbenchAnswer, { ok: false }>> {
-  const body: unknown = await response.json().catch(() => null);
+  const body = await smallJson(response, hangUp);
   const code = isRecord(body) ? body.code : null;
   if (code === "laf:workbench_busy") return { ok: false, failure: "busy" };
   if (code === "laf:workbench_not_isolated") {
@@ -299,13 +385,21 @@ export function createWorkbench(options: {
     const bound = AbortSignal.timeout(
       (request.timeoutMs ?? limits.timeoutMs) + marginMs,
     );
+    // This side's own way of ending the request, for an answer that runs past its bound.
+    const own = new AbortController();
+    const hangUp = () => own.abort();
     let response: Response;
     try {
       response = await fetch("http://workbench/run", {
         method: "POST",
         unix: socketPath,
         body: form,
-        signal: signal ? AbortSignal.any([signal, bound]) : bound,
+        redirect: "error",
+        signal: AbortSignal.any([
+          own.signal,
+          bound,
+          ...(signal ? [signal] : []),
+        ]),
       });
     } catch (error) {
       if (signal?.aborted) return { ok: false, failure: "stopped" };
@@ -317,17 +411,28 @@ export function createWorkbench(options: {
       return { ok: false, failure };
     }
     if (!response.ok) {
-      const refused = await failureFrom(response);
+      const refused = await failureFrom(response, hangUp);
       log.warn("workbench_refused", {
         status: response.status,
         failure: refused.failure,
       });
       return refused;
     }
-    const answer = await response.formData().catch(() => null);
+    // Read to the bound first, parsed second: a form is parsed from bytes this side already holds.
+    const bytes = await bodyWithin(response, answerBytes(limits), hangUp);
+    if (signal?.aborted) return { ok: false, failure: "stopped" };
+    const answer = bytes
+      ? await new Response(bytes, {
+          headers: {
+            "content-type": response.headers.get("content-type") ?? "",
+          },
+        })
+          .formData()
+          .catch(() => null)
+      : null;
     const run = answer ? await runFrom(answer, limits) : null;
     if (!run) {
-      log.warn("workbench_answer_malformed", {});
+      log.warn("workbench_answer_malformed", { tooLong: bytes === null });
       return { ok: false, failure: "malformed" };
     }
     return run;
@@ -336,11 +441,13 @@ export function createWorkbench(options: {
   return {
     async health() {
       try {
+        const own = new AbortController();
         const response = await fetch("http://workbench/health", {
           unix: socketPath,
-          signal: AbortSignal.timeout(2_000),
+          redirect: "error",
+          signal: AbortSignal.any([own.signal, AbortSignal.timeout(2_000)]),
         });
-        const body: unknown = await response.json();
+        const body = await smallJson(response, () => own.abort());
         return response.ok &&
           isRecord(body) &&
           body.status === "ok" &&
