@@ -382,7 +382,8 @@ const UNTEXT = `
 import { chmodSync, lstatSync, mkdirSync, readdirSync, rmSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 const name = Buffer.from([0x6e, 0xff]);
 const under = (directory, leaf = name) => Buffer.concat([Buffer.from(directory + "/"), leaf]);
-const has = (directory, leaf = name) => readdirSync(directory, { encoding: "buffer" }).some((entry) => entry.equals(leaf));
+// The runtime lists names as plain byte arrays; a Buffer is made of each to compare it.
+const has = (directory, leaf = name) => readdirSync(directory, { encoding: "buffer" }).some((entry) => Buffer.from(entry).equals(leaf));
 const bun = {};
 const attempt = (what, act) => { try { bun[what] = String(act()); } catch (error) { bun[what] = error.code ?? String(error); } };
 const own = Buffer.from([0x61, 0xff]);
@@ -411,7 +412,7 @@ console.log(JSON.stringify({ made, bun }));
 /** What is in each place a script can write, by the bytes of its name. */
 const BYTES = `
 import { readdirSync } from "node:fs";
-const hex = (directory) => readdirSync(directory, { encoding: "buffer" }).map((entry) => entry.toString("hex"));
+const hex = (directory) => readdirSync(directory, { encoding: "buffer" }).map((entry) => Buffer.from(entry).toString("hex"));
 console.log(JSON.stringify({ work: hex("/work"), shm: hex("/dev/shm"), socket: hex("/run/laf-workbench") }));
 `;
 
