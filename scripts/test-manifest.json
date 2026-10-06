@@ -83,6 +83,7 @@
   "app/tests/browsing-card-title.test.ts",
   "app/tests/browsing-row-transcript.test.tsx",
   "app/tests/browsing-tasks.test.ts",
+  "app/tests/build-watch-starts.test.tsx",
   "app/tests/build-watch.test.ts",
   "app/tests/bundle-graph.test.ts",
   "app/tests/card-seams.test.tsx",

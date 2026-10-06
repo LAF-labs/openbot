@@ -265,6 +265,38 @@ test("mid-turn it is drawn and cannot be pressed, and says why — and can be on
   expect(view.reloads.count).toBe(1);
 });
 
+test("a Bot waiting on the person is not a Bot at work: the control can be pressed and says nothing about waiting", async () => {
+  /*
+   * Held only while the Bot WORKS. With a question open the control used to be disabled under
+   * "your Bot is working, refresh once it is done" — telling somebody to wait for a Bot that was
+   * waiting for them, for as long as the question stood (review of pull request 112). The question
+   * is the server's; the page a reload brings draws it again.
+   */
+  const approvals = await import("../src/lib/approvals");
+  const { act } = await import("react");
+  const view = await notice({ serverRevision: NEWER });
+  await act(async () => {
+    approvals.openQuestion("call-waiting", {
+      approvalId: "approval-waiting",
+      botId: BOT,
+      subject: undefined,
+      rule: null,
+      expiresAt: new Date(Date.now() + 600_000).toISOString(),
+    });
+  });
+  await view.settle();
+  try {
+    expect(view.button()?.disabled).toBe(false);
+    expect(view.text()).toBe(`${NEW_VERSION}${REFRESH}`);
+    const free = view.button();
+    if (!free) throw new Error("no button");
+    await view.press(free);
+    expect(view.reloads.count).toBe(1);
+  } finally {
+    approvals.closeQuestion("call-waiting");
+  }
+});
+
 test("in the installed app with a newer shell in hand, the same row says 다시 시작해서 업데이트 and the press restarts through the shell", async () => {
   const calls = shell("0.6.1", "restarts");
   // The page is behind as well: one press does for both, and it is the restart.

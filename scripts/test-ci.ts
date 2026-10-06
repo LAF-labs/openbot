@@ -1410,13 +1410,20 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `sidebar-rail.test.tsx` and `phone-nav.test.tsx`, for where it stands: a row over the foot's
  * one button, and a row over the phone's tabs.
  *
+ * RAISED AGAIN 2026-10-06 from the independent read of that notice, `app` from 2143 to 2146, by
+ * exactly three: in `build-watch.test.ts`, a reload that did not help is offered again when the
+ * connection returns (the fleet replaces the server first and the front door last, and a press in
+ * between used to silence the control for the whole release); in `update-notice.test.tsx`, a Bot
+ * waiting on the person does not hold the control; and the new `build-watch-starts.test.tsx`,
+ * which mounts the real route tree and holds the one line that starts the watch at all.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 3553, roots: ["server"] },
-  { name: "app", floor: 2143, roots: ["app"] },
+  { name: "app", floor: 2146, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 719, roots: ["tests", "agent-bot"] },
 ] as const;
