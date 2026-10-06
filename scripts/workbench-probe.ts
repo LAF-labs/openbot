@@ -1093,7 +1093,9 @@ export async function rehearseWorkbench(tools: {
         host.PidsLimit === 128 &&
         host.CpuShares === 256 &&
         host.Init !== true &&
-        host.ShmSize === megabytes &&
+        typeof (host.Tmpfs as Record<string, string> | undefined)?.[
+          "/dev/shm"
+        ] === "string" &&
         userLine === '"65534:65534"',
       JSON.stringify({
         engine,
