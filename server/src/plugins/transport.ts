@@ -153,9 +153,12 @@ export type VendorTransport = {
  * server what it offers — MCP — declares true (`mcp.ts`), and that constant is what keeps a vendor's
  * definition out of this rule. It is not that a remote list always needs a credential: a custom
  * server added with no token is listed anonymously (`connections.ts`), and is still MCP, still
- * true, still paused. So `server/tests/plugin-transport-shipped.test.ts` walks the whole catalogue
- * and a custom server and holds the two apart; a transport that ever lists from somebody else's
- * server while declaring false would be accepted without a person, and that test is what says so.
+ * true, still paused. So `server/tests/plugin-transport-shipped.test.ts` writes out every entry a
+ * person connects — nine of the catalogue's thirteen — and a custom server, and holds the two
+ * apart; the partner entry and the three on the deployment's own keys get their transport from
+ * the process (`store.ts`) and are this repository's adapters or its refusing stand-ins. A
+ * transport that ever lists from somebody else's server while declaring false would be accepted
+ * without a person, and that test is what says so.
  *
  * What follows from the answer is the consent rule in `servers.ts`: a vendor's changed definition
  * is paused until a person has read it, and one that ships with this build is not, because it

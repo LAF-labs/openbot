@@ -73,9 +73,36 @@ describeDb("plugin definition consent", () => {
   const serverId = `laf-test-${randomUUID().slice(0, 8)}`;
   const actorId = `user-${randomUUID().slice(0, 8)}`;
   const botId = `bot-${randomUUID().slice(0, 8)}`;
+  /**
+   * Whether the tool a stranded-grant row names was still held when the row was written. The row
+   * is the only record of that moment, so it goes in before the tool is deleted; this is how a test
+   * sees the order without making a statement fail.
+   */
+  const heldWhenStrandedWasWritten: boolean[] = [];
+  const trail = createAuditStore(database);
   const store = createPluginStore({
     database,
-    auditStore: createAuditStore(database),
+    auditStore: {
+      insert: async (event) => {
+        const payload = event.payload as { change?: string; refs?: string[] };
+        if (payload.change === "grants_not_advertised") {
+          for (const ref of payload.refs ?? []) {
+            const [server, ...name] = ref.split("/");
+            const held = await database
+              .select({ name: mcpTools.name })
+              .from(mcpTools)
+              .where(
+                and(
+                  eq(mcpTools.serverId, server ?? ""),
+                  eq(mcpTools.name, name.join("/")),
+                ),
+              );
+            heldWhenStrandedWasWritten.push(held.length === 1);
+          }
+        }
+        await trail.insert(event);
+      },
+    },
     credentials: credentialVaultStub({ readSecret: async () => null }),
     encryptionKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
     policy: () => ({ deny: [], ask: [], allow: ["true"] }),
@@ -475,7 +502,7 @@ describeDb("plugin definition consent", () => {
     });
   });
 
-  test("a grant left pointing at nothing goes in the trail when its tool goes, and not again at every refresh after", async () => {
+  test("a grant left pointing at nothing goes in the trail as its tool goes, once, and not again at every refresh after", async () => {
     // A boot refreshes every shipped service now; a row at every refresh would be a row at every
     // restart for as long as the grant stood (review of #110).
     const strandedIds = async () =>
@@ -503,6 +530,9 @@ describeDb("plugin definition consent", () => {
     expect(written.map((row) => row.refs)).toEqual([
       [`${serverId}/${payout.name}`],
     ]);
+    // Written while the tool was still held: after the delete there is no second moment, and a
+    // refresh that failed just past it would have left the trail nothing (review of #110).
+    expect(heldWhenStrandedWasWritten).toEqual([true]);
 
     await store.refreshTools(serverId);
     expect(

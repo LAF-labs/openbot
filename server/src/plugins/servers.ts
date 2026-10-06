@@ -354,16 +354,22 @@ export function createServers(
           if (!firstSync) {
             await tookWithTheBuild(tool.name, "appeared");
           }
-          await database.insert(mcpTools).values({
-            serverId,
-            name: tool.name,
-            description: tool.description,
-            inputSchema: tool.inputSchema,
-            annotations: tool.annotations,
-            definitionHash: hash,
-            needsReview: false,
-            reviewReason: null,
-          });
+          // A person connecting while the pass at boot is here reads the same code's list and
+          // writes the same row: the second writer has nothing to add, and a refused insert would
+          // have left an error on a server that is fine (review of #110).
+          await database
+            .insert(mcpTools)
+            .values({
+              serverId,
+              name: tool.name,
+              description: tool.description,
+              inputSchema: tool.inputSchema,
+              annotations: tool.annotations,
+              definitionHash: hash,
+              needsReview: false,
+              reviewReason: null,
+            })
+            .onConflictDoNothing();
           continue;
         }
         if (!known) {
@@ -449,17 +455,63 @@ export function createServers(
           );
       }
 
-      for (const known of existing) {
-        if (!fetchedNames.has(known.name)) {
-          await database
-            .delete(mcpTools)
-            .where(
-              and(
-                eq(mcpTools.serverId, serverId),
-                eq(mcpTools.name, known.name),
-              ),
-            );
+      /*
+       * A grant left pointing at nothing goes in the trail, at the moment it starts pointing at
+       * nothing.
+       *
+       * Reporting it on a screen answers "what is true now", which somebody has to go and look
+       * at. This answers "when did it stop being offered, and what was holding it" — the question
+       * asked after a transport is swapped back and a name starts resolving again. Without the
+       * row, the only record of the gap is its absence.
+       *
+       * Not a refusal and not an error, so `configuration.changed` rather than a new event type:
+       * nothing was denied and the refresh succeeded.
+       *
+       * THE MOMENT, AND NOT EVERY REFRESH AFTER IT: only a grant whose tool THIS refresh removes —
+       * for a vendor's server as for an adapter. It used to name every grant pointing at nothing
+       * each time anybody refreshed, which was rare; now that every boot refreshes the servers
+       * whose definitions ship with the build, a grant left on a tool an adapter dropped would
+       * have written this row at every restart. What is true now stays on the connections screen.
+       *
+       * AND BEFORE THE TOOLS ARE DELETED, since there is only the one moment: written after, a
+       * refresh that removed the tool and then failed on a later statement would have left the
+       * next one nothing to remove and the trail nothing at all (both from the review of #110).
+       * Twice, after a delete that failed, is the mistake to prefer.
+       */
+      const removedNow = new Set(
+        existing
+          .filter((known) => !fetchedNames.has(known.name))
+          .map((known) => known.name),
+      );
+      if (removedNow.size > 0) {
+        const stranded = [
+          ...(await grants.mcpGrantsForServers([serverId])).entries(),
+        ]
+          .filter(([ref]) => removedNow.has(ref.slice(serverId.length + 1)))
+          .sort(([left], [right]) => left.localeCompare(right));
+        if (stranded.length > 0) {
+          await recordAuditEvent(auditStore, {
+            eventType: "configuration.changed",
+            targetType: "mcp_server",
+            targetId: serverId,
+            payload: {
+              actor: actorId,
+              change: "grants_not_advertised",
+              server: serverId,
+              // The refs, because that is what a grant is keyed on and what an administrator
+              // revokes.
+              refs: stranded.map(([ref]) => ref),
+              bots: [...new Set(stranded.flatMap(([, agents]) => agents))],
+              note: "Held by a Bot and not offered to any model, because this server no longer advertises the tool. Offered again if it starts.",
+            },
+          });
         }
+      }
+
+      for (const name of removedNow) {
+        await database
+          .delete(mcpTools)
+          .where(and(eq(mcpTools.serverId, serverId), eq(mcpTools.name, name)));
       }
 
       await database
@@ -471,56 +523,7 @@ export function createServers(
         })
         .where(eq(mcpServers.id, serverId));
 
-      /*
-       * A grant left pointing at nothing goes in the trail, at the moment it starts pointing at
-       * nothing.
-       *
-       * Reporting it on a screen answers "what is true now", which somebody has to go and look
-       * at. This answers "when did it stop being offered, and what was holding it" — the question
-       * asked after a transport is swapped back and a name starts resolving again. Without the
-       * row, the only record of the gap is its absence.
-       *
-       * Not a refusal and not an error, so `configuration.changed` rather than a new event type:
-       * nothing was denied and the refresh succeeded. Written after the tool list is replaced, so
-       * what it names is what is actually left over.
-       */
-      /*
-       * THE MOMENT, AND NOT EVERY REFRESH AFTER IT: only a grant whose tool THIS refresh removed.
-       * It used to name every grant pointing at nothing each time anybody refreshed, which was
-       * rare; now that every boot refreshes the servers whose definitions ship with the build, a
-       * grant left on a tool an adapter dropped would have written this row at every restart
-       * (review of #110).
-       */
       const advertised = new Set(tools.map((tool) => tool.name));
-      const removedNow = new Set(
-        existing
-          .filter((known) => !fetchedNames.has(known.name))
-          .map((known) => known.name),
-      );
-      const stranded =
-        removedNow.size === 0
-          ? []
-          : [...(await grants.mcpGrantsForServers([serverId])).entries()]
-              .filter(([ref]) => removedNow.has(ref.slice(serverId.length + 1)))
-              .sort(([left], [right]) => left.localeCompare(right));
-
-      if (stranded.length > 0) {
-        await recordAuditEvent(auditStore, {
-          eventType: "configuration.changed",
-          targetType: "mcp_server",
-          targetId: serverId,
-          payload: {
-            actor: actorId,
-            change: "grants_not_advertised",
-            server: serverId,
-            // The refs, because that is what a grant is keyed on and what an administrator
-            // revokes.
-            refs: stranded.map(([ref]) => ref),
-            bots: [...new Set(stranded.flatMap(([, agents]) => agents))],
-            note: "Held by a Bot and not offered to any model, because this server no longer advertises the tool. Offered again if it starts.",
-          },
-        });
-      }
 
       /*
        * Tools the vendor advertises that this deployment's write list does not name.

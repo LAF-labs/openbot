@@ -61,8 +61,8 @@ export const ko: Record<string, string> = {
   "Answers are coming faster than the model can take right now. Give it a moment and ask again.":
     "지금은 답변 요청이 몰려 모델이 잠시 벅차요. 조금 기다렸다가 다시 물어봐 주세요.",
   "Approved as it now is": "지금 상태 그대로 승인됨",
-  "Changed with a new version, taken as it came":
-    "새 버전에서 바뀜 · 그대로 받아들임",
+  "Came with a new version, taken as it came":
+    "새 버전과 함께 들어옴 · 그대로 받아들임",
   Blocked: "차단됨",
   "Bot endpoints": "봇 주소",
   "Could not be replaced": "교체하지 못함",
