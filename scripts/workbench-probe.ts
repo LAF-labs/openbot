@@ -411,6 +411,30 @@ try {
 console.log(JSON.stringify({ made, bun }));
 `;
 
+/**
+ * A tree deeper than a path may be long — sixteen folders of 255 bytes, 4,096 and more — with a
+ * file in its last folder and that folder closed. Built without ever naming a path that long: two
+ * halves of eight, and one moved under the other.
+ */
+const deepIn = (place: string) => `
+import { chmodSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
+const name = (letter) => letter.repeat(255);
+const chain = (root, letter, levels) => { let path = root; for (let n = 0; n < levels; n += 1) path += "/" + name(letter); return path; };
+const place = ${JSON.stringify(place)};
+const built = {};
+try {
+  mkdirSync(chain(place, "a", 8), { recursive: true });
+  const lower = chain(place + "/b", "b", 7);
+  mkdirSync(lower, { recursive: true });
+  writeFileSync(lower + "/held", "x");
+  chmodSync(lower, 0o000);
+  renameSync(place + "/b", chain(place, "a", 8) + "/" + name("b"));
+  built.folders = 16;
+  built.bytesDeep = place.length + 16 * 256;
+} catch (error) { built.stoppedBy = error.code ?? String(error); }
+console.log(JSON.stringify(built));
+`;
+
 /** What is in each place a script can write, by the bytes of its name. */
 const BYTES = `
 import { readdirSync } from "node:fs";
@@ -1094,6 +1118,53 @@ console.log(made.exitCode === 0 ? "made" : "refused: " + made.stderr.toString().
       handed.every((outcome) => !outcome.startsWith("A SCRIPT ANSWERED")),
     `three times a run was given up on with its child at the socket's path and another run waiting behind it; that run came back as: ${handed.map((outcome) => JSON.stringify(outcome)).join(" · ")}`,
   );
+
+  /*
+   * A TREE DEEPER THAN A PATH MAY BE LONG, its last folder closed (the third read of 2026-10-07).
+   * Removing a tree walks to any depth; opening up a folder a script closed went by its path, and
+   * a path that long names nothing. LAST, and the socket's directory last of the three: it is the
+   * one place that outlives the container, so a daemon that cannot empty it is a service that
+   * never starts again while anything holds that volume — as this container does.
+   */
+  const deep: string[] = [];
+  let deepGone = true;
+  for (const place of ["/dev/shm", "/work", SOCKET_DIRECTORY]) {
+    await Bun.sleep(11_000);
+    const before = await settled(180_000).catch(() => null);
+    if (before === null) {
+      deepGone = false;
+      deep.push(`${place}: no daemon answered to be sent it`);
+      break;
+    }
+    const built = await run(deepIn(place), { timeoutMs: 30_000 });
+    await Bun.sleep(1_000);
+    const after = await settled(120_000).catch(() => null);
+    const found =
+      after === null
+        ? null
+        : json<{ work: string[]; shm: string[]; socket: string[] }>(
+            await run(BYTES),
+          );
+    // What the next run finds there beyond what belongs: its own directory, the socket.
+    const left =
+      found === null
+        ? null
+        : place === "/work"
+          ? found.work.length - 1
+          : place === "/dev/shm"
+            ? found.shm.length
+            : found.socket.length - 1;
+    if (after === null || left !== 0) deepGone = false;
+    deep.push(
+      `${place}: the script said ${said(built)}; afterwards ${after === null ? "NO DAEMON ANSWERED for 120 s" : after === before ? "the same daemon answered" : "a new daemon answered"}${left === null ? "" : `, and the next run found ${left} thing(s) left there`}`,
+    );
+    if (after === null) break;
+  }
+  check(
+    "a tree deeper than a path may be long, its last folder closed, is gone before the next run — wherever a script built it",
+    deepGone && deep.length === 3,
+    deep.join(" · "),
+  );
 }
 
 // --- the outer half ------------------------------------------------------------------------------
@@ -1187,7 +1258,7 @@ export function megabytesHeld(usage: string): number | null {
  * How many things the inner half reports when it runs to its end. A floor in the only sense that
  * matters here: fewer is a probe that stopped, and a stopped probe has not found the walls sound.
  */
-export const PROBE_CHECKS = 31;
+export const PROBE_CHECKS = 32;
 
 /** Every script the probe sends, by name — so that a test can at least parse them before a run does. */
 export const PROBE_SCRIPTS: Readonly<Record<string, string>> = {
@@ -1205,6 +1276,7 @@ export const PROBE_SCRIPTS: Readonly<Record<string, string>> = {
   LEAVE_TAKER,
   UNTEXT,
   BYTES,
+  deepInSharedMemory: deepIn("/dev/shm"),
   ledSmall: ledByTheDead(16),
   ledLarge: ledByTheDead(576),
 };
