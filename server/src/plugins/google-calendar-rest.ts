@@ -333,10 +333,10 @@ export async function callTool(
      * not take it in half its runs: it looked the tool up and asked again, up to three times, and
      * only then said the day was empty — 3 to 5 requests where the move had left 1
      * (`docs/laf/eval-pack.md`, "An empty day says what comes next"). Three wordings of "nothing"
-     * changed nothing. What did was something to tell: with the nearest event of the days after
-     * in the result, 11 runs of 12 answered in the one request, measured twice. Where those days
-     * are empty too the result says so, which is true and costs nothing — and was NOT shown to
-     * do the same: 8 of 12, against 9 of 18 before.
+     * changed nothing. What did was something to tell: with the nearest day that has anything
+     * on it in the result, 25 runs of 29 answered in the one request, and every one of the 25
+     * rightly. Where the seven days after are empty too the result says so, which is true and
+     * costs nothing — and was NOT shown to do the same: 14 of 24, against 9 of 18 before.
      *
      * ONE REQUEST, WIDENED, NOT A SECOND ONE. This call is the wait between a person's message
      * and the first request of the Bot's model whenever the server made it (`turns/engine.ts`),

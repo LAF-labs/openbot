@@ -1016,10 +1016,10 @@ describe("Google Calendar", () => {
    * server's first move, the fleet's model looked the tool up and asked the calendar again in
    * half its runs, and three ways of wording "nothing" changed that not at all
    * (`docs/laf/eval-pack.md`, "An empty day says what comes next"). What it took was something
-   * to tell: the nearest event of the seven days after — and, where there is none, the statement
-   * that those are empty too, which is true and was not shown to do as much. Fetched by the SAME
-   * request, made wider — so each test below reads what Google was asked as well as what came of
-   * the answer: the stretch, the page's size and whether it was a search.
+   * to tell: the nearest day of the seven after that has anything on it — and, where there is
+   * none, the statement that those are empty too, which is true and was not shown to do as much.
+   * Fetched by the SAME request, made wider — so each test below reads what Google was asked as
+   * well as what came of the answer: the stretch, the page's size and whether it was a search.
    */
   const TODAY = "[본 기간: 2026-10-05 00:00 ~ 2026-10-06 00:00 Asia/Seoul(KST)";
   const NOTHING = "이 기간에 캘린더에 잡힌 일정이 없습니다.";
