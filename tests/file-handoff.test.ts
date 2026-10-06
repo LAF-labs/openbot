@@ -26,6 +26,11 @@ import { createChatTools } from "../server/src/turns/chat-tools";
 import { createPersonAnswers } from "../server/src/turns/people";
 import { ATTACHMENT_MAX_BYTES } from "../shared/attachments";
 import { toolResultText } from "../shared/prompt/tool-results.ko";
+import {
+  contentTypeOf,
+  inlineImageTypeOf,
+  rasterImageTypeOf,
+} from "../shared/workspace-files";
 
 /**
  * A FILE, FROM THE BOT'S FOLDER TO THE PERSON'S HANDS, WITH NOTHING FAKED IN BETWEEN (phase 8, first
@@ -503,4 +508,38 @@ test("the sentence for a file that is too large is true of a read as well as of 
   expect(refused instanceof Error && refused.message).toBe(
     "laf:file_too_large",
   );
+});
+
+/*
+ * A TABLE READ BY A NAME SOMEBODY ELSE CHOSE answers for `constructor` with what every object has
+ * under that name: a function. Found on 2026-10-06 in the prompt's service names; the same reading
+ * was live here in the two tables a file's NAME is looked up in, and in the one a computer's CODE
+ * is: a file called `report.constructor` was served as content type "function Object() { [native
+ * code] }" and called a picture by its name.
+ */
+test("a file's type is read by the table's own names: `report.constructor` is a file of no known type", () => {
+  for (const name of [
+    "report.constructor",
+    "x.__proto__",
+    "y.valueOf",
+    "z.hasOwnProperty",
+    "w.toString",
+  ]) {
+    expect(contentTypeOf(name), name).toBe("application/octet-stream");
+    expect(rasterImageTypeOf(name), name).toBeNull();
+    expect(inlineImageTypeOf(name, PNG), name).toBeNull();
+  }
+  // And the table still answers for what it does hold.
+  expect(contentTypeOf("매출.XLSX")).toBe(
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  );
+  expect(rasterImageTypeOf("chart.png")).toBe("image/png");
+  expect(inlineImageTypeOf("chart.png", PNG)).toBe("image/png");
+});
+
+test("a code that has no sentence is said as itself, whatever it is called", () => {
+  for (const code of ["constructor", "__proto__", "toString", "valueOf"]) {
+    expect(toolResultText(code), code).toBe(code);
+  }
+  expect(toolResultText("laf:file_exists")).toContain("이미 무언가");
 });

@@ -72,9 +72,23 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   zip: "application/zip",
 };
 
+/**
+ * A table's OWN entry for a key, or nothing.
+ *
+ * A NAME SOMEBODY ELSE CHOSE IS NOT A KEY UNTIL THE TABLE SAYS SO. `TABLE[key]` answers for
+ * `constructor` with what every object has under that name — a function — and a file's extension
+ * is whatever its author typed. Until 2026-10-06 `report.constructor` was served as content type
+ * "function Object() { [native code] }" and called a picture by its name (found the same evening
+ * as the same reading of the prompt's service names; `tests/file-handoff.test.ts`).
+ */
+const own = <Value>(
+  table: Readonly<Record<string, Value>>,
+  key: string,
+): Value | undefined => (Object.hasOwn(table, key) ? table[key] : undefined);
+
 /** The type a download is sent as, by its name alone. */
 export function contentTypeOf(name: string): string {
-  return CONTENT_TYPES[extensionOf(name)] ?? "application/octet-stream";
+  return own(CONTENT_TYPES, extensionOf(name)) ?? "application/octet-stream";
 }
 
 /**
@@ -83,7 +97,7 @@ export function contentTypeOf(name: string): string {
  * by the server that has them.
  */
 export function rasterImageTypeOf(name: string): string | null {
-  return RASTER_IMAGES[extensionOf(name)] ?? null;
+  return own(RASTER_IMAGES, extensionOf(name)) ?? null;
 }
 
 const startsWith = (bytes: Uint8Array, magic: readonly number[], at = 0) =>
@@ -119,5 +133,5 @@ export function inlineImageTypeOf(
   bytes: Uint8Array,
 ): string | null {
   const claimed = rasterImageTypeOf(name);
-  return claimed && MAGIC[claimed]?.(bytes) ? claimed : null;
+  return claimed && own(MAGIC, claimed)?.(bytes) ? claimed : null;
 }

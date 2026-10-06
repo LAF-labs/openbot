@@ -1530,6 +1530,11 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * from 733 to 734 (the sentence for a file that is too large true of a read as well as a write,
  * with the read answering that code through the server's client, in `tests/file-handoff.test.ts`).
  *
+ * AND TWO MORE THAT EVENING, `root` from 734 to 736, in the same file: a file's type read by the
+ * table's own names (`report.constructor` was served as content type "function Object() { [native
+ * code] }" and called a picture by its name), and a code with no sentence said as itself whatever
+ * it is called.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -1538,7 +1543,7 @@ const GROUPS = [
   { name: "server", floor: 3582, roots: ["server"] },
   { name: "app", floor: 2146, roots: ["app"] },
   { name: "agent-computer", floor: 529, roots: ["agent-computer"] },
-  { name: "root", floor: 734, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 736, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
