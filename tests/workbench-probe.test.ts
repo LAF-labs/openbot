@@ -11,6 +11,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import {
+  ACT_CHECKS,
+  ACT_RESULT,
+  ACT_ROWS,
+  ACT_SCRIPTS,
+  ACT_SENTINELS,
   listeningLineFrom,
   megabytesHeld,
   PROBE_CHECKS,
@@ -22,19 +27,41 @@ import {
   probeResultFrom,
 } from "../scripts/workbench-probe";
 
-test("the rehearsal's compose file adds one container on the workbench's socket and touches no service of the deployment", () => {
+test("the rehearsal's compose file adds two containers on the workbench's socket and touches no service of the deployment", () => {
   const override = parseYaml(
     probeOverride({
       serverImage: "ghcr.io/laf-labs/openbot-server:e2e-abc",
       probePath: "/home/runner/work/openbot/scripts/workbench-probe.ts",
+      actProbePath: "/home/runner/work/openbot/scripts/workbench-act-probe.ts",
     }),
   ) as { services: Record<string, Record<string, unknown>>; volumes?: unknown };
-  // One service, and not one the deployment has: nothing that was rehearsed is recreated by it.
-  expect(Object.keys(override.services)).toEqual(["workbench-probe"]);
+  // Two services, and neither one the deployment has: nothing that was rehearsed is recreated.
+  expect(Object.keys(override.services)).toEqual([
+    "workbench-probe",
+    "workbench-act-probe",
+  ]);
   const deployment = parseYaml(
     readFileSync(join(import.meta.dir, "..", "docker-compose.yml"), "utf8"),
   ) as { services: Record<string, unknown>; volumes: Record<string, unknown> };
   expect(Object.keys(deployment.services)).not.toContain("workbench-probe");
+  expect(Object.keys(deployment.services)).not.toContain("workbench-act-probe");
+  // The act's container is the walls' in everything but what it runs: the same image, the same
+  // key, the same volume, and no network — it reaches the socket and nothing else.
+  expect(override.services["workbench-act-probe"]).toEqual({
+    ...override.services["workbench-probe"],
+    volumes: [
+      "workbench-socket:/run/laf-workbench",
+      // Both files: the act's probe reads the lines it prints and the scripts it sends off this one.
+      "/home/runner/work/openbot/scripts/workbench-probe.ts:/app/scripts/workbench-probe.ts:ro",
+      "/home/runner/work/openbot/scripts/workbench-act-probe.ts:/app/scripts/workbench-act-probe.ts:ro",
+    ],
+    command: [
+      "bun",
+      "--no-env-file",
+      "/app/scripts/workbench-act-probe.ts",
+      "/run/laf-workbench/workbench.sock",
+    ],
+  });
   const probe = override.services["workbench-probe"];
   expect(probe).toEqual({
     // The server's image, as root, as the server is: what will hold the client for real.
@@ -166,6 +193,60 @@ test("a signal mask reads as the names of the signals in it", () => {
   expect(signalsIn("0000000000010000")).toEqual(["SIGCHLD"]);
   expect(signalsIn(null)).toEqual([]);
   expect(signalsIn("not a mask")).toEqual([]);
+});
+
+/*
+ * THE ACT'S PROBE (`scripts/workbench-act-probe.ts`). It is not imported here: it imports the
+ * gateway, and with it the server's own log. What can be held without a container is the half this
+ * file shares with it — the scripts, the strings looked for, the lines read back — and that the
+ * rehearsal drives it once and counts what it said.
+ */
+test("the act's probe is driven once, after the walls, and one that stopped early is not a pass", () => {
+  const outer = readFileSync(
+    join(import.meta.dir, "..", "scripts/workbench-probe.ts"),
+    "utf8",
+  );
+  const inner = readFileSync(
+    join(import.meta.dir, "..", "scripts/workbench-act-probe.ts"),
+    "utf8",
+  );
+  expect(outer.match(/"workbench-act-probe",\n\s+\]\);/g)).toHaveLength(1);
+  expect(outer.indexOf('"workbench-act-probe",\n    ]);')).toBeGreaterThan(
+    outer.indexOf("the probe said all of what it tries"),
+  );
+  expect(outer).toContain("(act?.length ?? 0) === ACT_CHECKS");
+  // Its floor is the number of things it reports on the way to its end, counted off its source.
+  expect(inner.match(/^ {2}check\($/gm)).toHaveLength(ACT_CHECKS);
+  expect(ACT_CHECKS).toBe(9);
+  // Its first run is by the client alone, to learn where it is; it stops there if not the sandbox.
+  expect(inner).toContain("if (!inSandbox) return;");
+  expect(inner.indexOf("if (!inSandbox) return;")).toBeLessThan(
+    inner.indexOf("gateway.runScript("),
+  );
+  // Read back by the first word of its own lines, and only the last of them.
+  expect(
+    probeResultFrom(
+      `${PROBE_RESULT}[{"name":"walls","ok":true,"detail":""}]\n${ACT_ROWS}{"rows":[]}\n${ACT_RESULT}[{"name":"act","ok":true,"detail":"d"}]\n`,
+      ACT_RESULT,
+    ),
+  ).toEqual([{ name: "act", ok: true, detail: "d" }]);
+});
+
+test("the act's scripts parse, and what one prints and writes is not also a line of it", () => {
+  const transpiler = new Bun.Transpiler({ loader: "ts" });
+  for (const [name, script] of Object.entries(ACT_SCRIPTS)) {
+    expect(() => transpiler.transformSync(script), name).not.toThrow();
+    expect(new TextEncoder().encode(script).length, name).toBeLessThan(
+      16 * 1024,
+    );
+  }
+  // The script's own sentinel is a line of it; the two it prints and writes are joined when it
+  // runs, so finding either in a row would mean the row held output or a file — not the script.
+  expect(ACT_SCRIPTS.total).toContain(ACT_SENTINELS.script);
+  expect(ACT_SCRIPTS.total).not.toContain(ACT_SENTINELS.stdout);
+  expect(ACT_SCRIPTS.total).not.toContain(ACT_SENTINELS.product);
+  expect(ACT_SCRIPTS.total).not.toContain(ACT_SENTINELS.input);
+  expect(new Set(Object.values(ACT_SENTINELS)).size).toBe(4);
 });
 
 test("the probe's floor is the number of things it tries, so one that stopped early is not a pass", () => {
