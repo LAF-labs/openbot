@@ -171,6 +171,14 @@ export const ko: Record<string, string> = {
     "{host}에 {path} 파일을 올리려 해요.",
   "It wants to upload the file {path}.": "{path} 파일을 올리려 해요.",
   "It wants to read the file {path}.": "{path} 파일을 읽으려 해요.",
+  // A script's run, as a person is asked about it: who wrote the program and which files it is
+  // handed. "작은 프로그램", not "스크립트" — the card is read by somebody who does not write code.
+  "It wants to run a small program it wrote.":
+    "직접 짠 작은 프로그램을 돌리려 해요.",
+  "It wants to run a small program it wrote, on the file {path}.":
+    "{path} 파일을 넣어, 직접 짠 작은 프로그램을 돌리려 해요.",
+  "It wants to run a small program it wrote, on {count} files including {path}.":
+    "{path} 등 파일 {count}개를 넣어, 직접 짠 작은 프로그램을 돌리려 해요.",
   "It wants to look at the page it has open.": "열어 둔 페이지를 보려 해요.",
   "It wants to look at {host}.": "{host} 사이트를 보려 해요.",
   "It wants to open a page.": "어떤 페이지를 열려 해요.",
@@ -1815,6 +1823,7 @@ export const ko: Record<string, string> = {
   "Read a file": "파일 읽기",
   "Write a file": "파일 쓰기",
   "Take a screenshot": "화면 캡처",
+  "Run a small program": "작은 프로그램 돌리기",
   // 기록의 종류 — 도구 호출이 아닌 줄이 '무엇을' 칸에 쓰는 말
   "A credential": "자격증명",
   "The Bot's answer": "봇의 응답",
@@ -1824,6 +1833,7 @@ export const ko: Record<string, string> = {
   "A tool's definition": "도구 정의",
   "An action": "봇의 행동",
   "The same action again": "같은 행동 반복",
+  "A small program's run": "작은 프로그램 실행",
   "The wheel": "제어권",
   "A secret": "비밀값",
   "A question": "질문",
@@ -1865,6 +1875,30 @@ export const ko: Record<string, string> = {
   "The tool said it failed and said no more": "도구가 실패했다고만 답했어요",
   "Every Bot of this account drives the same browser: sessions, files and logins are shared":
     "이 계정의 모든 봇이 같은 브라우저를 써요. 세션과 파일과 로그인이 공유돼요",
+  // 봇이 직접 짠 프로그램을 돌린 기록. 프로그램 내용과 출력은 기록에 없고, 여기 말에도 없다.
+  "The program's run ended": "프로그램 실행이 끝남",
+  "It ended by itself, with status {code}": "스스로 끝남 (종료 코드 {code})",
+  "It was stopped at the time it was given": "주어진 시간이 다 되어 멈춤",
+  "It was stopped at the memory it was given": "주어진 메모리를 넘어 멈춤",
+  "It left more files than a run hands back, so none was kept":
+    "남긴 파일이 너무 많아 하나도 보관하지 않음",
+  "It left a file too large to hand back, so none was kept":
+    "남긴 파일 하나가 너무 커서 하나도 보관하지 않음",
+  "The files it left were too large together, so none was kept":
+    "남긴 파일을 합치면 너무 커서 하나도 보관하지 않음",
+  "{ms} ms · printed {bytes} bytes": "{ms}ms · 출력 {bytes}바이트",
+  "Handed back {count} files": "파일 {count}개를 내놓음",
+  "The place programs run did not answer, so nothing ran":
+    "프로그램을 돌리는 곳이 응답하지 않아 아무것도 돌리지 못함",
+  "The place programs run was busy, so nothing ran":
+    "프로그램을 돌리는 곳이 바빠서 아무것도 돌리지 못함",
+  "The place programs run did not answer for the run, so nothing of it was kept":
+    "프로그램을 돌린 곳이 결과를 보증하지 못해 아무것도 보관하지 않음",
+  "The program was longer than one may be": "프로그램이 허용된 길이보다 김",
+  "The files or the time it asked for were not ones a run takes":
+    "함께 넘긴 파일이나 요청한 시간이 받을 수 없는 것이었음",
+  "The folder for files that programs make is full, so the file was not kept":
+    "프로그램이 만든 파일을 두는 폴더가 가득 차서 파일을 보관하지 못함",
 
   /*
    * 카드 자리에 뜨는 거절. 같은 코드를 사람이 읽는 문장이고, 위의 감사 칸보다 길다 —
@@ -2542,6 +2576,11 @@ export const ko: Record<string, string> = {
   "listing what is in the workspace": "봇 폴더에 무엇이 있는지 보기",
   "uploading the file {path} to {host}": "{host}에 파일 {path} 올리기",
   "uploading the file {path}": "파일 {path} 올리기",
+  "running a small program it wrote": "직접 짠 작은 프로그램 돌리기",
+  "running a small program on the file {path}":
+    "파일 {path}에 작은 프로그램 돌리기",
+  "running a small program on {count} files including {path}":
+    "{path} 등 파일 {count}개에 작은 프로그램 돌리기",
   "using “{tool}” on {server}": "{server}의 ‘{tool}’ 쓰기",
   "doing something on {host}": "{host}에서 무언가 하기",
   "doing something on the page": "열린 페이지에서 무언가 하기",

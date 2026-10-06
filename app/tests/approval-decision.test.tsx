@@ -154,6 +154,7 @@ function everySubject(): approvals.AskSubject[] {
     "write_file",
     "list_files",
     "upload",
+    "run_script",
     "call_tool",
     "act",
   ];
@@ -182,6 +183,14 @@ function everySubject(): approvals.AskSubject[] {
         kind: "tool",
         tool: { server: "notion", name: "create_page" },
       },
+      // What a script's run names: one file, several, none.
+      { ...base, kind: "file", files: [{ path: "uploads/매출.xlsx" }] },
+      {
+        ...base,
+        kind: "file",
+        files: [{ path: "uploads/매출.xlsx" }, { path: "uploads/비용.csv" }],
+      },
+      { ...base, kind: "file", files: [] },
     );
   }
   return shapes;

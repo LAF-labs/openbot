@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { COMPUTER_TOOLS } from "../../shared/tools/computer";
+import type {
+  ProductsRefusal,
+  RunEnding,
+} from "../../shared/workbench/protocol";
 import { auditEventTypes, auditFactCodes } from "../../server/src/audit";
+import { RUN_SCRIPT_TOOL } from "../../server/src/computer/gateway/intent";
 import {
   COMPUTER_FACTS,
   DECISIONS,
@@ -9,6 +14,8 @@ import {
   EVENTS,
   FACTS,
   OUTCOME_EVENT_TYPES,
+  SCRIPT_ENDINGS,
+  SCRIPT_FILES_WITHHELD,
   TOOLS,
   UNLABELLED_OUTCOMES,
 } from "../src/routes/_authed/admin/audit";
@@ -36,6 +43,8 @@ describe("the audit trail's labels", () => {
       ...Object.values(TOOLS),
       ...Object.values(FACTS),
       ...Object.values(COMPUTER_FACTS),
+      ...Object.values(SCRIPT_ENDINGS),
+      ...Object.values(SCRIPT_FILES_WITHHELD),
       ...UNLABELLED_OUTCOMES,
     ].filter((label) => !(label in ko));
     expect(missing).toEqual([]);
@@ -116,6 +125,47 @@ describe("what the trail says happened", () => {
     // The catalogue is a Vite-free plain module here, so an empty import would pass the line above
     // by walking nothing at all.
     expect(COMPUTER_TOOLS.length).toBeGreaterThanOrEqual(14);
+  });
+
+  /*
+   * THE ONE ACT THE GATEWAY RECORDS UNDER A NAME THE CATALOGUE DOES NOT HAVE. A script's run is
+   * offered to no Bot, so the walk above — the catalogue's names — never reaches it, and its rows
+   * would print `mcp__workbench__run_script` in a chip. Held to the SERVER's own constant, so the
+   * name cannot be respelled on one side.
+   */
+  test("the name a script's run is recorded under has words for the What column", () => {
+    expect(TOOLS[RUN_SCRIPT_TOOL]).toBe("Run a small program");
+    expect(COMPUTER_TOOLS.map((tool) => tool.name)).not.toContain(
+      RUN_SCRIPT_TOOL,
+    );
+  });
+
+  /*
+   * HOW A RUN ENDED is read from a row by a variable too (`payload.ending`,
+   * `payload.productsRefused`). The lists are the protocol's own types: a third way for a run to
+   * end, added there, is a typecheck error here until this column has words for it.
+   */
+  test("every way a script's run can end, and every reason its files were withheld, has words", () => {
+    const endings = Object.keys({
+      exited: true,
+      timed_out: true,
+      out_of_memory: true,
+    } satisfies Record<RunEnding, true>);
+    const withheld = Object.keys({
+      too_many: true,
+      too_large: true,
+      too_large_together: true,
+    } satisfies Record<ProductsRefusal, true>);
+    expect(Object.keys(SCRIPT_ENDINGS).sort()).toEqual([...endings].sort());
+    expect(Object.keys(SCRIPT_FILES_WITHHELD).sort()).toEqual(
+      [...withheld].sort(),
+    );
+    // Only the ending a script reaches by itself has a status to say.
+    expect(SCRIPT_ENDINGS.exited).toContain("{code}");
+    expect(ko[SCRIPT_ENDINGS.exited]).toContain("{code}");
+    for (const killed of ["timed_out", "out_of_memory"] as const) {
+      expect(SCRIPT_ENDINGS[killed]).not.toContain("{code}");
+    }
   });
 
   test("every fact code the server records has a sentence", () => {

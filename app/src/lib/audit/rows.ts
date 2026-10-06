@@ -105,6 +105,21 @@ export function signatureOf(event: AuditEvent): string {
     // Two lapses of one site are two sessions, told apart by when each began and was last alive.
     text(payload.signedInSince),
     text(payload.lastSeenAt),
+    /*
+     * A script's run is drawn from its script's digest, the files it was handed, how it ended and
+     * what it made. Two runs are one row only when every one of those is the same — as JSON, so a
+     * field the table reads and this did not name cannot make two different runs fold.
+     */
+    typeof payload.script === "object" && payload.script !== null
+      ? JSON.stringify([payload.script, payload.files ?? null])
+      : "",
+    text(payload.ending),
+    typeof payload.exit === "number" ? payload.exit : "",
+    typeof payload.ms === "number" ? payload.ms : "",
+    typeof payload.stdoutBytes === "number" ? payload.stdoutBytes : "",
+    typeof payload.stderrBytes === "number" ? payload.stderrBytes : "",
+    text(payload.productsRefused),
+    Array.isArray(payload.products) ? JSON.stringify(payload.products) : "",
   ]);
 }
 
