@@ -173,7 +173,6 @@ describe("the weather, as an entry the fleet's key opens", () => {
         return { url: KMA_HOST, added: true };
       },
       refreshTools: async () => ({ tools: 1 }),
-      approveToolDefinition: async () => true,
       grant: async (_kind: string, ref: string, botId: string) => {
         granted.push({ ref, botId });
       },

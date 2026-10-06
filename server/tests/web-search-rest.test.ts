@@ -540,7 +540,6 @@ function fakeStore(input: {
       input.calls.refreshed.push(serverId);
       return { tools: 1 };
     },
-    approveToolDefinition: async () => true,
     grant: async (_kind: string, ref: string, botId: string) => {
       input.calls.granted.push({ ref, botId });
     },

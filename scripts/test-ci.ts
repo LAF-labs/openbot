@@ -1346,12 +1346,20 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * runtime's doors are held to the megabyte like any other. The rate tests knock where a message
  * goes, and hold that a knock on the closed run door spends none of the count.
  *
+ * RAISED AGAIN 2026-10-06 with a definition that ships with the build, `server` by exactly two:
+ * three written in `plugin-consent.integration.test.ts` against a real database — a shipped
+ * adapter's changed definition and its new tool are accepted as they arrive, with the change and
+ * the acceptance each in the trail; one left waiting by an earlier build is accepted at the next
+ * refresh; and the pass at boot brings every shipped service up to this build without asking a
+ * vendor's server anything — and one gone from `public-data-rest.test.ts`, which held the same
+ * acceptance where it used to be written, in the deployment keys' own reconciliation.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3592, roots: ["server"] },
+  { name: "server", floor: 3594, roots: ["server"] },
   { name: "app", floor: 2109, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 718, roots: ["tests", "agent-bot"] },
