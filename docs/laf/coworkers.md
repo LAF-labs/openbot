@@ -95,6 +95,11 @@ The server requires this setting at startup.
 
 ## Register an external AG-UI agent
 
+**On a developer's stack only, since 2026-10-06** — one whose API runs with
+`AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true`. A hosted deployment takes no endpoint of a person's own
+for a Bot: the rule is in `CLAUDE.md` ("Every Bot a person creates is remote"), and why, in
+[deployment-model.md](deployment-model.md).
+
 The tenant package could once declare one in `agents.yaml`; it ships no Bots at all now, and that
 file is deleted. Every coworker is made in the product.
 
