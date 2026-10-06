@@ -171,6 +171,7 @@
   "app/tests/notebook-forget.test.tsx",
   "app/tests/notebook-korean-ime.test.tsx",
   "app/tests/notification-outbox.test.ts",
+  "app/tests/own-keys.test.ts",
   "app/tests/owner-vocabulary.test.ts",
   "app/tests/page-header.test.tsx",
   "app/tests/partner-cards.test.ts",
