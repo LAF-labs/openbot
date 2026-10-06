@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { own } from "@/lib/own";
 
 export function GalleryFrame({
   title,
@@ -52,7 +53,7 @@ export function Badge({
 }) {
   return (
     <span
-      className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-xs font-medium ${TONES[tone]}`}
+      className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-xs font-medium ${own(TONES, tone) ?? TONES.neutral}`}
     >
       {children}
     </span>

@@ -12,6 +12,7 @@
  * which is what makes this the whole fix rather than half of one.
  */
 import type { FailureGroup } from "./turn-failure";
+import { own } from "@/lib/own";
 
 /** The part of a message these rules read. An AG-UI message has it. */
 export type ThreadMessage = {
@@ -170,7 +171,7 @@ export function standingFailures(
     for (const later of messages.slice(at + 1)) {
       if (later.role === "user") return false;
       if (later.role === "system") continue;
-      const stamped = times[later.id];
+      const stamped = own(times, later.id);
       if (stamped === undefined || Date.parse(stamped) > failedAt) return true;
     }
     return false;

@@ -15,9 +15,17 @@
  * second reader found the same answer under other names: a step's line by the tool's name (a model
  * writes it), a notice by an event's name, a refusal by a word in the address, and `t()` itself,
  * which read its dictionary bare: `?connected=constructor` said
- * "function Object() { [native code] }에 연결했어요". A table whose keys are one of this app's own
- * unions is typed by that union and needs none of this; the compiler holds what may index it.
- * `app/tests/own-keys.test.ts` finds every string-keyed table in `src/` and fails on a bare read.
+ * "function Object() { [native code] }에 연결했어요". `app/tests/own-keys.test.ts` finds every
+ * string-keyed table declared in `src/` and fails on a bare read.
+ *
+ * WHAT THAT TEST DOES NOT SEE, so that nobody reads it as more. A table keyed by one of this
+ * app's own unions is typed by that union, and the compiler holds what OUR code may index it with
+ * — not what a model's arguments turn out to be at run time: a gallery card's `tone` is typed as
+ * one of four and arrives unchecked, so `TONES[tone]` and `TONE_WORD[tone]` read through this too.
+ * A table declared in `shared/` and indexed here is outside the walk (`activity.tsx` reads one
+ * through this). And a record handed in as a parameter or a prop — a message's time, a rating, by
+ * a message's id — is found only if somebody thinks of it. Where the key is somebody else's word,
+ * read through this, whatever the type says.
  *
  * `hasOwnProperty.call`, not `Object.hasOwn`: `t()` reads through this, and `t()` also draws the
  * notice shown on an engine too old for the app, where `Object.hasOwn` may not exist.

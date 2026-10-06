@@ -11,6 +11,7 @@ import {
   type CutOff,
 } from "@/lib/computer/browsing";
 import { type RowKind, rowKindsOf } from "./row-kinds";
+import { own } from "@/lib/own";
 
 /**
  * Transcript projection that pairs assistant tool calls with later tool-result messages.
@@ -462,7 +463,7 @@ export function toVisibleChatItems(
           id: message.id,
           role: "assistant",
           text: message.content,
-          ...(times[message.id] ? { at: times[message.id] } : {}),
+          ...(own(times, message.id) ? { at: own(times, message.id) } : {}),
         });
       }
       for (const toolCall of message.toolCalls ?? []) {
@@ -536,7 +537,7 @@ export function toVisibleChatItems(
             text,
             ...(attachments.length > 0 ? { attachments } : {}),
             ...(quotes.length > 0 ? { quotes } : {}),
-            ...(times[message.id] ? { at: times[message.id] } : {}),
+            ...(own(times, message.id) ? { at: own(times, message.id) } : {}),
           },
         ]
       : [];

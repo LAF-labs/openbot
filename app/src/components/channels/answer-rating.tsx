@@ -27,6 +27,7 @@ import {
   type RatingReceipt,
   rateAnswer,
 } from "@/lib/support/answer-ratings";
+import { own } from "@/lib/own";
 
 /** How long the line saying a press arrived stays beside the answer's controls. */
 const RECEIVED_MS = 3_500;
@@ -83,7 +84,7 @@ export function useAnswerRating(channelId: string, messageId: string) {
   const queryClient = useQueryClient();
   const ratings = useQuery({
     ...answerRatingsQueryOptions(channelId),
-    select: (all: AnswerRatings) => all[messageId] ?? null,
+    select: (all: AnswerRatings) => own(all, messageId) ?? null,
   });
   const rated = ratings.data ?? null;
 

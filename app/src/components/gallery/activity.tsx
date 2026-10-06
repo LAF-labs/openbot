@@ -13,6 +13,7 @@ import {
   GALLERY_CONFIRMATIONS,
   galleryReads,
 } from "@shared/tools/gallery";
+import { own } from "@/lib/own";
 
 /**
  * Server-filled report component. The model chooses report arguments; data and permissions come
@@ -73,7 +74,7 @@ export function ActivityReportCard({
   const conversation = useConversation();
   const [state, setState] = useState<State>({ status: "reading" });
 
-  const functionName = report ? FUNCTION_FOR[report] : undefined;
+  const functionName = own(FUNCTION_FOR, report);
 
   useEffect(() => {
     // Nothing to read until the arguments have finished streaming in, and nobody to read it for

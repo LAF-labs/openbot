@@ -10,8 +10,12 @@
  * The first version of this change swept the lookups whose key was called `code` and its test
  * walked for those names. A reader who had not written it found the same hole under seven other
  * names, and in `t()`. So the rule is by TYPE, and has no list of names: a table declared with
- * `string` keys is never read bare. A table keyed by one of this app's own unions is typed by that
- * union, and the compiler holds what may index it.
+ * `string` keys in `src/` is never read bare.
+ *
+ * What the walk does NOT see (the third read): a table typed by one of this app's own unions and
+ * indexed by a model's unchecked argument (a gallery card's `tone` — read through `own()` now,
+ * and held by a test of its own below), a table declared in `shared/`, and a record handed in as
+ * a parameter or a prop. `lib/own.ts` says the same.
  */
 import { describe, expect, test } from "bun:test";
 import { Glob } from "bun";
@@ -164,5 +168,30 @@ describe("a code from outside finds only what the table was given", () => {
       });
     }
     expect(bare).toEqual([]);
+
+    // The dictionary's own read stays in the one module: everything else says `t("…")`, which is
+    // what the i18n coverage test reads.
+    const askers = files
+      .filter(([, text]) => /\bkoreanFor\(/.test(text))
+      .map(([file]) => file);
+    expect(askers).toEqual(["lib/i18n.ts"]);
+  });
+
+  test("a card's tone is a model's argument: one the tables do not hold draws no badge and no class of its own", async () => {
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const { createElement } = await import("react");
+    const { Badge } = await import("@/components/gallery/frame");
+    const badge = (tone: string) =>
+      renderToStaticMarkup(
+        // The type says one of four; a model's arguments are not checked to be.
+        createElement(Badge, { tone: tone as never, children: "word" }),
+      );
+    for (const tone of INHERITED) {
+      expect(badge(tone)).not.toContain("native code");
+      expect(badge(tone)).not.toContain("[object");
+      // The plain badge's own classes, as for a tone nobody named.
+      expect(badge(tone)).toBe(badge("neutral"));
+    }
+    expect(badge("positive")).toContain("text-success");
   });
 });
