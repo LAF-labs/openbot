@@ -111,7 +111,11 @@ import { awaitApproval, type PersonAnswers } from "./people";
 export type ChatToolsDeps = {
   /** Absent when no computer is configured; its tools are then not offered. */
   gateway?: ComputerGateway;
-  pluginStore?: Pick<PluginStore, "listForAgent" | "callTool" | "viewSkill">;
+  /**
+   * `offeredToModel`, never `listForAgent`: this list is read by a model, and the other one holds a
+   * vendor's unreviewed words for a tool that waits for review (`OfferedPlugins`, `store.ts`).
+   */
+  pluginStore?: Pick<PluginStore, "offeredToModel" | "callTool" | "viewSkill">;
   approvals?: Pick<ApprovalRegistry, "hold" | "withdraw">;
   people: PersonAnswers;
   agents?: AgentProfileStore;
@@ -274,7 +278,7 @@ function computerReply(result: unknown): ComputerOutcome {
  * that loses tools and gets them back re-bills the conversation twice (review L3).
  */
 type Listing = {
-  plugins: Awaited<ReturnType<PluginStore["listForAgent"]>>["tools"];
+  plugins: Awaited<ReturnType<PluginStore["offeredToModel"]>>["tools"];
   components: string[];
 };
 
@@ -287,6 +291,8 @@ async function executableNames(
   names: Set<string>;
   pluginRefs: Map<string, string>;
   pluginTools: Tool[];
+  /** The plugin tools that wait for review: worded by this server, whoever else has a copy. */
+  waiting: Set<string>;
 }> {
   const names = new Set<string>();
   if (deps.gateway) {
@@ -299,11 +305,12 @@ async function executableNames(
   }
   const pluginRefs = new Map<string, string>();
   const pluginTools: Tool[] = [];
+  const waiting = new Set<string>();
   const last = lastListed.get(botId);
   const listing: Listing = { plugins: [], components: [] };
   if (deps.pluginStore) {
     names.add(SKILL_VIEW.name);
-    const granted = await deps.pluginStore.listForAgent(botId).catch(() => {
+    const granted = await deps.pluginStore.offeredToModel(botId).catch(() => {
       log.warn("chat_tools_listing_failed", { bot: botId, of: "plugins" });
       return null;
     });
@@ -311,6 +318,7 @@ async function executableNames(
     for (const tool of listing.plugins) {
       names.add(tool.toolName);
       pluginRefs.set(tool.toolName, tool.ref);
+      if (tool.waitsForReview) waiting.add(tool.toolName);
       pluginTools.push({
         name: tool.toolName,
         description: tool.description,
@@ -334,7 +342,7 @@ async function executableNames(
     }
   }
   lastListed.set(botId, listing);
-  return { names, pluginRefs, pluginTools };
+  return { names, pluginRefs, pluginTools, waiting };
 }
 
 /**
@@ -403,7 +411,7 @@ export function createChatTools(deps: ChatToolsDeps) {
     options: { effort?: boolean } = {},
   ): Promise<ChatToolkit> => {
     const { botId, owner, threadId, runId } = context;
-    const { names, pluginRefs, pluginTools } = await executableNames(
+    const { names, pluginRefs, pluginTools, waiting } = await executableNames(
       deps,
       botId,
       lastListed,
@@ -433,15 +441,26 @@ export function createChatTools(deps: ChatToolsDeps) {
      * plugin list is a query that may still be loading) and declared on the second would start an
      * epoch twice, re-billing everything behind it both times. The server's own listing does not
      * depend on which window sent the message or how long it had been open.
+     *
+     * AND SO IS A TOOL THAT WAITS FOR REVIEW, for a different reason (2026-10-06). What a window
+     * declares for a connected tool is the window's own copy of its description, kept by name —
+     * and a window open since before the vendor changed the tool, or loaded by a build that still
+     * handed the changed text over, declares words nobody has reviewed. For such a tool the only
+     * words a model is given are the ones `offeredToModel` wrote, and the window's are dropped. A
+     * tool that APPEARED after registration is not among the names at all, so a window's entry
+     * for it goes with everything else this server would not carry out. Every other connected
+     * tool keeps the window's words, which name its server beside the vendor's description.
      */
     const isCorePlugin = (name: string) =>
       pluginRefs.has(name) && CORE_TOOL_NAMES.has(name);
+    const isServerWorded = (name: string) =>
+      isCorePlugin(name) || waiting.has(name);
     const listed = declared
       ? [
           ...declared.filter(
-            (tool) => names.has(tool.name) && !isCorePlugin(tool.name),
+            (tool) => names.has(tool.name) && !isServerWorded(tool.name),
           ),
-          ...pluginTools.filter((tool) => isCorePlugin(tool.name)),
+          ...pluginTools.filter((tool) => isServerWorded(tool.name)),
         ]
       : serverTools(deps, pluginTools, options.effort !== false);
     /*

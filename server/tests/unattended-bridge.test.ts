@@ -209,7 +209,7 @@ describe("a routine asked for a calendar nobody connected", () => {
     const called: string[] = [];
     /* What a routine's Bot holds with nothing connected: what runs on the fleet's own key. */
     const pluginStore = {
-      listForAgent: async () => ({
+      offeredToModel: async () => ({
         tools: PUBLIC_DATA_TOOLS.map((tool) => ({
           ref: `public-data/${tool.name}`,
           toolName: toolNameFor(`public-data/${tool.name}`),

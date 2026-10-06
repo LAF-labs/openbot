@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { BASE_KO } from "../shared/prompt";
 import { TOOL_RESULT_KO } from "../shared/prompt/tool-results.ko";
+import { PAUSED_TOOL_DESCRIPTION } from "../shared/tools/paused";
 
 /**
  * THE BOT'S WORDS TO A SHOP OWNER — what the prompt says about them.
@@ -100,5 +101,43 @@ describe("the tool results", () => {
     const recently = TOOL_RESULT_KO["laf:declined_recently"] ?? "";
     expect(recently).toContain("거부하셔서 막혔다고");
     expect(recently).not.toContain("이 사람이 거부하셔서");
+  });
+});
+
+/*
+ * THE ONE DESCRIPTION OF A TOOL THAT IS THIS DEPLOYMENT'S AND NOT ITS VENDOR'S (2026-10-06,
+ * `shared/tools/paused.ts`). A tool whose definition changed after consent is offered to a model
+ * under its name with these words in place of the vendor's, so that nothing unreviewed is read —
+ * and the Bot saying them is how a person learns the tool is paused. So they are held as the
+ * tool results are: a model copies the words it is given.
+ */
+describe("the description a tool waiting for review is offered under", () => {
+  test("says the three facts in the words the person's own screen uses, and none a Bot would copy wrongly", () => {
+    // Pinned whole: these bytes stand in for every vendor's description, so a change is a decision.
+    expect(PAUSED_TOOL_DESCRIPTION).toBe(
+      "이 툴은 정의가 바뀌어서 검토를 기다리는 중이다. 검토가 끝나기 전에는 불러도 거절되니 부르지 마라. " +
+        "이 툴이 멈춰 있다고 알리고, 관리 메뉴의 플러그인 화면에서 바뀐 정의를 검토해 달라고 말해라.",
+    );
+    // What it is, that a call is refused, and where it is reviewed: 관리 → 플러그인.
+    expect(PAUSED_TOOL_DESCRIPTION).toContain("정의가 바뀌어서");
+    expect(PAUSED_TOOL_DESCRIPTION).toContain("거절");
+    expect(PAUSED_TOOL_DESCRIPTION).toContain("관리 메뉴의 플러그인");
+    // The same vocabulary as the sentence a refused call is answered with.
+    expect(TOOL_RESULT_KO["laf:tool_needs_review"]).toContain("정의가");
+    expect(TOOL_RESULT_KO["laf:tool_needs_review"]).toContain("검토");
+
+    // Nobody is named: not 사람에게, not 이 사람, not 사장님 — a student's Bot reads this too.
+    expect(PAUSED_TOOL_DESCRIPTION).not.toContain("사람");
+    expect(PAUSED_TOOL_DESCRIPTION).not.toContain("사장님");
+    expect(PAUSED_TOOL_DESCRIPTION).not.toContain("가게");
+    // None of the machine words the base prompt tells a Bot not to repeat.
+    for (const word of ["ref", "스냅샷", "요소", "작업 공간", "배포"]) {
+      expect([word, PAUSED_TOOL_DESCRIPTION.includes(word)]).toEqual([
+        word,
+        false,
+      ]);
+    }
+    // And no slot for anybody else's text: no brace, no quote, nothing interpolated.
+    expect(PAUSED_TOOL_DESCRIPTION).not.toMatch(/[{}$`"'<>]/);
   });
 });

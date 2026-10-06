@@ -1123,6 +1123,12 @@ export function createPluginRoutes(
    * polls it for the Bot in front of the person to decide what that Bot is offered; an unattended
    * run asks the store directly.
    *
+   * AS A MODEL IS OFFERED IT (`offeredToModel`), since 2026-10-06: what the window reads here it
+   * declares back as the Bot's tools, so this is a model's list by one more hop. A tool waiting for
+   * review is here under its name with this deployment's own description, or — if it appeared after
+   * registration — not here. The vendor's new definition is on the administrator's screen
+   * (`GET /servers`), where it is reviewed, and nowhere else.
+   *
    * YOUR BOT, not any Bot. Audit A8's last open cell: it answered a colleague naming the owner's Bot
    * with all of that, because "no secret from the person talking to it" had been read as "no secret
    * from anybody". Same guard and same 404 as every other door whose path names a Bot.
@@ -1132,7 +1138,7 @@ export function createPluginRoutes(
     requireUser,
     requireBotAccess("agentId"),
     async (context) =>
-      context.json(await store.listForAgent(context.req.param("agentId"))),
+      context.json(await store.offeredToModel(context.req.param("agentId"))),
   );
 
   /**

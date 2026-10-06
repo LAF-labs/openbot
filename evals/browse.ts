@@ -222,7 +222,7 @@ const client = createComputerClient({
 
 /** The skills a deployment ships, answered the way the store answers them — grant included. */
 const skillStore = {
-  listForAgent: async () => ({ tools: [], skills: [] }),
+  offeredToModel: async () => ({ tools: [], skills: [] }),
   callTool: async () => {
     throw new Error("no plugin tools in this eval");
   },

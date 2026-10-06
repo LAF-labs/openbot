@@ -735,7 +735,7 @@ describe("a Bot's grants that could not be read", () => {
     // Review L3: a failed listing dropped the plugin tools for a turn and changed the epoch twice.
     let fail = false;
     const pluginStore = {
-      listForAgent: async () => {
+      offeredToModel: async () => {
         if (fail) throw new Error("the database blinked");
         return {
           tools: [
@@ -770,7 +770,7 @@ describe("a Bot's grants that could not be read", () => {
 
 describe("a connected tool that is in the schema: the web search", () => {
   const searchStore = {
-    listForAgent: async () => ({
+    offeredToModel: async () => ({
       tools: [
         {
           ref: "web-search/search",
@@ -1162,7 +1162,7 @@ describe("a connect card the turn waits on", () => {
   /** A plugin store whose Gmail tools exist once Gmail is on. */
   const pluginStoreOver = (state: Record<string, boolean>) =>
     ({
-      listForAgent: async () => ({
+      offeredToModel: async () => ({
         tools: state.gmail
           ? [
               {
@@ -1611,7 +1611,7 @@ describe("a connect card the turn waits on", () => {
         let isListed = false;
         const lists: boolean[] = [];
         const pluginStore = {
-          listForAgent: async () => {
+          offeredToModel: async () => {
             lists.push(isListed);
             return {
               tools:
