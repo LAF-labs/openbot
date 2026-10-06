@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { type RegisteredAgent, registeredAgentFromRow } from "../copilot";
 import type { CredentialSecretReader } from "../credentials";
 import type { Database } from "../db/client";
@@ -30,6 +30,31 @@ export function createRuntimeAgentLoader(
   database: Database,
   /** Resolves a customer agent's key at load time. Absent means no agent can carry one. */
   vault?: { reader: CredentialSecretReader; encryptionKey: string },
+  /**
+   * Given on a HOSTED deployment, and only there: the deployment's own agent
+   * (`config.managedAgentAgUiUrl`), where every Bot is then dialled whatever its row holds.
+   *
+   * A hosted deployment takes no endpoint of a person's own for a Bot (the owner, 2026-10-06;
+   * `agents/routes.ts` refuses one). That alone leaves every Bot pointed elsewhere BEFORE the
+   * upgrade exactly where it was — answered by a server this deployment does not run, whose usage
+   * and whose endings it files as fact — with the screen that could point it back no longer drawn.
+   * This is the one place a row's address and key become the agent a run dials, so this is where
+   * such a Bot comes home. The row is not rewritten: it still says what somebody once set, and a
+   * boot says how many do (`botsHeldElsewhere`).
+   *
+   * WHATEVER THE ROW HOLDS, NOTHING INCLUDED. A configuration is an address and a key's reference
+   * and nothing else, and neither is read here — so a row whose configuration names nothing a run
+   * could dial, which a developer's stack skips, is a Bot that runs at home like any other. There
+   * is no screen left on a hosted deployment that could repair one.
+   *
+   * AND NO STORED KEY GOES WITH IT. The key in the vault is a person's bearer token for THEIR
+   * server; sent to ours it would be a credential delivered to a service it was never meant for.
+   * It is not read at all.
+   *
+   * Absent — a developer's stack, where the private-host opt-in is set — a Bot is dialled where
+   * its row says, with its key, as it always was.
+   */
+  hosted?: { home: URL },
 ) {
   return async (actor: AgentActor): Promise<RegisteredAgent[]> => {
     const [active, tombstones] = await Promise.all([
@@ -60,6 +85,11 @@ export function createRuntimeAgentLoader(
       const carried = remembered.get(row.id);
       const agent = registeredAgentFromRow({
         ...row,
+        // Home, on a hosted deployment, in place of whatever the row holds: who the Bot is comes
+        // from the row, and where it runs does not.
+        ...(hosted && row.type === "remote_ag_ui"
+          ? { configuration: { endpoint: hosted.home.toString() } }
+          : {}),
         memories: carried?.memories ?? [],
         // Only for a Bot holding lines: one that holds none carries nothing to tell apart.
         ...(carried
@@ -76,8 +106,9 @@ export function createRuntimeAgentLoader(
       });
       if (!agent) continue;
       // The key is resolved per load, rather than being cached on the row: revoking a
-      // credential then takes effect on the next run rather than on the next restart.
-      if (agent.type === "remote_ag_ui" && vault) {
+      // credential then takes effect on the next run rather than on the next restart. Never on a
+      // hosted deployment: the row's key is for the row's address, which is not where this goes.
+      if (agent.type === "remote_ag_ui" && vault && !hosted) {
         const headers = await agentAuthHeaders({
           reader: vault.reader,
           encryptionKey: vault.encryptionKey,
@@ -99,6 +130,34 @@ export function createRuntimeAgentLoader(
 
     return [...registered.values()];
   };
+}
+
+/**
+ * The Bots whose rows hold an address other than the deployment's own agent — the ones a hosted
+ * deployment dials at home all the same (`createRuntimeAgentLoader`). By id: a boot says how many
+ * (`sayBooted`), and the address itself is said nowhere.
+ *
+ * LIVE BOTS ONLY, since a deleted one is dialled nowhere. And "other" is the row's string against
+ * this deployment's address as `create` writes it, so a Bot left on an address this deployment
+ * USED to answer at — a port that moved, a path that changed — is counted too: it is equally a
+ * Bot whose row no longer says where it runs. A row holding no address is not one that holds
+ * another.
+ */
+export async function botsHeldElsewhere(
+  database: Database,
+  home: URL,
+): Promise<string[]> {
+  const rows = await database
+    .select({ id: agents.id })
+    .from(agents)
+    .innerJoin(agentProfiles, eq(agentProfiles.agentId, agents.id))
+    .where(
+      and(
+        isNull(agentProfiles.deletedAt),
+        sql`${agents.configuration}->>'endpoint' <> ${home.toString()}`,
+      ),
+    );
+  return rows.map((row) => row.id);
 }
 
 /**

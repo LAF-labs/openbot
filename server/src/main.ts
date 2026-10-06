@@ -25,7 +25,10 @@ import { createAgentMemoryStore, forgottenForBot } from "./agents/memory-store";
 import { withPersonContext } from "./agents/person-context";
 import { createAgentProfileStore } from "./agents/profile-store";
 import type { AgentActor } from "./agents/profile-types";
-import { createRuntimeAgentLoader } from "./agents/runtime-agents";
+import {
+  botsHeldElsewhere,
+  createRuntimeAgentLoader,
+} from "./agents/runtime-agents";
 import { withShopProfile } from "./agents/shop-context";
 import { createApp } from "./app";
 import { createAuditReader, createAuditStore } from "./audit";
@@ -473,12 +476,29 @@ const roleRepository = createRoleRepository(database);
  * (`PUT /api/me/shop`, the first run and Settings), read by `/api/me` and by every run below.
  */
 const shopStore = createShopStore(database);
+/**
+ * Where every Bot is dialled on a hosted deployment, whatever its row holds — and nothing on a
+ * developer's stack, where a Bot may be pointed at an agent of one's own.
+ *
+ * ONE SWITCH, AND IT IS THE ONE THAT ALREADY SAID WHICH THIS IS: the private-host opt-in
+ * (`AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS`), which only a local run sets and compose never hands the
+ * API. The same expression the agent routes and the deployment's facts are given (`app.ts`), so
+ * the form that would take an endpoint, the screen that would draw it and the loader that would
+ * dial it cannot disagree. It lives under the computer's configuration, so a stack with no
+ * computer configured is hosted in this sense too — as it already was for the form.
+ */
+const botsRunAt = config.computer?.allowPrivateHosts
+  ? undefined
+  : { home: config.managedAgentAgUiUrl };
 // What each Bot IS, then what skills it holds — by name and one line, for the prompt's index — then
 // the shop it works for, which is the person's and the same for every Bot they have.
 // And last, the person's clock and place, which every run — a routine at 07:30 included — reads.
 const loadAgentsForActor = withPersonContext(
   withShopProfile(
-    withGrantedSkills(createRuntimeAgentLoader(database, agentVault), database),
+    withGrantedSkills(
+      createRuntimeAgentLoader(database, agentVault, botsRunAt),
+      database,
+    ),
     shopStore.read,
     shopStore.readPerson,
   ),
@@ -1177,12 +1197,23 @@ const server = serve<SocketData>({
   websocket: liveScreen.websocket(channelSocket),
 });
 
+/*
+ * How many Bots this restart brought home (`sayBooted`): read off their rows, on a hosted
+ * deployment only. Never fatal — a count that cannot be read is a field the line does not have.
+ */
+const botsBroughtHome = botsRunAt
+  ? await botsHeldElsewhere(database, botsRunAt.home).then(
+      (held) => held.length,
+      () => undefined,
+    )
+  : undefined;
 sayBooted({
   config,
   model: tenantPackage.model,
   port: server.port,
   fleetWebhook: Boolean(fleetNotifier),
   harness: { version: HARNESS_VERSION, conversations: conversationsLoaded },
+  ...(botsBroughtHome === undefined ? {} : { botsBroughtHome }),
 });
 
 /*
