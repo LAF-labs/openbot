@@ -259,6 +259,7 @@ describeDb("plugin definition consent", () => {
           what: event.eventType,
           tool: event.targetId?.slice(shippedId.length + 1),
           by: (event.payload as { actor?: string }).actor ?? null,
+          change: (event.payload as { change?: string }).change ?? null,
         }))
         .sort((a, b) =>
           `${a.tool} ${a.what}`.localeCompare(`${b.tool} ${b.what}`),
@@ -288,7 +289,7 @@ describeDb("plugin definition consent", () => {
       }
     });
 
-    test("a changed one and a new one are accepted as they arrive, and the trail holds the change and the acceptance", async () => {
+    test("a changed one and a new one are taken as they arrive, each with one row that says the deployment took it", async () => {
       const [changed, appeared] = await rowsOf();
       if (!changed || !appeared) throw new Error("the adapter lists two tools");
       expect([changed.needsReview, appeared.needsReview]).toEqual([
@@ -330,25 +331,26 @@ describeDb("plugin definition consent", () => {
         after.find((row) => row.name === changed.name)?.definitionHash,
       ).toBe(changed.definitionHash);
       expect(after.some((row) => row.name === appeared.name)).toBe(true);
-      // What changed, and that the deployment accepted it — never a person who did not.
+      /*
+       * One row each, of a kind of its own. Not the pair a person's review leaves — "paused until
+       * somebody reviews it", then "approved as it now is" — which on the audit screen read as a
+       * tool that stopped and a person who looked, when nothing stopped and nobody did (review of
+       * #110).
+       */
       expect(await newSince([changed.name, appeared.name], seen)).toEqual(
         [
           {
-            what: "mcp.tool_definition_approved",
+            what: "mcp.tool_definition_shipped",
             tool: appeared.name,
             by: "deployment",
+            change: "appeared",
           },
           {
-            what: "mcp.tool_definition_changed",
-            tool: appeared.name,
-            by: null,
-          },
-          {
-            what: "mcp.tool_definition_approved",
+            what: "mcp.tool_definition_shipped",
             tool: changed.name,
             by: "deployment",
+            change: "definition",
           },
-          { what: "mcp.tool_definition_changed", tool: changed.name, by: null },
         ].sort((a, b) =>
           `${a.tool} ${a.what}`.localeCompare(`${b.tool} ${b.what}`),
         ),
@@ -367,8 +369,19 @@ describeDb("plugin definition consent", () => {
             eq(mcpTools.name, waiting.name),
           ),
         );
+      const seen = new Set(
+        (await trailRows([waiting.name])).map((event) => event.id),
+      );
       await store.refreshTools(shippedId);
       expect((await rowsOf()).filter((row) => row.needsReview)).toEqual([]);
+      expect(await newSince([waiting.name], seen)).toEqual([
+        {
+          what: "mcp.tool_definition_shipped",
+          tool: waiting.name,
+          by: "deployment",
+          change: "waiting",
+        },
+      ]);
     });
 
     test("at boot every shipped service is brought up to this build in one pass, and a vendor's is not asked", async () => {
@@ -416,5 +429,84 @@ describeDb("plugin definition consent", () => {
           .map((tool) => tool.name),
       );
     });
+
+    test("the pass at boot leaves alone a service this deployment cannot serve right now", async () => {
+      /*
+       * 알림톡 on a deployment built without the partner's module answers with a stand-in that
+       * lists nothing — because nothing can be asked of it, not because the entry offers nothing.
+       * Refreshing that would delete the tools a person connected (and write that their grants
+       * point at nothing), to put them back at the first boot the module returns.
+       */
+      const standInId = "kakao-alimtalk";
+      const made = await database
+        .insert(mcpServers)
+        .values({
+          id: standInId,
+          title: "카카오 알림톡",
+          vendor: "Kakao",
+          url: "https://api.solapi.com",
+          provenance: "first-party",
+          toolsRefreshedAt: new Date(),
+        })
+        .onConflictDoNothing()
+        .returning({ id: mcpServers.id });
+      if (made.length === 0) return; // Another suite's row under the same key is not ours to test on.
+      try {
+        await database.insert(mcpTools).values({
+          serverId: standInId,
+          name: "send",
+          description: "Send",
+          inputSchema: {},
+          annotations: {},
+          definitionHash: "as-connected",
+          needsReview: false,
+        });
+
+        await store.refreshShippedDefinitions();
+
+        const kept = await database
+          .select({ name: mcpTools.name, hash: mcpTools.definitionHash })
+          .from(mcpTools)
+          .where(eq(mcpTools.serverId, standInId));
+        expect(kept).toEqual([{ name: "send", hash: "as-connected" }]);
+      } finally {
+        await database.delete(mcpServers).where(eq(mcpServers.id, standInId));
+      }
+    });
+  });
+
+  test("a grant left pointing at nothing goes in the trail when its tool goes, and not again at every refresh after", async () => {
+    // A boot refreshes every shipped service now; a row at every refresh would be a row at every
+    // restart for as long as the grant stood (review of #110).
+    const strandedIds = async () =>
+      (
+        await database
+          .select()
+          .from(auditEvents)
+          .where(eq(auditEvents.targetId, serverId))
+      )
+        .filter(
+          (event) =>
+            (event.payload as { change?: string }).change ===
+            "grants_not_advertised",
+        )
+        .map((event) => ({
+          id: event.id,
+          refs: (event.payload as { refs?: string[] }).refs,
+        }));
+    const before = new Set((await strandedIds()).map((row) => row.id));
+
+    // The vendor withdraws the payout tool, which this suite's Bot holds a grant on.
+    toolsOnServer = [{ ...readOnly, annotations: { readOnlyHint: false } }];
+    await store.refreshTools(serverId);
+    const written = (await strandedIds()).filter((row) => !before.has(row.id));
+    expect(written.map((row) => row.refs)).toEqual([
+      [`${serverId}/${payout.name}`],
+    ]);
+
+    await store.refreshTools(serverId);
+    expect(
+      (await strandedIds()).filter((row) => !before.has(row.id)).length,
+    ).toBe(1);
   });
 });

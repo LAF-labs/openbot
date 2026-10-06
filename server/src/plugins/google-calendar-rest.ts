@@ -145,12 +145,14 @@ function localEdge(edge: CalendarEvent["start"], timeZone: string): string {
  *
  * `day` IS NOT ADVERTISED, ON PURPOSE. It is read here and declared nowhere: the one caller that
  * sends it is the server's own first move (`turns/first-move.ts`), and a Bot's model, which is
- * shown the schema above, cannot ask for it yet. Declaring it would change the tool's definition,
- * and a definition that changes is paused for review for every person who already has the
- * calendar connected (`servers.ts`, "definition changed"; the hashes are pinned in
- * `plugin-rest-adapters.test.ts`). Offering `day` to the Bot is that deliberate act, later. The
- * call path does not hold an argument to the stored schema beyond `required` and `enum`
- * (`call.ts`, `argumentOffSchema`), so the undeclared one arrives.
+ * shown the schema above, cannot ask for it yet. When this was written, declaring it would have
+ * paused the calendar for every person who already had it connected: a changed definition waited
+ * for a review. Since 2026-10-06 a definition that ships with the build is taken as it comes
+ * (`servers.ts`), so that cost is gone — and what is left is the other half of the reason:
+ * offering `day` to the Bot changes what its model is told, which is measured first and done on
+ * purpose (the hashes are pinned in `plugin-rest-adapters.test.ts`). The call path does not hold
+ * an argument to the stored schema beyond `required` and `enum` (`call.ts`, `argumentOffSchema`),
+ * so the undeclared one arrives.
  *
  * Only `"today"` is a day. Any other value is not one this reads, and the listing is `days`' as it
  * would have been without it — the first line of the answer says which stretch that was.

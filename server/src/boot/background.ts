@@ -109,11 +109,18 @@ export function startBackgroundWork(input: {
    * Then every service whose tool definitions are this build's own code is brought up to this
    * build (`refreshShippedDefinitions`): a calendar somebody connected under the last build keeps
    * that build's descriptions otherwise. After the keys' reconciliation and never beside it — both
-   * write the same rows for the entries the keys hold.
+   * write the same rows for the entries the keys hold. Neither is written to reject; the catch is
+   * for the day one of them is changed and does.
    */
   void input.deploymentKeys
     .reconcile(input.pluginStore, "deployment")
-    .then(() => input.pluginStore.refreshShippedDefinitions());
+    .then(() => input.pluginStore.refreshShippedDefinitions())
+    .catch((error: unknown) => {
+      log.error("shipped_definitions_not_refreshed", {
+        server: "*",
+        reason: error instanceof Error ? error.name : "unknown",
+      });
+    });
   // The package's skills, the same way: once, at boot, never fatal (built-in-skill-sync.ts).
   void input.builtInSkills?.reconcile(input.pluginStore, "deployment");
 

@@ -85,6 +85,11 @@ export const auditEventTypes = [
   // is what makes a quiet downgrade a visible pause instead of an escalation.
   "mcp.tool_definition_changed",
   "mcp.tool_definition_approved",
+  // The same change where there was no vendor and so no pause: a definition that is this
+  // repository's own code arrived with a release and was taken as it came (`plugins/servers.ts`,
+  // the owner's rule of 2026-10-06). Its own kind, because the pair above read on the audit screen
+  // as a tool that stopped until a person looked — and here nothing stopped and nobody did.
+  "mcp.tool_definition_shipped",
   /**
    * The same tool call on somebody else's server, again, and again.
    *
