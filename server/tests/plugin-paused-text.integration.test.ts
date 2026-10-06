@@ -54,9 +54,11 @@ import {
   toProviderTools,
 } from "../../agent-bot/src/deferral";
 import type { CompletionProvider } from "../../agent-bot/src/index";
+import { staticPrompt } from "../../shared/prompt";
 import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import {
   deferredToolsText,
+  openAccountsIn,
   TOOL_CALL,
   TOOL_SEARCH,
 } from "../../shared/tools/bridge";
@@ -70,6 +72,7 @@ import {
 import { createAuditStore } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";
 import { createApprovalRegistry } from "../src/computer/approvals";
+import { buildAgents } from "../src/copilot";
 import { createDatabase } from "../src/db/client";
 import {
   agents,
@@ -96,7 +99,7 @@ import {
 } from "../src/plugins/store";
 import { withFeed } from "../src/routines/feed";
 import { withNotepad } from "../src/routines/notepad";
-import { runTurnLoop } from "../src/runner/turn-loop";
+import { type LoopAgent, runTurnLoop } from "../src/runner/turn-loop";
 import {
   createUnattendedTools,
   runUnattended,
@@ -811,9 +814,13 @@ describeDb("what a model is given of a tool that waits for review", () => {
    * waiting for the person to review them, and the Bot's word is the one way a person learns that.
    *
    * So the listing counts what it does not list, per server; the run carries the count beside its
-   * tools; and every lookup ends on how many wait and where a person reviews them. The rule above
-   * still holds and is held the same way: while a tool waits, nothing its vendor wrote reaches a
-   * model — not its name. What does is a number, and the server's own id.
+   * tools; and the context layer says how many wait and where a person reviews them, in the
+   * paragraph that names what is behind the bridge. It was first said at the end of every lookup's
+   * answer, and a press on the real stack showed that nobody read it there: that paragraph tells
+   * the Bot its names are everything and not to look for anything else, and a Bot asked for a tool
+   * in a toolbox whose tools all waited made no lookup and said only that the tool was not in its
+   * list. The rule above still holds and is held the same way: while a tool waits, nothing its
+   * vendor wrote reaches a model — not its name. What does is a number, and the server's own id.
    */
   const found2 = (
     haystack: unknown,
@@ -825,6 +832,18 @@ describeDb("what a model is given of a tool that waits for review", () => {
   /** The line for this many of the toolbox's tools — a custom server is named by its own id. */
   const lineFor = (count: number) =>
     withheldToolsText(`${toolboxId} ${count}개`);
+  /** What a run built from `toolkit` forwards of the count, as it is written and read back. */
+  const countedBy = (toolkit: ChatToolkit | UnattendedToolkit) =>
+    withheldToolsIn(
+      JSON.parse(JSON.stringify(withheldToolsForwarded(toolkit.withheld))),
+    );
+  /** The paragraph of names behind the bridge, as `copilot.ts` draws it for such a run. */
+  const paragraphOf = (toolkit: ChatToolkit | UnattendedToolkit): string =>
+    deferredToolsText(
+      toolkit.tools.map((tool) => tool.name),
+      openAccountsIn(toolkit.tools),
+      countedBy(toolkit),
+    );
   /** A lookup as the Bot's service answers it for a run built from `toolkit`, count and all. */
   const lookedUp = (
     toolkit: ChatToolkit | UnattendedToolkit,
@@ -837,10 +856,7 @@ describeDb("what a model is given of a tool that waits for review", () => {
       exposed.deferred,
       new Set(),
       exposed.offered,
-      // Through the run's forwarded props, as they are written and as they are read back.
-      withheldToolsIn(
-        JSON.parse(JSON.stringify(withheldToolsForwarded(toolkit.withheld))),
-      ),
+      countedBy(toolkit),
     );
     return answer.kind === "answer" ? answer.text : "";
   };
@@ -873,12 +889,87 @@ describeDb("what a model is given of a tool that waits for review", () => {
       service.stop(true);
     }
   }
-  const answerTo = (agent: HttpAgent, id: string) =>
+  const answerTo = (agent: Pick<LoopAgent, "messages">, id: string) =>
     String(
       agent.messages.find(
         (message) => message.role === "tool" && message.toolCallId === id,
       )?.content,
     );
+
+  /**
+   * THE WHOLE WAY, IN ONE PROCESS: the server's own prompt middleware (`buildAgents`, the seam every
+   * run passes) in front of the Bot's own service (`runAgent`), with a scripted model behind it —
+   * as `conversation-epochs.test.ts` wires them. What comes back is every request the provider was
+   * sent: the tools, the system message the middleware composed, and the conversation.
+   */
+  async function throughThePrompt<T>(
+    scripts: Chunk[][],
+    drive: (agent: LoopAgent) => Promise<T>,
+  ): Promise<{ result: T; sent: Sent[]; agent: LoopAgent }> {
+    process.env.OPENAI_API_KEY ??= "test-key";
+    const { runAgent } = await import("../../agent-bot/src/index");
+    const sent: Sent[] = [];
+    const built = buildAgents(
+      [
+        {
+          id: botId,
+          name: "Paused Bot",
+          type: "remote_ag_ui",
+          endpoint: "http://agent-bot.internal/ag-ui",
+          profile: { id: botId, name: "Paused Bot", roleDescription: "" },
+          effort: "balanced",
+        },
+      ],
+      { provider: "openai", defaultModel: "test/model", supportsEffort: true },
+      {
+        watch: () =>
+          (async (_url: unknown, init?: { body?: unknown }) =>
+            runAgent(
+              JSON.parse(String(init?.body ?? "{}")),
+              async (toProvider) => {
+                sent.push(toProvider as Sent);
+                return completion(scripts[sent.length - 1] ?? said("…"));
+              },
+            )) as never,
+        stop: () => undefined,
+      },
+    )[botId];
+    if (!built) throw new Error("no agent was built");
+    built.threadId = `thread-${randomUUID()}`;
+    return { result: await drive(built), sent, agent: built };
+  }
+  const systemOf = (request: Sent | undefined): string =>
+    String(
+      request?.messages?.find((message) => message.role === "system")?.content,
+    );
+  const besideTheSystem = (request: Sent | undefined) =>
+    (request?.messages ?? []).filter((message) => message.role !== "system");
+
+  /** One message of a conversation, run as a turn runs it: this moment's listing, the loop. */
+  const message = async (agent: LoopAgent, text: string) => {
+    agent.addMessage({ id: randomUUID(), role: "user", content: text });
+    const toolkit = await turn(null);
+    return runTurnLoop(agent, {
+      tools: toolkit.tools,
+      execute: toolkit.execute,
+      timeoutMs: 10_000,
+      maxSteps: 12,
+      forwardedProps: withheldToolsForwarded(toolkit.withheld),
+    });
+  };
+  /** The refusals the store has written for one tool: the row a paused call owes a person. */
+  const rejectionsOf = async (tool: McpTool) =>
+    (
+      await database
+        .select({ payload: auditEvents.payload })
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.eventType, "mcp.call_rejected"),
+            eq(auditEvents.targetId, refOf(tool)),
+          ),
+        )
+    ).map((row) => row.payload);
 
   test("a toolbox that fills after its account was connected: none of it is offered, and what waits is counted — by server, a number, on every toolkit a run is built from", async () => {
     await database.insert(mcpServers).values({
@@ -891,12 +982,24 @@ describeDb("what a model is given of a tool that waits for review", () => {
     // Connected while empty: the registration consents to nothing, because nothing is there.
     toolsOnServer = [];
     expect((await store.refreshTools(toolboxId)).paused ?? 0).toBe(0);
-    // The person fills it, and connects again: listed, paused, and granted as a connect grants.
+    // The person fills it: listed, and paused.
     toolsOnServer = [ROUTE, SIPHON];
     expect((await store.refreshTools(toolboxId)).paused).toBe(2);
-    for (const tool of [ROUTE, SIPHON]) {
-      await store.grant("mcp", `${toolboxId}/${tool.name}`, botId, actorId);
-    }
+    /*
+     * NOT YET THIS BOT'S, SO NOT COUNTED FOR IT. A refresh lists; it is the connect that grants
+     * (`grantConnectionTo`). A tool the Bot holds no grant for would not be offered to it once
+     * reviewed either, so "two wait for you to review" would send a person to approve something
+     * that then still did nothing — the administrator's screen shows those rows, and the grant.
+     */
+    expect("withheld" in (await store.offeredToModel(botId))).toBe(false);
+    expect("withheld" in (await routineToolkit())).toBe(false);
+    expect(paragraphOf(await turn(null))).not.toContain("검토를 기다리고");
+    // And connects again, which grants every tool the server lists.
+    await store.grant("mcp", `${toolboxId}/${ROUTE.name}`, botId, actorId);
+    expect((await store.offeredToModel(botId)).withheld).toEqual([
+      { server: toolboxId, count: 1 },
+    ]);
+    await store.grant("mcp", `${toolboxId}/${SIPHON.name}`, botId, actorId);
 
     const counted = [{ server: toolboxId, count: 2 }];
     const offered = await store.offeredToModel(botId);
@@ -929,24 +1032,31 @@ describeDb("what a model is given of a tool that waits for review", () => {
       }).withheld,
     ).toEqual(counted);
 
-    // A lookup says it — chat and routine alike, whether it found something or not.
+    // The paragraph that names what is behind the bridge ends on it — a turn's and a routine's
+    // alike — and a lookup, whether it finds something or not, says nothing of it.
     for (const toolkit of [chat, stale, routine]) {
+      const paragraph = paragraphOf(toolkit).split("\n");
+      expect(paragraph).toContain(
+        `- ${serverId}: ${[APPEARED, LIST, NOTE].map(nameOf).join(", ")}`,
+      );
+      expect(paragraph.at(-1)).toBe(lineFor(2));
       const missed = lookedUp(toolkit, "길찾기 경로");
       expect(missed.split("\n")[0]).toBe("'길찾기 경로'에 맞는 도구가 없다.");
-      expect(missed.split("\n").at(-1)).toBe(lineFor(2));
+      expect(missed).not.toContain("검토를 기다리고");
       const hit = lookedUp(toolkit, "orders");
       expect(hit).toContain(`"name":"${nameOf(LIST)}"`);
-      expect(hit.split("\n").at(-1)).toBe(lineFor(2));
+      expect(hit).not.toContain("검토를 기다리고");
     }
 
     // And none of it is the vendor's: not a name, not a word, in anything a model is given — the
-    // count itself, the lists, the lookups with the count in them.
+    // count itself, the lists, the paragraph with the count in it, the lookups.
     const everything = [
       offered,
       await everythingAModelIsGiven(),
       [chat, stale, routine].map((toolkit) => [
         toolkit.tools,
         toolkit.withheld,
+        paragraphOf(toolkit),
         lookedUp(toolkit, "길찾기 경로"),
         lookedUp(toolkit, "orders"),
         lookedUp(toolkit, `select:${toolNameFor(`${toolboxId}/x`)}`),
@@ -963,97 +1073,129 @@ describeDb("what a model is given of a tool that waits for review", () => {
   });
 
   /*
-   * OVER THE REAL WIRE AGAIN, FOR A RUN NOBODY WATCHES — and with the head held against a control.
-   * The count is not a tool and is in no layer of the prompt: it is a forwarded prop that only a
-   * lookup's answer reads. So the same run is made twice, once as the toolkit is built and once
-   * with the count taken off it, and every request the provider was sent is compared: the tools —
-   * the head of the request — are the same bytes, and nothing differs but the line at the end of
-   * each lookup's answer.
+   * THE WHOLE WAY, AS THE PROVIDER RECEIVED IT — and with the head held against a control. The
+   * store's rows, the toolkit a run is built from, the prompt middleware every run passes, the
+   * Bot's own service, a scripted model. The count is a forwarded prop; the middleware draws one
+   * line of it into the context layer and nothing else of the request moves. So each run is made
+   * twice, once as the toolkit is built and once with the count taken off it, and every request
+   * the provider was sent is compared: the same tools, the same static layer, the same
+   * conversation — a lookup's answer included — and a system message that is the control's with
+   * that one line after the names.
+   *
+   * The model here is scripted, so it proves what a model is GIVEN and not what one does with it.
+   * What the fleet's model does was pressed on the real stack: told nothing, it made no lookup
+   * and said the tool was not in its list. So the first run is exactly that — one request, no
+   * lookup — and what is held is that the request it answers from says what waits.
    */
-  test("a routine's Bot looks for a tool that waits under no name: each lookup says how many wait and where they are reviewed — and the provider is sent the same head as a run told nothing", async () => {
-    const scripts = () => [
-      calling("missed", TOOL_SEARCH, { query: "길찾기 경로" }),
-      calling("hit", TOOL_SEARCH, { query: "orders" }),
-      said("길찾기 도구는 검토를 기다리고 있어서 쓰지 못했다."),
-    ];
-    const run = (toolkit: UnattendedToolkit) =>
-      withTheBotsService(scripts(), (agent) =>
+  test("a Bot is told in its prompt how many tools wait under no name and where they are reviewed — a routine's and a turn's, with no lookup made — and every request has the head of a run told nothing", async () => {
+    const asARoutine = (toolkit: UnattendedToolkit, scripts: Chunk[][]) =>
+      throughThePrompt(scripts, (agent) =>
         runUnattended(agent, "집까지 가는 길을 찾아 줘.", {
           toolkit,
           timeoutMs: 10_000,
           mode: "routine",
         }),
       );
+    const asATurn = (toolkit: ChatToolkit, scripts: Chunk[][]) =>
+      throughThePrompt(scripts, (agent) => {
+        agent.setMessages([
+          {
+            id: randomUUID(),
+            role: "user",
+            content: "집까지 가는 길을 찾아 줘.",
+          },
+        ]);
+        return runTurnLoop(agent, {
+          tools: toolkit.tools,
+          execute: toolkit.execute,
+          timeoutMs: 10_000,
+          maxSteps: 12,
+          // As `engine.ts` forwards it for a turn.
+          forwardedProps: withheldToolsForwarded(toolkit.withheld),
+        });
+      });
+    const names = `- ${serverId}: ${[APPEARED, LIST, NOTE].map(nameOf).join(", ")}`;
+    const theVendors = [...OF_THE_ROUTE, ...OF_THE_SIPHON];
+    const answered = () => [said("길찾기 도구 둘이 검토를 기다리고 있다.")];
 
-    // (a) Every tool of the service waits: the service is in no list at all.
-    const toolkit = await routineToolkit();
-    const told = await run(toolkit);
-    expect(told.sent).toHaveLength(3);
-    expect(answerTo(told.agent, "missed").split("\n")).toEqual([
-      "'길찾기 경로'에 맞는 도구가 없다.",
-      `지금 연결된 서비스: ${serverId}.`,
-      "다른 말로 다시 찾아 본다. 그래도 없으면 지금 쓸 수 있는 도구로 하거나, 할 수 없다고 사람에게 말한다.",
-      lineFor(2),
-    ]);
-    expect(answerTo(told.agent, "hit").split("\n").at(-1)).toBe(lineFor(2));
-    // Nothing the provider was sent, in any round, holds a name or a word of the toolbox's.
-    expect(found2(told.sent, [...OF_THE_ROUTE, ...OF_THE_SIPHON])).toEqual([]);
+    // (a) Every tool of the service waits, so the service is in no list at all. ONE REQUEST, NO
+    // LOOKUP: what the Bot answers from already says two wait and where a person reviews them.
+    const routine = await routineToolkit();
+    const told = await asARoutine(routine, answered());
+    expect(told.sent).toHaveLength(1);
+    expect(told.result.steps.flatMap((step) => step.calls)).toEqual([]);
+    expect(systemOf(told.sent[0]).split("\n")).toContain(lineFor(2));
+    expect(systemOf(told.sent[0])).toContain(`${names}\n${lineFor(2)}`);
+    expect(systemOf(told.sent[0])).toContain("관리 메뉴의 플러그인 화면에서");
+    expect(found2(told.sent, theVendors)).toEqual([]);
+    // A turn's the same, in the words of a conversation somebody is watching.
+    const chat = await turn(null);
+    const turnTold = await asATurn(chat, answered());
+    expect(turnTold.sent).toHaveLength(1);
+    expect(systemOf(turnTold.sent[0])).toContain(`\n${lineFor(2)}`);
+    expect(
+      systemOf(turnTold.sent[0]).startsWith(`${staticPrompt("chat")}\n\n`),
+    ).toBe(true);
+    expect(found2(turnTold.sent, theVendors)).toEqual([]);
 
-    // The control: the same toolkit with the count taken off it.
-    const { withheld: _counted, ...bare } = toolkit;
-    const untold = await run(bare);
-    expect(untold.sent).toHaveLength(3);
-    const line = JSON.stringify(`\n${lineFor(2)}`).slice(1, -1);
-    for (const [round, request] of told.sent.entries()) {
-      const control = untold.sent[round];
-      // The head: the same tools, byte for byte, in every round.
+    // THE CONTROL: the same toolkit with the count taken off it, and a model that looks anyway.
+    const looking = () => [
+      calling("missed", TOOL_SEARCH, { query: "길찾기 경로" }),
+      calling("hit", TOOL_SEARCH, { query: "orders" }),
+      said("길찾기 도구는 없었다."),
+    ];
+    const { withheld: _counted, ...bare } = routine;
+    const withIt = await asARoutine(routine, looking());
+    const without = await asARoutine(bare, looking());
+    expect(withIt.sent).toHaveLength(3);
+    expect(without.sent).toHaveLength(3);
+    for (const [round, request] of withIt.sent.entries()) {
+      const control = without.sent[round];
+      // The head: the same tools, and the same static layer in front of the context layer.
       expect(JSON.stringify(request.tools)).toBe(
         JSON.stringify(control?.tools),
       );
-      // And the conversation is the control's with the line at the end of each lookup's answer.
-      expect(JSON.stringify(request.messages).replaceAll(line, "")).toBe(
-        JSON.stringify(control?.messages),
-      );
-      for (const message of request.messages ?? []) {
-        if (message.role !== "tool") {
-          expect(JSON.stringify(message)).not.toContain("검토를 기다리고");
-        }
+      for (const system of [systemOf(request), systemOf(control)]) {
+        expect(system.startsWith(`${staticPrompt("routine")}\n\n`)).toBe(true);
       }
+      // The context layer: the control's, with the one line after the names.
+      expect(systemOf(control)).not.toContain("검토를 기다리고");
+      expect(systemOf(request)).toBe(
+        systemOf(control).replace(names, `${names}\n${lineFor(2)}`),
+      );
+      // And the conversation — each lookup's answer in it — is the control's, byte for byte.
+      expect(JSON.stringify(besideTheSystem(request))).toBe(
+        JSON.stringify(besideTheSystem(control)),
+      );
     }
-    // Not vacuous: the two runs do differ — by that line, twice, in the last request.
-    expect(JSON.stringify(told.sent.at(-1)).split(line)).toHaveLength(3);
-    expect(JSON.stringify(untold.sent)).not.toContain("검토를 기다리고");
+    // Not vacuous: the lookups were answered, and the two runs did differ — by that line.
+    expect(answerTo(withIt.agent, "missed").split("\n")[0]).toBe(
+      "'길찾기 경로'에 맞는 도구가 없다.",
+    );
+    expect(answerTo(withIt.agent, "hit")).toContain(`"name":"${nameOf(LIST)}"`);
+    expect(systemOf(withIt.sent[0])).not.toBe(systemOf(without.sent[0]));
+    expect(found2(withIt.sent, theVendors)).toEqual([]);
 
-    // (b) The person reviews one. It is offered in its vendor's words again; the other still
-    // waits, and a lookup that finds the first — or finds nothing — still says one waits.
+    // (b) The person reviews one. Its name is behind the bridge now and its vendor's words are a
+    // lookup's to hand over; the other still waits, and the prompt says that one does.
     expect(
       await store.approveToolDefinition(toolboxId, ROUTE.name, actorId),
     ).toBe(true);
     const afterOne = await routineToolkit();
     expect(afterOne.withheld).toEqual([{ server: toolboxId, count: 1 }]);
-    const reviewed = await withTheBotsService(
-      [
-        calling("route", TOOL_SEARCH, { query: "find a way" }),
-        calling("other", TOOL_SEARCH, { query: "택배 조회" }),
-        said("길은 찾을 수 있고, 다른 도구 하나는 검토를 기다린다."),
-      ],
-      (agent) =>
-        runUnattended(agent, "집까지 가는 길을 찾아 줘.", {
-          toolkit: afterOne,
-          timeoutMs: 10_000,
-          mode: "routine",
-        }),
-    );
     const routeName = toolNameFor(`${toolboxId}/${ROUTE.name}`);
+    const reviewed = await asARoutine(afterOne, [
+      calling("route", TOOL_SEARCH, { query: "find a way" }),
+      said("길은 찾을 수 있고, 다른 도구 하나는 검토를 기다린다."),
+    ]);
+    expect(systemOf(reviewed.sent[0])).toContain(
+      `- ${toolboxId}: ${routeName}\n${lineFor(1)}`,
+    );
+    expect(systemOf(reviewed.sent[0])).not.toContain(lineFor(2));
     expect(answerTo(reviewed.agent, "route")).toContain(
       `"name":"${routeName}"`,
     );
-    expect(answerTo(reviewed.agent, "route").split("\n").at(-1)).toBe(
-      lineFor(1),
-    );
-    expect(answerTo(reviewed.agent, "other").split("\n").at(-1)).toBe(
-      lineFor(1),
-    );
+    expect(answerTo(reviewed.agent, "route")).not.toContain("검토를 기다리고");
     expect(found2(reviewed.sent, OF_THE_ROUTE).sort()).toEqual(
       [...OF_THE_ROUTE].sort(),
     );
@@ -1066,7 +1208,9 @@ describeDb("what a model is given of a tool that waits for review", () => {
     const afterBoth = await routineToolkit();
     expect("withheld" in afterBoth).toBe(false);
     expect("withheld" in (await store.offeredToModel(botId))).toBe(false);
-    expect(lookedUp(afterBoth, "택배 조회")).not.toContain("검토를 기다리고");
+    expect(paragraphOf(afterBoth)).not.toContain("검토를 기다리고");
+    const settled = await asARoutine(afterBoth, answered());
+    expect(systemOf(settled.sent[0])).not.toContain("검토를 기다리고");
     expect(await store.offeredToModel(botId)).toEqual(
       await store.listForAgent(botId),
     );
@@ -1086,32 +1230,9 @@ describeDb("what a model is given of a tool that waits for review", () => {
   test("looked up while it waited, then reviewed: the call made while paused reaches the store and is refused with its row; the next one is handed the real schema first, and only then goes through", async () => {
     toolsOnServer = [LIST_CHANGED, NOTE_CHANGED, APPEARED_AGAIN];
     expect((await store.refreshTools(serverId)).paused).toBe(1);
-    const rejections = async () =>
-      (
-        await database
-          .select({ payload: auditEvents.payload })
-          .from(auditEvents)
-          .where(
-            and(
-              eq(auditEvents.eventType, "mcp.call_rejected"),
-              eq(auditEvents.targetId, refOf(NOTE)),
-            ),
-          )
-      ).map((row) => row.payload);
+    const rejections = () => rejectionsOf(NOTE);
     expect(await rejections()).toEqual([]);
 
-    /** One message of the conversation, run as a turn runs it: this moment's listing, the loop. */
-    const message = async (agent: HttpAgent, text: string) => {
-      agent.addMessage({ id: randomUUID(), role: "user", content: text });
-      const toolkit = await turn(null);
-      return runTurnLoop(agent, {
-        tools: toolkit.tools,
-        execute: toolkit.execute,
-        timeoutMs: 10_000,
-        maxSteps: 12,
-        forwardedProps: withheldToolsForwarded(toolkit.withheld),
-      });
-    };
     const guessed = { text: "문 앞에 놓아 주세요" };
     const asShown = { text: "문 앞에 놓아 주세요", pinned: true };
     const { result, sent, agent } = await withTheBotsService(

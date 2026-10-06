@@ -608,8 +608,9 @@ export function createTurnEngine(options: TurnEngineOptions) {
         /*
          * What the window's CopilotKit properties carried: the device's clock and language. And
          * what this turn's listing counted and could not list — the tools that wait for review and
-         * are offered under no name (`ChatToolkit.withheld`), for a lookup to say. Beside the
-         * tools, never among them: the tool list is the head of the prompt.
+         * are offered under no name (`ChatToolkit.withheld`), for the context layer to say
+         * (`copilot.ts`). Beside the tools, never among them: the tool list is the head of the
+         * prompt.
          */
         forwardedProps: {
           ...(input.device === undefined ? {} : { device: input.device }),

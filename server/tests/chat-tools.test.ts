@@ -38,8 +38,10 @@ import type { RoutineService } from "../src/routines/service";
 import { createChatTools, routineAction } from "../src/turns/chat-tools";
 import { createPersonAnswers } from "../src/turns/people";
 import {
+  deferredToolsText,
   describedToolNames,
   OPEN_ACCOUNTS_HEAD,
+  openAccountsIn,
   searchResultText,
 } from "../../shared/tools/bridge";
 import {
@@ -50,6 +52,7 @@ import { LIST_GOALS } from "../../shared/tools/goals";
 import {
   withheldToolsForwarded,
   withheldToolsIn,
+  withheldToolsText,
 } from "../../shared/tools/paused";
 import { A_CLICK } from "./support/subjects";
 
@@ -1544,10 +1547,11 @@ describe("a connect card the turn waits on", () => {
      * filled after the account is connected, so every tool in it appeared after registration and
      * is offered under no name until a person reviews it. This turn then read 카카오 as on with no
      * tools, and its lookup said the connection had brought none. The listing counts what it could
-     * not list, the turn carries the count for its run to forward (`engine.ts`), and the lookup
-     * says the count and where a person reviews — in place of "brought none", which was not true.
+     * not list and the turn carries the count for its run to forward (`engine.ts`). What is drawn
+     * from it is the context layer's paragraph, where the Bot reads it without looking anything
+     * up (`copilot.ts`); the lookup only stops saying "brought none", which was not true.
      */
-    test("an account whose tools wait for review: the turn carries how many, and its lookup says that — not that the connection brought none", async () => {
+    test("an account whose tools wait for review: the turn carries how many, the context layer's paragraph says it, and its lookup no longer says the connection brought none", async () => {
       const waiting = [{ server: "kakao-playmcp", count: 2 }];
       const pluginStore = {
         offeredToModel: async () => ({
@@ -1572,18 +1576,31 @@ describe("a connect card the turn waits on", () => {
       expect(toolkit.tools.map((one) => one.name)).toEqual(["showConnection"]);
       expect(JSON.stringify(toolkit.tools)).not.toContain("withheld");
 
-      // As the Bot's service is handed it: the run's forwarded props, read back in their shape.
+      // As the two readers are handed it: the run's forwarded props, read back in their shape.
+      const counted = withheldToolsIn(withheldToolsForwarded(toolkit.withheld));
+      // The paragraph `copilot.ts` draws for this run's tools: the card's name, then how many of
+      // 카카오's wait and where they are reviewed, then the sentence about what is left to connect.
+      const paragraph = deferredToolsText(
+        toolkit.tools.map((one) => one.name),
+        openAccountsIn(toolkit.tools),
+        counted,
+      ).split("\n");
+      expect(paragraph.slice(1)).toEqual([
+        "- 화면에 띄우는 카드: showConnection",
+        withheldToolsText("카카오(kakao-playmcp) 2개"),
+        expect.stringContaining("tool_search로 한 번 찾는다"),
+      ]);
+
+      // And the lookup: nothing false of 카카오, and nothing else of it — what waits is said once.
       const answer = searchResultText(
         behind(toolkit.tools),
         "카카오 길찾기",
         [],
-        withheldToolsIn(withheldToolsForwarded(toolkit.withheld)),
+        counted,
       );
-      expect(answer).toContain(
-        "어느 목록에도 없는 도구: 카카오(kakao-playmcp) 2개.",
-      );
-      expect(answer).toContain("관리 메뉴의 플러그인 화면에서");
       expect(answer).not.toContain("가져온 도구가 없는 계정");
+      expect(answer).not.toContain("kakao-playmcp");
+      expect(answer).not.toContain("검토");
       // What can still be connected is said as before, and 카카오 is not among it.
       expect(answer.split("\n").at(-1)).toContain(
         "지메일(gmail), 구글 캘린더(google-calendar), 노션(notion).",

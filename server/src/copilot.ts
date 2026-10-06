@@ -21,6 +21,7 @@ import { HARNESS_VERSION } from "../../shared/prompt/harness";
 import type { Persona } from "../../shared/persona";
 import type { ShopProfile } from "../../shared/shop/catalogue";
 import { isDeferredToolName, openAccountsIn } from "../../shared/tools/bridge";
+import { type WithheldTools, withheldToolsIn } from "../../shared/tools/paused";
 import { deviceOf } from "../../shared/whereabouts";
 import type { AgentActor, AgentEffort } from "./agents/profile-types";
 import { type AuditStore, auditRowLost, recordAuditEvent } from "./audit";
@@ -204,6 +205,8 @@ export function composeInputOf(
     toolNames?: readonly string[];
     /** The accounts this person could still connect, off the connect card the turn handed on. */
     openAccounts?: readonly string[];
+    /** Tools this Bot holds that wait for review under no name, counted per server by the run. */
+    withheld?: WithheldTools;
   },
 ): ComposePromptInput {
   return {
@@ -211,6 +214,7 @@ export function composeInputOf(
     ...(options.openAccounts?.length
       ? { openAccounts: options.openAccounts }
       : {}),
+    ...(options.withheld?.length ? { withheld: options.withheld } : {}),
     mode: options.mode,
     now: options.now,
     timeZone: options.timeZone,
@@ -671,6 +675,22 @@ function remoteAgentWithPrompt(
        * there is not — or where the run has no card, as a routine's has none.
        */
       openAccounts: openAccountsIn(input.tools ?? []),
+      /*
+       * What this run's listing counted and could not list: tools the Bot holds that wait for
+       * review and are offered under no name (`OfferedPlugins.withheld`), forwarded beside the
+       * tools by the turn and by an unattended run. Drawn into the same paragraph, as one line of
+       * this deployment's — the service and how many, never a name — because that paragraph is
+       * where the Bot is told the names it lists are everything: a Bot that believed it never
+       * looked, and so never learned that the tool a person had just added was waiting for them
+       * (pressed on the real stack, 2026-10-06; `deferredToolsText`). A routine reads it too.
+       *
+       * READ IN A CLOSED SHAPE, whoever forwarded it — a slug and a whole number, like the notepad
+       * above: this seam cannot tell a turn's run from anybody else's. And it is in the CONTEXT
+       * layer, not the head: neither the tools nor the static layer moves, a count that changes is
+       * a reminder on the person's next message like any change to that paragraph, and no epoch
+       * opens for it — the key below counts core tools (`toolsFingerprint`), and this is no tool.
+       */
+      withheld: withheldToolsIn(forwarded),
     });
     const facts = contextFactsFor(composing);
     const notepad = notepadLayerText(mode, composing.notepad);

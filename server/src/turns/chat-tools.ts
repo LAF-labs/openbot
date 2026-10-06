@@ -194,8 +194,9 @@ export type ChatToolkit = {
   /**
    * What this Bot holds and the list above cannot show: tools waiting for review that are offered
    * under no name, counted per server (`OfferedPlugins.withheld`). The turn forwards it beside the
-   * list (`engine.ts`), and a lookup says it. Read when the person's message arrives, like the
-   * list — a reconnect in the middle of a turn shows from the next message on.
+   * list (`engine.ts`), and the context layer says it (`copilot.ts`). Read when the person's
+   * message arrives, like the list — a reconnect in the middle of a turn shows from the next
+   * message on.
    */
   withheld?: WithheldTools;
 };

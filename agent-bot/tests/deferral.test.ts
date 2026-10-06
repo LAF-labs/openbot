@@ -946,4 +946,60 @@ describe("a lookup's answer for a person with an account left to connect", () =>
     expect(line).not.toContain("gmail");
     expect(answer).not.toContain('"name":"showConnection"');
   });
+
+  /*
+   * AN ACCOUNT THAT IS ON, WHOSE TOOLS ALL WAIT FOR REVIEW. They are offered under no name, so this
+   * run was handed none of them — and the lookup read that as an account that "is connected and
+   * brought no tools", and told the Bot to say so. The server counts what it does not list and
+   * forwards the count beside the tools (`shared/tools/paused.ts`); the prompt's context layer is
+   * where the Bot is told of it, and all the lookup does with it is not say the false thing. Held
+   * here through the service itself, because the count reaches a lookup only if the run hands it
+   * on: with the same tools and no count, the same lookup still says "brought none".
+   */
+  test("with an account on whose tools all wait for review, the count the run was forwarded keeps the lookup from saying it brought none — and the provider is sent the same request either way", async () => {
+    const BROUGHT_NONE = "연결돼 있지만 그 연결이 가져온 도구가 없는 계정: ";
+    const tools = [...CORE, GOALS, cardWith(["gmail"])];
+    const scripts = () => [
+      calls([{ id: "c1", name: "tool_search", args: { query: "메일 확인" } }]),
+      said("메일 도구는 검토를 기다리고 있어요."),
+    ];
+    const told = await runFor(tools, scripts(), {
+      toolsWithheld: [{ server: "gmail", count: 4 }],
+    });
+    const untold = await runFor(tools, scripts());
+    const answerOf = (run: typeof told) =>
+      String(resultsOf(run.events)[0]?.content);
+
+    expect(answerOf(untold)).toContain(`${BROUGHT_NONE}지메일(gmail).`);
+    expect(answerOf(told)).not.toContain(BROUGHT_NONE);
+    // Nothing is put in its place: what waits is the context layer's to say, once.
+    expect(answerOf(told)).not.toContain("검토");
+    expect(answerOf(told).split("\n")).toEqual(
+      answerOf(untold)
+        .split("\n")
+        .filter((line) => !line.startsWith(BROUGHT_NONE)),
+    );
+    // The calendar is still said as what could be connected, by both.
+    expect(answerOf(told).split("\n").at(-1)).toContain(
+      "구글 캘린더(google-calendar)",
+    );
+    // And the count is no part of what the provider is offered: the same tools, every round.
+    expect(told.requests).toHaveLength(2);
+    for (const [round, request] of told.requests.entries()) {
+      expect(JSON.stringify(request.tools)).toBe(
+        JSON.stringify(untold.requests[round]?.tools),
+      );
+    }
+    expect(JSON.stringify(told.requests)).not.toContain("toolsWithheld");
+
+    // A count that is not a server's slug and a whole number is no count: the lookup is the
+    // one a run with nothing forwarded gets.
+    const forged = await runFor(tools, scripts(), {
+      toolsWithheld: [
+        { server: "지메일", count: 4 },
+        { server: "gmail", count: "four" },
+      ],
+    });
+    expect(answerOf(forged)).toBe(answerOf(untold));
+  });
 });

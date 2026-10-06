@@ -208,7 +208,8 @@ export type OfferedPlugins = {
    * nothing — and the Bot's word is the one way a person learns that something waits (review of
    * #116). The number is this deployment's own; the server's id is a catalogue key or the name an
    * administrator typed; no name of a tool and no word of a vendor's is in it. It rides beside the
-   * list rather than on it (`WithheldTools`, `shared/tools/paused.ts`) and is said by a lookup.
+   * list rather than on it (`WithheldTools`, `shared/tools/paused.ts`) and is said in the context
+   * layer, where the names behind the bridge are listed (`deferredToolsText`).
    *
    * OF WHAT THIS BOT HOLDS, from the same read as `tools`: a tool it was never granted would not
    * be offered once reviewed either, and is the administrator's screen's to show.

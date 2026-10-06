@@ -1090,15 +1090,22 @@ describe("the accounts a turn writes on the connect card", () => {
  * A vendor's tool that appeared after registration is in no list a model is given: nobody consented
  * to its name, and a name is the vendor's text (`shared/tools/paused.ts`). The review of that
  * change found what it cost. 카카오's toolbox starts empty and is filled afterwards, so every tool a
- * person puts there "appeared after registration" — and a Bot asked for one looked, found nothing,
- * and was told the connection had brought no tools. The Bot's word is the one way a person learns
- * that something waits, and for these tools there was no word. So the server counts them, per
- * server, and a lookup ends on the count and on where a person reviews them: this deployment's
- * sentence, a service's name from this repository's table or the administrator's own slug, and a
- * number. It rides beside the tool list as a forwarded prop, because the lookup is answered from
- * the list and these tools are by definition not on it.
+ * person puts there "appeared after registration" — and a Bot asked for one was told the
+ * connection had brought no tools. The Bot's word is the one way a person learns that something
+ * waits, and for these tools there was no word. So the server counts them, per server, and the
+ * count is said with where a person reviews them: this deployment's sentence, a service's name
+ * from this repository's table or the administrator's own slug, and a number.
+ *
+ * SAID IN THE CONTEXT LAYER, NOT BY A LOOKUP. It was first put at the end of every lookup's answer,
+ * and a press on the real stack showed nobody read it there: the paragraph naming what is behind
+ * the bridge says the names are everything and not to look for anything else, the fleet's model
+ * does as it is told, and asked for a tool in a toolbox whose two tools were waiting it answered
+ * in one request with no lookup at all — "그 길찾기 도구는 지금 쓸 수 있는 목록에 없어서 찾아드릴 수
+ * 없어요". So the line stands in that paragraph, where a Bot reads it without doing anything, and
+ * the lookup says nothing of it: one fact, one place. What the lookup keeps is not to say anything
+ * false — an account whose tools wait has not "brought none".
  */
-describe("what a lookup says of tools that wait for review under no name", () => {
+describe("what a Bot is told of tools that wait for review under no name", () => {
   const SERVICES = [
     wire("mcp__gmail__search_messages", "지메일에서 메일을 찾는다. (gmail)"),
     wire(
@@ -1130,54 +1137,54 @@ describe("what a lookup says of tools that wait for review under no name", () =>
     ),
   });
 
-  test("every answer ends on how many wait, by service — found or not — and an answer with none waiting is the same bytes as before", () => {
-    // Found: the service's other tools come up, and the one the person just added is not among
-    // them. Said after the schemas, or the Bot concludes there is no such tool.
-    const found = searchResultText(SERVICES, "카카오 장소", [], WAITING);
-    expect(found.split("\n")[0]).toContain("맞는 도구 1개");
-    expect(found.split("\n").at(-1)).toBe(LINE);
-    // Missed, with no card in the list — a routine's lookup, where nothing is said of connecting.
-    expect(
-      searchResultText(SERVICES, "택배 조회", [], WAITING).split("\n"),
-    ).toEqual([
-      "'택배 조회'에 맞는 도구가 없다.",
-      "지금 연결된 서비스: 지메일, 카카오.",
-      "다른 말로 다시 찾아 본다. 그래도 없으면 지금 쓸 수 있는 도구로 하거나, 할 수 없다고 사람에게 말한다.",
+  test("the paragraph of names behind the bridge ends on how many wait, by service — after the names and before the sentence about connecting, and alone where there are no names", () => {
+    const NAMES = SERVICES.map((tool) => tool.name);
+    const plain = deferredToolsText(NAMES);
+    // After the names, as the last line: a rider on "what is behind the bridge is all below".
+    expect(deferredToolsText(NAMES, [], WAITING)).toBe(`${plain}\n${LINE}`);
+    // With an account still open, before the one sentence about connecting — which stays last.
+    const connecting = deferredToolsText(NAMES, ["notion"]);
+    expect(connecting.startsWith(`${plain}\n`)).toBe(true);
+    expect(deferredToolsText(NAMES, ["notion"], WAITING).split("\n")).toEqual([
+      ...plain.split("\n"),
       LINE,
+      connecting.split("\n").at(-1) ?? "",
     ]);
-    // And where the waiting tools are all a service has, straight after "nothing is connected".
-    expect(
-      searchResultText([], "카카오 길찾기", [], WAITING).split("\n"),
-    ).toEqual([
-      "'카카오 길찾기'에 맞는 도구가 없다.",
-      "지금 연결된 서비스는 없다.",
-      "다시 찾지 않는다. 지금 쓸 수 있는 도구로 하거나, 할 수 없다고 사람에게 말한다.",
-      LINE,
-    ]);
-    // A tool already in the schema: said there too.
-    const offered = [wire("mcp__web-search__search", "웹을 검색한다.")];
-    expect(
-      searchResultText(
-        SERVICES,
-        "select:mcp__web-search__search",
-        offered,
-        WAITING,
-      )
-        .split("\n")
-        .at(-1),
-    ).toBe(LINE);
 
-    // Nothing waiting: not a line more, whichever way the answer goes.
-    for (const query of ["카카오 장소", "택배 조회"]) {
-      expect(searchResultText(SERVICES, query, [], [])).toBe(
-        searchResultText(SERVICES, query),
-      );
-      expect(searchResultText(SERVICES, query)).not.toContain("검토");
-    }
+    // NOTHING BEHIND THE BRIDGE AT ALL — a routine whose one connected service has every tool
+    // waiting, and no card, no goal. There was no paragraph; there is this line, by itself, and
+    // not the head sentence saying the names below are everything over no names.
+    expect(deferredToolsText(["computer_navigate", "now"])).toBe("");
+    expect(deferredToolsText(["computer_navigate", "now"], [], WAITING)).toBe(
+      LINE,
+    );
+    expect(deferredToolsText([], ["gmail"], WAITING)).toBe(LINE);
+    // It stands without a sentence before it to lean on, and tells the Bot not to go looking.
+    expect(LINE.startsWith("검토를 기다리고 있어")).toBe(true);
+    expect(LINE).toContain("tool_search로 찾아도, 다시 연결해도 나오지 않는다");
+
+    // Nothing waiting: the paragraph is the bytes it was, whoever else is passed.
+    expect(deferredToolsText(NAMES, [], [])).toBe(plain);
+    expect(deferredToolsText(NAMES, ["notion"], [])).toBe(connecting);
+    expect(plain).not.toContain("검토");
     // The same state is the same bytes, whatever order the server counted in.
-    expect(
-      searchResultText(SERVICES, "택배 조회", [], [...WAITING].reverse()),
-    ).toBe(searchResultText(SERVICES, "택배 조회", [], WAITING));
+    expect(deferredToolsText(NAMES, [], [...WAITING].reverse())).toBe(
+      deferredToolsText(NAMES, [], WAITING),
+    );
+  });
+
+  test("a lookup says nothing of it: found, missed or already in the schema, its answer is the bytes it would be with nothing waiting", () => {
+    const offered = [wire("mcp__web-search__search", "웹을 검색한다.")];
+    for (const [deferred, query] of [
+      [SERVICES, "카카오 장소"],
+      [SERVICES, "택배 조회"],
+      [[], "카카오 길찾기"],
+      [SERVICES, "select:mcp__web-search__search"],
+    ] as const) {
+      const answer = searchResultText(deferred, query, offered, WAITING);
+      expect(answer).toBe(searchResultText(deferred, query, offered));
+      expect(answer).not.toContain("검토");
+    }
   });
 
   test("an account whose tools all wait is not said to have brought none — and one that really brought none still is", () => {
@@ -1202,14 +1209,17 @@ describe("what a lookup says of tools that wait for review under no name", () =>
       "\n",
     );
     expect(lines.slice(3)).toEqual([
-      withheldToolsText("카카오(kakao-playmcp) 2개"),
       `${BROUGHT_NONE}노션(notion). 연결 카드를 띄우지 않는다 — 이것이 필요한 일이면 연결은 돼 있는데 지금 쓸 도구가 없다고 사람에게 말한다.`,
       expect.stringContaining(`${OPEN_ACCOUNTS_HEAD}지메일(gmail).`),
     ]);
-    // 카카오 is on, so it is not offered for connecting either: what waits is said once.
-    expect(lines.filter((line) => line.includes("kakao-playmcp"))).toHaveLength(
-      1,
-    );
+    // 카카오 is on, so it is not offered for connecting either; and what waits there is the
+    // context layer's to say. The lookup's answer does not name it at all.
+    expect(lines.filter((line) => line.includes("kakao-playmcp"))).toEqual([]);
+    // A found answer the same: nothing false of 카카오, and nothing else of it.
+    const found = searchResultText(tools, "bar chart", [], waiting);
+    expect(found).toContain('"name":"showBarChart"');
+    expect(found).toContain(`${BROUGHT_NONE}노션(notion).`);
+    expect(found).not.toContain("kakao-playmcp");
   });
 
   test("what crossed the wire is read in a closed shape: a server's slug and a whole number, and nothing else gets into the sentence", () => {
