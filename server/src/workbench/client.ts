@@ -95,8 +95,9 @@ import {
 /**
  * Why there is no run to report.
  *
- * - `unavailable` — nothing answers at the socket for the few seconds a daemon takes to be back,
- *   or what answers cannot prove it is the service: the service is not there to be sent anything.
+ * - `unavailable` — nothing answers at the socket: at once where the daemon has never been seen
+ *   there, and after the few seconds a daemon takes to be back where it has; or what answers
+ *   cannot prove it is the service. The service is not there to be sent anything.
  * - `busy` — it is running something, and enough is already waiting behind that; or it is still
  *   clearing up after a run and did not finish in the time it is given.
  * - `invalid` — the request is not one the service takes; `field` says which part.
@@ -161,6 +162,9 @@ const MARGIN_MS = 10_000;
  * doubles its wait each time one ends again within ten (measured on the rehearsal's runner: 252,
  * 502, 753, 1,754, 3,508 ms). Until 2026-10-07 nothing there was `unavailable` at once — which is
  * what the run behind an abandoned one was told, and any run that met a daemon retiring.
+ *
+ * ONLY FOR A DAEMON THAT HAS BEEN THERE (`idle`, below): where none has ever answered in this
+ * process, there are no two lives for it to be between.
  */
 const ABSENT_MS = 4_000;
 
@@ -664,8 +668,20 @@ export function createWorkbench(options: WorkbenchOptions): Workbench {
 function clientFor(socketPath: string, made: Made): Workbench {
   const { key, log, limits, marginMs, absentMs } = made;
 
+  /**
+   * Whether the daemon has ever answered at this path, provably, in this process: by `health()`
+   * or by the knock before any run. Never unset — a daemon that was there and is not is the case
+   * the wait in `idle` is for.
+   */
+  let seen = false;
+
   /** Ask the path who is there. Believed only with a proof, like everything else it answers. */
   const knock = async (signal?: AbortSignal): Promise<Knocked> => {
+    const there = await knocked(signal);
+    if (there.kind === "daemon") seen = true;
+    return there;
+  };
+  const knocked = async (signal?: AbortSignal): Promise<Knocked> => {
     const asked = { route: "GET /health", nonce: newNonce() };
     const own = new AbortController();
     try {
@@ -713,8 +729,19 @@ function clientFor(socketPath: string, made: Made): Workbench {
    * it was first found so: that is a daemon between two lives — one that retired, or stopped
    * because a script had been at its socket — and the engine has it back within that.
    *
+   * BUT ONLY WHERE A DAEMON HAS LIVED. Those seconds were paid by every run on a deployment with
+   * no such service at all, and by each run waiting behind it in turn: measured 2026-10-07, three
+   * queued runs with nobody at the path took three waits, one after another (4.7 s with the wait
+   * at a second and a half; twelve seconds at a server's four). So nothing there is waited for
+   * only once the daemon has been SEEN — one proven answer at this path in this process
+   * (`seen`). Before that, nobody there is `unavailable` at once. What that gives up: the first
+   * run of a process that meets a daemon mid-restart is told so instead of waiting; whoever
+   * offers runs to anybody asks `health()` first, and a proven answer to that is a daemon seen.
+   *
    * NEVER WITHOUT AN END. Each wait has its own clock and neither is ever started again, so
-   * whatever is at the path, and however it changes, a caller is answered within the two together.
+   * whatever is at the path, and however it changes, a caller is answered within the two together
+   * — and these waits are BEFORE a run's own time, not out of it: a run that is sent has all of
+   * what it was given.
    */
   const idle = async (
     signal: AbortSignal | undefined,
@@ -728,6 +755,13 @@ function clientFor(socketPath: string, made: Made): Workbench {
       if (there.kind === "daemon" && !there.busy) return null;
       const now = performance.now();
       if (there.kind === "nobody") {
+        if (!seen) {
+          log.warn("workbench_unreachable", {
+            failure: "unavailable",
+            reason: "never_seen",
+          });
+          return "unavailable";
+        }
         absentSince ??= now;
         if (now - absentSince >= absentMs) {
           log.warn("workbench_unreachable", {
