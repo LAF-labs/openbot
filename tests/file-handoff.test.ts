@@ -24,6 +24,7 @@ import { createPolicyStore } from "../server/src/computer/policy-store";
 import { createComputerRoutes } from "../server/src/computer/routes";
 import { createChatTools } from "../server/src/turns/chat-tools";
 import { createPersonAnswers } from "../server/src/turns/people";
+import { ATTACHMENT_MAX_BYTES } from "../shared/attachments";
 import { toolResultText } from "../shared/prompt/tool-results.ko";
 
 /**
@@ -476,4 +477,30 @@ describe("the server's own file calls, against the real folder", () => {
         .message,
     ).toBe("laf:bot_header_missing");
   });
+});
+
+/*
+ * ONE CODE, TWO DIRECTIONS (the independent read of 2026-10-06). `laf:file_too_large` used to be
+ * what a WRITE over its bound was answered, and its sentence told a Bot to write smaller. The
+ * server's whole read (`/files/bytes`) answers the same code for a file too large to TAKE — the
+ * first oversized input would have told the Bot to split a write it never made. Decided: one code,
+ * and a sentence that is true of both; a second code would be a second row in six tables for a
+ * distinction the two numbers that ride with the code already make.
+ */
+test("the sentence for a file that is too large is true of a read as well as of a write", async () => {
+  const sentence = toolResultText("laf:file_too_large");
+  // It says both, and tells a reader something a reader can do.
+  expect(sentence).toContain("읽");
+  expect(sentence).toContain("쓰");
+  expect(sentence).not.toContain("쓰지 않았다. 더 작게 나눠서 써라");
+  // And the read does answer this code, through the server's own client.
+  const big = new Uint8Array(ATTACHMENT_MAX_BYTES + 1);
+  await writeFile(join(root, "too-large-to-take.bin"), big);
+  const refused = await computerClient
+    .forBot("bot-1")
+    .fileBytes("too-large-to-take.bin")
+    .catch((error: unknown) => error);
+  expect(refused instanceof Error && refused.message).toBe(
+    "laf:file_too_large",
+  );
 });
