@@ -56,6 +56,14 @@ export const AGENT_REFUSALS: Record<string, string> = {
   "laf:agent_name_invalid": "A Bot needs a name, of 80 characters or fewer.",
   "laf:agent_role_too_long": "A description can be up to 1,000 characters.",
   "laf:agent_endpoint_refused": "That address cannot be used.",
+  /*
+   * Not the line above: nothing is wrong with the address. A hosted deployment takes no endpoint
+   * of a person's own for a Bot, whatever it is (2026-10-06), and neither a key for one — so the
+   * sentence says what is true of the deployment instead of sending somebody to try another
+   * address. `/admin/bots` draws the same sentence where it would have drawn the form.
+   */
+  "laf:agent_endpoint_not_taken":
+    "Every Bot runs on this deployment. It cannot be pointed at another server here.",
   "laf:agent_avatar_invalid": "That face cannot be used.",
   "laf:agent_effort_invalid": "Choose how hard this Bot thinks.",
   "laf:agent_auto_review_too_long":

@@ -154,8 +154,45 @@ describe("server authorization", () => {
         // The server runs every chat turn, and says so for an app build from before the window
         // that drove its own turns was removed — whatever this app was built with (`app.ts`).
         serverTurns: true,
+        // And the one that is FALSE when nothing says otherwise: a deployment takes no endpoint
+        // of a person's own for a Bot unless it is a developer's stack (the case below).
+        botEndpoints: false,
       },
     });
+  });
+
+  /*
+   * WHETHER A BOT MAY BE POINTED AT AN AGENT OF SOMEBODY'S OWN, said to the app so that it draws
+   * the screen for it only where the server would take what the screen sends (2026-10-06). The
+   * fact is the private-host opt-in — the switch that already says "this is a developer's stack"
+   * — and it is under the computer's configuration: a stack with no computer is hosted in this
+   * sense whatever the variable says, as the form's own check has always read it.
+   */
+  test("says whether a Bot may be pointed at another server: only where the private-host opt-in marks a developer's stack", async () => {
+    const said = async (environment: Record<string, string>) => {
+      const app = createApp({
+        config: loadConfig(testEnvironment(environment)),
+        auth: authenticatedAs("member"),
+        roleRepository: { rolesForUser: async () => ["user"] },
+      });
+      const response = await app.request("http://laf.local/api/me");
+      return (
+        (await response.json()) as { deployment: { botEndpoints: unknown } }
+      ).deployment.botEndpoints;
+    };
+    const computer = { AGENT_COMPUTER_URL: "http://localhost:4100" };
+    expect(
+      await said({ ...computer, AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS: "true" }),
+    ).toBe(true);
+    // A hosted deployment: a computer, and no opt-in — compose never hands the API one.
+    expect(await said(computer)).toBe(false);
+    expect(
+      await said({ ...computer, AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS: "false" }),
+    ).toBe(false);
+    // The opt-in with no computer to read it under is no opt-in.
+    expect(await said({ AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS: "true" })).toBe(
+      false,
+    );
   });
 
   test("allows an administrator to reach an administrator route", async () => {

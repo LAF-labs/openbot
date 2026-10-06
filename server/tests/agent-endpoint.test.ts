@@ -78,6 +78,12 @@ describe("what may be registered as an agent", () => {
   });
 });
 
+/*
+ * ON A DEVELOPER'S STACK — the second argument, `true`, wherever an endpoint or a key is sent. A
+ * hosted deployment takes neither (2026-10-06): the form there is refused whole, by a code of its
+ * own, before an address is looked at (`agent-routes.test.ts`, its last describe). So what is held
+ * below about addresses and keys is held about the one place they are still fields.
+ */
 describe("the agent form", () => {
   const base = {
     name: "Sales Bot",
@@ -94,7 +100,7 @@ describe("the agent form", () => {
   test("an endpoint is carried through when it is allowed", () => {
     const parsed = parseAgentInput(
       { ...base, endpoint: "https://agents.example.com/ag-ui" },
-      false,
+      true,
     );
     expect(parsed.ok).toBe(true);
     if (parsed.ok)
@@ -293,11 +299,17 @@ describe("the key a customer's agent sits behind", () => {
       roleDescription: "Answers questions about pricing.",
     };
     // A newline here would let somebody inject a second header into every request this server makes.
-    const parsed = parseAgentInput({
-      ...base,
-      auth: { header: "X-Bad\nInjected: yes", value: "abc" },
+    const parsed = parseAgentInput(
+      {
+        ...base,
+        auth: { header: "X-Bad\nInjected: yes", value: "abc" },
+      },
+      true,
+    );
+    expect(parsed).toEqual({
+      ok: false,
+      code: "laf:agent_auth_header_invalid",
     });
-    expect(parsed.ok).toBe(false);
   });
 
   /*
@@ -309,11 +321,14 @@ describe("the key a customer's agent sits behind", () => {
    * that Bot takes, before its agent is dialled, and the error's own message quotes the key.
    */
   const withKey = (value: string) =>
-    parseAgentInput({
-      name: "Sales Bot",
-      roleDescription: "Answers questions about pricing.",
-      auth: { header: "Authorization", value },
-    });
+    parseAgentInput(
+      {
+        name: "Sales Bot",
+        roleDescription: "Answers questions about pricing.",
+        auth: { header: "Authorization", value },
+      },
+      true,
+    );
 
   test.each([
     ["an en dash where a hyphen was", "Bearer abc–def"],

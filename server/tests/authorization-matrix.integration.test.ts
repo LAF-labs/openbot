@@ -811,7 +811,14 @@ const B_ALLOWED = [
   "GET /api/version",
   "GET /connected",
   "GET /health",
-  "POST /api/agents/test-connection",
+  /*
+   * `POST /api/agents/test-connection` WAS HERE. It makes the server dial an address a person
+   * typed, and this deployment is a hosted one — no private-host opt-in — which takes no endpoint
+   * of a person's own for a Bot (2026-10-06). So it answers nobody: 400
+   * `laf:agent_endpoint_not_taken` to the colleague, the owner and the administrator alike, a
+   * refusal with a code that the walk of refusals below reads. Where it still answers, on a
+   * developer's stack, is held in `agent-routes.test.ts`.
+   */
   "POST /api/auth/*",
   // 소식's like and hide name a post by id, and the matrix's made-up id is nobody's: 404 for all.
   "POST /api/feed/seen",

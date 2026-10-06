@@ -47,6 +47,7 @@ export type AgentInputRefusal =
   | "laf:agent_name_invalid"
   | "laf:agent_role_too_long"
   | "laf:agent_endpoint_refused"
+  | "laf:agent_endpoint_not_taken"
   | "laf:agent_avatar_invalid"
   | "laf:agent_effort_invalid"
   | "laf:agent_auto_review_too_long"
@@ -103,6 +104,17 @@ type AgentInputObject = {
  * `allowPrivateHosts` is passed in rather than read from configuration here so this stays a pure
  * function: a developer's own agent lives on localhost, and a hosted deployment must refuse exactly
  * that, so the answer depends on the deployment and the test suite needs to exercise both.
+ *
+ * A HOSTED DEPLOYMENT TAKES NO ENDPOINT AT ALL (the owner, 2026-10-06), and that same switch is how
+ * it is known to be one. Until then a hosted deployment refused only the addresses on its own
+ * network and took any other: a person could point their Bot at an AG-UI agent they host. And
+ * everything that agent then said was filed as this deployment's fact — each turn's
+ * `laf.model.usage` (provider, model, tokens, dollars — the `model.usage` rows a trial's daily
+ * budget is judged on) and a run's ending code. Three independent reads of the control plane's
+ * fleet report ended at this door. So where the opt-in does not mark a developer's stack, a
+ * supplied endpoint is refused, and so is a key for one — by a code of its own, because "that
+ * address cannot be used" is not what is true: no address is. An absent or empty endpoint is what
+ * every screen a person uses sends, and is read as it always was.
  */
 export function parseAgentInput(
   input: unknown,
@@ -137,6 +149,10 @@ export function parseAgentInput(
   // goes through the same target check as navigation before it is allowed anywhere near the database.
   let endpoint: string | undefined;
   if (input.endpoint !== undefined && input.endpoint !== "") {
+    // Before the address is looked at: on a hosted deployment the answer is the same for every one.
+    if (!allowPrivateHosts) {
+      return { ok: false, code: "laf:agent_endpoint_not_taken" };
+    }
     const verdict = checkAgentEndpoint(input.endpoint, { allowPrivateHosts });
     if (!verdict.allowed) {
       return { ok: false, code: "laf:agent_endpoint_refused" };
@@ -203,6 +219,11 @@ export function parseAgentInput(
     const value =
       typeof supplied.value === "string" ? supplied.value.trim() : "";
     if (value) {
+      // A key is a key for an endpoint, and a hosted deployment has none to send it to: the same
+      // refusal, before the key is judged as one. An empty box is not a key, here or there.
+      if (!allowPrivateHosts) {
+        return { ok: false, code: "laf:agent_endpoint_not_taken" };
+      }
       const header =
         typeof supplied.header === "string" && supplied.header.trim()
           ? supplied.header.trim()
@@ -392,7 +413,10 @@ function storeRefusal(error: unknown): SelfEditRefusal | null {
 export function createAgentRoutes(
   store: AgentProfileStore,
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
-  /** Whether this deployment may talk to its own network. True on a laptop, false when hosted. */
+  /**
+   * Whether this deployment may talk to its own network. True on a laptop, false when hosted — and
+   * so also whether a Bot may be pointed at an agent of somebody's own at all (`parseAgentInput`).
+   */
   allowPrivateHosts = false,
   /**
    * Which of a person's Bots are mid-run. Absent answers "none", which is the right degraded
@@ -428,6 +452,9 @@ export function createAgentRoutes(
   onCreated?: (agentId: string, ownerUserId: string) => Promise<void>,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
+  /** A Bot as this deployment's app is told of it: with its address only where one may be set. */
+  const told = (actor: AgentActor, agent: AgentProfile) =>
+    agentDto(actor, agent, allowPrivateHosts);
 
   /*
    * `POST /:agentId/declined` used to be here, and is gone with `report_refusal`.
@@ -447,7 +474,7 @@ export function createAgentRoutes(
       const hidden = context.req.query("hidden") === "true";
       const agents = await store.list(context.var.actor, hidden);
       return context.json({
-        agents: agents.map((agent) => agentDto(context.var.actor, agent)),
+        agents: agents.map((agent) => told(context.var.actor, agent)),
       });
     } catch (error) {
       return mapStoreError(context, error);
@@ -484,7 +511,7 @@ export function createAgentRoutes(
           404,
         );
       }
-      return context.json({ agent: agentDto(context.var.actor, agent) });
+      return context.json({ agent: told(context.var.actor, agent) });
     } catch (error) {
       return mapStoreError(context, error);
     }
@@ -497,8 +524,21 @@ export function createAgentRoutes(
    * commit to it, and they need to be able to try again without creating dead
    * Bots on the way. It runs the same target check as saving, so it cannot probe addresses that
    * registration would refuse.
+   *
+   * AND IT IS REFUSED WHERE SAVING ONE IS. This makes the server dial an address a person typed,
+   * which on a hosted deployment is the thing that is not done — so it answers the form's own
+   * refusal before it reads the request, and nothing is dialled.
    */
   routes.post("/test-connection", requireUser, async (context) => {
+    if (!allowPrivateHosts) {
+      return context.json(
+        {
+          error: "laf:agent_endpoint_not_taken",
+          code: "laf:agent_endpoint_not_taken",
+        },
+        400,
+      );
+    }
     const body = (await context.req.json().catch(() => null)) as {
       endpoint?: unknown;
       headers?: unknown;
@@ -558,7 +598,7 @@ export function createAgentRoutes(
           });
         });
       }
-      return context.json({ agent: agentDto(context.var.actor, agent) }, 201);
+      return context.json({ agent: told(context.var.actor, agent) }, 201);
     } catch (error) {
       return mapStoreError(context, error);
     }
@@ -579,7 +619,7 @@ export function createAgentRoutes(
         context.req.param("agentId"),
         parsed.value,
       );
-      return context.json({ agent: agentDto(context.var.actor, agent) });
+      return context.json({ agent: told(context.var.actor, agent) });
     } catch (error) {
       return mapStoreError(context, error);
     }
@@ -618,7 +658,7 @@ export function createAgentRoutes(
         edited.status,
       );
     }
-    return context.json({ agent: agentDto(context.var.actor, edited.agent) });
+    return context.json({ agent: told(context.var.actor, edited.agent) });
   });
 
   /**
@@ -1054,7 +1094,12 @@ function parsePreferencePatch(
   return { ok: true, value };
 }
 
-function agentDto(actor: AgentActor, agent: AgentProfile) {
+function agentDto(
+  actor: AgentActor,
+  agent: AgentProfile,
+  /** Whether this deployment takes an endpoint for a Bot: a developer's stack. */
+  takesEndpoints: boolean,
+) {
   return {
     id: agent.id,
     name: agent.name,
@@ -1065,10 +1110,19 @@ function agentDto(actor: AgentActor, agent: AgentProfile) {
     hidden: agent.hidden,
     notify: agent.notify,
     systemOwned: agent.systemOwned,
-    // Published so the edit form can show it. Safe to expose: it is an address the person supplied,
-    // and any credential for it lives in the vault, never in this row.
-    endpoint: agent.endpoint,
-    hasAuth: agent.hasAuth,
+    /*
+     * WHERE THE ROW SAYS THIS BOT IS ANSWERED, for the one screen that can change it — the
+     * endpoints page of a developer's stack, which fills its field from this so that a save does
+     * not clear it. It said "an address the person supplied", and for nearly every Bot it is not:
+     * it is this deployment's own agent, written by `create` (`http://agent-bot:4200/…` on a VM).
+     * Any credential for it lives in the vault, never in this row, and only "there is one" is said.
+     *
+     * NEITHER IS SAID ON A HOSTED DEPLOYMENT. There is no screen to show them on and nothing to
+     * change: every Bot is dialled at the deployment's own agent whatever its row holds
+     * (`runtime-agents.ts`), so an address here would be the internal one or one that is not used.
+     */
+    endpoint: takesEndpoints ? agent.endpoint : null,
+    hasAuth: takesEndpoints ? agent.hasAuth : false,
     canManage: canManageAgent(actor, agent),
     // Ownership, kept separate from permission. `canManage` is also true for an administrator on
     // another user's coworker, so a roster that split "mine" on it would file other people's work
