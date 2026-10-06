@@ -26,8 +26,9 @@ import {
  * `/admin/bots` points a Bot at an AG-UI agent somebody hosts themselves. A hosted deployment takes
  * no such endpoint (the owner, 2026-10-06): `PATCH /api/agents/:id` refuses one there, and so does
  * the connection test. On a one-VM-per-person deployment the person IS the administrator, so the
- * page was offered to exactly the people it would refuse — a field, a 테스트 button and a 저장 button
- * that could only ever answer no. "A control that saves and does nothing is worse than no control":
+ * page was offered to exactly the people it would refuse — a field, a 연결 확인 button and a 저장
+ * button that could only ever answer no. "A control that saves and does nothing is worse than no
+ * control":
  * the server says whether it takes an endpoint (`deployment.botEndpoints` on `/api/me`), and where
  * it does not, nothing on the admin screens leads to the page and the page itself says why in one
  * sentence.
