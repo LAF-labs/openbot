@@ -10,7 +10,8 @@ import { testEnvironment } from "./support/environment";
  * `모두 멈추기`: everything a person has going on, on their own Bots, stopped by one press.
  *
  * What is pinned here is the door, not the stopping — each run path's own stop is tested where it
- * lives (`chat-stop`, `routine-stop`). The door has four promises:
+ * lives (`turn-engine` and, pressed through this door's own list, `stop-all-turn`; `routine-stop`).
+ * `chat-stop` was the window's runner's, and went with it (2026-10-06). The door has four promises:
  * it reaches only the person's own work on Bots the ownership rule lets them drive; it answers what
  * it stopped, by kind; it says out loud what it found and could not stop, rather than counting it as
  * stopped; and the press is on the trail whether or not anything was running.

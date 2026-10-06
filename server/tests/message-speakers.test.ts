@@ -26,10 +26,15 @@ describe("who said it, kept across saves", () => {
   test("a message carrying its own record keeps it, and only a new turn can", () => {
     /*
      * The message's own field beats the stored map — which sounds like a way to rename an older
-     * reply and is not one. The only messages that reach a save carrying this field are the ones
-     * `assistantMessagesFrom` just built for the run that is ending. Everything else arrives from
-     * the client, and both doors strip it: AG-UI's message schemas are zod `strip`, and
-     * `/threads/:id/messages` rebuilds each message from a fixed whitelist on the way out.
+     * reply and is not one. The messages that reach a save carrying this field are the replies a
+     * turn has just stamped as its own (`turnMessages` in `turns/engine.ts`) and a routine's
+     * delivery (`routines/deliver.ts`); what a window hands a turn is a person's words or a skill's
+     * instruction, never a reply (`acceptable`). The rule is older than the turn. It was written
+     * for the window's runner (gone 2026-10-06), where the only messages carrying the field were
+     * the ones `assistantMessagesFrom` had just built for the run that was ending, and everything
+     * else arrived from the client through two doors that stripped it: AG-UI's message schemas are
+     * zod `strip`, and `/threads/:id/messages` rebuilt each message from a fixed whitelist on the
+     * way out.
      */
     const merged = attribute(
       [said("m1", "knowledge")],

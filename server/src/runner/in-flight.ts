@@ -2,8 +2,9 @@
  * What this process is doing for somebody right now, and the one way to stop each piece of it.
  *
  * WHY A SECOND RECORD BESIDE THE LEDGER. `laf_thread_runs` says a run is going on; it cannot stop
- * one. What can is in memory, held by whatever started the run — the vendored runner's copy of a
- * chat's agent, the controller a routine was handed — and none of it could be reached
+ * one. What can is in memory, held by whatever started the run — the controller a chat's turn is
+ * made with (the vendored runner's copy of a chat's agent, until the run door closed on
+ * 2026-10-06), the controller a routine was handed — and none of it could be reached
  * from anywhere but the code that made it. So every run path says here what it has started, with
  * the function that stops it, for as long as it is going on. `모두 멈추기` reads this and nothing
  * else (`stop-all.ts`).

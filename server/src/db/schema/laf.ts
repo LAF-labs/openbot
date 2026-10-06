@@ -260,8 +260,9 @@ export const lafThreadRuns = pgTable(
      * before it is written (`runner/run-ledger.ts`), so none of them can hold a word of the
      * conversation. `label` above predates them and is 오늘's.
      *
-     * A person's turn can be several rows: a step handed to a window ends a run, and the step's
-     * result starts the next. `turnId` is the run that opened the turn — its own id for the
+     * A person's turn could be several rows, and the rows from then still are: a step handed to
+     * a window ended a run, and the step's result started the next (until the run door closed,
+     * 2026-10-06). `turnId` is the run that opened the turn — its own id for the
      * opener, a routine and a wake — so the report reads turns, not the runs a browser split
      * them into. Null on rows from before this was measured, which the report leaves out.
      */

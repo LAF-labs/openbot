@@ -6,11 +6,15 @@
  * instead, for as long as it is mounted. Module state because there is one of these per window, and
  * the conversation that holds a turn is whichever one is on screen.
  *
- * WHY THE SERVER'S STOP IS NOT ENOUGH ON ITS OWN. The server stops a run on the wire and refuses to
- * carry on a step a browser was doing (`server/src/runner/laf-runner.ts`), but it lets that step
- * finish: it cannot reach into a browser. The window that holds the turn can — its Stop aborts the
- * step itself, a click still on its way included — and it also covers the second and a half before
- * a turn's first run exists, which nothing on the server can see yet.
+ * WHY THE SERVER'S STOP WAS NOT ENOUGH ON ITS OWN, while a window drove the turn (until
+ * 2026-10-05). The server stopped a run on the wire and refused to carry on a step a browser was
+ * doing (its runner, gone with the run door on 2026-10-06), but it let that step finish: it could
+ * not reach into a browser. The window that held the turn could — its Stop aborted the step itself,
+ * a click still on its way included — and it also covered the second and a half before a turn's
+ * first run existed, which nothing on the server could see yet. A turn is the server's now, and a
+ * conversation's Stop here is the server's own door for it (`stopTurn`); what a window still holds
+ * it for is the sidebar's count and the order of the press — this window's conversation first,
+ * then the server (`lib/work/stop-all.ts`, `pressStopAll`).
  */
 export type HeldChat = {
   threadId: string;

@@ -33,11 +33,11 @@ import { redactSecretTyping } from "./secret-redaction";
  * A message as this store holds it: AG-UI's shape plus the two things AG-UI cannot carry.
  *
  * `lafAt` is when the message was first seen and `lafAgentId` is which Bot said it. Neither can
- * ride AG-UI's own message type — every message schema is zod `strip`, so a key the client attaches
- * is deleted before a run reaches the server, and `/threads/:id/messages` rebuilds each message
- * from a fixed whitelist on the way back out. They survive because this column is jsonb and the
- * read path casts rather than validates. Stamping on the server is also the only way the two sides
- * of a conversation share one clock.
+ * ride AG-UI's own message type — every message schema is zod `strip`, so a key the client attached
+ * was deleted before a run reached the server, and `/threads/:id/messages` rebuilt each message
+ * from a fixed whitelist on the way back out (the runtime's two doors, closed 2026-10-06). They
+ * survive because this column is jsonb and the read path casts rather than validates. Stamping on
+ * the server is also the only way the two sides of a conversation share one clock.
  *
  * `lafRedacted` says this row is not what arrived: a `computer_type` argument was taken out of it
  * because the boundary refused the typing as a secret. See `secret-redaction.ts`.
@@ -285,14 +285,15 @@ async function unstoredOf(
 }
 
 /**
- * Write messages into a thread. The one writer — runner, room and routine delivery alike.
+ * Write messages into a thread. The one writer — a turn and a routine's delivery alike, as the
+ * window's runner and a room were before them.
  *
  * A message the thread already holds is NOT appended again: every run hands the whole history back
  * as its input, so the common case is that most of what arrives is already here. It is updated in
- * place when the incoming copy differs, which is the case the runner depends on — an assistant turn
- * is stored from its text events without the tool calls it also made, and those arrive with the
- * next run's input carrying the same message id. The row keeps its `seq` and its `at`, so a richer
- * copy never reorders a conversation or restamps it.
+ * place when the incoming copy differs, which is the case the window's runner depended on (gone
+ * 2026-10-06) — an assistant turn was stored from its text events without the tool calls it also
+ * made, and those arrived with the next run's input carrying the same message id. The row keeps
+ * its `seq` and its `at`, so a richer copy never reorders a conversation or restamps it.
  *
  * One thing is NOT written as it arrived: a `computer_type` argument the boundary refused as a
  * secret. `secret-redaction.ts` decides that, and it is applied here rather than in a caller
