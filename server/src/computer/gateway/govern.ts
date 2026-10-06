@@ -117,8 +117,16 @@ export function createGovern(options: {
      * The action itself, handed the role and name the policy judged the ref as — from this server's
      * snapshot, never from the request — so the computer can refuse if the control is called
      * something else by the time it acts. Undefined where no ref resolved.
+     *
+     * AND THE FILE'S PATH AS IT WAS JUDGED, for an act that names a file: the string every decision
+     * and the row below were about, for the act to SEND. One reading, made here; an act that sent
+     * its own `input.path` instead would be a second reader of the same string, which is the fault
+     * this parameter exists to end (`addresses.ts`, `workspacePathOf`).
      */
-    run: (judged: JudgedElement | undefined) => Promise<T>,
+    run: (
+      judged: JudgedElement | undefined,
+      judgedPath: string | undefined,
+    ) => Promise<T>,
   ): Promise<T> {
     /*
      * A CALLER THAT HAS ALREADY STOPPED IS NOT GOVERNED AT ALL.
@@ -133,9 +141,9 @@ export function createGovern(options: {
     /*
      * THE FILE, AS THE COMPUTER WILL READ ITS PATH — not as it was written. Read here, once, for
      * every caller there is or will be: a rule, a question, an allowance, the count and the row
-     * below are all about this string, and it is the file the act will touch whichever spelling of
-     * it the act itself sends (`addresses.ts`, `workspacePathOf`). A string that is no path at all
-     * stays as written; the computer refuses it.
+     * below are all about this string, and it is handed to the act to send (`run`, below). A
+     * string with no one spelling stays exactly as written, here and on the wire
+     * (`addresses.ts`, `workspacePathOf`).
      */
     const filePath =
       subject.filePath === undefined
@@ -505,6 +513,7 @@ export function createGovern(options: {
       if (subject.signal?.aborted) throw stopped();
       result = await run(
         element ? { role: element.role, name: element.name } : undefined,
+        filePath,
       );
     } catch (error) {
       /**

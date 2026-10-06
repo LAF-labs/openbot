@@ -516,8 +516,8 @@ export const ko: Record<string, string> = {
   "Loading runs…": "실행 기록 불러오는 중…",
   "Logging out…": "로그아웃 중…",
   "Mark as unread": "읽지 않음으로 표시",
-  "Matches on the path the Bot asked for, so a folder it has not used before is a question rather than a refusal.":
-    "봇이 요청한 경로를 기준으로 판단하므로, 처음 쓰는 폴더는 거부가 아니라 질문이 돼요.",
+  "Matches on the file's path as the Bot's computer reads it, so a folder it has not used before is a question rather than a refusal.":
+    "봇의 컴퓨터가 읽는 파일 경로를 기준으로 판단하므로, 처음 쓰는 폴더는 거부가 아니라 질문이 돼요.",
   "May no longer read this": "더 이상 읽을 수 없음",
   "May read this": "읽을 수 있음",
   Messages: "메시지",

@@ -1684,22 +1684,26 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * already and says why: the environment a script is given, not the key's deleting.
  *
  * RAISED 2026-10-07 FOR THE PATH A RULE JUDGES, by exactly what was added: `server` from 3677 to
- * 3689. Twelve in the new `gateway-file-paths.test.ts`: a path's one spelling as a table, and what
- * has none; that spelling held against the REAL workspace, which is the reader it has to agree
- * with — every spelling the computer reads as one file, and every string it refuses as a path; a
- * file denied by its path, its name or its extension not read, written or handed to a site under
- * eleven spellings of it, a dotfile not read as `.env/`, a folder not listed, the boundaries
- * screen's own preset asked outside `notes/` and not inside; the string the computer is handed and
- * the row both in the one spelling, a listing with no path as it was, and what is no path at all
- * going on as written; and a routine's own door, which trims nothing. Six of them fail on the
- * gateway as it was.
+ * 3694. Seventeen in the new `gateway-file-paths.test.ts`, every one in front of the REAL
+ * workspace through the computer's own route handlers — the first twelve asserted on what a
+ * computer that echoes was sent, and a second independent read deleted the line that reads the
+ * path and watched all twelve pass. A path's one spelling as a table, what has none, and the mark
+ * a name with white space at an edge keeps; a spelling being its own spelling; the computer giving
+ * the same answer for a string as written and for its spelling, over some thirteen hundred
+ * spellings; no spelling reading a denied file or handing it to a site, and none writing over one,
+ * for a rule on the path (two ways), the name and the extension; a dotfile not read as `.env/`; a
+ * denied folder not listed; the whole folder not listed by a blank; the boundaries screen's preset
+ * never walked past (by what landed on the disk); an allowance for one file not spent on a write
+ * beside it; the row naming the string that was sent, for every spelling; what is no path going
+ * on as written with its two rows; a download recorded under the file's one name; and a routine's
+ * own door. Twelve mutations of the change each fail at least one.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3689, roots: ["server"] },
+  { name: "server", floor: 3694, roots: ["server"] },
   { name: "app", floor: 2158, roots: ["app"] },
   { name: "agent-computer", floor: 529, roots: ["agent-computer"] },
   { name: "root", floor: 807, roots: ["tests", "agent-bot"] },
