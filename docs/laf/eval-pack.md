@@ -161,7 +161,8 @@ EVAL_RUNS=3 OPENAI_BASE_URL=… OPENAI_API_KEY=… BOT_MODEL=candidate/name \
 마지막 네 요청에서 순수한 덧붙임에도 0을 읽기도 했다(공급자 정책은 설계의 R9, 나중). 두 원인
 모두 운영 화면에서 보인다: `model.usage` 행마다 공급자·비용·에포크·유휴 시간이 적히고, 따뜻한 캐시에서 확립된
 에포크의 요청이 절반도 못 읽으면 `cache_hit_low` 경고가 로그에 남고 행에 `cacheLow`가 붙는다.
-플릿 읽기(`GET /api/admin/metrics/insights`)의 `people.cache`가 그 합계와 공급자별 몫을 준다.
+플릿 읽기(`GET /api/admin/metrics/insights`)의 `people.cache`가 그 합계와 공급자별 몫을 주었다 — 그 문은
+2026-10-06에 없앴고(어느 VM에도 열린 적이 없었다), 지금은 `model.usage` 행을 직접 세어야 한다.
 
 보고서는 `evals/reports/cache-<model>-<시각>.json`, 로컬 전용. 게이트에 들어가지 않는다 —
 실모델 호출이다.
@@ -1868,11 +1869,12 @@ in the first-word figures with the person's minutes in it. And a turn asked abou
 its first word, but behind an earlier step, is left out with the ones asked before it: that loses
 a turn from the figure and puts no wrong one in.
 
-The fleet's read has the same as counts, in its `turns` section (`GET
-/api/admin/metrics/insights?days=1`): `firstWord`, cells of `[tenths of a second, turns]` that add
-across VMs, with the same turns left out; `chatTurns`, the turns that could have had one; and
-`firstMoves`, `kind → [asked, moved]` for every kind, zeros included. `bun run eval:from-failures
---days 1` prints them as two lines. Rows from before this release have none of it, and read as not
+The fleet's read has the same as counts, in its `turns` section (`turnsStatement`,
+`server/src/insights/turns.ts` — the VM's own door for it, `GET /api/admin/metrics/insights`, went
+on 2026-10-06, and laf-control's copy of the statement is from before these three): `firstWord`,
+cells of `[tenths of a second, turns]` that add across VMs, with the same turns left out;
+`chatTurns`, the turns that could have had one; and `firstMoves`, `kind → [asked, moved]` for every
+kind, zeros included. `bun run eval:from-failures --days 1` prints them as two lines. Rows from before this release have none of it, and read as not
 measured rather than as no wait.
 
 **The switch.** `FIRST_MOVE` unset is every kind; `off` is none; a comma list (`weather,calendar`)

@@ -158,7 +158,7 @@ export const routineScheduleKind = pgEnum("laf_routine_schedule_kind", [
  * `reminders` maps a person message's id to the reminder it carries.
  *
  * Content, like a message is: the frozen text holds the Bot's memories. Nothing outside the
- * conversation reads it; the fleet reads counts (`insights/read.ts`) and never this table.
+ * conversation reads it; the fleet reads counts (laf-control's `insights`) and never this table.
  */
 export const lafConversationContexts = pgTable("laf_conversation_contexts", {
   threadId: text("thread_id").primaryKey(),
@@ -969,7 +969,8 @@ export const answerRating = pgEnum("laf_answer_rating", ["up", "down"]);
  *
  * `reason` IS TEXT, NOT AN ENUM, for the reason `laf_notifications.kind` gives: the list is product
  * copy that will grow, and adding a reason should be a line of TypeScript rather than a migration.
- * The route takes only the keys in `ANSWER_RATING_REASONS`, and the fleet's count reads only those.
+ * The route takes only the keys in `ANSWER_RATING_REASONS`, and the fleet's count read only those
+ * (`insights/read.ts`, which went with the VM's insights door on 2026-10-06).
  *
  * CASCADES WITH ALL THREE PARENTS. A rating is the person's, about an answer in a conversation,
  * from a Bot; with any of them gone it is about nothing anybody can look at. The person's departure
@@ -1011,7 +1012,8 @@ export const lafAnswerRatings = pgTable(
       table.channelId,
       table.messageId,
     ),
-    // The fleet's count, which is a range over when each rating was last said.
+    // The fleet's count, which is a range over when each rating was last said. (Its one statement,
+    // `insights/read.ts`, went with the VM's insights door on 2026-10-06.)
     index("laf_answer_ratings_updated_at_idx").on(table.updatedAt),
   ],
 );

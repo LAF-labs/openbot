@@ -116,8 +116,9 @@ export const ADMIN_REQUIRED = "laf:admin_required";
  * will want it when a colleague's Bot is sitting on a question at six in the evening:
  *
  *   - READ what happened — the audit trail (`/api/admin/audit-events`) records the question being
- *     raised and every action around it, `/api/admin/metrics/approvals` counts them, and insights
- *     aggregates. None of that names a Bot's title or its transcript; it names ids.
+ *     raised and every action around it, `/api/admin/metrics/approvals` counts them, and the
+ *     fleet's `laf insights` aggregates. None of that names a Bot's title or its transcript; it
+ *     names ids.
  *   - Change the DEPLOYMENT's rules: `GET`/`PUT /api/computers/policy` is what the gateway
  *     enforces everywhere, and `GET /api/approvals/standing` lists every place a boundary has been
  *     stood down, on every Bot, with `DELETE /api/approvals/standing/:id` to put one back. Those

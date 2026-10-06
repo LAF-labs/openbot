@@ -30,7 +30,7 @@ export const RUN_ENDINGS = [
 ] as const;
 export type RunEnding = (typeof RUN_ENDINGS)[number];
 
-/** The one shape a code takes; the fleet's reader matches the same (`insights/read.ts`). */
+/** The one shape a code takes; the fleet's reader matches the same (`insights/turns.ts`). */
 export const ENDING_CODE_SOURCE = "^laf:[a-z0-9_]{1,60}$";
 const CODE_IN_TEXT = /laf:[a-z0-9_]{1,60}/;
 

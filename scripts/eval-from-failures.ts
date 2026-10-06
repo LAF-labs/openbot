@@ -13,8 +13,9 @@
  *
  * Two sources, the same cells:
  *   - `DATABASE_URL` — this deployment's own database, read with the fleet's statement;
- *   - `--from <file>` — an insights answer saved from a VM (`GET /api/admin/metrics/insights`, or
- *     laf-control's copy of the section), so the fleet's failures become stubs without a shell.
+ *   - `--from <file>` — an insights answer saved from a VM (laf-control's copy of the section; the
+ *     VM's own door for it, `GET /api/admin/metrics/insights`, went on 2026-10-06), so the fleet's
+ *     failures become stubs without a shell.
  *
  * `--days N` sets the window (default 7); the zone is `BOT_TIME_ZONE`, as the server reads it.
  */

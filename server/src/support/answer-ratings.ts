@@ -22,9 +22,10 @@
  *
  * WHO IS TOLD. Only 아쉬워요 that carries a note — somebody took the trouble to say what was wrong,
  * and that is worth reading the day it is written. 좋아요, and 아쉬워요 with nothing written, are
- * counts: kept here and counted by the fleet (`insights/read.ts`), and paging the operator with
- * each would teach them to mute the channel the 문의·의견 messages arrive in. A note sent again
- * unchanged — the popover reopened and 보내기 pressed on what was already there — is not told twice.
+ * counts: kept here for the fleet to count (the statement that did, `insights/read.ts`, went with
+ * the VM's insights door on 2026-10-06), and paging the operator with each would teach them to
+ * mute the channel the 문의·의견 messages arrive in. A note sent again unchanged — the popover
+ * reopened and 보내기 pressed on what was already there — is not told twice.
  *
  * KOREAN, FROM A SERVER THAT OTHERWISE SENDS NO PROSE, for the reason `feedback.ts` gives: the
  * alert is read by the fleet's operator, and there is no surface on the other end of a webhook to
