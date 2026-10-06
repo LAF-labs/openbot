@@ -92,8 +92,8 @@ import {
 /**
  * Why there is no run to report.
  *
- * - `unavailable` — nothing answers at the socket, or what answers cannot prove it is the
- *   service: the service is not there to be sent anything.
+ * - `unavailable` — nothing answers at the socket for the few seconds a daemon takes to be back,
+ *   or what answers cannot prove it is the service: the service is not there to be sent anything.
  * - `busy` — it is running something, and enough is already waiting behind that; or it is still
  *   clearing up after a run and did not finish in the time it is given.
  * - `invalid` — the request is not one the service takes; `field` says which part.
@@ -151,6 +151,15 @@ const WAITING = 4;
  * still busy with that.
  */
 const MARGIN_MS = 10_000;
+
+/**
+ * How long nothing at the socket's path is waited for before a run is told the service is not
+ * there. A daemon between two lives is back in a quarter of a second to a second, and the engine
+ * doubles its wait each time one ends again within ten (measured on the rehearsal's runner: 252,
+ * 502, 753, 1,754, 3,508 ms). Until 2026-10-07 nothing there was `unavailable` at once — which is
+ * what the run behind an abandoned one was told, and any run that met a daemon retiring.
+ */
+const ABSENT_MS = 4_000;
 
 /** How long the daemon's own name may be: it is twenty-four characters of hex. */
 const BOOT_LENGTH = 64;
@@ -525,6 +534,8 @@ type WorkbenchOptions = {
   limits?: Limits;
   /** See `MARGIN_MS`. A test shortens it. */
   marginMs?: number;
+  /** See `ABSENT_MS`. A test shortens it. */
+  absentMs?: number;
 };
 
 /** The one client there is for each socket's path in this process, and the key it was made with. */
@@ -558,6 +569,7 @@ function clientFor(options: WorkbenchOptions): Workbench {
   const { socketPath, key, log } = options;
   const limits = options.limits ?? WORKBENCH_LIMITS;
   const marginMs = options.marginMs ?? MARGIN_MS;
+  const absentMs = options.absentMs ?? ABSENT_MS;
 
   /** Ask the path who is there. Believed only with a proof, like everything else it answers. */
   const knock = async (signal?: AbortSignal): Promise<Knocked> => {
@@ -601,29 +613,37 @@ function clientFor(options: WorkbenchOptions): Workbench {
   /**
    * Wait for the daemon, proven, to say it is running nothing — or say why a run cannot be sent.
    *
-   * Nothing there is `unavailable` at once: a deployment without the service must not make every
-   * caller wait. Something there that is busy, or that cannot prove itself, is asked again for as
-   * long as the daemon is given to clear up after a run: busy is what it says while it ends what a
-   * run that was given up on had started, and unproven is what such a thing looks like from here
-   * until it has been ended.
+   * Something there that is busy, or that cannot prove itself, is asked again for as long as the
+   * daemon is given to clear up after a run (`marginMs`): busy is what it says while it ends what
+   * a run that was given up on had started, and unproven is what such a thing looks like from here
+   * until it has been ended. NOTHING there is asked again for a few seconds (`absentMs`) from when
+   * it was first found so: that is a daemon between two lives — one that retired, or stopped
+   * because a script had been at its socket — and the engine has it back within that.
+   *
+   * NEVER WITHOUT AN END. Each wait has its own clock and neither is ever started again, so
+   * whatever is at the path, and however it changes, a caller is answered within the two together.
    */
   const idle = async (
     signal: AbortSignal | undefined,
   ): Promise<WorkbenchFailure | null> => {
     const patience = performance.now() + marginMs;
+    let absentSince: number | null = null;
     for (let wait = 20; ; wait = Math.min(wait * 2, 250)) {
       if (signal?.aborted) return "stopped";
       const there = await knock(signal);
       if (signal?.aborted) return "stopped";
       if (there.kind === "daemon" && !there.busy) return null;
+      const now = performance.now();
       if (there.kind === "nobody") {
-        log.warn("workbench_unreachable", {
-          failure: "unavailable",
-          reason: "nobody",
-        });
-        return "unavailable";
-      }
-      if (performance.now() >= patience) {
+        absentSince ??= now;
+        if (now - absentSince >= absentMs) {
+          log.warn("workbench_unreachable", {
+            failure: "unavailable",
+            reason: "nobody",
+          });
+          return "unavailable";
+        }
+      } else if (now >= patience) {
         const failure = there.kind === "daemon" ? "busy" : "unavailable";
         log.warn("workbench_unreachable", { failure, reason: there.kind });
         return failure;
