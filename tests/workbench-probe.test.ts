@@ -13,7 +13,10 @@ import { parse as parseYaml } from "yaml";
 import {
   listeningLineFrom,
   megabytesHeld,
+  PROBE_CHECKS,
   PROBE_COMPOSE_FILE,
+  PROBE_SCRIPTS,
+  signalsIn,
   PROBE_RESULT,
   probeOverride,
   probeResultFrom,
@@ -136,4 +139,37 @@ test("the rehearsal tries the workbench once, after everything it holds the upgr
   expect(driver.indexOf("rehearseWorkbench(")).toBeGreaterThan(
     driver.indexOf('"a chat turn streams through the front door"'),
   );
+});
+
+test("every script the probe sends at least parses: a typo there costs a run on Linux to find", () => {
+  const transpiler = new Bun.Transpiler({ loader: "ts" });
+  expect(Object.keys(PROBE_SCRIPTS).length).toBeGreaterThanOrEqual(10);
+  for (const [name, script] of Object.entries(PROBE_SCRIPTS)) {
+    expect(() => transpiler.transformSync(script), name).not.toThrow();
+    // The size a script may be: it rides as the argument of a tool call.
+    expect(new TextEncoder().encode(script).length, name).toBeLessThan(
+      16 * 1024,
+    );
+  }
+  // None of them is ever run here: several would end, fill or signal whatever machine they ran on.
+});
+
+test("a signal mask reads as the names of the signals in it", () => {
+  // Bit n-1 is signal n: 0x4002 is SIGINT (2) and SIGTERM (15).
+  expect(signalsIn("0000000000004002")).toEqual(["SIGINT", "SIGTERM"]);
+  expect(signalsIn("0000000000000000")).toEqual([]);
+  expect(signalsIn("0000000000010000")).toEqual(["SIGCHLD"]);
+  expect(signalsIn(null)).toEqual([]);
+  expect(signalsIn("not a mask")).toEqual([]);
+});
+
+test("the probe's floor is the number of things it tries, so one that stopped early is not a pass", () => {
+  const source = readFileSync(
+    join(import.meta.dir, "..", "scripts/workbench-probe.ts"),
+    "utf8",
+  );
+  expect(PROBE_CHECKS).toBe(26);
+  expect(source).toContain("(results?.length ?? 0) === PROBE_CHECKS");
+  // A build that should have the service and does not is a failed check, not a finding.
+  expect(source).toContain("if (tools.expected) {");
 });

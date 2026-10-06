@@ -2183,6 +2183,7 @@ async function main(): Promise<number> {
       deployment,
       environment: composeEnv,
       serverImage: imageRef("server", toTag),
+      expected: local || options.to === "edge",
     }).catch((error) =>
       report.check(
         "the workbench's rehearsal ran to its end",

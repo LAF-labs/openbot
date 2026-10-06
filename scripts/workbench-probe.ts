@@ -85,23 +85,38 @@ for (const [name, url] of [
 }
 let daemonMemory;
 try { openSync("/proc/1/mem", "r"); daemonMemory = "opened"; } catch (error) { daemonMemory = error.code; }
+const one = readFileSync("/proc/1/status", "utf8");
+const ofOne = (name) => one.match(new RegExp("^" + name + ":\s*(.+)$", "m"))?.[1]?.trim() ?? null;
 console.log(JSON.stringify({
   ...who,
-  root: mount("/"), work: mount("/work"), socket: mount("/run/laf-workbench"),
+  root: mount("/"), work: mount("/work"), socket: mount("/run/laf-workbench"), shm: mount("/dev/shm"),
   writable, elsewhere, reached, daemonMemory,
+  one: { caught: ofOne("SigCgt"), ignored: ofOne("SigIgn"), blocked: ofOne("SigBlk") },
 }));
 `;
 
 /** Every process a script can see, with its state. Shared by the two scripts below. */
 const PROCESSES = String.raw`
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+const stateOf = (path) => {
+  const stat = readFileSync(path, "utf8");
+  return stat.slice(stat.lastIndexOf(")") + 2, stat.lastIndexOf(")") + 3);
+};
+// The threads of a process that can still run: its leader may have exited while they go on.
+const liveThreads = (pid) => {
+  try {
+    return readdirSync("/proc/" + pid + "/task").filter((tid) => {
+      try { return !["Z", "X"].includes(stateOf("/proc/" + pid + "/task/" + tid + "/stat")); } catch { return false; }
+    }).length;
+  } catch { return 0; }
+};
 const processes = () => readdirSync("/proc").filter((name) => /^\d+$/.test(name)).map((pid) => {
   try {
     const stat = readFileSync("/proc/" + pid + "/stat", "utf8");
     const state = stat.slice(stat.lastIndexOf(")") + 2, stat.lastIndexOf(")") + 3);
     const command = readFileSync("/proc/" + pid + "/cmdline", "utf8").split("\0").filter(Boolean).join(" ");
-    return { pid: Number(pid), state, command };
-  } catch { return { pid: Number(pid), state: "?", command: "" }; }
+    return { pid: Number(pid), state, command, live: liveThreads(pid) };
+  } catch { return { pid: Number(pid), state: "?", command: "", live: 0 }; }
 });
 const NOTES = ["/work/note", "/dev/shm/note", "/run/laf-workbench/note"];
 `;
@@ -144,7 +159,153 @@ type Seen = {
   pid: number;
   state: string;
   command: string;
+  /** Threads of it that can still run. A leader that has exited reads `Z` while its threads go on. */
+  live: number;
 };
+
+/** What a run finds of the runs before it (`LOOK`). */
+type Looked = {
+  notes: string[];
+  work: string[];
+  shm: string[];
+  socket: string[];
+  self: number;
+  processes: Seen[];
+};
+
+/** Signal numbers as Linux has them on both architectures the fleet could be. */
+const SIGNALS = [
+  "HUP",
+  "INT",
+  "QUIT",
+  "ILL",
+  "TRAP",
+  "ABRT",
+  "BUS",
+  "FPE",
+  "KILL",
+  "USR1",
+  "SEGV",
+  "USR2",
+  "PIPE",
+  "ALRM",
+  "TERM",
+  "STKFLT",
+  "CHLD",
+  "CONT",
+  "STOP",
+  "TSTP",
+  "TTIN",
+  "TTOU",
+  "URG",
+  "XCPU",
+  "XFSZ",
+  "VTALRM",
+  "PROF",
+  "WINCH",
+  "IO",
+  "PWR",
+  "SYS",
+];
+
+/** The names in a `/proc/<pid>/status` signal mask: bit n-1 is signal n. */
+export function signalsIn(mask: string | null): string[] {
+  if (!mask || !/^[0-9a-f]+$/i.test(mask)) return [];
+  const bits = BigInt(`0x${mask}`);
+  return SIGNALS.filter((_, index) => (bits >> BigInt(index)) & 1n).map(
+    (name) => `SIG${name}`,
+  );
+}
+
+/** Run a program from each place a script can write. Not executable is the mount's to say. */
+const EXEC = `
+import { chmodSync, copyFileSync } from "node:fs";
+const tried = {};
+for (const place of ["/work", "/run/laf-workbench", "/dev/shm"]) {
+  const path = place + "/t-" + process.pid;
+  try {
+    copyFileSync("/bin/true", path);
+    chmodSync(path, 0o755);
+    const ran = Bun.spawnSync([path]);
+    tried[place] = ran.exitCode === 0 ? "ran" : "exit " + ran.exitCode;
+  } catch (error) { tried[place] = error.code ?? error.name; }
+}
+console.log(JSON.stringify(tried));
+`;
+
+/** As many empty names as each place will take, to twenty thousand. */
+const NAMES = `
+import { closeSync, openSync } from "node:fs";
+const made = {};
+const stoppedBy = {};
+for (const place of ["/work", "/run/laf-workbench", "/dev/shm"]) {
+  let n = 0;
+  try { for (; n < 20000; n += 1) closeSync(openSync(place + "/n" + n, "w")); }
+  catch (error) { stoppedBy[place] = error.code ?? error.name; }
+  made[place] = n;
+}
+console.log(JSON.stringify({ made, stoppedBy }));
+`;
+
+/** The daemon's own socket, called by the script it is running. */
+const CALL = `
+const unix = "/run/laf-workbench/workbench.sock";
+const health = await (await fetch("http://workbench/health", { unix })).json();
+const form = new FormData();
+form.set("job", JSON.stringify({ files: [] }));
+form.set("script", new Blob(["console.log(1)"]));
+const refused = await fetch("http://workbench/run", { unix, method: "POST", body: form });
+console.log(JSON.stringify({ busy: health.busy, boot: typeof health.boot, status: refused.status, code: (await refused.json()).code }));
+`;
+
+/**
+ * A process whose LEADER has exited while a thread of it runs on: the main thread leaves by the
+ * thread's own exit call, a worker stays. `megabytes` is what the worker then holds.
+ */
+const ledByTheDead = (megabytes: number) => String.raw`
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+writeFileSync("held.ts", [
+  'const held = [];',
+  'const more = setInterval(() => {',
+  '  if (held.length * 16 >= ${megabytes}) return clearInterval(more);',
+  '  held.push(new Uint8Array(16 * 1024 * 1024).fill(1));',
+  '}, 20);',
+  'setInterval(() => {}, 1000);',
+].join("\n"));
+writeFileSync("leader.ts", [
+  'import { dlopen } from "bun:ffi";',
+  'new Worker(new URL("./held.ts", import.meta.url).href);',
+  'await Bun.sleep(400);',
+  '// The exit of the calling THREAD, not of the process: 93 on arm64, 60 on x86-64.',
+  'dlopen("libc.so.6", { syscall: { args: ["i64", "i64"], returns: "i64" } }).symbols.syscall(process.arch === "arm64" ? 93 : 60, 0);',
+].join("\n"));
+const child = Bun.spawn([process.execPath, "--no-install", "leader.ts"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+child.unref();
+await Bun.sleep(2500);
+const stateOf = (path) => { const stat = readFileSync(path, "utf8"); return stat.slice(stat.lastIndexOf(")") + 2, stat.lastIndexOf(")") + 3); };
+const rssOf = (path) => { try { return Number(readFileSync(path, "utf8").match(/^VmRSS:\s+(\d+)/m)?.[1] ?? NaN); } catch { return NaN; } };
+const base = "/proc/" + child.pid;
+let leader = "gone", live = [], leaderRss = NaN, liveRss = NaN;
+try {
+  leader = stateOf(base + "/stat");
+  leaderRss = rssOf(base + "/status");
+  live = readdirSync(base + "/task").filter((tid) => { try { return !["Z", "X"].includes(stateOf(base + "/task/" + tid + "/stat")); } catch { return false; } });
+  liveRss = live.length > 0 ? rssOf(base + "/task/" + live[0] + "/status") : NaN;
+} catch {}
+console.log(JSON.stringify({ pid: child.pid, leader, leaderRssKb: Number.isNaN(leaderRss) ? null : leaderRss, live: live.length, liveRssKb: Number.isNaN(liveRss) ? null : liveRss }));
+await Bun.sleep(${megabytes > 64 ? 8000 : 0});
+console.log("outlived");
+`;
+
+/** Children until the engine refuses one. */
+const FORK = `
+let n = 0;
+let stoppedBy = "the cap of 300";
+try {
+  for (; n < 300; n += 1) Bun.spawn(["/bin/sleep", "600"], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }).unref();
+} catch (error) { stoppedBy = error.code ?? error.name; }
+console.log(JSON.stringify({ n, stoppedBy }));
+`;
 
 /**
  * The inner half: what happens to each script, from the far side of the socket. Each thing
@@ -238,6 +399,12 @@ async function probe(socketPath: string, checks: ProbeCheck[]): Promise<void> {
     elsewhere: Record<string, string>;
     reached: Record<string, string>;
     daemonMemory: string;
+    shm?: string;
+    one?: {
+      caught: string | null;
+      ignored: string | null;
+      blocked: string | null;
+    };
   }>(first);
   const zero = (mask: string | null) => mask !== null && /^0+$/.test(mask);
   const isSandbox =
@@ -336,16 +503,21 @@ async function probe(socketPath: string, checks: ProbeCheck[]): Promise<void> {
   const leftRunning = (leaving?.processes ?? []).filter((process) =>
     process.command.includes("sleep 60"),
   );
-  const looking = json<{
-    notes: string[];
-    work: string[];
-    shm: string[];
-    socket: string[];
-    self: number;
-    processes: Seen[];
-  }>(await run(LOOK));
+  const look = async () => json<Looked>(await run(LOOK));
+  /** Nothing of an earlier run: no thread but the daemon's and the looker's, nothing written anywhere. */
+  const isClean = (seen: Looked | null): seen is Looked =>
+    !!seen &&
+    seen.processes.every(
+      (process) =>
+        process.live === 0 || process.pid === 1 || process.pid === seen.self,
+    ) &&
+    seen.notes.length === 0 &&
+    seen.work.length === 1 &&
+    seen.shm.length === 0 &&
+    seen.socket.join() === "workbench.sock";
+  const looking = await look();
   const alive = (looking?.processes ?? []).filter(
-    (process) => process.state !== "Z" && process.state !== "X",
+    (process) => process.live > 0,
   );
   check(
     "a process a script left running is gone before the next run (the sweep)",
@@ -416,6 +588,133 @@ async function probe(socketPath: string, checks: ProbeCheck[]): Promise<void> {
     `${stopped.ok ? "ran" : stopped.failure}; the daemon was idle again ${Date.now() - idleAgain} ms later, of the 50 s the script asked for`,
   );
 
+  // WHAT THE INDEPENDENT READ OF 2026-10-06 ASKED TO BE MEASURED HERE RATHER THAN ARGUED.
+  const one = where.one ?? { caught: null, ignored: null, blocked: null };
+  check(
+    "what process 1 catches was read: a signal it does not catch is dropped, whoever sends it",
+    one.caught !== null,
+    `caught: ${signalsIn(one.caught).join(" ") || "none"}; ignored: ${signalsIn(one.ignored).join(" ") || "none"}; blocked: ${signalsIn(one.blocked).join(" ") || "none"} — of the caught, SIGTERM is sent below and the others are not tried`,
+  );
+  const small = (mount: string) =>
+    /^tmpfs \S*noexec/.test(mount) &&
+    /nr_inodes=(\d+)/.test(mount) &&
+    Number(/nr_inodes=(\d+)/.exec(mount)?.[1]) <= 64;
+  check(
+    "the two small mounts are held as /work is: not executable, and a handful of names",
+    small(where.socket) && small(where.shm ?? ""),
+    JSON.stringify({ socket: where.socket, shm: where.shm ?? null }),
+  );
+  const ranFrom = json<Record<string, string>>(await run(EXEC));
+  check(
+    "a program a script wrote runs from nowhere it can write",
+    ranFrom !== null &&
+      Object.keys(ranFrom).length === 3 &&
+      Object.values(ranFrom).every((how) => how !== "ran"),
+    JSON.stringify(ranFrom),
+  );
+  const called = json<{
+    busy: boolean;
+    boot: string;
+    status: number;
+    code: string;
+  }>(await run(CALL));
+  check(
+    "a script that calls the daemon's socket itself is told it is busy, and is run nothing",
+    called?.busy === true &&
+      called.status === 503 &&
+      called.code === "laf:workbench_busy",
+    `${JSON.stringify(called)} — it can read the daemon's name for itself; the daemon asks its socket who answers only after everything a run started has been ended`,
+  );
+  const ten = new Uint8Array(10 * 1024 * 1024).fill(7);
+  const bigBegan = Date.now();
+  const big = await workbench.run({
+    script:
+      'const a = new Uint8Array(await Bun.file("in/a.bin").arrayBuffer()); const b = new Uint8Array(await Bun.file("in/b.bin").arrayBuffer()); await Bun.write("out/a.bin", a.subarray(0, 5_000_000)); await Bun.write("out/b.bin", b.subarray(0, 5_000_000)); console.log(a.byteLength + b.byteLength);',
+    files: [
+      { path: "in/a.bin", bytes: ten },
+      { path: "in/b.bin", bytes: ten },
+    ],
+  });
+  check(
+    "the largest request there is — twenty megabytes in, ten out — is taken and answered",
+    big.ok &&
+      said(big) === String(20 * 1024 * 1024) &&
+      big.products.length === 2 &&
+      big.products.every((product) => product.bytes.byteLength === 5_000_000),
+    big.ok
+      ? `${said(big)} bytes read, ${big.products.map((product) => product.bytes.byteLength).join(" + ")} handed back; ${Date.now() - bigBegan} ms there and back, ${big.run.ms} of them the script`
+      : said(big),
+  );
+
+  // A THREAD-GROUP LEADER THAT HAS EXITED WHILE A THREAD RUNS ON reads `Z` — a dead letter on a
+  // process that is alive. First the kernel's own account of one; then whether the sweep and the
+  // memory watch see it.
+  type Led = {
+    pid: number;
+    leader: string;
+    leaderRssKb: number | null;
+    live: number;
+    liveRssKb: number | null;
+  };
+  const ledRun = await run(ledByTheDead(16));
+  const led = ledRun.ok
+    ? (() => {
+        try {
+          return JSON.parse(ledRun.run.stdout.split("\n")[0] ?? "") as Led;
+        } catch {
+          return null;
+        }
+      })()
+    : null;
+  const afterLed = await look();
+  if (led && led.leader === "Z" && led.live > 0) {
+    check(
+      "a process whose leader has exited while a thread runs on is ended by the sweep like any other",
+      isClean(afterLed),
+      `the kernel's account of it while it ran: ${JSON.stringify(led)} — the leader reads Z and reports no memory, ${led.live} thread(s) run and one reports ${led.liveRssKb} kB; the next run saw ${JSON.stringify((afterLed?.processes ?? []).filter((process) => process.live > 0).map((process) => process.pid))} alive`,
+    );
+    const heavy = await run(ledByTheDead(576), { timeoutMs: 30_000 });
+    check(
+      "memory held by a process whose leader has exited counts against the run's 512 MB",
+      heavy.ok && heavy.run.ending === "out_of_memory",
+      heavy.ok
+        ? `${heavy.run.ending} after ${heavy.run.ms} ms; it said: ${JSON.stringify(heavy.run.stdout.slice(0, 200))}`
+        : said(heavy),
+    );
+  } else {
+    // Two things were to be measured with it, and neither was.
+    for (const name of [
+      "a process whose leader has exited while a thread runs on is ended by the sweep like any other",
+      "memory held by a process whose leader has exited counts against the run's 512 MB",
+    ]) {
+      check(
+        name,
+        null,
+        `the fixture did not make one here: ${ledRun.ok ? JSON.stringify(ledRun.run.stdout.slice(0, 200)) : said(ledRun)}`,
+      );
+    }
+  }
+
+  const namesBegan = Date.now();
+  const names = await run(NAMES, { timeoutMs: 60_000 });
+  const namesWall = Date.now() - namesBegan;
+  const named = json<{
+    made: Record<string, number>;
+    stoppedBy: Record<string, string>;
+  }>(names);
+  const clearing = names.ok ? namesWall - names.run.ms : null;
+  check(
+    "empty names are capped where a script can write, and clearing them takes no time to speak of",
+    named !== null &&
+      (named.made["/work"] ?? Number.POSITIVE_INFINITY) <= 4096 &&
+      (named.made[SOCKET_DIRECTORY] ?? Number.POSITIVE_INFINITY) <= 64 &&
+      (named.made["/dev/shm"] ?? Number.POSITIVE_INFINITY) <= 64 &&
+      clearing !== null &&
+      clearing < 5_000,
+    `${names.ok ? JSON.stringify(named) : said(names)}; the script took ${names.ok ? names.run.ms : "?"} ms and the answer came ${clearing ?? "?"} ms after it ended (the daemon empties every place before it answers; the client gives it 10 s)`,
+  );
+  await settled(120_000);
+
   // PROCESS 1 CANNOT BE STOPPED FROM INSIDE; WHAT DOES REACH IT ENDS THE CONTAINER.
   const signalled = await run(`
 for (const signal of ["SIGSTOP", "SIGKILL"]) {
@@ -432,27 +731,40 @@ console.log("and the run went on");
       unmoved === boot,
     `${said(signalled).replaceAll("\n", "; ")}; the same daemon answered afterwards: ${unmoved === boot}`,
   );
-  const ended = await run(
-    'process.kill(1, "SIGTERM"); await Bun.sleep(5000); console.log("outlived it");',
-  );
-  let fresh = await restarted(boot);
+  /** How long each new daemon took to answer after the one before it went, in order. */
+  const gaps: number[] = [];
+  const next = async (was: string): Promise<string> => {
+    const went = Date.now();
+    const now = await restarted(was, 180_000);
+    gaps.push(Date.now() - went);
+    return now;
+  };
+  // A note beside the socket, and then the signal: the daemon is ended under its own run, with no
+  // sweep and nothing emptied. What the volume kept is the next daemon's to remove before it binds.
+  const TERM =
+    'require("node:fs").writeFileSync("/run/laf-workbench/note", "for the next run"); process.kill(1, "SIGTERM"); await Bun.sleep(5000); console.log("outlived it");';
+  const ended = await run(TERM);
+  let fresh = await next(boot);
+  const afterTerm = await look();
   check(
-    "a signal the daemon does take ends the container, script and all, and compose starts a fresh one",
-    !ended.ok && fresh !== boot,
-    `the run: ${ended.ok ? said(ended) : ended.failure}; a new daemon answered on the same socket`,
+    "a signal the daemon does take ends the container, script and all — and the next daemon starts with nothing beside its socket",
+    !ended.ok && fresh !== boot && isClean(afterTerm),
+    `the run: ${ended.ok ? said(ended) : ended.failure}; a new daemon answered on the same socket; the next run found beside it ${JSON.stringify(afterTerm?.socket)}`,
   );
   boot = fresh;
   const replaced = await run(`
-import { rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 rmSync("/run/laf-workbench/workbench.sock");
-writeFileSync("/run/laf-workbench/workbench.sock", "not a socket");
+mkdirSync("/run/laf-workbench/workbench.sock");
+writeFileSync("/run/laf-workbench/workbench.sock/held", "so that it is not empty");
 console.log("replaced");
 `);
-  fresh = await restarted(boot);
+  fresh = await next(boot);
+  const afterSwap = await look();
   check(
-    "a script that takes the socket's place is answered once; the daemon then stops and a fresh one binds",
-    said(replaced) === "replaced" && fresh !== boot,
-    `the run: ${said(replaced)}; a new daemon answered on the same path`,
+    "a script that puts a DIRECTORY where the socket belongs is answered once; the daemon stops and a fresh one binds all the same",
+    said(replaced) === "replaced" && fresh !== boot && isClean(afterSwap),
+    `the run: ${said(replaced)}; a new daemon answered on the same path; the next run found beside it ${JSON.stringify(afterSwap?.socket)}`,
   );
   boot = fresh;
   const segment = await run(`
@@ -461,7 +773,8 @@ try { made = Bun.spawnSync(["/usr/bin/ipcmk", "-M", "4096"]); } catch { console.
 console.log(made.exitCode === 0 ? "made" : "refused: " + made.stderr.toString().trim());
 `);
   if (said(segment) === "made") {
-    fresh = await restarted(boot);
+    fresh = await next(boot);
+    boot = fresh;
     const listed = await run(
       'console.log(Bun.spawnSync(["/usr/bin/ipcs", "-m"]).stdout.toString().split("\\n").filter((line) => line.startsWith("0x")).length)',
     );
@@ -477,6 +790,33 @@ console.log(made.exitCode === 0 ? "made" : "refused: " + made.stderr.toString().
       `no segment could be made to try it with (${said(segment)})`,
     );
   }
+
+  // CHILDREN UNTIL THE ENGINE REFUSES ONE. Each is ended by the sweep and then held, dead, by a
+  // process 1 that waits for nobody — so this run also costs the daemon its container.
+  const forked = await run(FORK, { timeoutMs: 60_000 });
+  const afterFork = await settled(180_000);
+  const served = await run("console.log('served')");
+  check(
+    "a script that starts children until it is refused one is answered, and the service is there for the next",
+    said(served) === "served",
+    `${forked.ok ? said(forked) : `no run: ${forked.failure}`}; ${afterFork === boot ? "the same daemon" : "a new daemon"} answered afterwards and ran the next script`,
+  );
+  if (afterFork !== boot) gaps.push(-1);
+  boot = afterFork;
+
+  // HOW LONG A DAEMON THAT WENT TAKES TO BE BACK, when it goes again and again: what "the daemon
+  // quits after every run" would cost. The engine doubles its wait each time a container ends
+  // within ten seconds of starting.
+  for (let again = 0; again < 3; again += 1) {
+    await run('process.kill(1, "SIGTERM"); await Bun.sleep(5000);');
+    boot = await next(boot);
+  }
+  const measured = gaps.filter((gap) => gap >= 0);
+  check(
+    "a daemon that goes is back, each time it goes",
+    measured.length >= 5 && measured.every((gap) => gap < 180_000),
+    `ms until a new daemon answered, in the order they went (ended by SIGTERM, a directory at its socket, a System V segment, then SIGTERM three times running): ${measured.join(", ")}`,
+  );
 }
 
 // --- the outer half ------------------------------------------------------------------------------
@@ -562,6 +902,26 @@ export function megabytesHeld(usage: string): number | null {
   return amount * perUnit[figure[2] as keyof typeof perUnit];
 }
 
+/**
+ * How many things the inner half reports when it runs to its end. A floor in the only sense that
+ * matters here: fewer is a probe that stopped, and a stopped probe has not found the walls sound.
+ */
+export const PROBE_CHECKS = 26;
+
+/** Every script the probe sends, by name — so that a test can at least parse them before a run does. */
+export const PROBE_SCRIPTS: Readonly<Record<string, string>> = {
+  WHERE,
+  LEAVE,
+  LOOK,
+  SHEET,
+  EXEC,
+  NAMES,
+  CALL,
+  FORK,
+  ledSmall: ledByTheDead(16),
+  ledLarge: ledByTheDead(576),
+};
+
 /** What the daemon logged when it began to listen, or null when it has not. */
 export function listeningLineFrom(
   logs: string,
@@ -598,6 +958,11 @@ export async function rehearseWorkbench(tools: {
   /** The environment `compose` runs with: this adds the profile and the override to it. */
   environment: Record<string, string>;
   serverImage: string;
+  /**
+   * Whether the build being rehearsed is one that has the service: this checkout's own, or `edge`.
+   * An older release named by its version has none, and that is not a failure.
+   */
+  expected: boolean;
 }): Promise<void> {
   const { compose, docker, check, finding } = tools;
   const containers = async () =>
@@ -626,9 +991,19 @@ export async function rehearseWorkbench(tools: {
     .split("\n")
     .filter(Boolean);
   if (!known.includes("workbench")) {
-    finding(
-      "this build's compose file has no `workbench` service, so the workbench was not rehearsed",
-    );
+    // A release from before the service is a release with nothing here to try. A build that should
+    // have it and does not is a rehearsal that tried nothing and must not be green for it.
+    if (tools.expected) {
+      check(
+        "this build's compose file has the workbench service",
+        false,
+        `services with the profile on: ${known.join(", ")}`,
+      );
+    } else {
+      finding(
+        "this release's compose file has no `workbench` service, so the workbench was not rehearsed",
+      );
+    }
     return;
   }
   // The volume's record may exist already — compose makes what a file declares — and that is
@@ -778,6 +1153,13 @@ export async function rehearseWorkbench(tools: {
         finding(`not measured — ${result.name}: ${result.detail}`);
       } else check(result.name, result.ok, result.detail);
     }
+    // A probe that stopped early says less than it was written to, and must not pass for saying
+    // nothing wrong: every check it has is counted.
+    check(
+      `the probe said all of what it tries (${PROBE_CHECKS} things)`,
+      (results?.length ?? 0) === PROBE_CHECKS,
+      `${results?.length ?? 0} reported`,
+    );
     // And once it has: a daemon that kept something of each run would show here first.
     const after = await memory();
     const afterMegabytes = megabytesHeld(after);
