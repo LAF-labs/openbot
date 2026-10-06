@@ -19,7 +19,15 @@ import {
 import { buildQueryOptions } from "./lib/version";
 import { queryClient } from "./query-client";
 import { router } from "./router";
-import "@copilotkit/react-core/v2/styles.css";
+/*
+ * ONE STYLESHEET. CopilotKit's (`@copilotkit/react-core/v2/styles.css`, 89.7 kB) was imported here
+ * from upstream's first commit until 2026-10-06, and styled nothing: its rules are scoped to
+ * CopilotKit's own chat components (`[data-copilotkit]`, `cpk:` classes), and the app draws none of
+ * those — it uses the provider, some hooks and one renderer whose output is a sandboxed frame.
+ * Measured on twenty-six screens with that sheet switched off in the page: no element's computed
+ * style changed. If a CopilotKit component is ever drawn, import its sheet in that route and not
+ * here: this file is every first paint, the sign-in screen included.
+ */
 import "./styles.css";
 
 const rootElement = document.getElementById("root");
