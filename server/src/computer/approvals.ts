@@ -152,6 +152,12 @@ export type AskIntent =
   | "list_files"
   /** A workspace file handed to a site, which is the one browser action that sends something out. */
   | "upload"
+  /**
+   * A script the Bot wrote, run over files it names, where nothing but those files exists for it
+   * (`gateway/acts.ts`, `runScript`). Asked about only where a deployment says to, or when the
+   * same run comes round again: the shipped policy allows and records it.
+   */
+  | "run_script"
   /** A tool on somebody else's server. Read and write are not phrased apart; the guard is. */
   | "call_tool"
   /**
@@ -209,6 +215,13 @@ export type AskSubject = {
   /** The control, as the server resolved it from its own snapshot. */
   element?: { role: string; name: string };
   file?: { path: string };
+  /**
+   * The files a script would be handed, for a run (`run_script`): the one question about several
+   * files, or about none. Their paths as the Bot named them. What the script SAYS is not here and
+   * is nowhere a subject goes — it is bound to the answer by the fingerprint, like a call's
+   * arguments.
+   */
+  files?: { path: string }[];
   tool?: { server: string; name: string; guard?: AskGuard };
   /** How many times this exact call has just been made, when that is why it stopped. */
   repeatCount?: number;

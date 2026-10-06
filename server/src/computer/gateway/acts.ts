@@ -5,8 +5,24 @@
  * decides anything: what a method may add is what the policy needs to know about its call — the key,
  * whether it submits, which file — and the one promise every call on a ref makes to the computer,
  * that the click lands on the control the policy judged and not on whatever the page renamed it to.
+ *
+ * ONE METHOD IS A SEQUENCE OF THEM. `runScript` is several acts in a row — the files a script is
+ * handed, the run, the files it made — and each is still one call of `govern` with its own
+ * decision and its own row. It decides nothing either; what it adds is the order.
  */
-import type { ComputerClient } from "../client";
+import { WORKBENCH_LIMITS } from "../../../../shared/workbench/protocol";
+import {
+  type AuditStore,
+  SCRIPT_INPUTS_INVALID,
+  WORKBENCH_FAILED,
+  WORKBENCH_UNAVAILABLE,
+} from "../../audit";
+import type { Workbench, WorkbenchFile } from "../../workbench/client";
+import {
+  type ComputerClient,
+  ComputerUnavailableError,
+  factOfError,
+} from "../client";
 import type {
   ClickInput,
   KeyInput,
@@ -18,8 +34,28 @@ import type {
   UploadFileInput,
   WriteFileInput,
 } from "../schema";
-import type { ActionActor } from "./caller";
+import {
+  type ActionActor,
+  ActionNeedsApprovalError,
+  ActionRefusedError,
+} from "./caller";
 import type { Govern, JudgedElement } from "./govern";
+import { RUN_SCRIPT_TOOL } from "./intent";
+import {
+  areProductNames,
+  MADE_MAX_BYTES,
+  madeDirectoryFor,
+  madeFull,
+  madeHeldBy,
+  notRunFor,
+  requestProblem,
+  type ScriptProduct,
+  ScriptNotRunError,
+  type ScriptRun,
+  type ScriptRunInput,
+  scriptDigestOf,
+} from "./script-run";
+import { writeScriptFinished } from "./trail";
 
 /**
  * An acting input as the computer must receive it: holding the action to the control THIS server
@@ -48,8 +84,18 @@ export function createActs(deps: {
   /** The computer, addressed as the Bot that is asking. See `createComputerGateway`. */
   as: (botId: string) => ComputerClient;
   govern: Govern;
+  /** Where a script's ending is recorded, between the run and the files it made. */
+  auditStore: AuditStore;
+  /**
+   * Where a script runs. Absent on a deployment that has none — every deployment, today: nothing
+   * hands the server one (`main.ts`) — and `runScript` then refuses before it reads anything.
+   */
+  workbench?: Workbench | undefined;
+  /** The clock a run's folder is dated by. A test moves it. */
+  now?: () => Date;
 }) {
-  const { as, govern } = deps;
+  const { as, govern, auditStore, workbench } = deps;
+  const now = deps.now ?? (() => new Date());
 
   return {
     click(
@@ -292,6 +338,239 @@ export function createActs(deps: {
         (_judged, path) =>
           as(botId).writeFile({ ...input, path: path ?? input.path }),
       );
+    },
+
+    /**
+     * A script the Bot wrote, run over files it names — and what the script made, filed.
+     *
+     * NOT YET OFFERED TO ANYBODY (2026-10-07): no tool names this and no turn calls it.
+     *
+     * ONE CALL IS THIS SEQUENCE, FLAT, AND THERE IS NO OTHER WAY IN. Each step that touches the
+     * Bot's files or runs anything is its own call of `govern` — its own decision, its own row —
+     * one after another, so the trail reads in the order things happened: what it read, that it
+     * ran, how it ended, what it made. Never one `govern` around the lot: that would be one
+     * decision about several different things, and a rule about which files a Bot may read or
+     * which names it may write would not hold for a script.
+     *
+     * WHAT A PERSON'S ANSWER DOES HERE. A call is retried once with the one answer a person gave,
+     * and that answer is handed to every decision below in turn. Only the decision it was given
+     * for can spend it: a decision the policy simply allows never looks at it (`settle.ts`), and
+     * one it was not given for leaves it where it is (`approvals.ts`, `consume` — a mismatch is
+     * not burned). So a yes to the run cannot be spent on a read, nor on a file's name.
+     *
+     * THE COSTS OF THAT ORDER, SAID HERE. A run that is refused or asked about after its files
+     * were read drops the bytes; the reads' rows stand, because the reads happened. And a call
+     * made again once a question is answered reads the files again and runs the script again:
+     * two rows a file, bounded by how many files a run may name.
+     */
+    async runScript(
+      computerId: string,
+      botId: string,
+      actor: ActionActor,
+      input: ScriptRunInput,
+      signal?: AbortSignal,
+      approvalId?: string,
+    ): Promise<ScriptRun> {
+      /*
+       * NOWHERE TO RUN IT: said at once, before a file is read or anything is decided. Reading a
+       * person's files in order to run something that cannot run would be a read for nothing, and
+       * a row saying a run was allowed where no run is possible would be a row about nothing.
+       */
+      if (!workbench) throw new ScriptNotRunError(WORKBENCH_UNAVAILABLE);
+      // What can be refused without reading anything is, and leaves no row: see `requestProblem`.
+      const problem = requestProblem(input);
+      if (problem) throw problem;
+
+      const script = {
+        sha256: scriptDigestOf(input.script),
+        bytes: Buffer.byteLength(input.script),
+        files: input.files,
+      };
+      /** The caller's Stop and the one answer it may be carrying, for every decision below. */
+      const carried = {
+        ...(signal ? { signal } : {}),
+        ...(approvalId ? { approvalId } : {}),
+      };
+
+      /*
+       * 1. EACH FILE THE SCRIPT IS TO READ, READ AS THE BOT'S OWN READ IS: the same decision, the
+       * same row, the same rules about paths (`readFile` above). Whole and as bytes, because a
+       * workbook cannot be summed from the first of it as text. A refusal or a question about any
+       * one of them ends the call here, before any code runs. `part` is the script's digest, so
+       * two scripts over one file are counted as two reads and not as the same read twice.
+       */
+      const files: WorkbenchFile[] = [];
+      let together = 0;
+      for (const path of input.files) {
+        const bytes = await govern(
+          computerId,
+          "computer_read_file",
+          botId,
+          actor,
+          { filePath: path, part: script.sha256, ...carried },
+          () => as(botId).fileBytes(path),
+        );
+        /*
+         * The one bound that cannot be seen before a file is read: what they come to together.
+         * Held here, as each arrives, rather than left to the sandbox's client to refuse once all
+         * eight are in hand — this is the API server's memory, and the next file is not read. No
+         * row for it, as for any request over a bound; the reads that happened have theirs.
+         */
+        together += bytes.byteLength;
+        if (together > WORKBENCH_LIMITS.filesBytes) {
+          throw new ScriptNotRunError(SCRIPT_INPUTS_INVALID, {
+            field: "files",
+            limit: WORKBENCH_LIMITS.filesBytes,
+          });
+        }
+        files.push({ path, bytes });
+      }
+
+      /*
+       * 2. THE RUN, and its act is the sandbox call and nothing else. The decision's row is
+       * written before a byte is sent there; the caller's Stop ends the script through the same
+       * signal. A run that produced no ending is thrown, so that `govern` writes it down as
+       * allowed and not happened — unreachable, busy, stopped, or not vouched for.
+       */
+      const answer = await govern(
+        computerId,
+        RUN_SCRIPT_TOOL,
+        botId,
+        actor,
+        { script, ...carried },
+        async () => {
+          const answered = await workbench.run(
+            {
+              script: input.script,
+              files,
+              ...(input.timeoutMs === undefined
+                ? {}
+                : { timeoutMs: input.timeoutMs }),
+            },
+            signal,
+          );
+          if (!answered.ok) throw notRunFor(answered);
+          /*
+           * A file's name becomes part of a path below and a field of a row. The client has held
+           * each to what a name may be already (`workbench/client.ts`, `runFrom`); this is the
+           * place that composes the path not taking that on trust from whatever stands where the
+           * client does. An answer with a name that is not one is not a run to vouch for.
+           */
+          if (!areProductNames(answered.products.map(({ name }) => name))) {
+            throw new ScriptNotRunError(WORKBENCH_FAILED);
+          }
+          return answered;
+        },
+      );
+      const { run } = answer;
+
+      /*
+       * 3. HOW IT ENDED, WRITTEN BEFORE ANY FILE IT MADE IS FILED. A trail that will not take
+       * this row throws here, and then nothing below runs: no file enters the folder with nothing
+       * saying where it came from — the rule a download keeps on the way out (`person-files.ts`).
+       */
+      await writeScriptFinished(auditStore, {
+        toolName: RUN_SCRIPT_TOOL,
+        botId,
+        actor,
+        computerId,
+        script,
+        ending: run.ending,
+        exitCode: run.exitCode,
+        signal: run.signal,
+        ms: run.ms,
+        stdoutBytes: run.stdoutBytes,
+        stderrBytes: run.stderrBytes,
+        products: answer.products.map((product) => ({
+          name: product.name,
+          bytes: product.bytes.byteLength,
+        })),
+        productsRefused: run.productsRefused,
+        skipped: run.skipped,
+      });
+
+      /*
+       * 4. EACH FILE IT MADE, FILED AS THE BOT'S OWN WRITE IS DECIDED: a deployment's rules about
+       * names and folders hold for what a script makes. To a folder this server named, by a put
+       * that creates and never replaces (`client.ts`, `putFile`) — whatever a rule allows, nothing
+       * that exists is written over.
+       *
+       * A FILE THAT IS NOT FILED DOES NOT TAKE THE OTHERS WITH IT, AND DOES NOT TAKE THE RUN. The
+       * script ran; what it printed is the caller's whatever becomes of a file. So a rule that
+       * refuses one name, a folder that is full, a computer that will not take a file: each is
+       * said of that file, with its own row, and the next is tried. Two things do end the call —
+       * a question, which is a pause the same call comes back from, and the caller's Stop.
+       */
+      const directory = madeDirectoryFor(now(), actor.toolCallId);
+      /** What `made/` holds, asked once and only when there is something to file. */
+      let held: number | undefined;
+      /** The computer stopped answering: what is left is not tried against it one by one. */
+      let unreachable: string | undefined;
+      const products: ScriptProduct[] = [];
+      for (const product of answer.products) {
+        const size = product.bytes.byteLength;
+        if (unreachable) {
+          products.push({
+            name: product.name,
+            bytes: size,
+            unfiled: unreachable,
+          });
+          continue;
+        }
+        const path = `${directory}/${product.name}`;
+        try {
+          await govern(
+            computerId,
+            "computer_write_file",
+            botId,
+            actor,
+            { filePath: path, ...carried },
+            async () => {
+              held ??= await madeHeldBy(as(botId));
+              if (held + size > MADE_MAX_BYTES) throw madeFull(held, size);
+              const filed = await as(botId).putFile(path, product.bytes);
+              held += filed.bytes;
+              return filed;
+            },
+          );
+          products.push({ name: product.name, bytes: size, path });
+        } catch (error) {
+          if (error instanceof ActionNeedsApprovalError) throw error;
+          if (signal?.aborted) throw error;
+          /*
+           * A fact about THIS file — the rule that refused its name, the folder being full, what
+           * the computer said of it — is said of it, and the next is tried. Anything that is not
+           * a fact is a failure nobody named: a trail that would not take the decision's row, a
+           * bug. That ends the call, rather than being reported as a file the computer declined.
+           */
+          if (!(error instanceof Error && error.message.startsWith("laf:"))) {
+            throw error;
+          }
+          const unfiled =
+            error instanceof ActionRefusedError
+              ? error.code
+              : factOfError(error);
+          if (error instanceof ComputerUnavailableError) unreachable = unfiled;
+          products.push({ name: product.name, bytes: size, unfiled });
+        }
+      }
+
+      return {
+        sha256: script.sha256,
+        ending: run.ending,
+        exitCode: run.exitCode,
+        signal: run.signal,
+        ms: run.ms,
+        stdout: run.stdout,
+        stderr: run.stderr,
+        stdoutBytes: run.stdoutBytes,
+        stderrBytes: run.stderrBytes,
+        ...(run.productsRefused
+          ? { productsRefused: run.productsRefused }
+          : {}),
+        skipped: run.skipped,
+        products,
+      };
     },
   };
 }

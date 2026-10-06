@@ -6,6 +6,10 @@
  * to what an investigator can read a year from now, so it lives where it can be reviewed as that,
  * and not inside a diff to whatever action happened to need a new field.
  */
+import type {
+  ProductsRefusal,
+  RunEnding,
+} from "../../../../shared/workbench/protocol";
 import {
   type AuditStore,
   ELEMENT_NOT_IN_SNAPSHOT,
@@ -18,6 +22,32 @@ import type { HighRiskVerdict } from "../high-risk";
 import type { AllowanceTier } from "../standing-approvals";
 import { originOf, pageForTrail } from "./addresses";
 import type { ActionActor } from "./caller";
+
+/**
+ * What a row says of a script: its SHA-256, its length in bytes, and the files it names.
+ *
+ * THE WHOLE OF WHAT THE TRAIL HOLDS OF ONE. A script is a model's text and may carry anything a
+ * person told their Bot, so the row keeps what identifies it and nothing of what it says — the
+ * rule typed text and a written file's contents are held to in `write` below. The digest is found
+ * again from the conversation, where the script is the call's arguments, for as long as that
+ * conversation exists (the owner's decision, 2026-10-07: the digest and length, no second copy).
+ */
+export type ScriptOnTrail = {
+  sha256: string;
+  bytes: number;
+  files: readonly string[];
+};
+
+/** The fields a row about a run carries for its script: never more than these. */
+function scriptForTrail(script: ScriptOnTrail | undefined) {
+  return script
+    ? {
+        script: { sha256: script.sha256, bytes: script.bytes },
+        // The paths it was to read, as the Bot named them. Each read has its own row as well.
+        files: [...script.files],
+      }
+    : {};
+}
 
 /**
  * One audit row for one decision.
@@ -41,6 +71,8 @@ export async function write(
     /** Which key, for a keypress. Recorded because a keypress can act without naming a button. */
     key?: string | undefined;
     filePath: string | undefined;
+    /** The script, for a run: what identifies it. See {@link ScriptOnTrail}. */
+    script?: ScriptOnTrail | undefined;
     pageUrl: string;
     decision: PolicyDecision;
     /**
@@ -106,6 +138,7 @@ export async function write(
       // The path, never the contents. A Bot writes down what it was told, so a file body is exactly as
       // sensitive as text typed into a form field, and for the same reason it is not put here.
       ...(entry.filePath ? { file: entry.filePath } : {}),
+      ...scriptForTrail(entry.script),
       element: entry.element
         ? {
             role: entry.element.role,
@@ -325,6 +358,74 @@ export async function writeFileDownloaded(
 }
 
 /**
+ * One row for a script that ran to an ending.
+ *
+ * Its own writer for the reason a handover and a download have theirs: nothing is decided here.
+ * The decision to run it has its row already — `write`, before the script was sent anywhere — and
+ * every file it made gets a decision and a row of its own afterwards. This is the fact between
+ * them: it ran, and this is how it ended.
+ *
+ * FIELD BY FIELD, AND NEVER A SPREAD. What the sandbox reports about a run holds what the script
+ * printed, and what it handed back holds files; this takes the counts and the names out of them
+ * one at a time, so that a field added to either cannot arrive here by being there. A file's name
+ * is the script's own choice and is kept, as a path a Bot writes to is kept — the name, never
+ * what is in it.
+ */
+export async function writeScriptFinished(
+  auditStore: AuditStore,
+  entry: {
+    toolName: string;
+    botId: string;
+    actor: ActionActor;
+    computerId: string;
+    script: { sha256: string; bytes: number };
+    /** By itself, or stopped at which bound: the time it was given, or the memory. */
+    ending: RunEnding;
+    /** The status it left with, where it ended by itself. */
+    exitCode: number | null;
+    /** The signal that ended it, where one did. A name (`SIGKILL`), held to that shape upstream. */
+    signal: string | null;
+    ms: number;
+    /** How much it printed, in bytes. Never what. */
+    stdoutBytes: number;
+    stderrBytes: number;
+    /** Each file it handed back: the name it gave it, and its size. */
+    products: readonly { name: string; bytes: number }[];
+    /** Present when it left files and none came back, and says which bound they were over. */
+    productsRefused?: ProductsRefusal | undefined;
+    /** How many things it left that were not files to hand back. */
+    skipped: number;
+  },
+) {
+  await recordAuditEvent(auditStore, {
+    eventType: "computer.script_finished",
+    targetType: "computer",
+    targetId: entry.computerId,
+    ...(entry.actor.userId ? { actorUserId: entry.actor.userId } : {}),
+    payload: {
+      action: entry.toolName,
+      bot: entry.botId,
+      actor: entry.actor.id,
+      script: { sha256: entry.script.sha256, bytes: entry.script.bytes },
+      ending: entry.ending,
+      exit: entry.exitCode,
+      signal: entry.signal,
+      ms: entry.ms,
+      stdoutBytes: entry.stdoutBytes,
+      stderrBytes: entry.stderrBytes,
+      products: entry.products.map((product) => ({
+        name: product.name,
+        bytes: product.bytes,
+      })),
+      ...(entry.productsRefused
+        ? { productsRefused: entry.productsRefused }
+        : {}),
+      skipped: entry.skipped,
+    },
+  });
+}
+
+/**
  * The row for a question the boundary stopped to ask.
  *
  * Its own writer rather than a variant of either of the others, because an approval sits between
@@ -350,6 +451,8 @@ export async function writeApprovalEvent(
     toolName?: string;
     pageUrl?: string;
     filePath?: string | undefined;
+    /** The script a question about a run is bound to, by its digest. See {@link ScriptOnTrail}. */
+    script?: ScriptOnTrail | undefined;
     /**
      * What the Bot's own instruction made of this, when there was one.
      *
@@ -387,6 +490,7 @@ export async function writeApprovalEvent(
       // is as often as not the one a form sent by GET, or an OAuth return, just landed on.
       ...(entry.pageUrl ? { page: pageForTrail(entry.pageUrl) } : {}),
       ...(entry.filePath ? { file: entry.filePath } : {}),
+      ...scriptForTrail(entry.script),
       // An empty reason is the judge having failed rather than having decided, and the two are said
       // differently: "could not be reached" is somebody's provider being down, not their rule being
       // too narrow, and only one of those is worth editing the rule over.

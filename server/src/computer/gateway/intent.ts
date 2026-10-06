@@ -51,6 +51,18 @@ export function isTextKey(key: string): boolean {
 const ACTIVATING_KEYS = new Set(["Enter", "NumpadEnter", "Space", " "]);
 
 /**
+ * The name a run of a script is decided, counted, allowed and recorded under.
+ *
+ * NOT `computer_…`, though it is this gateway's act like the rest. It is the name the tool will be
+ * offered under when one is (`mcp__workbench__run_script`, behind the bridge and never at the head
+ * of the prompt), so that the trail's row, a rule written about `tool.name`, an allowance's scope
+ * and the call in the conversation all say one name — a row is found from a transcript by this name
+ * and the script's digest. NOTHING OFFERS IT YET: no tool, no turn; the only caller is `runScript`
+ * in `acts.ts`, which nothing calls.
+ */
+export const RUN_SCRIPT_TOOL = "mcp__workbench__run_script";
+
+/**
  * The intents this gateway can produce, which is every one that is not about somebody else's server.
  *
  * Named so that both readers of an intent take the same value: the policy context, whose union also
@@ -92,6 +104,9 @@ export function intentOf(
       return "write_file";
     case "computer_list_files":
       return "list_files";
+    // The one act here that touches no page and names no single file: it is what its script says.
+    case RUN_SCRIPT_TOOL:
+      return "run_script";
     default:
       return undefined;
   }
@@ -117,10 +132,28 @@ export function askSubjectOf(input: {
   /** The expression that asked, to tell a question about repetition from any other. */
   matched: string | null;
   repeatCount: number;
+  /** The files a script would be handed, for a run. Paths, and never a line of the script. */
+  files?: readonly string[] | undefined;
 }): AskSubject {
   const reason = isAboutRepetition(input.matched) ? "repeat" : "policy_ask";
   const repeated =
     reason === "repeat" ? { repeatCount: input.repeatCount } : {};
+  /*
+   * A RUN IS ASKED ABOUT AS THE FILES IT WOULD READ, and as nothing else. What a script says is
+   * the call's arguments, and arguments are fingerprinted and never shown as a subject: this
+   * record is copied into the trail, an allowance's row, the notice a person is sent and the
+   * prompt a judge reads (`approvals.ts`, `CallPreview`). No host either — a run has nothing to do
+   * with whatever the browser is showing.
+   */
+  if (input.intent === "run_script") {
+    return {
+      kind: "file",
+      intent: "run_script",
+      files: (input.files ?? []).map((path) => ({ path })),
+      ...repeated,
+      reason,
+    };
+  }
   // A file call has nothing to do with whatever the browser is showing, so its subject names no
   // host: saying one would send somebody to a page that has nothing to do with it.
   if (input.filePath) {

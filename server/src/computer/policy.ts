@@ -174,6 +174,10 @@ export type PolicyContext = {
    * `navigate`, opening a page.
    * `read`, looking at the page or listing what is on it.
    * `write_file` / `read_file` / `list_files`, the workspace.
+   * `run_script`, a script the Bot wrote, run where nothing but the files it names exists. It has
+   * no page: `page.url` and `page.host` are blank for it whatever the browser is showing, so a rule
+   * about a site never fires on one. What it reads and what it makes are each judged as the file
+   * acts they are, before and after it (`gateway/acts.ts`, `runScript`).
    *
    * It still cannot see whether a keypress will submit a form. A browser submits
    * from Enter in any field of it, and the element a keypress names is the field, not the form. The
@@ -193,6 +197,8 @@ export type PolicyContext = {
     // A workspace file handed to a page. The one call that takes something OUT of the Bot's own
     // folder and gives it to a website, which is why the shipped policy asks about it.
     | "upload"
+    // A script, run over named files in a place with no network. See the list above.
+    | "run_script"
     // A tool on somebody else's MCP server. Split by effect for the same reason as the browser
     // intents: an operator thinks "nothing may change anything in Jira", not "nothing may call
     // editJiraIssue, transitionJiraIssue, addCommentToJiraIssue and the six others".

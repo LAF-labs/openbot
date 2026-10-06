@@ -107,9 +107,22 @@ export type RepeatedCall = {
   /**
    * Which part of the file a read asked for (`computer_read_file`'s `offset`/`limit`). Kept apart in
    * the count like a page's query: reading a long file on, fifteen thousand characters at a time,
-   * is not asking for the same thing again.
+   * is not asking for the same thing again. For a script's run it is the files the script names,
+   * so one script over other files is another call.
    */
   part?: string | undefined;
+  /**
+   * The SHA-256 of the script, for a run of one (`gateway/acts.ts`, `runScript`).
+   *
+   * The one call here that is identified by nothing it touches: a run has no ref, no key, no path
+   * and no address, and a call with none of those is not counted at all (`fingerprintOf` below) —
+   * so without this every run is a first attempt, and a Bot sending one script round and round
+   * is never "the same call five times". In the FINGERPRINT, unlike `part` and `asked`, because
+   * it is a digest already: it says which script without saying anything a script said, and it is
+   * the same digest the run's own rows carry, so a reader of "the same call, 25 times" can find
+   * the runs it means.
+   */
+  script?: string | undefined;
   /**
    * What a connected service's READ asked for: its arguments, as {@link readArgumentsKey} writes
    * them. Kept apart in the count the same way, and held only as a digest in the counting key —
@@ -311,6 +324,7 @@ export function fingerprintOf(call: RepeatedCall): string | null {
     "url",
     call.targetUrl === undefined ? undefined : pageForTrail(call.targetUrl),
   );
+  add("script", call.script);
 
   if (parts.length === 0) return null;
   return [normalize(call.tool) || call.tool, ...parts].join(" ");
