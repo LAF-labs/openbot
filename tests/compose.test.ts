@@ -470,9 +470,28 @@ test("the workbench is behind a profile, walled, process 1 of a container that k
     driver_opts: {
       type: "tmpfs",
       device: "tmpfs",
-      o: "size=1m,nr_inodes=64,mode=0700,uid=65534,gid=65534,noexec,nosuid,nodev",
+      o: "size=1m,nr_inodes=16,mode=0700,uid=65534,gid=65534,noexec,nosuid,nodev",
     },
   });
+  /*
+   * SIXTEEN NAMES IS A LENGTH (the third read, 2026-10-07). The socket's volume is the one place a
+   * script writes that outlives its container, and with sixty-four names it built sixteen folders
+   * of 255 bytes there — longer than a path may be — which no daemon could open up to remove, so
+   * none started again. The mount's own folder is one of its names: what is left for folders, each
+   * as long as a name can be, has to come to less than a path.
+   */
+  const names = Number(
+    /nr_inodes=(\d+)/.exec(
+      (
+        parsedCompose.volumes["workbench-socket"] as {
+          driver_opts: { o: string };
+        }
+      ).driver_opts.o,
+    )?.[1],
+  );
+  expect("/run/laf-workbench".length + (names - 1) * (1 + 255)).toBeLessThan(
+    4096,
+  );
   // EVERY PLACE A SCRIPT CAN WRITE IS HELD THE SAME WAY (the independent read, 2026-10-06: the two
   // small ones were a size and nothing else, so a program ran from them and names were unbounded).
   for (const mount of [

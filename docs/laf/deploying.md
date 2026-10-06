@@ -277,8 +277,11 @@ can be read and measured alone. What they are:
   `out/`. The Bot's folder is never mounted there.
 - **Everything a script writes is memory**: `/work` is a tmpfs of the
   container's own (96 MB, not executable, 4,096 names), the socket's volume is a
-  tmpfs of one megabyte, and both — with `/dev/shm` — are emptied after every
-  run.
+  tmpfs of one megabyte and sixteen names, and both — with `/dev/shm` — are
+  emptied after every run. Sixteen is a length: the socket's volume is the one
+  place a script writes that outlives its container, and fifteen folders, each as
+  long as a name can be, are still shorter than a path may be — so whatever a
+  script leaves there, the next daemon can open up and remove before it binds.
 - **One script at a time, and nothing of it left running.** The daemon is
   process 1 of its container (no `init:`, on purpose: a script is the daemon's
   own user, and process 1 is what its own namespace cannot stop or kill). When a

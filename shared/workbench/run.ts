@@ -18,7 +18,14 @@
  * as it is, and the daemon stops taking runs: a service that could not clean up after one script
  * is not one to hand the next person's file to.
  */
-import { chmodSync, constants, lstatSync, readdirSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  constants,
+  lstatSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+} from "node:fs";
 import {
   chmod,
   lstat,
@@ -182,7 +189,7 @@ async function reclaim(directories: readonly string[]): Promise<void> {
  * nothing and said nothing. Measured on the service 2026-10-07 (the second independent read's
  * finding): a script left `6e ff` in the work root, in shared memory and beside the socket, and a
  * closed folder `64 fe`; the next run found all four, and the daemon had answered as though it had
- * cleaned. They would have piled up, sixty-four names from a full socket directory.
+ * cleaned. They would have piled up, a handful of names from a full socket directory.
  *
  * So the removal is also HELD TO WHAT IT IS FOR: `emptyDirectory` looks again when it is done, and
  * a name still there is thrown as the failure it is — the daemon's cue to stop (`./daemon.ts`).
@@ -219,15 +226,78 @@ const namesInSync = (directory: BytePath): Buffer[] =>
     Buffer.from(name),
   );
 
-/** Give a tree back to its owner: a script may have closed a directory to its own user. */
-async function unlock(directory: BytePath): Promise<void> {
-  await chmod(directory, 0o700).catch(() => {});
-  const names = await namesIn(directory).catch(() => []);
-  for (const name of names) {
-    const path = under(directory, name);
-    // The entry's own kind: a link to a directory is a link, and is not followed.
-    const entry = await lstat(path).catch(() => null);
-    if (entry?.isDirectory()) await unlock(path);
+/**
+ * How long a folder's path may get, inside a tree being opened up, before the folder is moved to
+ * the top of that tree. Well under the shortest limit a path has anywhere this runs (1,024 bytes
+ * on a laptop, 4,096 on Linux), with room left for one more name of 255.
+ */
+const MOVE_UP_PAST_BYTES = 600;
+
+/** Whether a path is a folder itself — not a link to one, and not something that cannot be asked. */
+const isFolder = (path: BytePath): boolean => {
+  try {
+    return lstatSync(path, { throwIfNoEntry: false })?.isDirectory() ?? false;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Give a tree back to its owner: a script may have closed any folder in it to its own user.
+ *
+ * AT ANY DEPTH. Removing a tree walks down it however deep it goes; opening up what a script
+ * closed went by PATH, and a path has a longest. Sixteen folders of 255 bytes are past it, and a
+ * script can build that without ever naming it — two halves, one moved under the other. Closed at
+ * the bottom, such a tree could be neither opened nor removed: on a laptop the cleanup threw
+ * EACCES (and ENAMETOOLONG from its synchronous twin) and left it; on the service it was built
+ * beside the socket, where it outlives the container, and no daemon could start again (the third
+ * read, 2026-10-07; the rehearsal's first run of it).
+ *
+ * So no path here is ever long. A folder whose path has grown past a bound is MOVED to the top of
+ * the tree under a name of this function's own, and the walk goes on from there: the tree is on
+ * its way to being removed, and what shape it is in meanwhile is nobody's concern. Every folder is
+ * then reached by a path of a few hundred bytes, opened, and left where the removal that follows
+ * can name it too.
+ *
+ * Synchronous for both callers — a daemon starting or leaving cannot wait, and after a run
+ * nothing else is happening. Never through a link: only what is itself a folder is opened.
+ */
+function unlock(top: BytePath): void {
+  const root = Buffer.from(top);
+  let moved = 0;
+  const waiting: Buffer[] = [root];
+  for (let folder = waiting.pop(); folder; folder = waiting.pop()) {
+    try {
+      chmodSync(folder, 0o700);
+    } catch {
+      // Not this user's to open; the removal after this says so.
+    }
+    let names: Buffer[];
+    try {
+      names = namesInSync(folder);
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      let path = under(folder, name);
+      if (!isFolder(path)) continue;
+      if (path.byteLength > MOVE_UP_PAST_BYTES) {
+        try {
+          // A folder moved to another parent has to be its user's to write.
+          chmodSync(path, 0o700);
+          let to: Buffer;
+          do {
+            to = under(root, Buffer.from(`.moved-up-${moved}`));
+            moved += 1;
+          } while (lstatSync(to, { throwIfNoEntry: false }));
+          renameSync(path, to);
+          path = to;
+        } catch {
+          // Left where it is, to be walked as far as its path allows; the removal says the rest.
+        }
+      }
+      waiting.push(path);
+    }
   }
 }
 
@@ -237,31 +307,10 @@ export async function removeTree(path: BytePath): Promise<void> {
     await rm(path, { recursive: true, force: true });
     return;
   } catch {
-    await unlock(path);
+    // A link is removed as a link: only what is still a folder is opened up.
+    if (isFolder(path)) unlock(path);
   }
   await rm(path, { recursive: true, force: true });
-}
-
-/** {@link unlock}, for the two moments nothing may be awaited: a daemon starting, a daemon leaving. */
-function unlockSync(directory: BytePath): void {
-  try {
-    chmodSync(directory, 0o700);
-  } catch {
-    // Not this user's to open; the removal after this says so.
-  }
-  const names = (() => {
-    try {
-      return namesInSync(directory);
-    } catch {
-      return [];
-    }
-  })();
-  for (const name of names) {
-    const path = under(directory, name);
-    if (lstatSync(path, { throwIfNoEntry: false })?.isDirectory()) {
-      unlockSync(path);
-    }
-  }
 }
 
 /** {@link removeTree}, synchronously. Whatever is at the path — a file, a socket, a link, a tree. */
@@ -270,10 +319,7 @@ export function removeTreeSync(path: BytePath): void {
     rmSync(path, { recursive: true, force: true });
     return;
   } catch {
-    // A link is removed as a link: only what is still a directory is opened up.
-    if (lstatSync(path, { throwIfNoEntry: false })?.isDirectory()) {
-      unlockSync(path);
-    }
+    if (isFolder(path)) unlock(path);
   }
   rmSync(path, { recursive: true, force: true });
 }
