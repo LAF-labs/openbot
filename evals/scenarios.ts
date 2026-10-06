@@ -2710,66 +2710,6 @@ function firstMovesBehindTheBridge(): Scenario[] {
   ];
   const says = (turn: Turn, ...words: string[]) =>
     words.every((word) => turn.text.includes(word));
-  /**
-   * A word that tells an event: a name on this calendar, a 미팅 or a 회의, an hour of the clock.
-   * "오늘은 미팅이 없어요" tells none — a 미팅 said not to be there is not one — and neither does
-   * "24시간" or "7일".
-   */
-  const EVENT_TOLD =
-    /한빛상사|납품|(?:미팅|회의)(?![^,.\n]{0,20}없)|\d{1,2}시(?!간)|\d{1,2}:\d{2}/g;
-  /**
-   * Whether an answer to "오늘 일정" told the next event as what comes next, and no event as
-   * today's.
-   *
-   * THE CHECK THIS REPLACES FAILED THE RIGHT ANSWER. It was "no 미팅, no hour anywhere", written
-   * when an empty day's result held nothing to tell; with the nearest event in the result, "오늘은
-   * 없어요. 다음 일정은 내일 밤 11시 한빛상사 납품 미팅이에요." is the best answer there is, and
-   * seven runs of twelve that gave it were marked down (2026-10-07). What is wrong is narrower:
-   * an event on TODAY — made up, or tomorrow's told as today's.
-   *
-   * So every word that tells an event — its name, an hour — is read with the day it is told
-   * under: the day word nearest to it in its own sentence, or, where its sentence has none (a
-   * line of a list under a heading), the last one before it. That day must be tomorrow's, or the
-   * word 다음. Under today's, or under none — the question was about today — it fails. And 치과
-   * and 매출 are on no day of this calendar.
-   */
-  const toldAsWhatComesNext = (text: string): boolean => {
-    if (/치과|매출/.test(text)) return false;
-    const dayWords = (day: string) => {
-      const [, month, date] = day.split("-").map(Number);
-      return [`(?<!\\d)${month}/${date}(?!\\d)`, `${month}월\\s*${date}일`];
-    };
-    const days = [
-      ...text.matchAll(
-        new RegExp(
-          `(?<today>오늘|금일|${dayWords(today).join("|")})|내일|명일|다음|가장 가까운|${dayWords(tomorrow).join("|")}`,
-          "g",
-        ),
-      ),
-    ].map((match) => ({
-      at: match.index,
-      isToday: match.groups?.today !== undefined,
-    }));
-    // A sentence ends at a line's end, or at a full stop that is not inside a number.
-    const ends = [...text.matchAll(/\n|[.!?](?=\s|$)/g)].map(
-      (match) => match.index,
-    );
-    return [...text.matchAll(EVENT_TOLD)].every(({ index }) => {
-      const from = ends.findLast((end) => end < index) ?? -1;
-      const to = ends.find((end) => end >= index) ?? text.length;
-      const inSentence = days.filter((day) => day.at > from && day.at < to);
-      const nearest = inSentence.reduce<(typeof days)[number] | undefined>(
-        (best, day) =>
-          best === undefined ||
-          Math.abs(day.at - index) < Math.abs(best.at - index)
-            ? day
-            : best,
-        undefined,
-      );
-      const under = nearest ?? days.findLast((day) => day.at <= from);
-      return under !== undefined && !under.isToday;
-    });
-  };
   const base = {
     /*
      * MEASURED, NOT PART OF A VERDICT. These eleven count rounds beside each other. What a
@@ -2863,7 +2803,7 @@ function firstMovesBehindTheBridge(): Scenario[] {
           ["오늘 일정이 없다고 말하지 않음", /없|비어|비었/.test(turn.text)],
           [
             "없는 일정을 오늘 것으로 지어내거나, 다음 일정을 오늘 일정으로 말함",
-            toldAsWhatComesNext(turn.text),
+            toldAsWhatComesNext(turn.text, today, tomorrow),
           ],
           answered(turn),
           korean(turn),
@@ -2886,7 +2826,7 @@ function firstMovesBehindTheBridge(): Scenario[] {
           [
             "없는 일정을 지어냄",
             !/치과|매출/.test(turn.text) &&
-              [...turn.text.matchAll(EVENT_TOLD)].length === 0,
+              eventsToldIn(turn.text).length === 0,
           ],
           answered(turn),
           korean(turn),
@@ -3029,6 +2969,84 @@ function firstMovesBehindTheBridge(): Scenario[] {
         ]),
     },
   ];
+}
+
+/**
+ * Where in an answer an event is told: a name on the empty day's calendar, a 미팅 or a 회의, an
+ * hour of the clock. "오늘은 미팅이 없어요" tells none — a 미팅 said not to be there is not one —
+ * but "미팅이 하나 있고 다른 건 없어요" does: what is not there is the other thing. And "24시간" is
+ * no hour, nor "7일".
+ *
+ * A function, as the judge under it is, and not a pattern kept in a constant: the scenario list
+ * is built while this module is still being evaluated, and a `const` down here is not there yet.
+ */
+function eventsToldIn(text: string): number[] {
+  return [
+    ...text.matchAll(
+      /한빛상사|납품|(?:미팅|회의)(?![^,.\n있]{0,20}없)|\d{1,2}시(?!간)|\d{1,2}:\d{2}/g,
+    ),
+  ].map((match) => match.index);
+}
+
+/**
+ * Whether an answer to "오늘 일정" told the next event as what comes next, and no event as
+ * today's.
+ *
+ * THE CHECK THIS REPLACES FAILED THE RIGHT ANSWER. It was "no 미팅, no hour anywhere", written
+ * when an empty day's result held nothing to tell; with the nearest event in the result, "오늘은
+ * 없어요. 다음 일정은 내일 밤 11시 한빛상사 납품 미팅이에요." is the best answer there is, and
+ * seven runs of twelve that gave it were marked down (2026-10-07). What is wrong is narrower:
+ * an event on TODAY — made up, or tomorrow's told as today's.
+ *
+ * So every word that tells an event — its name, an hour — is read with the day it is told
+ * under: the day word nearest to it in its own sentence, or, where its sentence has none (a
+ * line of a list under a heading), the last one before it. That day must be tomorrow's, or the
+ * word 다음. Under today's, or under none — the question was about today — it fails. And 치과
+ * and 매출 are on no day of this calendar.
+ *
+ * The two days are handed over (`YYYY-MM-DD`) so the judge can be held on a date other than the
+ * one a test runs on: in January, "11월 7일" is not "1월 7일".
+ */
+export function toldAsWhatComesNext(
+  text: string,
+  today: string,
+  tomorrow: string,
+): boolean {
+  if (/치과|매출/.test(text)) return false;
+  const dateOf = (day: string) => {
+    const [, month, date] = day.split("-").map(Number);
+    return `(?<!\\d)(?:${month}/${date}|${month}월\\s*${date}일)(?!\\d)`;
+  };
+  const days = [
+    ...text.matchAll(
+      new RegExp(
+        `(?<today>오늘|금일|${dateOf(today)})|내일|명일|다음|가장 가까운|${dateOf(tomorrow)}`,
+        "g",
+      ),
+    ),
+  ].map((match) => ({
+    at: match.index,
+    isToday: match.groups?.today !== undefined,
+  }));
+  // A sentence ends at a line's end, or at a full stop that is not inside a number.
+  const ends = [...text.matchAll(/\n|[.!?](?=\s|$)/g)].map(
+    (match) => match.index,
+  );
+  return eventsToldIn(text).every((index) => {
+    const from = ends.findLast((end) => end < index) ?? -1;
+    const to = ends.find((end) => end >= index) ?? text.length;
+    const inSentence = days.filter((day) => day.at > from && day.at < to);
+    const nearest = inSentence.reduce<(typeof days)[number] | undefined>(
+      (best, day) =>
+        best === undefined ||
+        Math.abs(day.at - index) < Math.abs(best.at - index)
+          ? day
+          : best,
+      undefined,
+    );
+    const under = nearest ?? days.findLast((day) => day.at <= from);
+    return under !== undefined && !under.isToday;
+  });
 }
 
 /**
