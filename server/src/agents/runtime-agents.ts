@@ -20,6 +20,21 @@ import { visibleToActor } from "./profile-policy";
 import type { AgentActor } from "./profile-types";
 
 /**
+ * Where the Bots a person made are dialled. Two answers, and a loader is not built without one.
+ *
+ * NO DEFAULT, ON PURPOSE (the independent read of #121). This was an optional argument, and left
+ * out it meant the open setting: each Bot dialled where its row says, with its key. The agent routes
+ * default shut (`routes.ts`); a second caller of the loader that forgot the argument would have
+ * reopened the door for every row from before the upgrade. The compiler asks each caller now, and
+ * a caller that gets past the compiler is refused when the loader is made.
+ */
+export type BotsRunAt =
+  /** A hosted deployment: every Bot at the deployment's own agent, whatever its row holds. */
+  | { home: URL }
+  /** A developer's stack: each Bot where its row says, with the key stored for it. */
+  | "where each row says";
+
+/**
  * Read the agents one person may run, on every request.
  *
  * The filtering is in the query, not in JavaScript afterwards: a private coworker must never be
@@ -28,10 +43,8 @@ import type { AgentActor } from "./profile-types";
  */
 export function createRuntimeAgentLoader(
   database: Database,
-  /** Resolves a customer agent's key at load time. Absent means no agent can carry one. */
-  vault?: { reader: CredentialSecretReader; encryptionKey: string },
   /**
-   * Given on a HOSTED deployment, and only there: the deployment's own agent
+   * `{ home }` on a HOSTED deployment, and only there: the deployment's own agent
    * (`config.managedAgentAgUiUrl`), where every Bot is then dialled whatever its row holds.
    *
    * A hosted deployment takes no endpoint of a person's own for a Bot (the owner, 2026-10-06;
@@ -51,11 +64,20 @@ export function createRuntimeAgentLoader(
    * server; sent to ours it would be a credential delivered to a service it was never meant for.
    * It is not read at all.
    *
-   * Absent — a developer's stack, where the private-host opt-in is set — a Bot is dialled where
-   * its row says, with its key, as it always was.
+   * `"where each row says"` — a developer's stack, where the private-host opt-in is set — and a
+   * Bot is dialled where its row says, with its key, as it always was.
    */
-  hosted?: { home: URL },
+  botsRunAt: BotsRunAt,
+  /** Resolves a customer agent's key at load time. Absent means no agent can carry one. */
+  vault?: { reader: CredentialSecretReader; encryptionKey: string },
 ) {
+  const hosted = botsRunAt === "where each row says" ? undefined : botsRunAt;
+  // Anything that is neither answer is no answer, and no answer is not the open one.
+  if (botsRunAt !== "where each row says" && !(hosted?.home instanceof URL)) {
+    throw new TypeError(
+      'createRuntimeAgentLoader must be told where Bots run: { home } on a hosted deployment, or "where each row says" on a developer\'s stack.',
+    );
+  }
   return async (actor: AgentActor): Promise<RegisteredAgent[]> => {
     const [active, tombstones] = await Promise.all([
       selectActiveAgents(database, actor),

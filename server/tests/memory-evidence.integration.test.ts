@@ -43,7 +43,10 @@ const profileStore = createAgentProfileStore(
   database,
   new URL("https://managed.example.test/ag-ui"),
 );
-const loadAgents = createRuntimeAgentLoader(database);
+// Hosted, as a deployment runs: where a Bot is dialled is not what this file is about.
+const loadAgents = createRuntimeAgentLoader(database, {
+  home: new URL("https://managed.example.test/ag-ui"),
+});
 
 const prefix = `memory-evidence-${randomUUID()}`;
 const made = {

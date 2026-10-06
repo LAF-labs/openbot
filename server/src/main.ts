@@ -26,6 +26,7 @@ import { withPersonContext } from "./agents/person-context";
 import { createAgentProfileStore } from "./agents/profile-store";
 import type { AgentActor } from "./agents/profile-types";
 import {
+  type BotsRunAt,
   botsHeldElsewhere,
   createRuntimeAgentLoader,
 } from "./agents/runtime-agents";
@@ -477,18 +478,20 @@ const roleRepository = createRoleRepository(database);
  */
 const shopStore = createShopStore(database);
 /**
- * Where every Bot is dialled on a hosted deployment, whatever its row holds — and nothing on a
- * developer's stack, where a Bot may be pointed at an agent of one's own.
+ * Where every Bot is dialled: at this deployment's own agent on a hosted deployment, whatever its
+ * row holds — and where its row says on a developer's stack, where a Bot may be pointed at an
+ * agent of one's own.
  *
  * ONE SWITCH, AND IT IS THE ONE THAT ALREADY SAID WHICH THIS IS: the private-host opt-in
- * (`AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS`), which only a local run sets and compose never hands the
- * API. The same expression the agent routes and the deployment's facts are given (`app.ts`), so
- * the form that would take an endpoint, the screen that would draw it and the loader that would
- * dial it cannot disagree. It lives under the computer's configuration, so a stack with no
- * computer configured is hosted in this sense too — as it already was for the form.
+ * (`AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS`), which only a local run sets, compose never hands the
+ * API, and production refuses to start with. The same reading the agent routes and the
+ * deployment's facts are given (`botEndpointsTaken`), so the form that would take an endpoint,
+ * the screen that would draw it and the loader that would dial it cannot disagree. It lives
+ * under the computer's configuration, so a stack with no computer configured is hosted in this
+ * sense too — as it already was for the form.
  */
-const botsRunAt = botEndpointsTaken(config)
-  ? undefined
+const botsRunAt: BotsRunAt = botEndpointsTaken(config)
+  ? "where each row says"
   : { home: config.managedAgentAgUiUrl };
 // What each Bot IS, then what skills it holds — by name and one line, for the prompt's index — then
 // the shop it works for, which is the person's and the same for every Bot they have.
@@ -496,7 +499,7 @@ const botsRunAt = botEndpointsTaken(config)
 const loadAgentsForActor = withPersonContext(
   withShopProfile(
     withGrantedSkills(
-      createRuntimeAgentLoader(database, agentVault, botsRunAt),
+      createRuntimeAgentLoader(database, botsRunAt, agentVault),
       database,
     ),
     shopStore.read,
@@ -1202,12 +1205,13 @@ const server = serve<SocketData>({
  * deployment only. Never fatal — a count that cannot be read is said as `null`, which is not the
  * same line as a developer's stack, where there is no count to read and the field is not there.
  */
-const botsBroughtHome: number | null | undefined = botsRunAt
-  ? await botsHeldElsewhere(database, botsRunAt.home).then(
-      (held): number | null => held.length,
-      (): number | null => null,
-    )
-  : undefined;
+const botsBroughtHome: number | null | undefined =
+  botsRunAt === "where each row says"
+    ? undefined
+    : await botsHeldElsewhere(database, botsRunAt.home).then(
+        (held): number | null => held.length,
+        (): number | null => null,
+      );
 sayBooted({
   config,
   model: tenantPackage.model,

@@ -22,7 +22,10 @@ const database = createDatabase(databaseUrl, TEST_POOL);
 const managedEndpoint = new URL("https://managed.example.test/ag-ui");
 const profileStore = createAgentProfileStore(database, managedEndpoint);
 const memoryStore = createAgentMemoryStore(database);
-const loadAgents = createRuntimeAgentLoader(database);
+// Hosted, as a deployment runs: where a Bot is dialled is not what this file is about.
+const loadAgents = createRuntimeAgentLoader(database, {
+  home: managedEndpoint,
+});
 
 const testPrefix = `agent-memory-${randomUUID()}`;
 const createdUserIds: string[] = [];
