@@ -1523,6 +1523,13 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * over a real socket — which is where a put first failed, on a request body the pinned Bun would
  * not iterate once it had come off a socket, while every test that built its own request passed.
  *
+ * RAISED AGAIN 2026-10-06 after that change's independent read, by exactly the four written before
+ * their fixes: `agent-computer` from 526 to 529 (a NUL refused as a path whichever way a file is
+ * reached, and a name longer than a name may be, in `workspace.test.ts`; an unforeseen failure
+ * logged by its kind and never by the name it happened to, in `file-handoff.test.ts`) and `root`
+ * from 733 to 734 (the sentence for a file that is too large true of a read as well as a write,
+ * with the read answering that code through the server's client, in `tests/file-handoff.test.ts`).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -1530,8 +1537,8 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
 const GROUPS = [
   { name: "server", floor: 3582, roots: ["server"] },
   { name: "app", floor: 2146, roots: ["app"] },
-  { name: "agent-computer", floor: 526, roots: ["agent-computer"] },
-  { name: "root", floor: 733, roots: ["tests", "agent-bot"] },
+  { name: "agent-computer", floor: 529, roots: ["agent-computer"] },
+  { name: "root", floor: 734, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
