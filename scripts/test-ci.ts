@@ -1444,15 +1444,39 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `owner-words-prompt.test.ts`: the description that stands in, pinned whole, naming nobody and
  * carrying no slot for a vendor's text.
  *
+ * RAISED 2026-10-06 with a waiting tool that is said to be waiting, `server` from 3564 to 3571 and
+ * `root` from 720 to 725, by exactly the twelve written for it. The change above left a tool that
+ * appeared after registration out of every list, and so out of everything the Bot could say: a
+ * person who filled 카카오's toolbox and asked for a tool in it was told the connection had brought
+ * none (the review of that change). The listing counts what it does not list, the run carries the
+ * count beside its tools, and a lookup ends on it. Seven for `server`. Three in
+ * `plugin-paused-text.integration.test.ts`, on a real database: a toolbox filled after its
+ * account was connected is counted by server on the store's read, the window's route, a turn's
+ * toolkit, a routine's and through each of the three hands a routine's toolkit passes, with no
+ * name or word of the vendor's in any of it; a routine's Bot over the real wire is told how many
+ * wait in each lookup's answer while every request's tools are the same bytes as a control run
+ * told nothing, then one tool is reviewed and one still counted, then none; and a tool looked up
+ * while it waited is called — the call reaches the store and is refused with its row — then
+ * reviewed, and the next call is handed the real schema before one goes through. Two in
+ * `chat-tools.test.ts` (the turn carries the count and its lookup says it in place of "brought
+ * none"; a listing that fails keeps the last count with the last list), one in
+ * `turn-engine.integration.test.ts` (the turn forwards it on every request, beside the device),
+ * one in `copilot.test.ts` (it reaches the endpoint, and the prompt and the tools are the same
+ * bytes with it or without). Five for `root`. Four in `tool-bridge.test.ts`: every answer ending
+ * on the count, found or not, and the same bytes as before where nothing waits; an account whose
+ * tools all wait not said to have brought none; what crossed the wire read in a closed shape; and
+ * a stand-in's line counting as the schema only while the tool still stands in. One in
+ * `owner-words-prompt.test.ts`: the line's words, pinned whole around their one slot.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3564, roots: ["server"] },
+  { name: "server", floor: 3571, roots: ["server"] },
   { name: "app", floor: 2146, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
-  { name: "root", floor: 720, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 725, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
