@@ -34,7 +34,7 @@ import {
   allowanceFor,
   type StandingApprovalStore,
 } from "../standing-approvals";
-import { describeFile, hostOf, pathOf } from "./addresses";
+import { describeFile, hostOf, pathOf, workspacePathOf } from "./addresses";
 import {
   type ActionActor,
   ActionNeedsApprovalError,
@@ -129,7 +129,18 @@ export function createGovern(options: {
      */
     if (subject.signal?.aborted) throw stopped();
 
-    const { ref, filePath } = subject;
+    const { ref } = subject;
+    /*
+     * THE FILE, AS THE COMPUTER WILL READ ITS PATH — not as it was written. Read here, once, for
+     * every caller there is or will be: a rule, a question, an allowance, the count and the row
+     * below are all about this string, and it is the file the act will touch whichever spelling of
+     * it the act itself sends (`addresses.ts`, `workspacePathOf`). A string that is no path at all
+     * stays as written; the computer refuses it.
+     */
+    const filePath =
+      subject.filePath === undefined
+        ? undefined
+        : (workspacePathOf(subject.filePath) ?? subject.filePath);
     const element = resolve(computerId, ref);
     const cached = snapshots.get(computerId);
     // For a navigation the relevant page is the one being opened, not the one already loaded. Using

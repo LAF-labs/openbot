@@ -1683,12 +1683,23 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * script handed nothing of what its daemon was STARTED with, the key least of all — which passed
  * already and says why: the environment a script is given, not the key's deleting.
  *
+ * RAISED 2026-10-07 FOR THE PATH A RULE JUDGES, by exactly what was added: `server` from 3677 to
+ * 3689. Twelve in the new `gateway-file-paths.test.ts`: a path's one spelling as a table, and what
+ * has none; that spelling held against the REAL workspace, which is the reader it has to agree
+ * with — every spelling the computer reads as one file, and every string it refuses as a path; a
+ * file denied by its path, its name or its extension not read, written or handed to a site under
+ * eleven spellings of it, a dotfile not read as `.env/`, a folder not listed, the boundaries
+ * screen's own preset asked outside `notes/` and not inside; the string the computer is handed and
+ * the row both in the one spelling, a listing with no path as it was, and what is no path at all
+ * going on as written; and a routine's own door, which trims nothing. Six of them fail on the
+ * gateway as it was.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3677, roots: ["server"] },
+  { name: "server", floor: 3689, roots: ["server"] },
   { name: "app", floor: 2158, roots: ["app"] },
   { name: "agent-computer", floor: 529, roots: ["agent-computer"] },
   { name: "root", floor: 807, roots: ["tests", "agent-bot"] },
