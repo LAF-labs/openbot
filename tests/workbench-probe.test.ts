@@ -173,7 +173,7 @@ test("the probe's floor is the number of things it tries, so one that stopped ea
     join(import.meta.dir, "..", "scripts/workbench-probe.ts"),
     "utf8",
   );
-  expect(PROBE_CHECKS).toBe(31);
+  expect(PROBE_CHECKS).toBe(32);
   expect(source).toContain("(results?.length ?? 0) === PROBE_CHECKS");
   // A build that should have the service and does not is a failed check, not a finding.
   expect(source).toContain("if (tools.expected) {");
