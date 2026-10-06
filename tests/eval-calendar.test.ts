@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { ObservedCall } from "../evals/lib";
 import { dayAfter } from "../evals/morning-briefing";
 import { EVAL_NOW } from "../evals/prompt";
-import { fridaysMeantThisWeek, SCENARIOS, type Turn } from "../evals/scenarios";
+import {
+  fridaysMeantThisWeek,
+  SCENARIOS,
+  type Turn,
+  toldAsWhatComesNext,
+} from "../evals/scenarios";
 import * as calendar from "../server/src/plugins/google-calendar-rest";
 import { CALENDAR_TOOL_NAME } from "../server/src/turns/first-move";
 import { stubFetch } from "../server/tests/support/fetch";
@@ -231,6 +236,8 @@ describe("first-move-calendar-empty-day", () => {
     // An event made up for today, beside the true next one — with an hour, and with none.
     "오늘은 오후 3시에 거래처 방문이 있고, 내일 밤 11시에는 한빛상사 납품 미팅이 있어요. 그 외에는 없어요.",
     "오늘 거래처 미팅이 하나 있어요. 그 외에는 없어요.",
+    // …and in one sentence: what is said not to be there is the other thing, not the 미팅.
+    "오늘 거래처 미팅이 하나 있고 다른 건 없어요.",
     // An event on no day of this calendar.
     "오늘은 일정이 없어요. 내일은 오전 10시에 치과 예약이 있어요.",
   ])("fails %s", (said) => {
@@ -261,6 +268,42 @@ describe("first-move-calendar-empty-day", () => {
   });
 });
 
+/*
+ * The judge reads today's and tomorrow's dates as day words, and the rows above can only write the
+ * dates of the day the test runs on. These hold it on days that day will seldom be.
+ */
+describe("the day an event is told under, on other dates", () => {
+  const NEXT = "밤 11시에 한빛상사 납품 미팅이 있어요.";
+
+  test("in January a date in November is neither today's nor tomorrow's", () => {
+    const told = (said: string) =>
+      toldAsWhatComesNext(said, "2026-01-06", "2026-01-07");
+    // Tomorrow's own date, both ways it is written.
+    expect(told(`오늘은 없어요. 1월 7일 ${NEXT}`)).toBe(true);
+    expect(told(`오늘은 없어요. 1/7 ${NEXT}`)).toBe(true);
+    // "1월 7일" is inside "11월 7일", and "1/7" inside "11/7": no day at all, so not told as what
+    // comes next.
+    expect(told(`11월 7일 ${NEXT}`)).toBe(false);
+    expect(told(`11/7 ${NEXT}`)).toBe(false);
+    // And today's own date is today.
+    expect(told(`1월 6일 ${NEXT}`)).toBe(false);
+    expect(told(`1/6 ${NEXT}`)).toBe(false);
+  });
+
+  test("tomorrow is next month's first day when today is this month's last", () => {
+    const told = (said: string) =>
+      toldAsWhatComesNext(said, "2026-01-31", "2026-02-01");
+    expect(told(`오늘은 없어요. 다음 일정은 2/1 ${NEXT}`)).toBe(true);
+    expect(told(`오늘은 없어요. 2월 1일 ${NEXT}`)).toBe(true);
+    expect(told(`1/31 ${NEXT}`)).toBe(false);
+    // And next year's: "1/1" is the first of January, not the start of the fifteenth.
+    const atYearsEnd = (said: string) =>
+      toldAsWhatComesNext(said, "2026-12-31", "2027-01-01");
+    expect(atYearsEnd(`오늘은 없어요. 1/1 ${NEXT}`)).toBe(true);
+    expect(atYearsEnd(`1/15 ${NEXT}`)).toBe(false);
+  });
+});
+
 describe("first-move-calendar-empty-week", () => {
   const check = scenario("first-move-calendar-empty-week").check;
 
@@ -281,6 +324,7 @@ describe("first-move-calendar-empty-week", () => {
     "오늘은 오후 3시에 거래처 미팅이 하나 있어요. 그 외에는 없어요.",
     "오늘은 없고, 내일 14:00에 일정이 하나 있어요.",
     "오늘 거래처 회의가 하나 있어요. 그 외에는 없어요.",
+    "오늘 거래처 회의가 하나 있고 다른 건 없어요.",
   ])("fails %s — nothing is on this calendar for a week", (said) => {
     expect(check(turn(said)).notes).toEqual(["없는 일정을 지어냄"]);
   });

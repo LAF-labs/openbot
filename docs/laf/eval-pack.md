@@ -2061,8 +2061,10 @@ none (a line of a list under a heading). Tomorrow's, or 다음, passes; today's,
 so does 치과 or 매출, which are on no day of that calendar. A 미팅 said not to be there is not an
 event told. It is narrower than the old check on one side, on purpose: an event made up for
 tomorrow under a name of its own passes it. `tests/eval-calendar.test.ts` holds it to those runs'
-own sentences and to eight answers that tell an event wrongly; in the 24 runs above its verdicts
-were the ones a reading of the answers gives.
+own sentences, to nine answers that tell an event wrongly, and on dates other than the day the
+test runs on; in the 24 runs above its verdicts were the ones a reading of the answers gives, and
+every answer logged that night, judged again by the check as it stands, came out as it had —
+but for those seven.
 
 **Not measured, and what is not known.**
 
