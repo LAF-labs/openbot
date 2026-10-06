@@ -346,6 +346,9 @@ async function runRounds(context: RunContext): Promise<void> {
       transcript.flatMap((message) =>
         message.role === "tool" ? [textOf(message.content)] : [],
       ),
+      // Against what stands behind the bridge NOW: a tool that was looked up while it waited for
+      // review was shown this deployment's stand-in, not its schema (`describedToolNames`).
+      exposed.deferred,
     );
     const nudge = mustSpeak
       ? answerNowText("budget")

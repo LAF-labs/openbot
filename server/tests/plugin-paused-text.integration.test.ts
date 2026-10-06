@@ -96,6 +96,7 @@ import {
 } from "../src/plugins/store";
 import { withFeed } from "../src/routines/feed";
 import { withNotepad } from "../src/routines/notepad";
+import { runTurnLoop } from "../src/runner/turn-loop";
 import {
   createUnattendedTools,
   runUnattended,
@@ -181,6 +182,20 @@ const SIPHON: McpTool = {
 };
 const OF_THE_ROUTE = [ROUTE.name, "Find a way between"] as const;
 const OF_THE_SIPHON = [SIPHON.name, "pay-9a3c", "settle up"] as const;
+/** The first server's tools as the last refresh above leaves them, for a refresh that changes one. */
+const APPEARED_AGAIN: McpTool = {
+  ...APPEARED,
+  description: `${APPEARED.description} Now.`,
+};
+const NOTE_CHANGED: McpTool = {
+  ...NOTE,
+  description: "Add a note to an order, and say whether it is pinned.",
+  inputSchema: {
+    type: "object",
+    properties: { text: { type: "string" }, pinned: { type: "boolean" } },
+  },
+};
+
 /** One request as the provider was sent it: the head (`tools`) and the conversation. */
 type Sent = {
   tools?: unknown;
@@ -656,11 +671,7 @@ describeDb("what a model is given of a tool that waits for review", () => {
   });
 
   test("a tool nobody consented to stays one when its vendor changes it again", async () => {
-    toolsOnServer = [
-      LIST_CHANGED,
-      NOTE,
-      { ...APPEARED, description: `${APPEARED.description} Now.` },
-    ];
+    toolsOnServer = [LIST_CHANGED, NOTE, APPEARED_AGAIN];
     // Counted as paused again, and still for the reason it was first paused for.
     expect((await store.refreshTools(serverId)).paused).toBe(1);
     const [row] = await database
@@ -1059,5 +1070,107 @@ describeDb("what a model is given of a tool that waits for review", () => {
     expect(await store.offeredToModel(botId)).toEqual(
       await store.listForAgent(botId),
     );
+  });
+
+  /*
+   * THE STAND-IN IS NOT THE SCHEMA (the same review). A tool whose definition changed is found by
+   * its name and handed over as this deployment's description and an empty schema. That line
+   * stays in the conversation — and after a person reviewed the tool it still counted as "this
+   * conversation was shown the schema", so the Bot's next call was forwarded on arguments it had
+   * never been shown a field for. Walked here as a conversation of two messages over the real
+   * wire and the real store: looked up and called while paused (the call must still REACH the
+   * store, whose refusal is the audit row and the table's sentence — a stand-in that simply did
+   * not count would be answered by the Bot's service for ever and leave neither), approved, and
+   * called again.
+   */
+  test("looked up while it waited, then reviewed: the call made while paused reaches the store and is refused with its row; the next one is handed the real schema first, and only then goes through", async () => {
+    toolsOnServer = [LIST_CHANGED, NOTE_CHANGED, APPEARED_AGAIN];
+    expect((await store.refreshTools(serverId)).paused).toBe(1);
+    const rejections = async () =>
+      (
+        await database
+          .select({ payload: auditEvents.payload })
+          .from(auditEvents)
+          .where(
+            and(
+              eq(auditEvents.eventType, "mcp.call_rejected"),
+              eq(auditEvents.targetId, refOf(NOTE)),
+            ),
+          )
+      ).map((row) => row.payload);
+    expect(await rejections()).toEqual([]);
+
+    /** One message of the conversation, run as a turn runs it: this moment's listing, the loop. */
+    const message = async (agent: HttpAgent, text: string) => {
+      agent.addMessage({ id: randomUUID(), role: "user", content: text });
+      const toolkit = await turn(null);
+      return runTurnLoop(agent, {
+        tools: toolkit.tools,
+        execute: toolkit.execute,
+        timeoutMs: 10_000,
+        maxSteps: 12,
+        forwardedProps: withheldToolsForwarded(toolkit.withheld),
+      });
+    };
+    const guessed = { text: "문 앞에 놓아 주세요" };
+    const asShown = { text: "문 앞에 놓아 주세요", pinned: true };
+    const { result, sent, agent } = await withTheBotsService(
+      [
+        // The first message, while the tool waits.
+        calling("find", TOOL_SEARCH, { query: "orders note" }),
+        calling("early", TOOL_CALL, { name: nameOf(NOTE), args: {} }),
+        said("메모 툴은 검토를 기다리고 있어요."),
+        // The second, after the person reviewed it.
+        calling("guess", TOOL_CALL, { name: nameOf(NOTE), args: guessed }),
+        calling("real", TOOL_CALL, { name: nameOf(NOTE), args: asShown }),
+        said("메모를 남겼어요."),
+      ],
+      async (agent) => {
+        const paused = await message(agent, "주문에 메모를 남겨 줘.");
+        const rowsWhilePaused = await rejections();
+        expect(
+          await store.approveToolDefinition(serverId, NOTE.name, actorId),
+        ).toBe(true);
+        const reviewed = await message(agent, "검토했어. 다시 해 줘.");
+        return { paused, rowsWhilePaused, reviewed };
+      },
+    );
+    expect(sent).toHaveLength(6);
+
+    // While paused: the lookup hands over the stand-in, and the call still goes to the store.
+    expect(answerTo(agent, "find")).toContain(`"name":"${nameOf(NOTE)}"`);
+    expect(answerTo(agent, "find")).toContain(PAUSED_TOOL_DESCRIPTION);
+    expect(answerTo(agent, "early")).toBe(
+      toolResultText("laf:tool_needs_review"),
+    );
+    // Under its real name, which is how a call that left the Bot's service is filed.
+    const namesOf = (steps: typeof result.paused.steps) =>
+      steps.flatMap((step) => step.calls.map((call) => call.name));
+    expect(namesOf(result.paused.steps)).toEqual([TOOL_SEARCH, nameOf(NOTE)]);
+    expect(result.rowsWhilePaused).toEqual([
+      {
+        actor: actorId,
+        bot: botId,
+        server: serverId,
+        tool: NOTE.name,
+        refusal: "needs_review",
+      },
+    ]);
+
+    // After the review the conversation still holds the stand-in's line — and it is not taken
+    // for the schema: the first call is answered with the real one, by the Bot's own service.
+    expect(JSON.stringify(sent[3]?.messages)).toContain(
+      JSON.stringify(PAUSED_TOOL_DESCRIPTION).slice(1, -1),
+    );
+    const handedOver = answerTo(agent, "guess");
+    expect(handedOver).toContain("스키마를 이 대화에서 아직 받지 않아서");
+    expect(handedOver).toContain(NOTE_CHANGED.description);
+    expect(handedOver).toContain('"pinned":{"type":"boolean"}');
+    expect(handedOver).not.toContain(PAUSED_TOOL_DESCRIPTION);
+    // Then the call made from what was shown is the real call, and the vendor answers it.
+    expect(answerTo(agent, "real")).toBe("ok");
+    expect(namesOf(result.reviewed.steps)).toEqual([TOOL_CALL, nameOf(NOTE)]);
+    // The guess never reached the store: one refusal, the one made while the tool waited.
+    expect(await rejections()).toHaveLength(1);
   });
 });
