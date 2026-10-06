@@ -19,6 +19,7 @@ import { josa } from "@/lib/josa";
 import { siteById } from "@/lib/sites/catalogue";
 import { useNow } from "@/lib/use-now";
 import { own } from "@/lib/own";
+import type { ProductsRefusal, RunEnding } from "@shared/workbench/protocol";
 
 /**
  * Read surface for policy, computer, component, MCP, and credential audit events.
@@ -270,6 +271,17 @@ function Row({
     stalled;
   const verdict = decisionOf(event.eventType, refused, failed);
   const silence = stalled ? silenceOf(payload) : null;
+  /*
+   * A SCRIPT'S RUN: which script, by the digest every row about it carries, and — on the row that
+   * says how it ended — the ending. Read as what arrived, field by field: the trail is JSON a
+   * year old by the time somebody reads it, and a row from another build must draw as less, not
+   * as "undefined". Never the script or anything it printed: the row holds neither (`trail.ts`).
+   */
+  const script = scriptOf(payload);
+  const ended =
+    event.eventType === "computer.script_finished" ? endingOf(payload) : null;
+  // Killed at a bound, or left with a failing status: the colour a reader skims for.
+  const endedBadly = ended?.badly === true;
 
   return (
     <tr className="border-border border-t align-top">
@@ -335,6 +347,19 @@ function Row({
           <Id>{payload.fingerprint}</Id>
         ) : typeof payload.file === "string" ? (
           <Id>{payload.file}</Id>
+        ) : script ? (
+          // Which script, by the start of its digest — the whole of it is the chip's title, for
+          // finding the same run in a conversation. Beneath it, the files it was handed.
+          <span>
+            <span title={script.sha256}>
+              <Id>{script.sha256.slice(0, 12)}</Id>
+            </span>
+            {script.files.length > 0 ? (
+              <span className="mt-0.5 block text-muted-foreground text-xs">
+                {script.files.join(", ")}
+              </span>
+            ) : null}
+          </span>
         ) : typeof element === "object" && element?.name ? (
           <span>
             {element.name}
@@ -370,7 +395,7 @@ function Row({
           className={
             refused
               ? "font-medium text-destructive"
-              : failed
+              : failed || endedBadly
                 ? "font-medium text-warning"
                 : "text-muted-foreground"
           }
@@ -414,6 +439,36 @@ function Row({
         {failed && typeof payload.failure === "string" ? (
           <div className="mt-0.5 text-xs text-muted-foreground">
             {fact(payload.failure)}
+          </div>
+        ) : null}
+        {/*
+         * How a script's run ended: by itself and with what status, or stopped at which bound;
+         * how long it took and how much it printed, as a count; and the files it handed back, by
+         * name. Each of those files has a row of its own below this one, where it was filed or
+         * was not.
+         */}
+        {ended ? (
+          <div className="mt-0.5 text-xs text-muted-foreground">
+            <div>{t(ended.words, { code: ended.code })}</div>
+            <div>
+              {t("{ms} ms · printed {bytes} bytes", {
+                ms: ended.ms,
+                bytes: ended.printed,
+              })}
+            </div>
+            {ended.withheld ? <div>{t(ended.withheld)}</div> : null}
+            {ended.products.length > 0 ? (
+              <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                <span>
+                  {t("Handed back {count} files", {
+                    count: ended.products.length,
+                  })}
+                </span>
+                {ended.products.map((name) => (
+                  <Id key={name}>{name}</Id>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
         {/*
@@ -515,6 +570,80 @@ function Row({
   );
 }
 
+/** The script a row is about, where it is about one: its digest, and the files it was handed. */
+function scriptOf(
+  payload: Record<string, unknown>,
+): { sha256: string; files: string[] } | null {
+  const script = payload.script;
+  if (!script || typeof script !== "object") return null;
+  const { sha256 } = script as { sha256?: unknown };
+  if (typeof sha256 !== "string" || !sha256) return null;
+  const files = Array.isArray(payload.files)
+    ? payload.files.filter((file): file is string => typeof file === "string")
+    : [];
+  return { sha256, files };
+}
+
+/**
+ * HOW A SCRIPT'S RUN ENDED, in the words this column wants — keyed by the three endings the place
+ * a script runs can report (`shared/workbench/protocol.ts`, `RunEnding`).
+ *
+ * Read through a variable, so `audit-labels.test.ts` walks it. An ending this build does not know
+ * draws nothing rather than a wrong word: a row written by a later build is still a row.
+ */
+export const SCRIPT_ENDINGS: Record<RunEnding, string> = {
+  exited: "It ended by itself, with status {code}",
+  timed_out: "It was stopped at the time it was given",
+  out_of_memory: "It was stopped at the memory it was given",
+};
+
+/** Why a run that left files handed none back, said for the same column and walked the same way. */
+export const SCRIPT_FILES_WITHHELD: Record<ProductsRefusal, string> = {
+  too_many: "It left more files than a run hands back, so none was kept",
+  too_large: "It left a file too large to hand back, so none was kept",
+  too_large_together:
+    "The files it left were too large together, so none was kept",
+};
+
+/** A `computer.script_finished` row as this page draws it, or null when it is not readable as one. */
+function endingOf(payload: Record<string, unknown>): {
+  words: string;
+  code: number | string;
+  ms: number;
+  printed: number;
+  withheld: string | undefined;
+  products: string[];
+  badly: boolean;
+} | null {
+  const words =
+    typeof payload.ending === "string"
+      ? own(SCRIPT_ENDINGS, payload.ending)
+      : undefined;
+  if (!words) return null;
+  const count = (value: unknown) => (typeof value === "number" ? value : 0);
+  return {
+    words,
+    // A status is a number; where a run ended by itself and the row has none, a dash says so.
+    code: typeof payload.exit === "number" ? payload.exit : "-",
+    ms: count(payload.ms),
+    printed: count(payload.stdoutBytes) + count(payload.stderrBytes),
+    withheld:
+      typeof payload.productsRefused === "string"
+        ? own(SCRIPT_FILES_WITHHELD, payload.productsRefused)
+        : undefined,
+    products: Array.isArray(payload.products)
+      ? payload.products
+          .map((product: unknown) =>
+            product && typeof product === "object"
+              ? (product as { name?: unknown }).name
+              : undefined,
+          )
+          .filter((name): name is string => typeof name === "string")
+      : [],
+    badly: payload.ending !== "exited" || payload.exit !== 0,
+  };
+}
+
 /**
  * Target types whose id is a name worth putting on screen.
  *
@@ -594,6 +723,9 @@ export const DECISIONS: Record<string, string> = {
   // A person took a file out of their Bot's folder. Nothing judged it — it is their folder — so the
   // row says what happened and not that it was allowed. The path is in the column beside it.
   "computer.file_downloaded": "A person downloaded a file",
+  // Not a permission and not a refusal: the permission has its own row, written before the program
+  // was sent anywhere. This one says a run ended; the lines beneath say how, and what it made.
+  "computer.script_finished": "The program's run ended",
   "computer.reset": "The computer was reset",
   // A deleted Bot let go of the shared computer: its tabs closed, the account's logins stayed.
   "computer.released": "A deleted Bot let go of the computer",
@@ -848,6 +980,23 @@ export const FACTS: Record<string, string> = {
   // The boot row's whole content. Not a refusal — the arrangement this deployment runs under.
   "laf:one_shared_computer":
     "Every Bot of this account drives the same browser: sessions, files and logins are shared",
+
+  /*
+   * Why a program the Bot wrote was allowed to run and did not, or why a file it made was not
+   * kept. "The place programs run", never its name: a reader of this column knows what they asked
+   * their Bot for, not which container did not answer. A program that ran and ended badly is not
+   * here — that is the row that says how its run ended.
+   */
+  "laf:workbench_unavailable":
+    "The place programs run did not answer, so nothing ran",
+  "laf:workbench_busy": "The place programs run was busy, so nothing ran",
+  "laf:workbench_failed":
+    "The place programs run did not answer for the run, so nothing of it was kept",
+  "laf:script_too_large": "The program was longer than one may be",
+  "laf:script_inputs_invalid":
+    "The files or the time it asked for were not ones a run takes",
+  "laf:made_full":
+    "The folder for files that programs make is full, so the file was not kept",
 };
 
 /**
@@ -920,6 +1069,10 @@ export const TOOLS: Record<string, string> = {
   // Not in the catalogue and never registered on a Bot, but the contract still names it and an old
   // row can carry it. Cheaper to say than to find out from a reader.
   computer_screenshot: "Take a screenshot",
+  // A program the Bot wrote, run over files it names (`server/src/computer/gateway/intent.ts`,
+  // `RUN_SCRIPT_TOOL`). Not in the catalogue either — no Bot is offered it yet — and the gateway
+  // writes rows under this name, so `audit-labels.test.ts` holds this entry to the server's name.
+  mcp__workbench__run_script: "Run a small program",
 };
 
 /**
@@ -966,6 +1119,8 @@ export const EVENTS: Record<string, string> = {
   "computer.secret_requested": "A secret",
   "computer.secret_supplied": "A secret",
   "computer.file_downloaded": "A file from the Bot's folder",
+  // Drawn only where a row has no tool's name on it; this one does, and takes the table above.
+  "computer.script_finished": "A small program's run",
   "approval.requested": "A question",
   "approval.granted": "A question",
   "approval.denied": "A question",

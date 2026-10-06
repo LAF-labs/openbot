@@ -31,6 +31,7 @@ const INTENTS = Object.keys({
   write_file: true,
   list_files: true,
   upload: true,
+  run_script: true,
   call_tool: true,
   act: true,
 } satisfies Record<AskSubject["intent"], true>) as AskSubject["intent"][];
@@ -103,6 +104,19 @@ function shapesOf(
     return [
       { kind: "file", ...base, file: { path: "." } },
       { kind: "file", ...base, file: { path: "reports" } },
+    ];
+  }
+  if (intent === "run_script") {
+    // A run names several files, one, or none — and an older or a broken sender, no list at all.
+    return [
+      { kind: "file", ...base, files: [] },
+      { kind: "file", ...base, files: [{ path: "uploads/매출.xlsx" }] },
+      {
+        kind: "file",
+        ...base,
+        files: [{ path: "uploads/매출.xlsx" }, { path: "uploads/비용.csv" }],
+      },
+      { kind: "file", ...base },
     ];
   }
   return [
@@ -193,6 +207,76 @@ describe("saying what a Bot is about to do", () => {
         reason: "guard_floor",
       }).reason?.key,
     ).toBe("The tool is declared as one that sends something outward.");
+  });
+
+  /*
+   * A RUN'S SENTENCE, WRITTEN OUT. The table test above proves each shape has an entry; this is
+   * that the sentence names the file a person would recognise, counts the files when there are
+   * several, and — the property the card exists for — holds nothing a script says, because the
+   * subject it is built from has nowhere to carry one.
+   */
+  test("a script's run is said as the files it is handed, in a person's words", () => {
+    const actionOf = (files: unknown, extra: object = {}) =>
+      subjectPhrases({
+        kind: "file",
+        intent: "run_script",
+        files,
+        reason: "policy_ask",
+        ...extra,
+      } as unknown as AskSubject);
+    const none = "It wants to run a small program it wrote.";
+
+    expect(actionOf([{ path: "uploads/매출.xlsx" }]).action).toEqual({
+      key: "It wants to run a small program it wrote, on the file {path}.",
+      params: { path: "uploads/매출.xlsx" },
+    });
+    expect(
+      actionOf([
+        { path: "uploads/매출.xlsx" },
+        { path: "uploads/비용.csv" },
+        { path: "uploads/재고.csv" },
+      ]).action,
+    ).toEqual({
+      key: "It wants to run a small program it wrote, on {count} files including {path}.",
+      params: { path: "uploads/매출.xlsx", count: 3 },
+    });
+    expect(actionOf([]).action).toEqual({ key: none, params: {} });
+    // A list that is not one, or holds what is not a path, prints nothing in a file's place.
+    for (const files of [
+      undefined,
+      "uploads/a.csv",
+      [{}],
+      [{ path: 7 }],
+      [null],
+    ]) {
+      expect(actionOf(files).action).toEqual({ key: none, params: {} });
+    }
+    // The fifth identical run says so, like any repeated call.
+    expect(
+      actionOf([], { repeatCount: 5, reason: "repeat" }).reason?.params,
+    ).toEqual({ count: 5 });
+
+    // And the Korean a person reads: who wrote the program, which file, how many.
+    expect(ko[none]).toBe("직접 짠 작은 프로그램을 돌리려 해요.");
+    expect(
+      ko["It wants to run a small program it wrote, on the file {path}."],
+    ).toBe("{path} 파일을 넣어, 직접 짠 작은 프로그램을 돌리려 해요.");
+    expect(
+      ko[
+        "It wants to run a small program it wrote, on {count} files including {path}."
+      ],
+    ).toBe(
+      "{path} 등 파일 {count}개를 넣어, 직접 짠 작은 프로그램을 돌리려 해요.",
+    );
+    // In English, with the values in it, as every sentence here is composed.
+    expect(
+      describeSubject({
+        kind: "file",
+        intent: "run_script",
+        files: [{ path: "uploads/매출.xlsx" }],
+        reason: "policy_ask",
+      }),
+    ).toContain("uploads/매출.xlsx");
   });
 
   test("a question about repetition says how many times", () => {

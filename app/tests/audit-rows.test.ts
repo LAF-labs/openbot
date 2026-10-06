@@ -171,6 +171,60 @@ describe("what counts as the same row", () => {
     expect(signatures.size).toBe(changes.length + 1);
   });
 
+  /*
+   * A SCRIPT'S RUN. The table draws which script by its digest, the files it was handed, how it
+   * ended and what it made — so two runs that differ in any of those are two rows, and a Bot
+   * running one script five times with five different endings is not "one row, five times".
+   */
+  test("two runs of a script are one row only when the script, its files, its ending and what it made are the same", () => {
+    const ran = {
+      action: "mcp__workbench__run_script",
+      bot: "bot-1",
+      script: { sha256: "a".repeat(64), bytes: 120 },
+      ending: "exited",
+      exit: 0,
+      signal: null,
+      ms: 400,
+      stdoutBytes: 16,
+      stderrBytes: 0,
+      products: [{ name: "out.csv", bytes: 9 }],
+      skipped: 0,
+    };
+    const changes: Record<string, unknown>[] = [
+      { ...ran, script: { sha256: "b".repeat(64), bytes: 120 } },
+      { ...ran, ending: "timed_out", exit: null },
+      { ...ran, ending: "out_of_memory", exit: null },
+      { ...ran, exit: 1 },
+      { ...ran, ms: 401 },
+      { ...ran, stdoutBytes: 17 },
+      { ...ran, stderrBytes: 1 },
+      { ...ran, products: [{ name: "other.csv", bytes: 9 }] },
+      { ...ran, products: [{ name: "out.csv", bytes: 10 }] },
+      { ...ran, products: [], productsRefused: "too_many" },
+    ];
+    const signature = (payload: Record<string, unknown>) =>
+      signatureOf(
+        event(noonOn("2026-10-07"), "computer.script_finished", payload),
+      );
+    const signatures = new Set([ran, ...changes].map(signature));
+    expect(signatures.size).toBe(changes.length + 1);
+    expect(signature({ ...ran })).toBe(signature(ran));
+
+    // And the decision's row, which names the files: the same script over other files is another.
+    const decided = (files: string[]) =>
+      signatureOf(
+        event(noonOn("2026-10-07"), "computer.action_allowed", {
+          action: "mcp__workbench__run_script",
+          bot: "bot-1",
+          script: ran.script,
+          files,
+          decision: { allowed: true, rule: "true" },
+        }),
+      );
+    expect(decided(["uploads/a.csv"])).not.toBe(decided(["uploads/b.csv"]));
+    expect(decided(["uploads/a.csv"])).toBe(decided(["uploads/a.csv"]));
+  });
+
   test("the same row at a different time is the same row", () => {
     // Time is the one field a run is allowed to differ in; it is what the count stands for.
     const payload = { action: "computer_click", bot: "bot-1" };

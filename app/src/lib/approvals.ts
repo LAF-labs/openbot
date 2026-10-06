@@ -97,12 +97,15 @@ export type AskSubject = {
     | "write_file"
     | "list_files"
     | "upload"
+    | "run_script"
     | "call_tool"
     | "act";
   host?: string;
   path?: string;
   element?: { role: string; name: string };
   file?: { path: string };
+  /** The files a script would be handed, for a run: several, one or none. Never the script. */
+  files?: { path: string }[];
   tool?: {
     server: string;
     name: string;
@@ -178,6 +181,7 @@ const INTENTS = new Set<AskSubject["intent"]>([
   "write_file",
   "list_files",
   "upload",
+  "run_script",
   "call_tool",
   "act",
 ]);
@@ -305,6 +309,28 @@ function actionPhrase(subject: AskSubject): Phrase {
           }
         : { key: "It wants to upload the file {path}.", params: { path } };
     }
+    case "run_script": {
+      /*
+       * WHAT A PERSON CAN JUDGE, AND NOTHING THEY CANNOT: that the Bot wrote a program itself,
+       * and which of their files it would be handed. What the program says is not on the card —
+       * the server never sends it as a fact (`AskSubject.files` is all a run's subject holds), and
+       * a card that printed code at somebody who does not read code would be asking them to press
+       * Allow without reading. "A small program", not "a script": the word this audience knows.
+       */
+      const [first, ...rest] = runFiles(subject);
+      if (first === undefined) {
+        return { key: "It wants to run a small program it wrote.", params: {} };
+      }
+      return rest.length === 0
+        ? {
+            key: "It wants to run a small program it wrote, on the file {path}.",
+            params: { path: first },
+          }
+        : {
+            key: "It wants to run a small program it wrote, on {count} files including {path}.",
+            params: { path: first, count: rest.length + 1 },
+          };
+    }
     case "call_tool": {
       // By the names a person knows them by, where this surface has one: "지메일의 ‘메일 보내기’",
       // not "gmail의 ‘send_message’" (audit R4-14). An unnamed tool keeps its own name.
@@ -326,6 +352,22 @@ function actionPhrase(subject: AskSubject): Phrase {
             params: {},
           };
   }
+}
+
+/**
+ * The paths a run's question names, read as what arrived rather than as what the type promises:
+ * this is JSON off the wire, and a card must not print "undefined" where a file's name goes.
+ */
+function runFiles(subject: AskSubject): string[] {
+  const files: unknown = subject.files;
+  if (!Array.isArray(files)) return [];
+  return files
+    .map((file: unknown) =>
+      file && typeof file === "object"
+        ? (file as { path?: unknown }).path
+        : undefined,
+    )
+    .filter((path): path is string => typeof path === "string" && path !== "");
 }
 
 function reasonPhrase(subject: AskSubject): Phrase | undefined {
@@ -584,6 +626,21 @@ export function actionNounPhrase(subject: AskSubject | undefined): Phrase {
             params: { path, host },
           }
         : { key: "uploading the file {path}", params: { path } };
+    }
+    case "run_script": {
+      const [first, ...rest] = runFiles(subject);
+      if (first === undefined) {
+        return { key: "running a small program it wrote", params: {} };
+      }
+      return rest.length === 0
+        ? {
+            key: "running a small program on the file {path}",
+            params: { path: first },
+          }
+        : {
+            key: "running a small program on {count} files including {path}",
+            params: { path: first, count: rest.length + 1 },
+          };
     }
     case "call_tool": {
       const server = subject.tool?.server ?? "";
