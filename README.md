@@ -167,7 +167,7 @@ A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui),
 | `/admin/audit`                | Review permitted, refused, and failed actions.                                          |
 | `/admin/computers`            | View, stop, and reset computers.                                                        |
 | `/admin/credentials`          | Store write-only encrypted credentials.                                                 |
-| `/admin/bots`                 | A Bot answered by your own AG-UI endpoint.                                              |
+| `/admin/bots`                 | A Bot answered by your own AG-UI endpoint — on a developer's stack only.                |
 | `/admin/components`           | Publish components and govern which Bots may use them.                                  |
 | `/admin/playground`           | Draft and publish sandboxed components in the browser.                                  |
 | `/admin/plugins`              | Configure MCP servers, MCP grants, and deployment skills.                                |
@@ -180,7 +180,7 @@ A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui),
 - **CEL policy, fail closed**: rules can inspect `tool.name`, `intent`, `bot.id`, `actor.id`, `page.url`, `page.host`, `element.*`, `key`, `submit`, `file.*`, `mcp.*` and `repeat.count`. Deny is evaluated before allow, a missing policy permits nothing, and a broken rule refuses rather than opens.
 - **Take the wheel**: a Bot that hits a login wall or a 2FA prompt asks for help. Control is handed over in the same panel and recorded as `computer.help_requested`, `computer.control_taken` and `computer.control_released`. While a person is driving, Bot actions are refused rather than queued.
 - **Secrets never enter the transcript**: the trail records that a secret was requested and how long it was, not what it said.
-- **Bring your own agent**: any AG-UI endpoint is a Bot, on a framework or hand written. Endpoints are validated with the same target checks used for browser navigation, and an auth header is stored write-only.
+- **Bring your own agent, on a developer's stack**: any AG-UI endpoint is a Bot, on a framework or hand written. Endpoints are validated with the same target checks used for browser navigation, and an auth header is stored write-only. A hosted deployment takes none.
 - **Components instead of prose**: compiled React components live in `app/src/components/gallery/`, sandboxed ones are authored in `/admin/playground` and published with no deployment. Every call asks the server whether the component exists, is published, and is not withheld from that Bot. Data functions are granted per component.
 - **Governed MCP, connected as the person asking**: the curated catalogue ships Notion (hosted MCP, one-click OAuth — the deployment registers its own client, RFC 7591, so there is no console paperwork), Google Drive (read-only, via an admin-registered OAuth client), Google Sheets, Gmail, Google Calendar, Google Business Profile and Cafe24, Canva and Kakao's PlayMCP (hosted MCP), plus 카카오 알림톡, 나라장터·기업마당, web search and the weather (기상청) on an account or key the fleet holds. For the ones a person connects, each person consents for themselves and calls run on their own grant, so the answers are the ones their own account can see. A vendor's tool whose definition changes is paused until a person has read it; the adapters in this repository are taken as the release ships them and recorded as that. Custom servers must pass URL checks, and any tool not positively classified as a read is treated as a write. See [docs/laf/connections.md](docs/laf/connections.md) for why the previous five-vendor catalogue was removed.
 - **Skills are instructions, not capabilities**: personal skills attach only to Bots their author owns, deployment skills are admin-owned, and both are invoked with `/` in the composer.
@@ -194,9 +194,11 @@ A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui),
 
 ## Bring your own agent
 
-Any AG-UI endpoint can be a Bot.
+Any AG-UI endpoint can be a Bot — on a developer's stack, which is one whose API runs with `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS=true`.
 
-The server validates agent endpoints with the same target checks used for browser navigation. The Bot a person makes runs on `MANAGED_AGENT_AG_UI_URL` (`agent-bot`); an administrator can point one at an endpoint of their own from `/admin/bots`.
+The server validates agent endpoints with the same target checks used for browser navigation. The Bot a person makes runs on `MANAGED_AGENT_AG_UI_URL` (`agent-bot`); there, an administrator can point one at an endpoint of their own from `/admin/bots`.
+
+A hosted deployment takes no endpoint for a Bot. The rule is in [CLAUDE.md](CLAUDE.md), under "Every Bot a person creates is remote".
 
 See [docs/configuration.md](docs/configuration.md) and [docs/laf/coworkers.md](docs/laf/coworkers.md).
 
@@ -222,7 +224,7 @@ Settings worth knowing:
 | `BOT_MODEL`                          | The model, read by `agent-bot` and substituted into the tenant package. Sent verbatim.              |
 | `COMPUTER_TOKEN`                     | Secret every computer request must present. The computer refuses to start without it.               |
 | `AGENT_COMPUTER_POLICY`              | JSON action policy. Malformed JSON stops server startup.                                            |
-| `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS` | Lets a Bot reach this machine's own services.                                                       |
+| `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS` | Lets a Bot reach this machine's own services, and marks a developer's stack: only there may a Bot be pointed at your own agent. |
 | `TENANT_PACKAGE_DIR`                 | Directory containing tenant YAML. Defaults to `../tenant/laf`.                                       |
 | `LAF_NOTIFY_WEBHOOK_URL`             | Where "a Bot is blocked on you" is delivered. Unset, it is a log line.                               |
 

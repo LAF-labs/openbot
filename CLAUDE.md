@@ -178,6 +178,15 @@ built-in configuration reaches nothing anybody will ever use.** Per-run settings
 travel as AG-UI `forwardedProps` through the middleware in `copilot.ts`, which
 is the one seam every path goes through — chat and routines alike.
 
+**A hosted deployment takes no endpoint of a person's own for a Bot** (owner,
+2026-10-06): what an agent says is filed as fact — what a turn cost, how a run
+ended — so only the deployment's own may say it. An address, or a key for one,
+is accepted only where the private-host opt-in
+(`AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS`) marks a developer's stack. Everywhere
+else it is refused (`laf:agent_endpoint_not_taken`), the screen that would send
+one is not drawn, and every Bot is dialled at the deployment's own agent
+whatever its row holds, with no stored key.
+
 ### The computer reads the Bot from a header
 
 `agent-computer` takes the Bot from `x-openbot-bot-id` and **refuses without
