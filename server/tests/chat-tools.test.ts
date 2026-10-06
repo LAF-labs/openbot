@@ -50,6 +50,8 @@ import {
 } from "../../shared/tools/gallery";
 import { LIST_GOALS } from "../../shared/tools/goals";
 import {
+  PAUSED_TOOL_DESCRIPTION,
+  PAUSED_TOOL_PARAMETERS,
   withheldToolsForwarded,
   withheldToolsIn,
   withheldToolsText,
@@ -866,6 +868,108 @@ describe("a connected tool that is in the schema: the web search", () => {
       "mcp__gmail__search_messages",
       "mcp__web-search__search",
     ]);
+  });
+});
+
+/*
+ * A WINDOW'S COPY OF THE STAND-IN, AFTER THE REVIEW (the review of #119). A window declares each
+ * connected tool from its own copy of the listing, refreshed by a poll. While a tool waits for
+ * review that copy is this deployment's "waiting for review, do not call" and an empty schema — and
+ * for up to a minute after a person approves the tool, a second window of theirs still declares
+ * it, with the tool's server named after it. The turn took a window's words for any tool that did
+ * not wait, so the Bot was told a reviewed tool still waited, and a call it made anyway went out
+ * with no field it had ever been shown. The stand-in is this server's own sentence: a window's
+ * copy of it is never what a tool is, so the listing the turn just read is offered instead.
+ */
+describe("a window still holding the stand-in for a tool that has been reviewed", () => {
+  const reviewed = {
+    ref: "acme-desk/orders_list",
+    toolName: "mcp__acme-desk__orders_list",
+    description: "주문을 나열한다.",
+    inputSchema: {
+      type: "object",
+      properties: { state: { type: "string" } },
+    },
+  };
+  const beside = {
+    ref: "acme-desk/orders_note",
+    toolName: "mcp__acme-desk__orders_note",
+    description: "주문에 메모를 남긴다.",
+    inputSchema: { type: "object", properties: { text: { type: "string" } } },
+  };
+  const storeOffering = (...tools: object[]) =>
+    ({
+      offeredToModel: async () => ({ tools, skills: [] }),
+      callTool: async () => ({ text: "{}", isError: false }),
+      viewSkill: async () => ({
+        allowed: false,
+        reason: "laf:skill_not_granted",
+      }),
+    }) as unknown as Parameters<typeof createChatTools>[0]["pluginStore"];
+  /** As `app/src/lib/copilot/plugin-tools.tsx` registers a listing: the server named after it. */
+  const asAWindowDeclares = (listed: {
+    toolName: string;
+    description: string;
+    inputSchema: object;
+  }): Tool => ({
+    name: listed.toolName,
+    description: `${listed.description} (acme-desk)`,
+    parameters: listed.inputSchema,
+  });
+  const heldStandIn = asAWindowDeclares({
+    toolName: reviewed.toolName,
+    description: PAUSED_TOOL_DESCRIPTION,
+    inputSchema: PAUSED_TOOL_PARAMETERS,
+  });
+
+  test("is offered the reviewed definition as the server lists it — and every other tool keeps the window's words", async () => {
+    const toolkit = await createChatTools({
+      pluginStore: storeOffering(reviewed, beside),
+      people: createPersonAnswers(),
+    })(context, [heldStandIn, asAWindowDeclares(beside)]);
+    const offered = (name: string) =>
+      toolkit.tools.find((one) => one.name === name);
+    expect(offered(reviewed.toolName)).toEqual({
+      name: reviewed.toolName,
+      description: reviewed.description,
+      parameters: reviewed.inputSchema,
+    });
+    expect(JSON.stringify(toolkit.tools)).not.toContain(
+      PAUSED_TOOL_DESCRIPTION.slice(0, 20),
+    );
+    // The tool beside it was never a stand-in: the window's copy, its server named after it.
+    expect(offered(beside.toolName)?.description).toBe(
+      "주문에 메모를 남긴다. (acme-desk)",
+    );
+
+    // While it still waits the server's stand-in is what is offered, as it was — the constant
+    // itself, with no server's name after it, which is how a lookup knows the tool stands in.
+    const waiting = await createChatTools({
+      pluginStore: storeOffering(
+        {
+          ...reviewed,
+          description: PAUSED_TOOL_DESCRIPTION,
+          inputSchema: PAUSED_TOOL_PARAMETERS,
+          waitsForReview: true,
+        },
+        beside,
+      ),
+      people: createPersonAnswers(),
+    })(context, [heldStandIn, asAWindowDeclares(beside)]);
+    expect(waiting.tools.find((one) => one.name === reviewed.toolName)).toEqual(
+      {
+        name: reviewed.toolName,
+        description: PAUSED_TOOL_DESCRIPTION,
+        parameters: PAUSED_TOOL_PARAMETERS,
+      },
+    );
+
+    // And a stand-in declared for a tool this Bot no longer holds is offered as nothing at all.
+    const gone = await createChatTools({
+      pluginStore: storeOffering(beside),
+      people: createPersonAnswers(),
+    })(context, [heldStandIn, asAWindowDeclares(beside)]);
+    expect(gone.tools.map((one) => one.name)).toEqual([beside.toolName]);
   });
 });
 

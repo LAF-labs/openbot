@@ -519,7 +519,15 @@ export function createServers(
               // revokes.
               refs: stranded.map(([ref]) => ref),
               bots: [...new Set(stranded.flatMap(([, agents]) => agents))],
-              note: "Held by a Bot and not offered to any model, because this server no longer advertises the tool. Offered again if it starts.",
+              /*
+               * What happens if it comes back depends on whose definitions these are, and this
+               * said "offered again if it starts" of both. That is still so where they ship with
+               * this build. A vendor's tool that reappears is one that appeared after
+               * registration: it waits, under no name, until a person reviews it (`REVIEW_APPEARED`).
+               */
+              note: shipped
+                ? "Held by a Bot and not offered to any model, because this server no longer advertises the tool. Offered again if it starts."
+                : "Held by a Bot and not offered to any model, because this server no longer advertises the tool. If it starts again the tool waits for review first, as one that appeared after registration.",
             },
           });
         }
