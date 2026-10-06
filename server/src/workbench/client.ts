@@ -28,6 +28,17 @@
  * port's answer was passed on as the run — it is this server, which has a network, sent wherever
  * the far side of the wall says, with the files in hand on a 307.
  *
+ * AND WHAT IT SAYS ITS ANSWER IS, IS NOT TAKEN FROM IT. Two headers are the far side's to write and
+ * decide what becomes of the bytes: `Content-Encoding`, which the runtime obeys by inflating inside
+ * `fetch`, before the bound above has counted anything, and `Content-Type`, which picks the parser.
+ * The second independent read measured both on this client (2026-10-06): 1.6 kB of brotli grew the
+ * API server by 1.2 GB for three seconds, and thirteen megabytes called a url-encoded form by
+ * 0.7 GB. So no encoding is asked for, the runtime is told to inflate nothing, and an answer that
+ * names one is refused unread; a run is read only out of `multipart/form-data`, a refusal and
+ * `/health` only out of JSON; and a form is looked over as bytes before it is parsed — no more
+ * parts than a run can have, no part with more header than a part has — and holds no part its
+ * report does not name.
+ *
  * ONE RUN AT A TIME, FROM THIS SIDE TOO. The daemon refuses a second run while one is in progress;
  * this queues a few behind the one in flight so that two callers in one process do not meet that
  * refusal, and so that no request of this server's is ever on its way to the socket while a
@@ -140,6 +151,64 @@ const SMALL_ANSWER_BYTES = 8 * 1024;
 const answerBytes = (limits: Limits): number =>
   limits.productsBytes + 12 * limits.streamBytes + 64 * 1024;
 
+/** What every request says of encodings: none. The runtime is told not to undo one either. */
+const PLAIN = { "accept-encoding": "identity" } as const;
+
+/** Whether an answer names an encoding. Any name is a lie: none was asked for, `identity` included. */
+const isEncoded = (response: Response) =>
+  response.headers.has("content-encoding");
+
+/** A refusal's and `/health`'s type, as the daemon's runtime writes it. */
+const JSON_TYPE = /^application\/json(?:;\s*charset=utf-8)?$/i;
+
+const saysJson = (response: Response) =>
+  JSON_TYPE.test(response.headers.get("content-type") ?? "");
+
+/**
+ * A run's answer's type, with the line between its parts: seventy characters at most, of the ones
+ * a boundary may be made of (RFC 2046) and none that means something to a pattern or a header.
+ */
+const FORM_TYPE =
+  /^multipart\/form-data;\s*boundary=([0-9A-Za-z'()+_,.:=?-]{1,70})$/i;
+
+/**
+ * The most a part's own header lines may come to. The daemon's are a name and a type, a hundred
+ * bytes or so; nothing a part is called here is longer than `product7`.
+ */
+const PART_HEADER_BYTES = 512;
+
+/**
+ * Whether a form's bytes are no more than `most` parts, each with a header that is short, and
+ * closed — looked over as bytes, before anything is asked to parse them.
+ *
+ * The bound on an answer's length is not a bound on what a parser makes of it: thirteen megabytes
+ * are two hundred thousand parts, or one part with thirteen megabytes of header. A line between
+ * parts is found wherever its bytes are, which is how the parser finds one too.
+ */
+function isModestForm(
+  bytes: Uint8Array<ArrayBuffer>,
+  boundary: string,
+  most: number,
+): boolean {
+  const body = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const line = Buffer.from(`--${boundary}`);
+  let parts = 0;
+  let at = body.indexOf(line);
+  while (at !== -1) {
+    const after = at + line.byteLength;
+    // `--boundary--`: the form's end.
+    if (body[after] === 0x2d && body[after + 1] === 0x2d) return true;
+    parts += 1;
+    if (parts > most) return false;
+    const headersEnd = body.indexOf("\r\n\r\n", after);
+    if (headersEnd === -1 || headersEnd - after > PART_HEADER_BYTES) {
+      return false;
+    }
+    at = body.indexOf(line, headersEnd + 4);
+  }
+  return false;
+}
+
 /**
  * A body, read no further than `most` bytes: in pieces, and let go of one piece past the bound.
  * Null when it was longer — nothing of it is kept — or when it broke off.
@@ -182,11 +251,15 @@ async function bodyWithin(
   return whole;
 }
 
-/** A small JSON answer, or null when it was not small or not JSON. */
+/** A small JSON answer, or null when it was not small, not JSON, or did not say it was plain JSON. */
 async function smallJson(
   response: Response,
   hangUp: () => void,
 ): Promise<unknown> {
+  if (isEncoded(response) || !saysJson(response)) {
+    hangUp();
+    return null;
+  }
   const bytes = await bodyWithin(response, SMALL_ANSWER_BYTES, hangUp);
   if (!bytes) return null;
   try {
@@ -287,6 +360,21 @@ async function runFrom(
     // What the report says a file is, and what arrived, are the same size or neither is believed.
     if (!(part instanceof Blob) || part.size !== bytes) return null;
     products.push({ name, bytes: new Uint8Array(await part.arrayBuffer()) });
+  }
+  // The report and the parts it names, each once, and nothing else: a part nobody named is not
+  // ignored, it is an answer that says one thing and holds another.
+  const named = new Set<unknown>(
+    report.products.map((product: unknown) =>
+      isRecord(product) ? product.part : null,
+    ),
+  );
+  const held = [...answer.keys()];
+  if (
+    held.length !== 1 + named.size ||
+    named.size !== report.products.length ||
+    held.some((name) => name !== REPORT_PART && !named.has(name))
+  ) {
+    return null;
   }
   return {
     ok: true,
@@ -394,6 +482,8 @@ export function createWorkbench(options: {
         method: "POST",
         unix: socketPath,
         body: form,
+        headers: PLAIN,
+        decompress: false,
         redirect: "error",
         signal: AbortSignal.any([
           own.signal,
@@ -418,24 +508,39 @@ export function createWorkbench(options: {
       });
       return refused;
     }
+    /** Not an answer this side passes on, and why — by a name, never by anything it held. */
+    const malformed = (
+      reason: "encoded" | "not_a_form" | "too_long" | "form" | "report",
+    ): WorkbenchAnswer => {
+      log.warn("workbench_answer_malformed", { reason });
+      return { ok: false, failure: "malformed" };
+    };
+    // What it says it is, before a byte of it: an encoding is not undone, and not read past.
+    if (isEncoded(response)) {
+      hangUp();
+      return malformed("encoded");
+    }
+    const type = response.headers.get("content-type") ?? "";
+    const boundary = FORM_TYPE.exec(type)?.[1];
+    if (!boundary) {
+      hangUp();
+      return malformed("not_a_form");
+    }
     // Read to the bound first, parsed second: a form is parsed from bytes this side already holds.
     const bytes = await bodyWithin(response, answerBytes(limits), hangUp);
     if (signal?.aborted) return { ok: false, failure: "stopped" };
-    const answer = bytes
-      ? await new Response(bytes, {
-          headers: {
-            "content-type": response.headers.get("content-type") ?? "",
-          },
-        })
-          .formData()
-          .catch(() => null)
-      : null;
-    const run = answer ? await runFrom(answer, limits) : null;
-    if (!run) {
-      log.warn("workbench_answer_malformed", { tooLong: bytes === null });
-      return { ok: false, failure: "malformed" };
+    if (!bytes) return malformed("too_long");
+    // The report, and a part for each file a run may hand back.
+    if (!isModestForm(bytes, boundary, 1 + limits.products)) {
+      return malformed("form");
     }
-    return run;
+    const answer = await new Response(bytes, {
+      headers: { "content-type": type },
+    })
+      .formData()
+      .catch(() => null);
+    if (!answer) return malformed("form");
+    return (await runFrom(answer, limits)) ?? malformed("report");
   };
 
   return {
@@ -444,6 +549,8 @@ export function createWorkbench(options: {
         const own = new AbortController();
         const response = await fetch("http://workbench/health", {
           unix: socketPath,
+          headers: PLAIN,
+          decompress: false,
           redirect: "error",
           signal: AbortSignal.any([own.signal, AbortSignal.timeout(2_000)]),
         });

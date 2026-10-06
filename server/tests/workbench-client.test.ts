@@ -11,6 +11,13 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Transform } from "node:stream";
+import {
+  createBrotliCompress,
+  createDeflate,
+  createGzip,
+  constants as zlib,
+} from "node:zlib";
 import type { Logger } from "../../shared/log";
 import {
   type InvalidField,
@@ -778,4 +785,335 @@ test("a caller that gives up while waiting its turn is told at once, and its run
   );
   expect(more.every((answer) => answer.ok)).toBe(true);
   expect(asked()).toBe(6);
+});
+
+/*
+ * WHAT THE FAR SIDE SAYS ITS ANSWER IS, IS THE FAR SIDE'S TO SAY (the second independent read of
+ * 2026-10-06). The bound above is on the bytes this side pulls — and two headers decide what
+ * becomes of them before and after: `Content-Encoding`, which the runtime obeys by inflating
+ * inside `fetch`, before a byte is counted; and `Content-Type`, which decides what parser the
+ * bytes are handed to. Measured against the client as it was, with a listener that is not the
+ * daemon: 1.6 kB of brotli grew this process by 1.2 GB and held it three seconds; a megabyte of
+ * gzip by 0.6 GB; thirteen megabytes sent as a url-encoded form by 0.7 GB. And a form with ten
+ * thousand parts nobody named, or a megabyte of headers on one, was passed on as a run.
+ */
+
+/** `megabytes` of zeros through a compressor, a megabyte at a time: what they are on the wire. */
+async function squeezed(
+  compressor: Transform,
+  megabytes: number,
+): Promise<Uint8Array<ArrayBuffer>> {
+  const pieces: Buffer[] = [];
+  compressor.on("data", (piece: Buffer) => pieces.push(piece));
+  const ended = new Promise<void>((resolve, reject) => {
+    compressor.on("end", () => resolve());
+    compressor.on("error", reject);
+  });
+  const zeros = Buffer.alloc(MEBIBYTE);
+  for (let sent = 0; sent < megabytes; sent += 1) {
+    if (!compressor.write(zeros)) {
+      await new Promise<void>((resolve) =>
+        compressor.once("drain", () => resolve()),
+      );
+    }
+  }
+  compressor.end();
+  await ended;
+  return new Uint8Array(Buffer.concat(pieces));
+}
+
+/** How much this process grew while `work` ran, at most. */
+async function grownBy<T>(
+  work: () => Promise<T>,
+): Promise<{ value: T; grew: number }> {
+  Bun.gc(true);
+  const before = process.memoryUsage().rss;
+  let most = before;
+  const watch = setInterval(() => {
+    most = Math.max(most, process.memoryUsage().rss);
+  }, 2);
+  try {
+    const value = await work();
+    most = Math.max(most, process.memoryUsage().rss);
+    return { value, grew: most - before };
+  } finally {
+    clearInterval(watch);
+  }
+}
+
+/** Bytes handed over a few at a time, counting what was taken. */
+function trickled(bytes: Uint8Array, piece = 64 * 1024) {
+  let served = 0;
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      if (served >= bytes.byteLength) return controller.close();
+      await Bun.sleep(2);
+      controller.enqueue(bytes.subarray(served, served + piece));
+      served += piece;
+    },
+  });
+  return { body, served: () => Math.min(served, bytes.byteLength) };
+}
+
+/** What a logger was told, by event. */
+function recorded() {
+  const events: [string, Record<string, unknown> | undefined][] = [];
+  const log: Logger = {
+    svc: "test",
+    info() {},
+    warn: (event, fields) => void events.push([event, fields]),
+    error() {},
+  };
+  return { log, events };
+}
+
+/** A multipart body written by hand: each part is its own header lines and what follows them. */
+const handBuilt = (parts: string[], boundary = "x") =>
+  new TextEncoder().encode(
+    `${parts.map((part) => `--${boundary}\r\n${part}\r\n`).join("")}--${boundary}--\r\n`,
+  );
+
+const reportPart = (extra = "") =>
+  `Content-Disposition: form-data; name="${REPORT_PART}"${extra}\r\n\r\n${JSON.stringify(
+    {
+      ending: "exited",
+      exitCode: 0,
+      signal: null,
+      ms: 1,
+      stdout: "",
+      stderr: "",
+      stdoutBytes: 0,
+      stderrBytes: 0,
+      products: [],
+      skipped: 0,
+    },
+  )}`;
+
+const FORM_TYPE = { "content-type": "multipart/form-data; boundary=x" };
+
+test("an answer that names an encoding is refused by that name and never inflated", async () => {
+  const half = 512;
+  const bombs: [string, Uint8Array<ArrayBuffer>][] = [
+    ["gzip", await squeezed(createGzip(), half)],
+    ["deflate", await squeezed(createDeflate(), half)],
+    [
+      "br",
+      await squeezed(
+        createBrotliCompress({
+          params: { [zlib.BROTLI_PARAM_QUALITY]: 4 },
+        }),
+        half,
+      ),
+    ],
+  ];
+  for (const [encoding, bytes] of bombs) {
+    // Half a gigabyte of nothing, in a megabyte or less on the wire.
+    expect(bytes.byteLength, encoding).toBeLessThan(2 * MEBIBYTE);
+    const { socketPath } = fakeDaemon(
+      () =>
+        new Response(bytes, {
+          headers: { ...FORM_TYPE, "content-encoding": encoding },
+        }),
+    );
+    const { log, events } = recorded();
+    const began = performance.now();
+    const { value, grew } = await grownBy(() =>
+      createWorkbench({ socketPath, log }).run({ script, files: [] }),
+    );
+    expect(value, encoding).toEqual({ ok: false, failure: "malformed" });
+    expect(events, encoding).toContainEqual([
+      "workbench_answer_malformed",
+      { reason: "encoded" },
+    ]);
+    // What this process held: nothing of the half gigabyte. It was 0.6 and 1.2 GB.
+    expect(grew / MEBIBYTE, encoding).toBeLessThan(64);
+    expect(performance.now() - began, encoding).toBeLessThan(1_000);
+  }
+  // Any encoding at all is a lie here, the one that means "none" included: none was asked for.
+  const named = fakeDaemon(() => {
+    const answer = honest();
+    answer.headers.set("content-encoding", "identity");
+    return answer;
+  });
+  expect(
+    await createWorkbench({ socketPath: named.socketPath, log: quiet }).run({
+      script,
+      files: [],
+    }),
+  ).toEqual({ ok: false, failure: "malformed" });
+});
+
+test("no encoding is asked for, of a run or of health", async () => {
+  const asked: (string | null)[] = [];
+  const { socketPath } = fakeDaemon(
+    (request) => {
+      asked.push(request.headers.get("accept-encoding"));
+      return honest();
+    },
+    // Health's request is not handed to this fake: the header is read off the next run instead.
+  );
+  const workbench = createWorkbench({ socketPath, log: quiet });
+  expect((await workbench.run({ script, files: [] })).ok).toBe(true);
+  expect(asked).toEqual(["identity"]);
+});
+
+test("a refusal or a health answer that names an encoding is not believed either", async () => {
+  const bomb = await squeezed(createGzip(), 256);
+  const encoded = (status: number) =>
+    new Response(bomb, {
+      status,
+      headers: {
+        "content-type": "application/json",
+        "content-encoding": "gzip",
+      },
+    });
+  const { socketPath } = fakeDaemon(
+    () => encoded(503),
+    () => encoded(200),
+  );
+  const workbench = createWorkbench({ socketPath, log: quiet });
+  const { value, grew } = await grownBy(async () => [
+    await workbench.run({ script, files: [] }),
+    await workbench.health(),
+  ]);
+  expect(value).toEqual([{ ok: false, failure: "failed" }, null]);
+  expect(grew / MEBIBYTE).toBeLessThan(64);
+});
+
+test("only a form is read as a run, and only JSON as a refusal or as health", async () => {
+  // Thirteen megabytes that are a form of four million fields, if anybody parses them as one.
+  const fields = new TextEncoder().encode(
+    "a=&".repeat(Math.floor((13 * MEBIBYTE) / 3)),
+  );
+  const flood = trickled(fields);
+  const urlencoded = fakeDaemon(
+    () =>
+      new Response(flood.body, {
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+      }),
+  );
+  const { log, events } = recorded();
+  const began = performance.now();
+  const { value, grew } = await grownBy(() =>
+    createWorkbench({ socketPath: urlencoded.socketPath, log }).run({
+      script,
+      files: [],
+    }),
+  );
+  expect(value).toEqual({ ok: false, failure: "malformed" });
+  expect(events).toContainEqual([
+    "workbench_answer_malformed",
+    { reason: "not_a_form" },
+  ]);
+  expect(performance.now() - began).toBeLessThan(500);
+  // Refused on what it said it was: not read to its end, and not parsed. It was 0.7 GB.
+  expect(grew / MEBIBYTE).toBeLessThan(64);
+  await Bun.sleep(100);
+  expect(flood.served()).toBeLessThan(4 * MEBIBYTE);
+
+  const honestBytes = new Uint8Array(await honest().arrayBuffer());
+  for (const type of [
+    "text/plain",
+    "application/json",
+    "multipart/form-data",
+    "multipart/form-data; boundary=",
+    `multipart/form-data; boundary=${"b".repeat(200)}`,
+    "multipart/mixed; boundary=x",
+  ]) {
+    const { socketPath } = fakeDaemon(
+      () => new Response(honestBytes, { headers: { "content-type": type } }),
+    );
+    expect(
+      await createWorkbench({ socketPath, log: quiet }).run({
+        script,
+        files: [],
+      }),
+      type,
+    ).toEqual({ ok: false, failure: "malformed" });
+  }
+
+  // A refusal's code is read out of JSON that says it is JSON, and out of nothing else.
+  const busy = JSON.stringify({ code: "laf:workbench_busy" });
+  const said = (type: string) =>
+    fakeDaemon(
+      () =>
+        new Response(busy, { status: 503, headers: { "content-type": type } }),
+      () =>
+        new Response(JSON.stringify({ status: "ok", busy: false }), {
+          headers: { "content-type": type },
+        }),
+    );
+  const json = said("application/json");
+  const asJson = createWorkbench({ socketPath: json.socketPath, log: quiet });
+  expect(await asJson.run({ script, files: [] })).toEqual({
+    ok: false,
+    failure: "busy",
+  });
+  expect(await asJson.health()).toEqual({ busy: false });
+  for (const type of ["text/html", "application/x-www-form-urlencoded"]) {
+    const other = said(type);
+    const asOther = createWorkbench({
+      socketPath: other.socketPath,
+      log: quiet,
+    });
+    expect(await asOther.run({ script, files: [] }), type).toEqual({
+      ok: false,
+      failure: "failed",
+    });
+    expect(await asOther.health(), type).toBeNull();
+  }
+});
+
+test("a form with more parts than a run can have, or a part nobody named, is not passed on", async () => {
+  const stray = (n: number) =>
+    `Content-Disposition: form-data; name="p${n}"; filename="p${n}"\r\nContent-Type: application/octet-stream\r\n\r\nx`;
+  const crowd = handBuilt([
+    reportPart(),
+    ...Array.from({ length: 10_000 }, (_, n) => stray(n)),
+  ]);
+  for (const [what, bytes] of [
+    ["ten thousand parts", crowd],
+    ["one part the report does not name", handBuilt([reportPart(), stray(0)])],
+    ["the report twice", handBuilt([reportPart(), reportPart()])],
+  ] as const) {
+    const { socketPath } = fakeDaemon(
+      () => new Response(bytes, { headers: FORM_TYPE }),
+    );
+    const { log, events } = recorded();
+    expect(
+      await createWorkbench({ socketPath, log }).run({ script, files: [] }),
+      what,
+    ).toEqual({ ok: false, failure: "malformed" });
+    expect(
+      events.map(([event]) => event),
+      what,
+    ).toEqual(["workbench_answer_malformed"]);
+  }
+  // And the same form with nothing stray in it is a run: the hand-built one is not what is refused.
+  const alone = fakeDaemon(
+    () => new Response(handBuilt([reportPart()]), { headers: FORM_TYPE }),
+  );
+  expect(
+    (
+      await createWorkbench({ socketPath: alone.socketPath, log: quiet }).run({
+        script,
+        files: [],
+      })
+    ).ok,
+  ).toBe(true);
+});
+
+test("a part with a megabyte of headers is not passed on", async () => {
+  const heavy = handBuilt([reportPart(`; junk="${"h".repeat(MEBIBYTE)}"`)]);
+  const { socketPath } = fakeDaemon(
+    () => new Response(heavy, { headers: FORM_TYPE }),
+  );
+  const { log, events } = recorded();
+  expect(
+    await createWorkbench({ socketPath, log }).run({ script, files: [] }),
+  ).toEqual({ ok: false, failure: "malformed" });
+  expect(events).toContainEqual([
+    "workbench_answer_malformed",
+    { reason: "form" },
+  ]);
 });
