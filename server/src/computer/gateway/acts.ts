@@ -561,7 +561,13 @@ export function createActs(deps: {
        * said of that file, with its own row, and the next is tried. Two things do end the call —
        * a question, which is a pause the same call comes back from, and the caller's Stop.
        */
-      const directory = madeDirectoryFor(now(), actor.toolCallId);
+      const directory = madeDirectoryFor(now(), {
+        botId,
+        threadId: actor.threadId,
+        toolCallId: actor.toolCallId,
+        sha256: script.sha256,
+        files: script.files,
+      });
       const products: ScriptProduct[] = [];
       // A run that made nothing has nothing to wait its turn for.
       if (answer.products.length === 0) return ended(products);
