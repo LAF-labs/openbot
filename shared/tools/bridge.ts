@@ -1050,28 +1050,45 @@ export function searchResultText(
  * 없으면 그 자리에서 없다고 답한다(`connectCard`, `server/src/turns/chat-tools.ts`). 규칙은 그대로
  * 하나다: 모양을 들은 대화만 부른다.
  *
- * 검토를 기다리는 툴의 줄은 그 툴이 **지금도 그 모습으로 서 있는 동안만** 건네진 것으로 센다
- * (`deferred` — 이 실행이 받은 다리 뒤의 목록). 멈춘 툴을 찾으면 답에 남는 것은 이 배포의 설명과 빈
- * 스키마다(`PAUSED_TOOL_DESCRIPTION`). 사람이 검토를 마치면 목록에는 진짜 정의가 서는데, 대화에는
- * 그 빈 줄이 그대로 남아 있어서 봇의 다음 호출은 "스키마를 받은 툴"로 통과했다 — 한 번도 본 적 없는
- * 스키마에 짐작한 인자로(#116의 리뷰). 이 규칙이 막으려던 바로 그 호출이다. 그렇다고 그 줄을 아예
- * 세지 않으면 멈춰 있는 동안의 호출이 여기서 되돌려져(`undescribedToolText`가 같은 빈 줄을 다시
- * 건네고, 봇은 다시 부르고) 서버에 닿지 않는다: 서버가 거절하며 남기는 감사 행
- * (`mcp.call_rejected`)과 봇이 듣는 문장(`laf:tool_needs_review`)이 사라진다. 그래서 멈춰 있는
- * 동안은 세고, 검토가 끝나면 세지 않는다 — 그러면 다음 호출은 진짜 스키마를 먼저 받는다.
+ * 줄 하나가 "건네졌다"고 세어지는 것은 그것이 **지금 다리 뒤에 선 그 툴의 줄일 때**다(`deferred` —
+ * 이 실행이 받은 목록): 지금의 `schemaLine`과 글자 하나까지 같거나, 그 툴이 지금 검토를 기다리며
+ * 이 배포의 설명으로 서 있거나(`PAUSED_TOOL_DESCRIPTION`).
  *
- * `deferred`를 주지 않으면 줄마다 전부 센다: 대화의 글만 가지고 "무엇을 건넸는가"를 묻는 쪽(테스트,
- * 평가)의 답이다. 호출을 넘길지 정하는 쪽은 반드시 준다(`agent-bot/src/run.ts`).
+ * 왜 글자까지 견주는가(#116과 #119의 리뷰). 대화에 남은 줄은 그 줄이 쓰인 날의 정의다. 공급자가
+ * 정의를 바꾸고 사람이 검토해 승인하면 목록에는 새 정의가 서는데, 대화에는 옛 줄이 그대로 있다 —
+ * 멈춰 있는 동안 찾아서 받은 빈 줄이든, 바뀌기 전에 받은 진짜 스키마든. 그 줄을 "스키마를 받은
+ * 툴"로 세면 봇의 다음 호출은 한 번도 본 적 없는 스키마에 옛 칸 이름으로 나가고, 사람이 방금
+ * 검토한 글은 끝내 건네지지 않는다 — 이 규칙이 막으려던 바로 그 호출이다. 처음 고칠 때는 빈
+ * 줄만 가려냈고 옛 진짜 줄은 그대로 셌다. 이제는 같지 않으면 세지 않는다: 그러면 다음 호출은
+ * 지금의 스키마를 먼저 받고(`undescribedToolText`), 그 답의 줄이 지금의 줄이니 그다음 호출은 나간다.
+ * 이 저장소의 툴 정의가 릴리스와 함께 바뀌었을 때도 같다 — 옛 스키마를 본 대화는 새것을 한 번 받는다.
+ *
+ * 왜 멈춰 있는 동안은 어느 줄이든 세는가. 그때의 호출은 서버에 **닿아야** 한다: 서버가 거절하며
+ * 남기는 감사 행(`mcp.call_rejected`)과 봇이 듣는 문장(`laf:tool_needs_review`)이 멈춤이 사람에게
+ * 진 빚이다. 세지 않으면 호출이 여기서 되돌려지고(같은 빈 줄을 다시 건네고, 봇은 다시 부르고)
+ * 둘 다 사라진다.
+ *
+ * 목록에 없는 이름의 줄은 세지 않는다 — 넘길 호출이 없다. `deferred`를 주지 않으면 줄마다 전부
+ * 센다: 대화의 글만 가지고 "무엇을 건넸는가"를 묻는 쪽(테스트, 평가)의 답이다. 호출을 넘길지
+ * 정하는 쪽은 반드시 준다(`agent-bot/src/run.ts`).
  */
 export function describedToolNames(
   results: readonly string[],
   deferred?: readonly WireTool[],
 ): Set<string> {
-  const stillPaused = new Set(
-    (deferred ?? [])
-      .filter((tool) => tool.description === PAUSED_TOOL_DESCRIPTION)
-      .map((tool) => tool.name),
+  const standing = new Map(
+    (deferred ?? []).map((tool) => [tool.name, tool] as const),
   );
+  /** 지금의 줄, 이름마다 한 번만 그린다. */
+  const lineNow = new Map<string, string>();
+  const shownAsItStands = (name: string, line: string): boolean => {
+    const tool = standing.get(name);
+    if (!tool) return false;
+    if (tool.description === PAUSED_TOOL_DESCRIPTION) return true;
+    const now = lineNow.get(name) ?? schemaLine(tool);
+    lineNow.set(name, now);
+    return line === now;
+  };
   const names = new Set<string>();
   for (const text of results) {
     for (const line of text.split("\n")) {
@@ -1083,7 +1100,6 @@ export function describedToolNames(
       try {
         const parsed = JSON.parse(line) as {
           name?: unknown;
-          description?: unknown;
           parameters?: unknown;
         };
         if (
@@ -1092,11 +1108,7 @@ export function describedToolNames(
         ) {
           continue;
         }
-        if (
-          deferred !== undefined &&
-          parsed.description === PAUSED_TOOL_DESCRIPTION &&
-          !stillPaused.has(parsed.name)
-        ) {
+        if (deferred !== undefined && !shownAsItStands(parsed.name, line)) {
           continue;
         }
         names.add(parsed.name);

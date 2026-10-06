@@ -347,8 +347,9 @@ async function runRounds(context: RunContext): Promise<void> {
       transcript.flatMap((message) =>
         message.role === "tool" ? [textOf(message.content)] : [],
       ),
-      // Against what stands behind the bridge NOW: a tool that was looked up while it waited for
-      // review was shown this deployment's stand-in, not its schema (`describedToolNames`).
+      // Against what stands behind the bridge NOW: a line counts when it is the tool as it stands —
+      // not the stand-in it was shown while it waited for review, and not the definition it had
+      // before a person reviewed a new one (`describedToolNames`).
       exposed.deferred,
     );
     const nudge = mustSpeak

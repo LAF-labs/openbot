@@ -1344,4 +1344,88 @@ describe("what a Bot is told of tools that wait for review under no name", () =>
     expect(describedToolNames([seenBefore], paused).has(NAME)).toBe(true);
     expect(describedToolNames([lookedUpWhilePaused]).has(NAME)).toBe(true);
   });
+
+  /*
+   * AND NEITHER IS THE DEFINITION IT HAD BEFORE (the review of the fix above, which told a
+   * stand-in's line apart and left every other line counting). The conversation was handed the
+   * real schema; the vendor changed the tool; it was paused; a person reviewed the new definition
+   * and approved it. The line in the conversation is the OLD definition's, so the next call went
+   * out on fields the reviewed tool may no longer have, and the text the person had just read was
+   * never handed over. A line is the schema when it is the tool as it stands now, to the byte.
+   */
+  test("a schema handed over before the vendor changed the tool is not the one it has after a review: the reviewed schema is handed over first — and an unchanged tool, and the connect card, go on as they did", async () => {
+    const { settleDeferredCall } = await import("../agent-bot/src/deferral");
+    const NAME = "mcp__acme-desk__orders_list";
+    const before = wire(NAME, "주문을 나열한다. (acme-desk)", {
+      status: { type: "string" },
+    });
+    const after = wire(NAME, "주문을 최신순으로 나열한다. (acme-desk)", {
+      state: { type: "string" },
+    });
+    const standIn: WireTool = {
+      name: NAME,
+      description: PAUSED_TOOL_DESCRIPTION,
+      parameters: PAUSED_TOOL_PARAMETERS,
+    };
+    const seenBefore = searchResultText([before], `select:${NAME}`);
+    const calledAsBefore = { status: "open" };
+
+    // Nothing changed: shown is shown.
+    expect([...describedToolNames([seenBefore], [before])]).toEqual([NAME]);
+    // Paused: the call still goes to the server, which refuses it and writes its row.
+    expect(
+      settleDeferredCall(
+        NAME,
+        calledAsBefore,
+        [standIn],
+        describedToolNames([seenBefore], [standIn]),
+      ).kind,
+    ).toBe("forward");
+
+    // Reviewed: the old line is not this tool's schema, so the call on its fields is answered
+    // with the definition the person approved — and not forwarded.
+    expect([...describedToolNames([seenBefore], [after])]).toEqual([]);
+    const answered = settleDeferredCall(
+      NAME,
+      calledAsBefore,
+      [after],
+      describedToolNames([seenBefore], [after]),
+    );
+    expect(answered.kind).toBe("answer");
+    const handedOver = answered.kind === "answer" ? answered.text : "";
+    expect(handedOver).toContain("주문을 최신순으로 나열한다.");
+    expect(handedOver).toContain('"state":{"type":"string"}');
+    expect(handedOver).not.toContain('"status"');
+    // With that in the conversation beside the old line, the call on the new field goes through.
+    expect(
+      settleDeferredCall(
+        NAME,
+        { state: "open" },
+        [after],
+        describedToolNames([seenBefore, handedOver], [after]),
+      ),
+    ).toEqual({ kind: "forward", name: NAME, args: { state: "open" } });
+
+    // A line for a name that is not behind the bridge now is a line for nothing.
+    expect([...describedToolNames([seenBefore], [])]).toEqual([]);
+    expect([...describedToolNames([seenBefore], SERVICES)]).toEqual([]);
+
+    // THE CONNECT CARD IS NOT CAUGHT BY THIS. A turn rewrites the accounts on it as people connect
+    // them, and those are not part of what a Bot is shown: its line is the same line whatever the
+    // accounts say, and the line naming the open accounts still stands for its schema.
+    const cardOf = (connected: boolean) => card([{ key: "gmail", connected }]);
+    const cardSeen = searchResultText(
+      [cardOf(false)],
+      `select:${CONNECT_CARD}`,
+    );
+    expect(cardSeen).toContain(`{"name":"${CONNECT_CARD}"`);
+    expect(
+      describedToolNames([cardSeen], [cardOf(true)]).has(CONNECT_CARD),
+    ).toBe(true);
+    const lineOnly = searchResultText([cardOf(false)], "캘린더 일정");
+    expect(lineOnly).not.toContain(`{"name":"${CONNECT_CARD}"`);
+    expect(
+      describedToolNames([lineOnly], [cardOf(false)]).has(CONNECT_CARD),
+    ).toBe(true);
+  });
 });
