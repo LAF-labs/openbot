@@ -572,4 +572,59 @@ describeDb("plugin definition consent", () => {
       (await strandedIds()).filter((row) => !before.has(row.id)).length,
     ).toBe(1);
   });
+
+  /*
+   * WHAT THAT ROW SAYS COMES NEXT (the review of #119). Its note ended "Offered again if it
+   * starts", of every server. For this build's own definitions that is so. For a vendor's it
+   * stopped being so when a tool that appears after registration stopped being offered at all: a
+   * withdrawn tool's row is deleted, so the tool that comes back is one that appeared — it waits,
+   * under no name, until a person reviews it. A trail that promises an offer and delivers a wait
+   * is the trail being wrong about the one question it exists to answer.
+   */
+  test("the row says what happens if the tool comes back, and for a vendor's tool that is a review: it waits under no name, counted for the Bot that still holds its grant", async () => {
+    const notes = (
+      await database
+        .select()
+        .from(auditEvents)
+        .where(eq(auditEvents.targetId, serverId))
+    )
+      .map((event) => event.payload as { change?: string; note?: string })
+      .filter((payload) => payload.change === "grants_not_advertised")
+      .map((payload) => String(payload.note));
+    expect(notes.length).toBeGreaterThan(0);
+    for (const note of notes) {
+      expect(note).toContain("this server no longer advertises the tool");
+      expect(note).toContain("waits for review first");
+      expect(note).not.toContain("Offered again");
+    }
+
+    // And that is what happens. The vendor advertises the payout tool again, exactly as it was;
+    // the Bot's grant on it never went away.
+    toolsOnServer = [
+      { ...readOnly, annotations: { readOnlyHint: false } },
+      payout,
+    ];
+    expect((await store.refreshTools(serverId)).paused).toBe(1);
+    const [row] = await database
+      .select()
+      .from(mcpTools)
+      .where(
+        and(eq(mcpTools.serverId, serverId), eq(mcpTools.name, payout.name)),
+      );
+    expect(row?.needsReview).toBe(true);
+    expect(row?.reviewReason).toBe("appeared after registration");
+    const offered = await store.offeredToModel(botId);
+    expect(offered.tools.map((tool) => tool.ref)).not.toContain(
+      `${serverId}/${payout.name}`,
+    );
+    expect(offered.withheld).toEqual([{ server: serverId, count: 1 }]);
+    await expect(
+      store.callTool({
+        ref: `${serverId}/${payout.name}`,
+        args: {},
+        botId,
+        actorId,
+      }),
+    ).rejects.toMatchObject({ code: "laf:tool_needs_review" });
+  });
 });

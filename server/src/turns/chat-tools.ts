@@ -52,7 +52,10 @@ import {
   withAccountStates,
 } from "../../../shared/tools/gallery";
 import { isGoalToolName } from "../../../shared/tools/goals";
-import type { WithheldTools } from "../../../shared/tools/paused";
+import {
+  PAUSED_TOOL_DESCRIPTION,
+  type WithheldTools,
+} from "../../../shared/tools/paused";
 import {
   MANAGE_ROUTINE,
   REMEMBER,
@@ -472,11 +475,31 @@ export function createChatTools(deps: ChatToolsDeps) {
      * tool that APPEARED after registration is not among the names at all, so a window's entry
      * for it goes with everything else this server would not carry out. Every other connected
      * tool keeps the window's words, which name its server beside the vendor's description.
+     *
+     * AND THE OTHER WAY ROUND: A WINDOW STILL HOLDING THE STAND-IN FOR A TOOL THAT NO LONGER WAITS
+     * (the review of #119). The window's copy is refreshed by a poll, so for up to a minute after a
+     * person approves a tool another window of theirs still declares this deployment's "waiting
+     * for review, do not call" in place of the definition they have just read — with its server
+     * named after it, so it is not even the same bytes — and an empty schema. Taken, the Bot was
+     * told a reviewed tool still waited, and a call it made anyway went out with no field it had
+     * ever been shown. The stand-in is this server's sentence and never a vendor's, so a window's
+     * copy of it is recognised by how it begins, and the listing this turn just read is offered
+     * in its place: for a tool that waits that is the stand-in again, and for one that does not
+     * it is the reviewed definition.
      */
     const isCorePlugin = (name: string) =>
       pluginRefs.has(name) && CORE_TOOL_NAMES.has(name);
+    const heldAsStandIn = new Set(
+      (declared ?? [])
+        .filter(
+          (tool) =>
+            pluginRefs.has(tool.name) &&
+            tool.description.startsWith(PAUSED_TOOL_DESCRIPTION),
+        )
+        .map((tool) => tool.name),
+    );
     const isServerWorded = (name: string) =>
-      isCorePlugin(name) || waiting.has(name);
+      isCorePlugin(name) || waiting.has(name) || heldAsStandIn.has(name);
     const listed = declared
       ? [
           ...declared.filter(
