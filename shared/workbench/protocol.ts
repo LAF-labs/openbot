@@ -269,6 +269,17 @@ export const RUN_PATH_SEGMENTS = 16;
  * a script opens a file by the name the Bot knows it by. They were already confined once, by the
  * computer that read them; this is the daemon not taking that on trust, and the client not sending
  * what the daemon would refuse.
+ *
+ * AND WRITTEN THE ONE WAY EVERY READER OF IT READS IT. A path has three readers here and they must
+ * be handed one string that means one file to all of them: the policy, which judges it as written
+ * (`file.path`, `file.name`, `file.extension`); the Bot's computer, which TRIMS what it is handed
+ * before it looks (`agent-computer/src/workspace.ts`, `resolvePath`); and the daemon, which places
+ * the bytes at it as written. Until 2026-10-07 a path ending in a space was a path: a rule about
+ * `private/payroll.csv`, about its name or about its extension did not match `"private/payroll.csv "`,
+ * the computer read the file the rule was written to keep, and its bytes went to a script —
+ * measured over the computer's real workspace, 22 of 32 pairs of a rule and such a spelling. So
+ * anything a trim would change is not a path. REFUSED, NOT TIDIED: tidied, the policy and the
+ * computer would agree and the script would be handed its file under a name it did not ask for.
  */
 export function isRunPath(path: unknown): path is string {
   if (typeof path !== "string" || path.length === 0 || path.length > 1024) {
@@ -277,6 +288,9 @@ export function isRunPath(path: unknown): path is string {
   // A NUL ends a path in a C library; a backslash is a separator to some reader, somewhere.
   if (path.includes("\0") || path.includes("\\")) return false;
   if (path.startsWith("/")) return false;
+  // Whitespace at either end, of every kind a trim removes: a space, a tab, a line's end, a
+  // no-break or an ideographic space. See above for who trims.
+  if (path !== path.trim()) return false;
   const segments = path.split("/");
   return (
     segments.length <= RUN_PATH_SEGMENTS &&
@@ -287,14 +301,39 @@ export function isRunPath(path: unknown): path is string {
 }
 
 /**
+ * What a file's name may not hold, beyond a separator: what would make the name mean something to
+ * a path or a terminal, and what would make it DRAW as a name it is not.
+ *
+ * - C0 and C1 controls and DEL, and the character a name gets where its bytes were not text.
+ * - Bidirectional overrides and isolates (U+202A–U+202E, U+2066–U+2069): `invoice<RLO>fdp.exe`
+ *   draws as `invoiceexe.pdf`. A file a script made is shown by its name on the trail's page and
+ *   on the card that hands it to a person, and the script chose that name.
+ * - Zero-width characters and the byte-order mark (U+200B–U+200F, U+2060–U+2065, U+FEFF), which
+ *   make two names that look the same different.
+ *
+ * The classes a person's own attachment has taken out of its name
+ * (`server/src/attachments/files.ts`), less the one that is about saving a file on Windows: a
+ * download's name is the browser's to make safe for the disk it lands on.
+ */
+const UNNAMEABLE =
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: refusing them is the point
+  /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff/\\\ufffd]/;
+
+/**
  * Whether a name a script gave a file is one that can be handed on: a single segment, visible, with
- * nothing in it that means something to a path or a terminal.
+ * nothing in it that means something to a path or a terminal, or that draws as another name.
+ *
+ * AND NOTHING A TRIM WOULD CHANGE, for the reason a path has none (`isRunPath`): the name becomes
+ * the end of a path the policy judges as written and the computer trims. `"tool2.exe "` was not
+ * an `exe` to a rule and was `tool2.exe` on the disk; a name of three spaces trimmed to nothing,
+ * and was written as a FILE at the path of the folder its run's files go in. Refused here, a file
+ * of such a name is not handed back: the daemon counts it among what it skipped, and an answer
+ * that names one is not one the client or the gateway passes on.
  */
 export function isProductName(name: unknown): name is string {
   if (typeof name !== "string" || name.length === 0) return false;
   if (new TextEncoder().encode(name).length > 255) return false;
   if (name.startsWith(".")) return false;
-  // Control characters, the separators, and the character a name gets where its bytes were not text.
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: refusing them is the point
-  return !/[\u0000-\u001f\u007f/\\�]/.test(name);
+  if (name !== name.trim()) return false;
+  return !UNNAMEABLE.test(name);
 }

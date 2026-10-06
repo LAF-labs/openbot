@@ -8,7 +8,13 @@
  * (`scripts/workbench-probe.ts`), the computer's routes in its own workspace's tests.
  */
 import {
+  createWorkspace,
+  WorkspaceFileError,
+  WorkspacePathError,
+} from "../../../agent-computer/src/workspace";
+import {
   type ComputerClient,
+  WorkspaceRefusedError,
   WorkspaceRequestError,
 } from "../../src/computer/client";
 import type { SnapshotResult } from "../../src/computer/schema";
@@ -151,4 +157,61 @@ export function fakeComputer(
       snapshot.url = url;
     },
   };
+}
+
+/**
+ * The Bot's computer, NOT standing in: the workspace the computer's own routes are written over
+ * (`agent-computer/src/workspace.ts`), on a folder that is really on the disk.
+ *
+ * For what a stand-in cannot show: how the computer READS a path it is handed. It trims one, and
+ * a rule judged the path as it was written — so a path that differs only by what a trim removes
+ * is one thing to the policy and another to the disk. A stand-in that looks a path up in a map
+ * does whatever its author thought of; this does what the computer does.
+ *
+ * The failures are the computer's own codes, thrown as the server's client throws them, so the
+ * gateway reads them as it would off the wire.
+ */
+export function realComputer(root: string) {
+  const workspace = createWorkspace(root);
+  /** Every call that reached the computer, by method and path AS IT WAS HANDED, in order. */
+  const asked: string[] = [];
+  const through = async <T>(work: () => Promise<T>): Promise<T> => {
+    try {
+      return await work();
+    } catch (error) {
+      if (error instanceof WorkspacePathError) {
+        throw new WorkspaceRefusedError(error.code);
+      }
+      if (error instanceof WorkspaceFileError) {
+        throw new WorkspaceRequestError(error.code);
+      }
+      throw error;
+    }
+  };
+  const client = {
+    async fileBytes(path: string) {
+      asked.push(`fileBytes ${path}`);
+      const { bytes: held } = await through(() => workspace.whole(path));
+      return new Uint8Array(held);
+    },
+    async putFile(path: string, body: Uint8Array) {
+      asked.push(`putFile ${path}`);
+      return through(() =>
+        workspace.put(
+          path,
+          (async function* () {
+            yield body;
+          })(),
+        ),
+      );
+    },
+    async listFiles(input: { path?: string }) {
+      asked.push(`listFiles ${input.path ?? "."}`);
+      return through(() => workspace.list(input.path));
+    },
+    forBot() {
+      return client;
+    },
+  } as unknown as ComputerClient;
+  return { client, asked };
 }

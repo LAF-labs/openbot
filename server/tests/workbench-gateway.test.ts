@@ -1,5 +1,17 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { REPEAT_RULE } from "../../shared/policy-rules";
 import { WORKBENCH_LIMITS } from "../../shared/workbench/protocol";
 import type { AuditEventInput, AuditFactCode, AuditStore } from "../src/audit";
@@ -25,6 +37,7 @@ import {
   fakeComputer,
   fakeWorkbench,
   made,
+  realComputer,
 } from "./support/script-run";
 
 /**
@@ -1712,5 +1725,210 @@ describe("a script's run, again and again", () => {
       repeatCount: 5,
     });
     expect(same.sent).toHaveLength(4);
+  });
+});
+
+/*
+ * WHAT A RULE JUDGES MUST BE WHAT THE COMPUTER IS GIVEN (the independent read of 2026-10-07, the
+ * blocker). A path was held to going nowhere but down and no more — so `"private/payroll.csv "`
+ * was a path a run could name. The policy judged that string, trailing space and all, and a rule
+ * about `private/payroll.csv`, about its name or about its extension did not match it; the
+ * computer TRIMS the path it is handed (`agent-computer/src/workspace.ts`, `resolvePath`) and
+ * read the file the rule was written to keep. The same from the other side: a file a script
+ * called `"tool2.exe "` was not an `exe` to a rule and was `tool2.exe` on the disk.
+ *
+ * Over the computer's REAL workspace, because a stand-in's map does not trim: each of these read
+ * the file, or wrote one, on the code as that read found it.
+ */
+describe("a path a rule read one way and the computer would read another", () => {
+  const roots: string[] = [];
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  /** A real folder with one file a rule is written to keep, and the gateway over it. */
+  function overTheDisk(
+    policy: ActionPolicy,
+    answer?: Parameters<typeof fakeWorkbench>[0],
+  ) {
+    const root = mkdtempSync(join(tmpdir(), "wg-"));
+    roots.push(root);
+    mkdirSync(join(root, "private"));
+    writeFileSync(join(root, "private", "payroll.csv"), "name,pay\nkim,1\n");
+    const computer = realComputer(root);
+    const bench = fakeWorkbench(answer);
+    const audit = fakeAudit();
+    const gateway = createComputerGateway({
+      client: computer.client,
+      auditStore: audit.store,
+      policy: () => policy,
+      workbench: bench.workbench,
+      now: () => AT,
+    });
+    return { gateway, root, computer, rows: audit.rows, sent: bench.sent };
+  }
+
+  /** Each a different thing to a rule, and the one file to a reader that trims. */
+  const SPELLINGS = [
+    "private/payroll.csv ",
+    " private/payroll.csv",
+    "private/payroll.csv\n",
+    "private/payroll.csv\t",
+    "private/payroll.csv\r\n",
+    "private/payroll.csv\u00a0",
+    "\u3000private/payroll.csv",
+    "private/payroll.csv\u2028",
+  ];
+  const RULES = [
+    'file.path == "private/payroll.csv"',
+    'matches(file.path, "^private/")',
+    'file.name == "payroll.csv"',
+    'file.extension == "csv"',
+  ];
+
+  test("a file a rule denies is not read for a script by writing its path with a space, a tab or a line's end", async () => {
+    const leaked: string[] = [];
+    for (const rule of RULES) {
+      for (const path of SPELLINGS) {
+        const { gateway, rows, sent, computer } = overTheDisk(denying(rule));
+        const error = (await failure(
+          gateway.runScript(COMPUTER, BOT, ACTOR, {
+            script: SCRIPT,
+            files: [path],
+          }),
+        )) as ScriptNotRunError;
+        const held = sent.flatMap((request) =>
+          request.files.map((file) => new TextDecoder().decode(file.bytes)),
+        );
+        if (held.length > 0) leaked.push(`${rule} / ${JSON.stringify(path)}`);
+        // Not a path a run takes: refused before anything was read, decided or recorded.
+        expect({ rule, path, code: error.code }).toEqual({
+          rule,
+          path,
+          code: "laf:script_inputs_invalid",
+        });
+        expect(computer.asked).toEqual([]);
+        expect(rows).toEqual([]);
+      }
+    }
+    // It was most of them: the payroll file's own bytes, in what the sandbox was sent.
+    expect(leaked).toEqual([]);
+  });
+
+  test("the file itself, by its own path, is refused by each of those rules — and read where none denies it", async () => {
+    for (const rule of RULES) {
+      const { gateway, sent, computer } = overTheDisk(denying(rule));
+      expect(
+        await failure(
+          gateway.runScript(COMPUTER, BOT, ACTOR, {
+            script: SCRIPT,
+            files: ["private/payroll.csv"],
+          }),
+        ),
+      ).toBeInstanceOf(ActionRefusedError);
+      expect(sent).toEqual([]);
+      expect(computer.asked).toEqual([]);
+    }
+    const open = overTheDisk(PERMISSIVE);
+    await open.gateway.runScript(COMPUTER, BOT, ACTOR, {
+      script: SCRIPT,
+      files: ["private/payroll.csv"],
+    });
+    expect(new TextDecoder().decode(open.sent[0]?.files[0]?.bytes)).toBe(
+      "name,pay\nkim,1\n",
+    );
+  });
+
+  test("a file a script calls `tool2.exe ` is not an exe to a rule and `tool2.exe` on the disk: its answer is not vouched for", async () => {
+    for (const name of [
+      "tool2.exe ",
+      " tool2.exe",
+      "tool2.exe\n",
+      "tool2.exe\u00a0",
+    ]) {
+      const { gateway, root, rows } = overTheDisk(
+        denying('intent == "write_file" && file.extension == "exe"'),
+        () => made(["report.csv", "r"], [name, "MZ"]),
+      );
+      const error = (await failure(
+        gateway.runScript(
+          COMPUTER,
+          BOT,
+          { ...ACTOR, toolCallId: "call-1" },
+          { script: SCRIPT, files: [] },
+        ),
+      )) as ScriptNotRunError;
+      expect({ name, code: error.code }).toEqual({
+        name,
+        code: "laf:workbench_failed",
+      });
+      // Nothing of that run is on the disk: not the exe, and not the file beside it.
+      expect(existsSync(join(root, "made"))).toBe(false);
+      expect(rows.at(-1)?.payload.failure).toBe("laf:workbench_failed");
+    }
+  });
+
+  test("a file a script calls by three spaces does not become a FILE where the run's folder belongs", async () => {
+    const { gateway, root } = overTheDisk(PERMISSIVE, () =>
+      made(["   ", "x"], ["report.csv", "r"]),
+    );
+    const folder = `made/2026-10-07-${id8("call-1")}`;
+    const outcome = await gateway
+      .runScript(
+        COMPUTER,
+        BOT,
+        { ...ACTOR, toolCallId: "call-1" },
+        { script: SCRIPT, files: [] },
+      )
+      .then(
+        (run) => run.products.map((product) => product.unfiled ?? "filed"),
+        (error: Error) => error.message,
+      );
+    // It was ["filed", "laf:file_wrong_kind"]: the blank name was trimmed to the folder's own
+    // path, written there as a file, and the real file then had nowhere to go.
+    expect(outcome).toBe("laf:workbench_failed");
+    expect(
+      existsSync(join(root, folder)) && statSync(join(root, folder)).isFile(),
+    ).toBe(false);
+    expect(existsSync(join(root, "made"))).toBe(false);
+  });
+
+  test("a name that would draw as another name is not a name a file is handed back under", async () => {
+    // A right-to-left override (`invoice<RLO>fdp.exe` draws as `invoiceexe.pdf`), an isolate, a
+    // zero-width space, the byte-order mark, and a C1 control.
+    for (const name of [
+      "invoice\u202efdp.exe",
+      "a\u2066b.csv",
+      "to\u200btals.csv",
+      "\ufefftotals.csv",
+      "totals\u0085.csv",
+    ]) {
+      const { gateway, root } = overTheDisk(PERMISSIVE, () =>
+        made([name, "x"]),
+      );
+      const error = (await failure(
+        gateway.runScript(COMPUTER, BOT, ACTOR, { script: SCRIPT, files: [] }),
+      )) as ScriptNotRunError;
+      expect({ name, code: error.code }).toEqual({
+        name,
+        code: "laf:workbench_failed",
+      });
+      expect(existsSync(join(root, "made"))).toBe(false);
+    }
+    // Korean, a space inside a name, and a dot inside one are names.
+    const fine = overTheDisk(PERMISSIVE, () =>
+      made(["요일별 매출 v1.2.csv", "x"]),
+    );
+    const run = await fine.gateway.runScript(COMPUTER, BOT, ACTOR, {
+      script: SCRIPT,
+      files: [],
+    });
+    const filed = run.products[0]?.path ?? "";
+    expect(readFileSync(join(fine.root, filed), "utf8")).toBe("x");
+    expect(readdirSync(join(fine.root, filed, ".."))).toEqual([
+      "요일별 매출 v1.2.csv",
+    ]);
   });
 });

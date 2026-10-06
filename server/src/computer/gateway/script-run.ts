@@ -112,6 +112,12 @@ export class ScriptNotRunError extends Error {
  * (`workbench/client.ts`, `wrongPartOf`); what only it can see — the files' sizes together, once
  * they have been read — comes back from it as `invalid`, inside the governed run.
  *
+ * A PATH THAT IS NOT WRITTEN THE ONE WAY EVERY READER READS IT IS REFUSED HERE TOO (`isRunPath`):
+ * one with a space or a line's end at either end, which the policy would judge as written and the
+ * Bot's computer would trim. Refused and not tidied — the script opens its file by the path it
+ * was asked with — and, like the rest of what is refused here, with no row: nothing was read and
+ * nothing decided, so there is nothing for the trail to say happened.
+ *
  * `unknown` where a type says `string`: what arrives here will be a model's arguments.
  */
 export function requestProblem(

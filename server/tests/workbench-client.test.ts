@@ -280,6 +280,21 @@ test("a request the daemon could only refuse is refused here, unsent", async () 
       refused("files"),
     );
   }
+  // What a trim would change: the computer trims the path it reads, and a rule judged it as
+  // written, so the two would not be reading the same path (the read of 2026-10-07).
+  for (const path of [
+    "a ",
+    " a",
+    "a\n",
+    "a\t",
+    "d/a\u00a0",
+    "\u3000a",
+    "   ",
+  ]) {
+    expect(await workbench.run({ script, files: [file(path)] })).toEqual(
+      refused("files"),
+    );
+  }
   expect(
     await workbench.run({ script, files: [file("a"), file("b"), file("c")] }),
   ).toEqual(refused("files"));
@@ -381,6 +396,48 @@ const lies: [string, () => Response][] = [
     () =>
       honest(
         { products: [{ name: ".env", bytes: 1, part: "product0" }] },
+        { product0: "x" },
+      ),
+  ],
+  /*
+   * A NAME THE POLICY AND THE COMPUTER WOULD READ DIFFERENTLY (the independent read of
+   * 2026-10-07): a name becomes the end of a path a rule judges as written and the computer
+   * trims, so `"tool2.exe "` was not an exe to a rule and was `tool2.exe` on the disk, and a
+   * name of spaces was the path of its own folder. And a name that draws as another name.
+   */
+  [
+    "a file whose name ends in a space",
+    () =>
+      honest(
+        { products: [{ name: "tool2.exe ", bytes: 1, part: "product0" }] },
+        { product0: "x" },
+      ),
+  ],
+  [
+    "a file whose name is nothing but spaces",
+    () =>
+      honest(
+        { products: [{ name: "   ", bytes: 1, part: "product0" }] },
+        { product0: "x" },
+      ),
+  ],
+  [
+    "a file whose name ends a line",
+    () =>
+      honest(
+        { products: [{ name: "a.csv\n", bytes: 1, part: "product0" }] },
+        { product0: "x" },
+      ),
+  ],
+  [
+    "a file whose name draws as another name",
+    () =>
+      honest(
+        {
+          products: [
+            { name: "invoice\u202efdp.exe", bytes: 1, part: "product0" },
+          ],
+        },
         { product0: "x" },
       ),
   ],
