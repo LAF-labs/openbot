@@ -1252,7 +1252,7 @@ describe("Google Calendar", () => {
     });
   });
 
-  test("an all-day event tomorrow comes after today, and one today is today's — on the person's clock", async () => {
+  test("an all-day event tomorrow comes after today, and one today is today's — a calendar kept where the person is", async () => {
     const todays = allDay("a1", "창립기념일", "2026-10-05", "2026-10-06");
     const tomorrows = allDay(
       "a2",
@@ -1262,7 +1262,7 @@ describe("Google Calendar", () => {
     );
 
     // Tomorrow's alone: the day is empty. Its date begins where the day ends, not inside it.
-    reply = () => json({ items: [tomorrows] });
+    reply = () => json({ timeZone: "Asia/Seoul", items: [tomorrows] });
     const empty = await calendar.callTool(
       seoul,
       "list_events",
@@ -1278,7 +1278,7 @@ describe("Google Calendar", () => {
     ]);
 
     // Both: today's is the day's one event, and tomorrow's is not a second.
-    reply = () => json({ items: [todays, tomorrows] });
+    reply = () => json({ timeZone: "Asia/Seoul", items: [todays, tomorrows] });
     const one = await calendar.callTool(
       seoul,
       "list_events",
@@ -1292,7 +1292,7 @@ describe("Google Calendar", () => {
 
     // West of Greenwich a date begins hours AFTER the same date does in UTC: read as UTC's,
     // tomorrow's all-day event would begin at eight this evening in New York and be today's.
-    reply = () => json({ items: [tomorrows] });
+    reply = () => json({ timeZone: "America/New_York", items: [tomorrows] });
     const newYork = await calendar.callTool(
       { ...connection, timeZone: "America/New_York" },
       "list_events",
@@ -1312,6 +1312,122 @@ describe("Google Calendar", () => {
       THE_NEAREST,
       "- 2026-10-06 (종일) ~ 2026-10-07 (종일) · 부가세 신고 마감 · id: a2",
     ]);
+  });
+
+  /*
+   * WHERE AN ALL-DAY DATE BEGINS IS THE CALENDAR'S TO SAY, AND GOOGLE SAYS IT IN THE ANSWER
+   * (2026-10-07, the second read of this change). The first version began it where the PERSON is,
+   * and its comment said Google's own rule was written nowhere. It is written: "The calendar time
+   * zone is used to calculate start and end times of all-day events to determine whether they fall
+   * within the filter specification" (the guide, Calendars & events, Time zones), and the answer
+   * carries that zone as `timeZone`. Where the two zones differ — a device in New York, a calendar
+   * kept in Seoul — an all-day event Google's filter had put on today was set aside as "after",
+   * and a day with something on it no longer read as it did (600 of 10,347 such listings).
+   *
+   * Each case is the answer Google's own filter gives to the day's request, beside its answer to
+   * the wider one: the two must read the same.
+   */
+  test("an all-day date begins where the calendar's zone says: kept east of the person, tomorrow's is on today as Google's filter has it", async () => {
+    const newYork = { ...connection, timeZone: "America/New_York" };
+    // Noon on the 5th in New York. The day is 04:00Z to 04:00Z.
+    const noon = () => new Date("2026-10-05T16:00:00Z");
+    const lunch = timed(
+      "z1",
+      "점심 약속",
+      "2026-10-05T12:30:00-04:00",
+      "2026-10-05T13:30:00-04:00",
+    );
+    // The 6th begins in Seoul at 15:00Z on the 5th: inside New York's 5th. The 7th does not.
+    const sixth = allDay("z2", "창립기념일", "2026-10-06", "2026-10-07");
+    const seventh = allDay(
+      "z3",
+      "부가세 신고 마감",
+      "2026-10-07",
+      "2026-10-08",
+    );
+    const ask = async (items: unknown[]) => {
+      reply = () => json({ timeZone: "Asia/Seoul", items });
+      const result = await calendar.callTool(
+        newYork,
+        "list_events",
+        { day: "today" },
+        noon,
+      );
+      return result.text;
+    };
+
+    // What Google answers the day's own request with, and what it answers the wider one with.
+    const asItWas = await ask([lunch, sixth]);
+    const wider = await ask([lunch, sixth, seventh]);
+
+    expect(asItWas.split("\n")).toEqual([
+      "[본 기간: 2026-10-05 00:00 ~ 2026-10-06 00:00 America/New_York · 일정 2건]",
+      "- 2026-10-05 12:30 ~ 2026-10-05 13:30 · 점심 약속 · id: z1",
+      "- 2026-10-06 (종일) ~ 2026-10-07 (종일) · 창립기념일 · id: z2",
+    ]);
+    expect(wider).toBe(asItWas);
+  });
+
+  test("…and kept west of the person, one that Google's filter left out of a stretch stays out of it", async () => {
+    // Three in the morning on the 6th in Seoul, and a day from now: 18:00Z to 18:00Z.
+    const threeAm = () => new Date("2026-10-05T18:00:00Z");
+    const breakfast = timed(
+      "w1",
+      "조찬 모임",
+      "2026-10-06T08:00:00+09:00",
+      "2026-10-06T09:00:00+09:00",
+    );
+    // The 7th begins in Seoul at 15:00Z on the 6th, inside the stretch — and in New York at
+    // 04:00Z on the 7th, after it. The calendar is New York's, so Google left it out.
+    const seventh = allDay(
+      "w2",
+      "부가세 신고 마감",
+      "2026-10-07",
+      "2026-10-08",
+    );
+    const ask = async (items: unknown[]) => {
+      reply = () => json({ timeZone: "America/New_York", items });
+      const result = await calendar.callTool(
+        seoul,
+        "list_events",
+        { days: 1 },
+        threeAm,
+      );
+      return result.text;
+    };
+
+    const asItWas = await ask([breakfast]);
+    const wider = await ask([breakfast, seventh]);
+
+    expect(asItWas.split("\n")).toEqual([
+      "[본 기간: 2026-10-06 03:00 ~ 2026-10-07 03:00 Asia/Seoul(KST) · 일정 1건]",
+      "- 2026-10-06 08:00 ~ 2026-10-06 09:00 · 조찬 모임 · id: w1",
+    ]);
+    expect(wider).toBe(asItWas);
+  });
+
+  test("an answer that names no zone, or one nobody knows, is read on the person's clock", async () => {
+    const tomorrows = allDay(
+      "n1",
+      "부가세 신고 마감",
+      "2026-10-06",
+      "2026-10-07",
+    );
+    for (const named of [
+      {},
+      { timeZone: "Mars/Olympus_Mons" },
+      { timeZone: 9 },
+    ]) {
+      reply = () => json({ ...named, items: [tomorrows] });
+      const result = await calendar.callTool(
+        seoul,
+        "list_events",
+        { day: "today" },
+        NINE_PM_SEOUL,
+      );
+      // Tomorrow's, by Seoul's midnight: the day is empty.
+      expect(result.text.split("\n")[0]).toBe(`${TODAY} · 일정 0건]`);
+    }
   });
 
   test("an event that began before today and is still running is today's", async () => {
