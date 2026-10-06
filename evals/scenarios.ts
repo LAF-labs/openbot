@@ -2546,6 +2546,25 @@ function firstMoveThreads(): Scenario[] {
  *
  * The answers are fixtures in the shape the two transports write (`google-calendar-rest.ts`,
  * `gmail-rest.ts`); no Google account is asked anything.
+ *
+ * AN EMPTY DAY HAS THREE OF ITS OWN (2026-10-07). A day with nothing on it was where a move paid
+ * least: half the runs did not take "nothing" and asked the calendar again. The transport now
+ * answers an empty stretch with what comes next, out of the same request, and these hold the
+ * model to each way that reads:
+ *
+ *   `…-empty-day`            nothing today, and the nearest event of the seven days after. Held to
+ *                            one request, to saying today has nothing, and to telling the next
+ *                            event as what comes NEXT — not as today's.
+ *   `…-empty-week`           nothing today and nothing in the seven days after.
+ *   `…-empty-day-for-tomorrow-is-put-right`   a WRONG move again: that first answer under a
+ *                            question about tomorrow, which holds two events. The one line of
+ *                            look-ahead is the first of them; held to asking the calendar for the
+ *                            day and naming both.
+ *
+ * Twelve runs each on the fleet's model that day: 11 in one request; 8; and 12 put right
+ * (`docs/laf/eval-pack.md`, "An empty day says what comes next"). `tests/eval-calendar.test.ts`
+ * holds the answers these open with to the transport's own text, and each judge to the sentences
+ * it was written for.
  */
 function firstMovesBehindTheBridge(): Scenario[] {
   const zone = "Asia/Seoul";
@@ -2554,13 +2573,30 @@ function firstMovesBehindTheBridge(): Scenario[] {
   const person = { timeZone: zone, locale: "ko-KR" };
   const event = (day: string, from: string, to: string, title: string) =>
     `- ${day} ${from} ~ ${day} ${to} · ${title}`;
-  /** A listing as `google-calendar-rest.ts` writes it: the stretch it covers, then the events. */
-  const listing = (from: string, until: string, events: readonly string[]) =>
+  /**
+   * A listing as `google-calendar-rest.ts` writes it: the stretch it covers, then the events. An
+   * empty stretch says what comes next — `next`, the nearest event of the seven days after it, or
+   * that those have nothing either. A search's empty answer says neither, and none is made here.
+   */
+  const listing = (
+    from: string,
+    until: string,
+    events: readonly string[],
+    next?: string,
+  ) =>
     [
       `[본 기간: ${from} 00:00 ~ ${until} 00:00 Asia/Seoul(KST) · 일정 ${events.length}건]`,
       ...(events.length > 0
         ? events
-        : ["이 기간에 캘린더에 잡힌 일정이 없습니다."]),
+        : [
+            "이 기간에 캘린더에 잡힌 일정이 없습니다.",
+            ...(next
+              ? [
+                  "[그 뒤 7일 안의 가장 가까운 일정 1건 — 그날의 전체 일정은 아님]",
+                  next,
+                ]
+              : ["그 뒤 7일 안에도 잡힌 일정이 없습니다."]),
+          ]),
     ].join("\n");
   const dayAfterTomorrow = dayAfter(today, 2);
   const TODAYS_EVENTS = [
@@ -2576,7 +2612,22 @@ function firstMovesBehindTheBridge(): Scenario[] {
     `${event(today, "00:10", "00:40", "새벽 배송 확인")} · id: ev_past_1`,
     `${event(today, "00:50", "01:20", "원두 발주 마감")} · id: ev_past_2`,
   ]);
-  const NOTHING_TODAY = listing(today, tomorrow, []);
+  /*
+   * Nothing today, and the nearest event after it: tomorrow night's, the one tomorrow's own list
+   * holds. And nothing for a week. An empty day is always one of the two now — the move's call
+   * carries no search.
+   */
+  const [THE_NEXT_EVENT = ""] = TOMORROWS_EVENTS;
+  const NOTHING_TODAY = listing(today, tomorrow, [], THE_NEXT_EVENT);
+  const NOTHING_ALL_WEEK = listing(today, tomorrow, []);
+  /*
+   * A tomorrow with a second event on it, after the one an empty today points at: an answer made
+   * from that one line is short by this one.
+   */
+  const TOMORROWS_TWO = [
+    THE_NEXT_EVENT,
+    `${event(tomorrow, "23:40", "23:55", "마감 재고 실사")} · id: ev_tomorrow_2`,
+  ];
   /** A search as `gmail-rest.ts` writes it: what was searched for, then the mails. */
   const found = (query: string, mails: readonly string[]) =>
     [
@@ -2659,9 +2710,69 @@ function firstMovesBehindTheBridge(): Scenario[] {
   ];
   const says = (turn: Turn, ...words: string[]) =>
     words.every((word) => turn.text.includes(word));
+  /**
+   * A word that tells an event: a name on this calendar, a 미팅 or a 회의, an hour of the clock.
+   * "오늘은 미팅이 없어요" tells none — a 미팅 said not to be there is not one — and neither does
+   * "24시간" or "7일".
+   */
+  const EVENT_TOLD =
+    /한빛상사|납품|(?:미팅|회의)(?![^,.\n]{0,20}없)|\d{1,2}시(?!간)|\d{1,2}:\d{2}/g;
+  /**
+   * Whether an answer to "오늘 일정" told the next event as what comes next, and no event as
+   * today's.
+   *
+   * THE CHECK THIS REPLACES FAILED THE RIGHT ANSWER. It was "no 미팅, no hour anywhere", written
+   * when an empty day's result held nothing to tell; with the nearest event in the result, "오늘은
+   * 없어요. 다음 일정은 내일 밤 11시 한빛상사 납품 미팅이에요." is the best answer there is, and
+   * seven runs of twelve that gave it were marked down (2026-10-07). What is wrong is narrower:
+   * an event on TODAY — made up, or tomorrow's told as today's.
+   *
+   * So every word that tells an event — its name, an hour — is read with the day it is told
+   * under: the day word nearest to it in its own sentence, or, where its sentence has none (a
+   * line of a list under a heading), the last one before it. That day must be tomorrow's, or the
+   * word 다음. Under today's, or under none — the question was about today — it fails. And 치과
+   * and 매출 are on no day of this calendar.
+   */
+  const toldAsWhatComesNext = (text: string): boolean => {
+    if (/치과|매출/.test(text)) return false;
+    const dayWords = (day: string) => {
+      const [, month, date] = day.split("-").map(Number);
+      return [`(?<!\\d)${month}/${date}(?!\\d)`, `${month}월\\s*${date}일`];
+    };
+    const days = [
+      ...text.matchAll(
+        new RegExp(
+          `(?<today>오늘|금일|${dayWords(today).join("|")})|내일|명일|다음|가장 가까운|${dayWords(tomorrow).join("|")}`,
+          "g",
+        ),
+      ),
+    ].map((match) => ({
+      at: match.index,
+      isToday: match.groups?.today !== undefined,
+    }));
+    // A sentence ends at a line's end, or at a full stop that is not inside a number.
+    const ends = [...text.matchAll(/\n|[.!?](?=\s|$)/g)].map(
+      (match) => match.index,
+    );
+    return [...text.matchAll(EVENT_TOLD)].every(({ index }) => {
+      const from = ends.findLast((end) => end < index) ?? -1;
+      const to = ends.find((end) => end >= index) ?? text.length;
+      const inSentence = days.filter((day) => day.at > from && day.at < to);
+      const nearest = inSentence.reduce<(typeof days)[number] | undefined>(
+        (best, day) =>
+          best === undefined ||
+          Math.abs(day.at - index) < Math.abs(best.at - index)
+            ? day
+            : best,
+        undefined,
+      );
+      const under = nearest ?? days.findLast((day) => day.at <= from);
+      return under !== undefined && !under.isToday;
+    });
+  };
   const base = {
     /*
-     * MEASURED, NOT PART OF A VERDICT. These nine count rounds beside each other. What a
+     * MEASURED, NOT PART OF A VERDICT. These eleven count rounds beside each other. What a
      * candidate must do with a thread a move opened is held by the weather's two above, which
      * are; and the calendar's "is answered from" passes five runs of six on the fleet's model (it
      * looks the tool up and calls it again once in six), which in a verdict of "every scenario,
@@ -2733,7 +2844,11 @@ function firstMovesBehindTheBridge(): Scenario[] {
     },
     {
       ...base,
-      // A day with nothing on it: the result says which day had nothing, and so must the answer.
+      /*
+       * A DAY WITH NOTHING ON IT, AND SOMETHING AFTER. The result says which day had nothing and
+       * names the nearest event of the seven days after; the answer is held to the first and may
+       * tell the second — as what comes next.
+       */
       id: "first-move-calendar-empty-day",
       messages: moved("calendar", "오늘 일정 뭐 있어?", NOTHING_TODAY),
       // Asked again, the calendar says again what it said: nothing that day.
@@ -2742,11 +2857,74 @@ function firstMovesBehindTheBridge(): Scenario[] {
       check: (turn) =>
         verdict([
           [
-            "빈 답을 믿지 않고 캘린더를 다시 부름 — 첫 수가 아낀 바퀴를 도로 씀",
-            !called(turn, CALENDAR_TOOL_NAME),
+            "빈 답을 믿지 않고 캘린더를 다시 부르거나 도구를 찾음 — 첫 수가 아낀 바퀴를 도로 씀",
+            !called(turn, CALENDAR_TOOL_NAME) && !called(turn, "tool_search"),
           ],
-          ["오늘 일정이 없다고 말하지 않음", /없/.test(turn.text)],
-          ["없는 일정을 지어냄", !/치과|미팅|회의|\d{1,2}시/.test(turn.text)],
+          ["오늘 일정이 없다고 말하지 않음", /없|비어|비었/.test(turn.text)],
+          [
+            "없는 일정을 오늘 것으로 지어내거나, 다음 일정을 오늘 일정으로 말함",
+            toldAsWhatComesNext(turn.text),
+          ],
+          answered(turn),
+          korean(turn),
+        ]),
+    },
+    {
+      ...base,
+      // Nothing today and nothing for a week: no event exists to tell, on any day.
+      id: "first-move-calendar-empty-week",
+      messages: moved("calendar", "오늘 일정 뭐 있어?", NOTHING_ALL_WEEK),
+      stub: (call) =>
+        call.name === CALENDAR_TOOL_NAME ? NOTHING_ALL_WEEK : backend(call),
+      check: (turn) =>
+        verdict([
+          [
+            "빈 답을 믿지 않고 캘린더를 다시 부르거나 도구를 찾음 — 첫 수가 아낀 바퀴를 도로 씀",
+            !called(turn, CALENDAR_TOOL_NAME) && !called(turn, "tool_search"),
+          ],
+          ["오늘 일정이 없다고 말하지 않음", /없|비어|비었/.test(turn.text)],
+          [
+            "없는 일정을 지어냄",
+            !/치과|매출/.test(turn.text) &&
+              [...turn.text.matchAll(EVENT_TOLD)].length === 0,
+          ],
+          answered(turn),
+          korean(turn),
+        ]),
+    },
+    {
+      ...base,
+      /*
+       * THE MOVE WAS WRONG, AND WHAT IT BROUGHT LOOKS LIKE AN ANSWER. The question is about
+       * tomorrow; the result in hand is today's — empty — with one line of look-ahead, which IS
+       * an event of tomorrow's. Tomorrow holds two. The line says it is one event and not that
+       * day's list, and this is what that sentence is for: an answer made from it names one
+       * event and is short by the other.
+       */
+      id: "first-move-calendar-empty-day-for-tomorrow-is-put-right",
+      messages: moved("calendar", "내일 일정 뭐 있어?", NOTHING_TODAY),
+      stub: (call) => {
+        if (call.name !== CALENDAR_TOOL_NAME) return backend(call);
+        // `days` is all the Bot is shown; from now on for a day stops short of tomorrow night.
+        const days = Number(call.arguments?.days ?? 7) || 7;
+        return call.arguments?.day === "today" || days <= 1
+          ? NOTHING_TODAY
+          : listing(today, dayAfter(today, days), TOMORROWS_TWO);
+      },
+      check: (turn) =>
+        verdict([
+          [
+            "내일을 보도록 캘린더를 다시 부르지 않음",
+            turn.calls.some(
+              (call) =>
+                call.name === CALENDAR_TOOL_NAME &&
+                call.arguments?.day !== "today",
+            ),
+          ],
+          [
+            "내일의 두 일정(한빛상사 납품 미팅, 마감 재고 실사)을 다 말하지 않음 — 미리 본 한 줄로 답함",
+            says(turn, "한빛상사", "재고"),
+          ],
           answered(turn),
           korean(turn),
         ]),
