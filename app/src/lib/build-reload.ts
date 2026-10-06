@@ -80,7 +80,12 @@ export type BuildReloadDeps = {
 /** How long the server is given to say which build it runs, before this is a dropped connection. */
 const BUILD_WAIT_MS = 5_000;
 
-async function readServerBuild(): Promise<{
+/**
+ * The build the server runs now, asked afresh and bounded, or null when it could not say. Also what
+ * the page looks at from time to time to learn that the server has moved past it
+ * (`lib/build-watch.ts`): one small request, never answered from a cache.
+ */
+export async function readServerBuild(): Promise<{
   version: string;
   revision?: string;
 } | null> {
@@ -109,7 +114,8 @@ async function readServerBuild(): Promise<{
   }
 }
 
-function sessionStore(): Storage | null {
+/** This tab's own storage, which a reload keeps and a new window does not — or none. */
+export function sessionStore(): Storage | null {
   try {
     return globalThis.sessionStorage ?? null;
   } catch {

@@ -9,6 +9,7 @@ import { TrialBanner } from "../components/layout/trial-banner";
 import { loadCurrentUser } from "../lib/auth/load-current-user";
 import { useSessionGate } from "../lib/auth/use-session-gate";
 import { useBotAccent } from "../lib/avatar/accent";
+import { watchBuild } from "../lib/build-watch";
 import { useChannelEvents } from "../lib/channels/use-channel-events";
 import { inShell } from "../lib/notifications/shell";
 import { handleShellLinks } from "../lib/notifications/shell-links";
@@ -97,6 +98,13 @@ function AuthedShell() {
   // And its place: asked of the device once, and followed each time the page is looked at again.
   useDevicePlace();
   /*
+   * WHETHER THE SERVER HAS MOVED PAST THIS PAGE, and whether the shell holds a newer shell
+   * (`lib/build-watch.ts`): watched on every signed-in screen, said at the foot of the Bot's column
+   * (`components/layout/update-notice.tsx`). Signed out there is nothing to keep whole and the next
+   * screen is a fresh load anyway.
+   */
+  useEffect(watchBuild, []);
+  /*
    * A conversation is kept for a while after its screen leaves (`lib/turns/kept-threads.ts`) — for
    * as long as somebody is signed in, and no longer. However the session ends — signing out, or a
    * session that ran out and sent them to the sign-in screen — nothing is kept past these screens.
@@ -131,7 +139,7 @@ function AuthedShell() {
        * the check away from the one page that still offers it.
        */}
       <ShellConnectionCheck />
-      {/* The installed app's tray status, wakefulness and update notice; nothing in a tab. */}
+      {/* The installed app's tray status, wakefulness and download notice; nothing in a tab. */}
       {inShell() ? (
         <SectionBoundary layout="line" section="notices">
           <ShellSync />

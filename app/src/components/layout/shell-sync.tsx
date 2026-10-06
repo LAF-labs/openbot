@@ -1,7 +1,6 @@
 import { useEffect } from "react";
 import { usePresence } from "@/components/channels/use-presence";
 import { DownloadNotice } from "@/components/layout/download-notice";
-import { UpdateNotice } from "@/components/layout/update-notice";
 import { useMyBots } from "@/lib/agents/my-bots";
 import {
   holdShellAwake,
@@ -23,9 +22,12 @@ const STATUS_SETTLE_MS = 1_500;
  *    the Bot finished would be the one lie the tray line exists to prevent.
  *  - STAYING AWAKE on Windows, where WebView2 has no background-throttling switch
  *    (`holdShellAwake`).
- *  - THE UPDATE NOTICE, which needs the same answer: no restart while the Bot is busy.
  *  - THE DOWNLOAD NOTICE: a webview saves a file and draws nothing, so the shell says when one has
  *    ended and this says it on screen (`DownloadNotice`).
+ *
+ * THE UPDATE NOTICE WAS HERE until 2026-10-06, a card in the corner below. A newer shell is said by
+ * the one control that says a newer page (`update-notice.tsx`), at the foot of the Bot's column,
+ * and it reads for itself whether the Bot is busy.
  *
  * The first of the person's Bots: there is one (docs/laf/deployment-model.md). An account from
  * before 2026-09-24 with several shows the first one's status, as its sidebar leads with it.
@@ -60,10 +62,10 @@ export function ShellSync() {
    * ONE CORNER, ONE STACK. Each card used to fix itself to the corner, which is right for one card
    * and draws the second over the first. The corner is held here and the cards stack inside it;
    * it takes no clicks of its own, so an empty corner is not a patch of the screen that is dead.
+   * (One card stacks in it since 2026-10-06; the corner is kept for the next thing a shell says.)
    */
   return (
     <div className="pointer-events-none fixed top-16 right-4 z-40 flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2">
-      <UpdateNotice isBotBusy={status !== "idle"} />
       <DownloadNotice />
     </div>
   );

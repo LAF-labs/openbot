@@ -10,6 +10,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { usePresence } from "@/components/channels/use-presence";
+import { UpdateNotice } from "@/components/layout/update-notice";
 import { focusRing } from "@/components/ui/focus";
 import { conversationOf, primaryBot, useMyBots } from "@/lib/agents/my-bots";
 import { channelListQueryOptions } from "@/lib/channels/queries";
@@ -36,6 +37,11 @@ import { cn } from "@/lib/utils";
  *
  * AWAY WHILE THE KEYBOARD IS UP (`use-keyboard-up.ts`), so it never sits stacked between the box
  * being typed in and the keys.
+ *
+ * A NEWER VERSION IS SAID HERE, ON A ROW OVER THE TABS (`update-notice.tsx`), since 2026-10-06: a
+ * phone has no column whose foot could hold it, and the bar is the phone's. Part of the bar, so it
+ * is laid out under the screen rather than over it, and goes away with the bar while the keyboard
+ * is up. Nothing is drawn while there is none.
  *
  * NEVER ON THE PC APP, whose window is never narrower than 1024: `md:hidden`.
  */
@@ -64,6 +70,7 @@ export function PhoneTabBar() {
       hidden={isKeyboardUp}
       data-phone-tab-bar
     >
+      <UpdateNotice className="border-border border-b px-2 py-1" shape="row" />
       <ul className="grid h-14 grid-cols-6">
         <li className="contents">
           <Tab

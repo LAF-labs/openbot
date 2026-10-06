@@ -684,6 +684,65 @@ describe("one Bot: who it is, then the conversation, then where else to go", () 
     expect(ACCOUNT).toContain("kim@example.com");
   });
 
+  test("a newer version is one row over that button — the icon alone in the rail — and the foot is the one button again once it is gone", async () => {
+    /*
+     * WHERE THE APP SAYS IT HAS A NEWER VERSION (2026-10-06, `update-notice.tsx`): in the foot,
+     * which is the column's place for what is about the app rather than the Bot, pinned where it
+     * cannot scroll out of sight and laid out in the column, so it covers nothing. What the row
+     * says and what its press does is `update-notice.test.tsx`; this holds where it stands.
+     */
+    const watch = await import("../src/lib/build-watch");
+    const { act } = await import("react");
+    watch.configureBuildWatch({
+      bundleRevision: () => "1bf325e4aaaa",
+      readBuild: async () => ({ revision: "e9be7221bbbb" }),
+      isVisible: () => true,
+      storage: () => null,
+      lookEveryMs: 3_600_000,
+    });
+    const stop = watch.watchBuild();
+    try {
+      const view = await roster({ bots: one() });
+      // Until the page has looked there is nothing to say, and the foot is as it always is.
+      expect(view.footerLinks()).toHaveLength(1);
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await view.settle();
+
+      const foot = view.column().querySelector("[data-sidebar-nav]");
+      const [notice, menu] = view.footerLinks();
+      expect(view.footerLinks()).toHaveLength(2);
+      expect(
+        foot?.querySelector("[data-update-notice]")?.contains(notice ?? null),
+      ).toBe(true);
+      expect(notice?.textContent).toBe("A new version is hereRefresh");
+      expect(menu?.hasAttribute("data-sidebar-menu")).toBe(true);
+      // In the foot, so outside the part of the column that scrolls.
+      expect(notice?.closest(".overflow-y-auto")).toBeNull();
+
+      // The rail has no room for the words: the icon, named by them.
+      await view.resizeTo(false);
+      const [icon] = view.footerLinks();
+      expect(view.footerLinks()).toHaveLength(2);
+      expect(icon?.textContent).toBe("");
+      expect(icon?.getAttribute("aria-label")).toBe(
+        "A new version is here · Refresh",
+      );
+
+      // What was known is forgotten, as it is on the page a reload brings, and the row is gone.
+      await act(async () => {
+        watch.configureBuildWatch(null);
+      });
+      await view.settle();
+      expect(view.footerLinks()).toHaveLength(1);
+      expect(foot?.querySelector("[data-update-notice]")).toBeNull();
+    } finally {
+      stop();
+      watch.configureBuildWatch(null);
+    }
+  });
+
   test("and under those rows nothing: the column does not list the Bot's day, or ask for it", async () => {
     /*
      * 오늘 — 기다리는 일, 한 일, 다음 — STOOD UNDER THESE ROWS UNTIL 2026-10-04, and the owner had it

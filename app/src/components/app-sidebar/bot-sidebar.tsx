@@ -30,6 +30,7 @@ import { PersonAvatar } from "@/components/avatar/person-avatar";
 import { PILL_CLASS, PILL_TONES } from "@/components/channels/bot-header";
 import { usePresence } from "@/components/channels/use-presence";
 import { ReadNotice } from "@/components/layout/read-states";
+import { UpdateNotice } from "@/components/layout/update-notice";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   ContextMenu,
@@ -945,11 +946,17 @@ export function BotSidebar() {
        * 도움말 below the fold (UX review 0.5.4, item 4). No word is written beside it — the owner
        * had the column's words cut to the ones that navigate ("아이콘으로도 되는 걸 항상 글자로
        * 표시하는 게 문제", 2026-10-04), and this is not a place but the way to a list of them.
+       *
+       * AND, ONLY WHILE THERE IS A NEWER VERSION, ONE ROW OVER IT (`update-notice.tsx`). The foot is
+       * where this column keeps what is about the app rather than about the Bot, and it does not
+       * scroll, so the row is in sight at 1024×640 and covers nothing. It draws nothing otherwise:
+       * the foot is the one button every other day.
        */}
       <div
         className="shrink-0 border-border border-t px-2 py-2"
         data-sidebar-nav
       >
+        <UpdateNotice className="pb-1" shape={isRail ? "icon" : "row"} />
         {menu}
         {underAccount}
       </div>
