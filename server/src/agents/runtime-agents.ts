@@ -56,9 +56,11 @@ export function createRuntimeAgentLoader(
    * boot says how many do (`botsHeldElsewhere`).
    *
    * WHATEVER THE ROW HOLDS, NOTHING INCLUDED. A configuration is an address and a key's reference
-   * and nothing else, and neither is read here — so a row whose configuration names nothing a run
-   * could dial, which a developer's stack skips, is a Bot that runs at home like any other. There
-   * is no screen left on a hosted deployment that could repair one.
+   * and nothing else, and neither is read to dial a Bot — so a row whose configuration names
+   * nothing a run could dial, which a developer's stack skips, is a Bot that runs at home like
+   * any other. There is no screen left on a hosted deployment that could repair one. (The one
+   * reader of a row's address there is the boot's count, which compares it in SQL:
+   * `botsHeldElsewhere`.)
    *
    * AND NO STORED KEY GOES WITH IT. The key in the vault is a person's bearer token for THEIR
    * server; sent to ours it would be a credential delivered to a service it was never meant for.

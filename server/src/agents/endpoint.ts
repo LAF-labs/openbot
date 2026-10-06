@@ -20,6 +20,12 @@ import { checkNavigationTarget } from "../computer/target";
  * this check is weakest. That is the same trade navigation makes, and the reason the never-allowed
  * list is checked ahead of it. In a hosted deployment the opt-in is off and a private address is
  * refused.
+ *
+ * WHICH NO ROUTE REACHES ANY MORE (2026-10-06). A hosted deployment takes no endpoint for a Bot at
+ * all: the form and the connection test both answer `laf:agent_endpoint_not_taken` before an
+ * address is looked at (`routes.ts`), so with the opt-in off nothing arrives here to be refused.
+ * The refusal of a private address stays as the floor under a caller that forgets to ask first —
+ * `agent-endpoint.test.ts` still holds it — and with the opt-in on, this is the whole check.
  */
 
 export type EndpointVerdict =

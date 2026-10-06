@@ -182,10 +182,12 @@ is the one seam every path goes through — chat and routines alike.
 2026-10-06): what an agent says is filed as fact — what a turn cost, how a run
 ended — so only the deployment's own may say it. An address, or a key for one,
 is accepted only where the private-host opt-in
-(`AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS`) marks a developer's stack. Everywhere
-else it is refused (`laf:agent_endpoint_not_taken`), the screen that would send
-one is not drawn, and every Bot is dialled at the deployment's own agent
-whatever its row holds, with no stored key.
+(`AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS`) marks a developer's stack — and it marks
+one only where a computer is configured, and never in production, which
+refuses to start with it. Everywhere else it is refused
+(`laf:agent_endpoint_not_taken`), the screen that would send one is not drawn,
+and every Bot is dialled at the deployment's own agent whatever its row holds,
+with no stored key.
 
 ### The computer reads the Bot from a header
 
