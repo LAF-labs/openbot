@@ -198,6 +198,7 @@
   "app/tests/reading.test.ts",
   "app/tests/render-legal.test.ts",
   "app/tests/request-refusals.test.ts",
+  "app/tests/revision-tag.test.ts",
   "app/tests/roster-state.test.ts",
   "app/tests/router.test.ts",
   "app/tests/routine-card.test.tsx",

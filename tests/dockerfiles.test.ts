@@ -185,6 +185,37 @@ describe("the build baked into the images", () => {
     }
   });
 
+  /*
+   * THE PAGE'S BUNDLE WAS THE ONE PART OF A DEPLOYMENT THAT COULD NOT SAY WHICH BUILD IT WAS, until
+   * 2026-10-06: the workflow has passed `REVISION` to the web image all along and the Dockerfile
+   * never declared it, so it was dropped. A window left open across an upgrade compares its own
+   * commit with the server's (`app/src/lib/build-watch.ts`) — which needs the commit set BEFORE
+   * the bundle is built, and the build to write it into the page. Either half missing is a page
+   * that never says there is a newer version, which looks exactly like there being none.
+   */
+  test("reaches the page's bundle too: set before it is built, and written into the page by the build", () => {
+    const web = read("app/Dockerfile");
+    expect(web).toMatch(/^ARG REVISION=/m);
+    const set = web.indexOf("ENV GIT_SHA=${REVISION}");
+    const built = web.indexOf("RUN bun run build");
+    expect(set).toBeGreaterThan(-1);
+    expect(built).toBeGreaterThan(set);
+    // In the stage that builds, not the one that serves.
+    expect(web.indexOf("ARG REVISION=")).toBeLessThan(
+      web.indexOf("FROM caddy"),
+    );
+
+    const config = read("app/vite.config.ts");
+    expect(config).toContain(
+      "transformIndexHtml: () => revisionTags(process.env)",
+    );
+    const plugins = config.slice(
+      config.indexOf("plugins: ["),
+      config.indexOf("resolve: {"),
+    );
+    expect(plugins).toContain("buildRevision(),");
+  });
+
   test("is passed by the workflow that publishes them", () => {
     // The per-arch build step. The deploy bundle's step passes the same two into its VERSION file.
     expect(workflow.match(/--build-arg REVISION="\$REVISION"/g)).toHaveLength(
