@@ -441,7 +441,7 @@ describe("where a Bot is dialled", () => {
 
   /*
    * WHATEVER ITS ROW HOLDS — nothing included. A row's configuration is an address and a key's
-   * reference and nothing else, and a hosted deployment reads neither, so there is nothing in it
+   * reference and nothing else, and a hosted deployment dials by neither, so there is nothing in it
    * left to be unusable. Skipped there, as a developer's stack skips it, such a Bot would be gone
    * from every run with no screen left that could point it anywhere: the endpoints page is the
    * one that repaired a row, and a hosted deployment does not draw it.
