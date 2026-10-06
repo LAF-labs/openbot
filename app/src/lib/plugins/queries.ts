@@ -373,6 +373,15 @@ export function connectFailureText(reason: string | null | undefined): string {
   }
 }
 
+/**
+ * Whether the reason is the person's own cancel at the vendor: the one of the five that is not
+ * something going wrong. Beside `connectFailureText` so the server's words are matched in this one
+ * place, and the screen can say a cancel quietly rather than as a failure.
+ */
+export function isConnectCancel(reason: string | null | undefined): boolean {
+  return reason === "denied";
+}
+
 /** One person dropping their own connection to one server. */
 export async function disconnectServer(serverId: string): Promise<boolean> {
   const response = await fetch(

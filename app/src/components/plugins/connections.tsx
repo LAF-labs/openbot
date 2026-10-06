@@ -12,6 +12,7 @@ import {
   connectFailureText,
   connectionsQueryOptions,
   disconnectServer,
+  isConnectCancel,
   pluginKeys,
   saveOauthClient,
 } from "@/lib/plugins/queries";
@@ -539,15 +540,26 @@ export const ConnectOutcome = ({
    * above, a render after this mounts, so a line drawn only then arrived with its region and the
    * way back from a consent screen was silent.
    */
+  /*
+   * A CANCEL IS SAID, NOT ALARMED. `denied` is the person pressing 취소 on the vendor's own screen:
+   * nothing went wrong, so it takes the quiet line and the polite region, and the red line that
+   * interrupts is kept for a failure (`LiveRegion`). Seen in the app on 2026-10-06, the day the
+   * reason was first read at all: "연결이 취소됐어요." in red, to somebody who had just chosen it.
+   */
+  const isCancelled = outcome === "failed" && isConnectCancel(why);
+  const failure =
+    outcome === "failed" && !isCancelled ? connectFailureText(why) : null;
+  const connectedTo =
+    outcome !== null && outcome !== "failed"
+      ? t("Connected to {name}.", { name: titleFor(outcome) })
+      : null;
   return (
     <>
       <LiveRegion as="p" className="mt-4 text-destructive text-sm" tone="alert">
-        {outcome === "failed" ? connectFailureText(why) : null}
+        {failure}
       </LiveRegion>
       <LiveRegion as="p" className="mt-4 text-muted-foreground text-sm">
-        {outcome !== null && outcome !== "failed"
-          ? t("Connected to {name}.", { name: titleFor(outcome) })
-          : null}
+        {isCancelled ? connectFailureText(why) : connectedTo}
       </LiveRegion>
     </>
   );

@@ -46,19 +46,33 @@ afterAll(async () => {
 const GENERAL =
   "The connection did not finish, and nothing was saved. Please try again.";
 
-/** The five words the callback chooses from (`REASONS` in the server's `connected-page.ts`). */
-const REASONS = [
+/**
+ * The five words the callback chooses from (`REASONS` in the server's `connected-page.ts`), and
+ * the line each is said on. Four are failures and interrupt (`alert`). `denied` is the person's own
+ * cancel at the vendor: said on the quiet line, because nothing went wrong.
+ */
+const REASONS: { reason: string; says: string; on: "alert" | "status" }[] = [
   {
     reason: "expired",
     says: "The connection took too long. Please try again.",
+    on: "alert",
   },
-  { reason: "reused", says: "That connection link has already been used." },
-  { reason: "denied", says: "The connection was cancelled." },
+  {
+    reason: "reused",
+    says: "That connection link has already been used.",
+    on: "alert",
+  },
+  { reason: "denied", says: "The connection was cancelled.", on: "status" },
   {
     reason: "exchange",
     says: "The service could not finish connecting. Please try again.",
+    on: "alert",
   },
-  { reason: "mismatch", says: "This connection could not be completed." },
+  {
+    reason: "mismatch",
+    says: "This connection could not be completed.",
+    on: "alert",
+  },
 ];
 
 type View = Awaited<ReturnType<typeof mountApp>>;
@@ -94,9 +108,17 @@ async function backWith(search: string, api?: ApiAnswer): Promise<View> {
 describe("a consent that did not finish", () => {
   test.each(REASONS)(
     "$reason is told in its own words, and they stay once the address has lost them",
-    async ({ reason, says }) => {
+    async ({ reason, says, on }) => {
       const view = await backWith(`connected=failed&reason=${reason}`);
-      expect(said(view, "alert")).toEqual([says]);
+      // On its own line and not the other: a cancel is not alarmed, and a failure is not whispered.
+      // The quiet lines are searched rather than listed: the screen has status lines of its own.
+      expect({
+        alert: said(view, "alert"),
+        quiet: said(view, "status").includes(says),
+      }).toEqual({
+        alert: on === "alert" ? [says] : [],
+        quiet: on === "status",
+      });
       expect(carried(view)).toEqual({
         connected: undefined,
         reason: undefined,
