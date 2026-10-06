@@ -1383,15 +1383,23 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * the measured columns and search the section for it — and the shape of a catalogue key by
  * `help-opened-route.test.ts`, on the one route that still asks it.
  *
+ * RAISED 2026-10-06 with the commit a page carries, `app` from 2109 to 2111 and `root` from 718 to
+ * 719, by exactly the three written for it. The bundle was the one part of a deployment that could
+ * not say which build it was: the workflow passed `REVISION` to the web image and its Dockerfile
+ * never declared it. Two in the new `revision-tag.test.ts` (a build told its commit writes one
+ * tag into the document's head; one told nothing, or something that is no commit, writes none)
+ * and one for `root` in `dockerfiles.test.ts` (the web image sets the commit before the bundle is
+ * built, in the stage that builds, and the build's config writes it into the page).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 3553, roots: ["server"] },
-  { name: "app", floor: 2109, roots: ["app"] },
+  { name: "app", floor: 2111, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
-  { name: "root", floor: 718, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 719, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

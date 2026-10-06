@@ -48,6 +48,16 @@ ARG AUTH_PROVIDERS=""
 ENV AUTH_PROVIDERS=${AUTH_PROVIDERS}
 RUN bun scripts/generate-app-config.ts
 
+# Which commit this bundle is, written into the page that loads it (`src/lib/build/revision-tag.ts`),
+# so a window left open across an upgrade can see that the server has moved past it and say so
+# (`src/lib/build-watch.ts`). images.yml passes `--build-arg REVISION` to every image; this one
+# never declared it until 2026-10-06, so the bundle was the one part of a deployment that could not
+# say which build it was. A local build leaves it empty: no tag is written, and the page never says
+# there is a newer version. Declared here, under everything else, so a new commit rebuilds only the
+# bundle.
+ARG REVISION=
+ENV GIT_SHA=${REVISION}
+
 WORKDIR /app/app
 RUN bun run build
 

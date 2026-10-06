@@ -4,6 +4,7 @@ import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 import { REACT_COMPILER_OPTIONS } from "./src/lib/build/react-compiler";
+import { revisionTags } from "./src/lib/build/revision-tag";
 import {
   lazyBoundaryOffences,
   lazyOnlyPackageOf,
@@ -136,6 +137,16 @@ const MANUAL_CHUNKS: Record<string, string> = {
   marked: "markdown",
 };
 
+/**
+ * THE COMMIT THIS BUNDLE IS, AS A `<meta>` IN ITS OWN `index.html` — and nothing in development,
+ * where there is no commit to name. What it is for, and why the document rather than a module:
+ * `src/lib/build/revision-tag.ts`.
+ */
+const buildRevision = (): Plugin => ({
+  name: "laf:build-revision",
+  transformIndexHtml: () => revisionTags(process.env),
+});
+
 export default defineConfig({
   plugins: [
     /*
@@ -166,6 +177,7 @@ export default defineConfig({
     }),
     tailwindcss(),
     lazyBoundaries(),
+    buildRevision(),
   ],
   resolve: {
     alias: {
