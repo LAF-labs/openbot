@@ -1,5 +1,9 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
+import { eq } from "drizzle-orm";
+import { createDatabase } from "../src/db/client";
+import { agents } from "../src/db/schema";
+import { TEST_POOL } from "./support/database";
 
 /**
  * What an operator's log actually contains after a whole turn, and what it must not.
@@ -337,8 +341,10 @@ const BOT_NAME_PREFIX = "Log canary ";
  * The development person's one Bot, made here for this run.
  *
  * A person has one Bot (2026-09-24), and the development actor is one person shared by every test
- * that runs without sign-in, so a Bot this file left behind would have this one refused — and
- * reusing it would send the turn to the address of an `agent-bot` that died with an earlier run.
+ * that runs without sign-in, so a Bot this file left behind would have this one refused — and,
+ * until a deployment like this one dialled every Bot at its own agent whatever its row holds
+ * (2026-10-06, the test below), reusing it sent the turn to the address of an `agent-bot` that
+ * died with an earlier run.
  * So this file's own leftovers, and only those, go first: an earlier run whose teardown never ran,
  * or a tree from before the teardown was put in order (above).
  */
@@ -483,6 +489,57 @@ describe("a running deployment's log", () => {
     }
   }, 120_000);
 
+  test("answers from its own Bot service a Bot whose row somebody pointed at a server of theirs", async () => {
+    running();
+    const [botId] = made;
+    const [routineId] = routines;
+    if (!botId || !routineId) {
+      throw new Error("The turn above made no Bot; it says why.");
+    }
+    /*
+     * THE WHOLE WAY, THROUGH THE REAL `main.ts`. This boot has no private-host opt-in, so it is a
+     * hosted deployment in the sense that decides where a Bot runs, and a hosted deployment takes
+     * no endpoint of a person's own for a Bot (2026-10-06). The API refuses one now — so the row
+     * is written the only way such a row can still exist: it was there before the upgrade. Dialled
+     * where it says, the turn goes to a name that resolves nowhere and no answer comes back.
+     *
+     * `runtime-agents.integration.test.ts` holds the loader's half with the address and the key
+     * watched on the wire. What only this can hold is that the process an operator starts hands
+     * the loader its own agent at all: one argument in `main.ts`, and without it every test of the
+     * loader passes while a Bot pointed elsewhere goes on running there.
+     */
+    const ELSEWHERE = "https://agents.somebody-elses.example.test/ag-ui";
+    const database = createDatabase(DATABASE_URL, TEST_POOL);
+    const rowOf = async () =>
+      (
+        await database
+          .select({ configuration: agents.configuration })
+          .from(agents)
+          .where(eq(agents.id, botId))
+      )[0]?.configuration;
+    const before = await rowOf();
+    try {
+      await database
+        .update(agents)
+        .set({ configuration: { endpoint: ELSEWHERE } })
+        .where(eq(agents.id, botId));
+      providerMode = "answer";
+      const answered = await runOnce(routineId);
+      expect(answered?.answer).toContain(REPLY);
+      // Brought home for the run, and the row left saying what somebody once set.
+      expect(await rowOf()).toEqual({ endpoint: ELSEWHERE });
+      // Nor does either process say where the row points: a log is read by whoever runs the fleet.
+      expect(everything().text).not.toContain("somebody-elses");
+    } finally {
+      // The Bot is this file's own and is deleted below; its row is put back as it was all the same.
+      await database
+        .update(agents)
+        .set({ configuration: before ?? {} })
+        .where(eq(agents.id, botId));
+      await database.$client.close();
+    }
+  }, 60_000);
+
   test("says which build, which model and how many tools at boot", async () => {
     const { bot, server } = running();
     const serverBoot = await server.event("boot");
@@ -490,6 +547,14 @@ describe("a running deployment's log", () => {
     expect(serverBoot.model).toBe(MODEL);
     expect(serverBoot.tools).toBeGreaterThan(0);
     expect(serverBoot.computer).toBe("none");
+    /*
+     * No computer, so no private-host opt-in to read: a hosted deployment in the one sense that
+     * decides where a Bot runs (`main.ts`, `botsRunAt`). Every Bot is dialled at this process's own
+     * agent whatever its row holds, and the boot says how many rows said otherwise — a count read
+     * off the database as the port opened, and never an address.
+     */
+    expect(typeof serverBoot.botsBroughtHome).toBe("number");
+    expect(serverBoot.raw).not.toContain("/ag-ui");
 
     const botBoot = await bot.event("boot");
     expect(botBoot.version).toBe(IMAGE_TAG);

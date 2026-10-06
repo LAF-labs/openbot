@@ -3,9 +3,14 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import type { AgentActor } from "../src/agents/profile-types";
-import { createRuntimeAgentLoader } from "../src/agents/runtime-agents";
+import {
+  botsHeldElsewhere,
+  createRuntimeAgentLoader,
+} from "../src/agents/runtime-agents";
 import { createChannelStore } from "../src/channels/routes";
 import { createThreadIdentity } from "../src/channels/thread-identity";
+import { buildAgents, type RegisteredAgent } from "../src/copilot";
+import { encryptSecret } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
 import {
   agentProfiles,
@@ -237,5 +242,261 @@ describe("runtime agent loading", () => {
     expect(
       reloaded?.type === "remote_ag_ui" && reloaded.profile.roleDescription,
     ).toBe("Reconcile corporate card statements.");
+  });
+});
+
+/*
+ * EVERY BOT RUNS HERE, ON A HOSTED DEPLOYMENT — WHATEVER ITS ROW HOLDS (the owner, 2026-10-06).
+ *
+ * A hosted deployment no longer takes an endpoint of a person's own for a Bot (`agents/routes.ts`).
+ * Refusing new ones is half of it. A Bot pointed elsewhere BEFORE the deployment was upgraded
+ * would otherwise go on being answered there — its usage and its endings still filed here as fact
+ * — and the screen that could point it back is no longer drawn. So this loader, the one place a
+ * row's address and key become the agent a run dials, is told where home is: on a hosted
+ * deployment every Bot is dialled there, and the key a person stored for their own server is not
+ * sent to ours. The row is not rewritten: what a person once set is still what the row says.
+ *
+ * Held on what is DIALLED, through the same construction a run goes through (`buildAgents`), not
+ * only on what the loader hands back.
+ */
+describe("where a Bot is dialled", () => {
+  const ELSEWHERE = "https://agents.somebody.example.test/ag-ui";
+  const THEIR_KEY = "Bearer a-key-for-their-own-server";
+  const ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
+
+  /** A vault holding the one key, and which ids it was asked for. */
+  function vaultOf() {
+    const asked: string[] = [];
+    return {
+      asked,
+      vault: {
+        encryptionKey: ENCRYPTION_KEY,
+        reader: {
+          readSecret: async (id: string) => {
+            asked.push(id);
+            return {
+              encryptedValue: await encryptSecret(ENCRYPTION_KEY, THEIR_KEY),
+              revokedAt: null,
+            };
+          },
+        },
+      },
+    };
+  }
+
+  /** The row of a Bot somebody pointed at their own agent, with a key, while that was taken. */
+  const POINTED = {
+    endpoint: ELSEWHERE,
+    auth: { header: "Authorization", credentialId: "credential-of-theirs" },
+  };
+  async function pointElsewhere(agentId: string) {
+    await database
+      .update(agents)
+      .set({ configuration: POINTED })
+      .where(eq(agents.id, agentId));
+  }
+  const configurationOf = async (agentId: string) =>
+    (
+      await database
+        .select({ configuration: agents.configuration })
+        .from(agents)
+        .where(eq(agents.id, agentId))
+    )[0]?.configuration;
+
+  /** One run of the Bot as the runtime builds it: the address the request went to, and its key. */
+  async function dialled(registered: RegisteredAgent | undefined) {
+    if (!registered) throw new Error("the Bot was not loaded");
+    const seen: { url: string; authorization: string | null }[] = [];
+    const built = buildAgents(
+      [registered],
+      { provider: "openai", defaultModel: "test/model", supportsEffort: true },
+      {
+        watch: () =>
+          (async (url: unknown, init?: { headers?: HeadersInit }) => {
+            seen.push({
+              url: String(url),
+              authorization: new Headers(init?.headers).get("authorization"),
+            });
+            return new Response(
+              `data: ${JSON.stringify({ type: "RUN_STARTED", threadId: "t", runId: "r" })}\n\n` +
+                `data: ${JSON.stringify({ type: "RUN_FINISHED", threadId: "t", runId: "r" })}\n\n`,
+              { headers: { "content-type": "text/event-stream" } },
+            );
+          }) as never,
+        stop: () => undefined,
+      },
+    )[registered.id];
+    if (!built) throw new Error("no agent was built");
+    built.setMessages([{ id: "m1", role: "user", content: "안녕" }]);
+    await built.runAgent();
+    return seen;
+  }
+
+  test("on a hosted deployment a Bot whose row holds another address is dialled at the deployment's own agent, with no key of the person's — and its row is left as it was", async () => {
+    const owner = await createUser();
+    const profile = await createCoworker(owner);
+    await pointElsewhere(profile.id);
+    const { asked, vault } = vaultOf();
+    const hosted = createRuntimeAgentLoader(database, vault, {
+      home: managedEndpoint,
+    });
+
+    const loaded = (await hosted(owner)).find(
+      (agent) => agent.id === profile.id,
+    );
+    expect(loaded).toMatchObject({
+      type: "remote_ag_ui",
+      endpoint: managedEndpoint.toString(),
+    });
+    expect(loaded && "headers" in loaded).toBe(false);
+    // The key was not sent, and was not so much as read out of the vault for the run.
+    expect(asked).toEqual([]);
+    expect(await dialled(loaded)).toEqual([
+      { url: managedEndpoint.toString(), authorization: null },
+    ]);
+    // Nothing of theirs is anywhere in what the run was built from.
+    expect(JSON.stringify(loaded)).not.toContain("somebody.example.test");
+    expect(JSON.stringify(loaded)).not.toContain(THEIR_KEY);
+
+    // THE ROW IS NOT REWRITTEN: what somebody once set is still what it says.
+    expect(await configurationOf(profile.id)).toEqual(POINTED);
+  });
+
+  test("on a developer's stack the same Bot is dialled where its row says, with its key", async () => {
+    const owner = await createUser();
+    const profile = await createCoworker(owner);
+    await pointElsewhere(profile.id);
+    const { asked, vault } = vaultOf();
+    const developers = createRuntimeAgentLoader(database, vault);
+
+    const loaded = (await developers(owner)).find(
+      (agent) => agent.id === profile.id,
+    );
+    expect(asked).toEqual(["credential-of-theirs"]);
+    expect(await dialled(loaded)).toEqual([
+      { url: ELSEWHERE, authorization: THEIR_KEY },
+    ]);
+  });
+
+  test("a Bot nobody pointed anywhere is dialled at home either way", async () => {
+    const owner = await createUser();
+    const profile = await createCoworker(owner);
+    for (const load of [
+      createRuntimeAgentLoader(database, vaultOf().vault),
+      createRuntimeAgentLoader(database, vaultOf().vault, {
+        home: managedEndpoint,
+      }),
+    ]) {
+      const loaded = (await load(owner)).find(
+        (agent) => agent.id === profile.id,
+      );
+      expect(await dialled(loaded)).toEqual([
+        { url: managedEndpoint.toString(), authorization: null },
+      ]);
+    }
+  });
+
+  /*
+   * WHATEVER ITS ROW HOLDS — nothing included. A row's configuration is an address and a key's
+   * reference and nothing else, and a hosted deployment reads neither, so there is nothing in it
+   * left to be unusable. Skipped there, as a developer's stack skips it, such a Bot would be gone
+   * from every run with no screen left that could point it anywhere: the endpoints page is the
+   * one that repaired a row, and a hosted deployment does not draw it.
+   */
+  test.each([
+    ["no address at all", {}],
+    ["something that is no address", { endpoint: "not a url" }],
+    ["an address nothing can dial", { endpoint: "ftp://agents.example.test/" }],
+  ])(
+    "a Bot whose row holds %s runs at home on a hosted deployment, and is skipped on a developer's stack as it always was",
+    async (_what, configuration) => {
+      const owner = await createUser();
+      const profile = await createCoworker(owner);
+      await database
+        .update(agents)
+        .set({ configuration })
+        .where(eq(agents.id, profile.id));
+
+      const developers = createRuntimeAgentLoader(database, vaultOf().vault);
+      expect(
+        (await developers(owner)).find((agent) => agent.id === profile.id),
+      ).toBeUndefined();
+
+      const { asked, vault } = vaultOf();
+      const hosted = createRuntimeAgentLoader(database, vault, {
+        home: managedEndpoint,
+      });
+      const loaded = (await hosted(owner)).find(
+        (agent) => agent.id === profile.id,
+      );
+      expect(await dialled(loaded)).toEqual([
+        { url: managedEndpoint.toString(), authorization: null },
+      ]);
+      expect(asked).toEqual([]);
+      // Read around, not repaired: the row says what it said.
+      expect(await configurationOf(profile.id)).toEqual(configuration);
+      // And it is not one that "holds another address" for the boot's count unless it names one.
+      const counted = await botsHeldElsewhere(database, managedEndpoint);
+      expect(counted.includes(profile.id)).toBe("endpoint" in configuration);
+    },
+  );
+
+  /*
+   * THE EDIT FORM'S ORDINARY SAVE SENDS NO ADDRESS, and a hosted deployment refuses one that is
+   * sent — so what a save does to the row when none is sent is the whole of what a hosted
+   * deployment can do to it. It keeps it: the address and the key's reference, as they were.
+   */
+  test("a save that names no address leaves the row's configuration as it was: a rename moves nothing", async () => {
+    const owner = await createUser();
+    const pointed = await createCoworker(owner);
+    await pointElsewhere(pointed.id);
+    const ordinary = await createCoworker(await createUser());
+    const before = await configurationOf(ordinary.id);
+    expect(before).toEqual({ endpoint: managedEndpoint.toString() });
+
+    const renamed = await profileStore.update(owner, pointed.id, {
+      name: "새 이름",
+      roleDescription: "",
+      avatarSeed: "r2c6",
+      effort: "thorough",
+    });
+    expect(renamed.name).toBe("새 이름");
+    expect(await configurationOf(pointed.id)).toEqual(POINTED);
+    // And an empty one, which is what a form's cleared box becomes, is no address either.
+    await profileStore.update(owner, pointed.id, {
+      name: "또 새 이름",
+      roleDescription: "",
+      endpoint: undefined,
+    });
+    expect(await configurationOf(pointed.id)).toEqual(POINTED);
+    expect(await configurationOf(ordinary.id)).toEqual(before);
+  });
+
+  /*
+   * WHAT A BOOT SAYS OF IT (`boot/announce.ts`): how many Bots hold an address other than the
+   * deployment's own, so an operator reading the first lines after an upgrade knows one came
+   * home. Counted off the rows of Bots that still exist. Ids here, a number on the line, and the
+   * address nowhere.
+   */
+  test("the Bots whose rows hold another address are found by id: the live ones, and never one that holds the deployment's own", async () => {
+    const owner = await createUser();
+    const pointed = await createCoworker(owner);
+    await pointElsewhere(pointed.id);
+    const ordinary = await createCoworker(await createUser());
+    const deleted = await createCoworker(await createUser());
+    await pointElsewhere(deleted.id);
+    await profileStore.softDelete(
+      { id: deleted.ownerUserId ?? "", role: "user" },
+      deleted.id,
+    );
+
+    const elsewhere = await botsHeldElsewhere(database, managedEndpoint);
+    expect(elsewhere).toContain(pointed.id);
+    expect(elsewhere).not.toContain(ordinary.id);
+    expect(elsewhere).not.toContain(deleted.id);
+    // By what the row says against what home is: named differently, the same rows read the other way.
+    const fromElsewhere = await botsHeldElsewhere(database, new URL(ELSEWHERE));
+    expect(fromElsewhere).not.toContain(pointed.id);
+    expect(fromElsewhere).toContain(ordinary.id);
   });
 });

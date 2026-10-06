@@ -224,6 +224,21 @@ export function sayBooted(input: {
    * new epoch in every one of them, and the line says so before the first cache miss does.
    */
   harness?: { version: string; conversations: number };
+  /**
+   * On a hosted deployment: how many live Bots hold, in their rows, an address other than this
+   * deployment's own agent (`botsHeldElsewhere`, `agents/runtime-agents.ts`).
+   *
+   * Each of them is dialled at home all the same — a hosted deployment takes no endpoint of a
+   * person's own for a Bot (2026-10-06) — so for a Bot pointed elsewhere before the upgrade, this
+   * restart is the moment it changed where it runs, and no screen says so: the page that showed
+   * its address is not drawn any more. This line is where an operator reads it. Zero is said
+   * too. A NUMBER, NEVER THE ADDRESS: that is something a person once typed, and a log is read
+   * by whoever runs the fleet.
+   *
+   * Absent on a developer's stack, where a Bot runs where its row says and none is brought
+   * anywhere — and where the rows could not be read, since a boot does not fail over a count.
+   */
+  botsBroughtHome?: number;
 }): void {
   const { config } = input;
   if (config.devNoAuth) {
@@ -251,5 +266,8 @@ export function sayBooted(input: {
           conversations: input.harness.conversations,
         }
       : {}),
+    ...(input.botsBroughtHome === undefined
+      ? {}
+      : { botsBroughtHome: input.botsBroughtHome }),
   });
 }
