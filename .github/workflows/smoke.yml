@@ -86,6 +86,21 @@ jobs:
           OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
           BOT_MODEL: ${{ vars.BOT_MODEL }}
         run: |
+          # THE MODEL IS NAMED, ALWAYS. agent-bot carries no default of its own and refuses to start
+          # without one (`boot_refused`, `bot_model_unset`) — on purpose, since four defaults once
+          # disagreed — and the one default is the package's line. So this reads that line rather
+          # than keep a second copy of the model's name in a repository variable nobody would
+          # remember to change with it; the variable still wins, for a night spent on a candidate.
+          # Measured 2026-10-06: with the key in place and no model named, the Bot's container
+          # restarted for two minutes and the journey never began.
+          model="$BOT_MODEL"
+          if [ -z "$model" ]; then
+            model="$(sed -n 's/^ *default_model: *\${BOT_MODEL:-\([^}]*\)}.*$/\1/p' tenant/laf/model.yaml)"
+          fi
+          if [ -z "$model" ]; then
+            echo "::error title=Smoke did not run::tenant/laf/model.yaml names no default model, and no BOT_MODEL variable does either."
+            exit 1
+          fi
           {
             echo "DATABASE_URL=$DATABASE_URL"
             echo "POSTGRES_PORT=$POSTGRES_PORT"
@@ -105,9 +120,9 @@ jobs:
             echo "OPENAI_API_KEY=$OPENAI_API_KEY"
             # `if`, not `[ … ] && echo`: a test that is false is the group's last status, and the step
             # then fails for the variable that is ALLOWED to be absent. It did, on 2026-10-06, the
-            # first time this ran in eight nights — with no model named, which is the package's default.
+            # first time this ran in eight nights.
             if [ -n "$OPENAI_BASE_URL" ]; then echo "OPENAI_BASE_URL=$OPENAI_BASE_URL"; fi
-            if [ -n "$BOT_MODEL" ]; then echo "BOT_MODEL=$BOT_MODEL"; fi
+            echo "BOT_MODEL=$model"
           } > .env
 
       # agent-computer is BUILT, not pulled: a nightly that checked the published `:stable` image
