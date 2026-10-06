@@ -661,6 +661,53 @@ test("what a script left outside its own directory is gone before the next run",
   ).toBe("next\n");
 });
 
+/*
+ * A NAME NEED NOT BE TEXT (the second independent read, 2026-10-06). On Linux a name is any bytes
+ * but `/` and NUL. Listed as text, `6e ff` comes back as "n" and the mark for "not a character",
+ * and a path built from that names nothing — so removing it removed nothing, and said nothing.
+ * Measured on the service before the fix: every one of these outlived its run, and the daemon
+ * answered as though it had cleaned. Only where a filesystem takes such a name, which APFS does
+ * not: this runs on the machine CI has, and the rehearsal tries it on the service itself.
+ */
+test.skipIf(process.platform !== "linux")(
+  "a name that is not text is removed like any other, wherever a script left it",
+  async () => {
+    const { workbench, socketPath, scratch, workRoot, quits } = bench();
+    const socketDirectory = join(socketPath, "..");
+    const answer = ran(
+      await workbench.run({
+        script: `
+          import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+          const name = Buffer.from([0x6e, 0xff]);
+          const under = (directory, leaf = name) => Buffer.concat([Buffer.from(directory + "/"), leaf]);
+          for (const directory of [${JSON.stringify(workRoot)}, ${JSON.stringify(socketDirectory)}, ${JSON.stringify(scratch)}, "."]) {
+            writeFileSync(under(directory), "left");
+          }
+          // And a folder of such a name with such a name in it, closed to its own user.
+          const closed = under(${JSON.stringify(workRoot)}, Buffer.from([0x64, 0xfe]));
+          mkdirSync(closed);
+          writeFileSync(Buffer.concat([closed, Buffer.from("/"), name]), "left");
+          chmodSync(closed, 0o000);
+          console.log("left");
+        `,
+        files: [],
+      }),
+    );
+    expect(answer.run.stdout).toBe("left\n");
+    const byBytes = (directory: string) =>
+      readdirSync(directory, { encoding: "buffer" }).map((name) =>
+        Buffer.from(name).toString("hex"),
+      );
+    expect(byBytes(workRoot)).toEqual([]);
+    expect(byBytes(socketDirectory)).toEqual([
+      Buffer.from("w.sock").toString("hex"),
+    ]);
+    expect(byBytes(scratch)).toEqual([]);
+    // Clean without having had to stop: nothing was left for a fresh container to clear.
+    expect(quits).toEqual([]);
+  },
+);
+
 test("a script that takes the socket's place is answered once, and then the daemon stops", async () => {
   const { workbench, socketPath, quits } = bench();
   const answer = ran(

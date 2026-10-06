@@ -174,20 +174,65 @@ async function reclaim(directories: readonly string[]): Promise<void> {
   }
 }
 
-/** Give a tree back to its owner: a script may have closed a directory to its own user. */
-async function unlock(directory: string): Promise<void> {
-  await chmod(directory, 0o700).catch(() => {});
-  const entries = await readdir(directory, { withFileTypes: true }).catch(
-    () => [],
-  );
-  for (const entry of entries) {
-    // The entry's own kind, as the directory records it: a link to a directory is a link.
-    if (entry.isDirectory()) await unlock(join(directory, entry.name));
+/*
+ * A NAME IS ITS BYTES. Everything below that goes through a directory a script could write lists
+ * it as bytes and removes by bytes, because a name need not be text: on Linux it is any bytes but
+ * `/` and NUL. Listed the ordinary way, a byte that is no character's comes back as the mark for
+ * "not a character", and the path built from that names nothing — so `rm` with `force` removed
+ * nothing and said nothing. Measured on the service 2026-10-07 (the second independent read's
+ * finding): a script left `6e ff` in the work root, in shared memory and beside the socket, and a
+ * closed folder `64 fe`; the next run found all four, and the daemon had answered as though it had
+ * cleaned. They would have piled up, sixty-four names from a full socket directory.
+ *
+ * So the removal is also HELD TO WHAT IT IS FOR: `emptyDirectory` looks again when it is done, and
+ * a name still there is thrown as the failure it is — the daemon's cue to stop (`./daemon.ts`).
+ */
+
+/** A path whose last part may not be text. */
+type BytePath = string | Buffer;
+
+const SEPARATOR = Buffer.from("/");
+
+const under = (directory: BytePath, name: Buffer): Buffer =>
+  Buffer.concat([Buffer.from(directory), SEPARATOR, name]);
+
+/** What a script left in a directory would not go: `left` names are still there. */
+export class LeftBehindError extends Error {
+  readonly code = "ELEFTBEHIND";
+  constructor(readonly left: number) {
+    super("a directory could not be emptied");
+    this.name = "LeftBehindError";
   }
 }
 
-/** Remove a path and everything under it. Throws when something is still there afterwards. */
-export async function removeTree(path: string): Promise<void> {
+const kept = (keep: readonly string[], name: Buffer) =>
+  keep.some((one) => Buffer.from(one).equals(name));
+
+/** A directory's names, as the bytes they are. The runtime hands back plain byte arrays. */
+const namesIn = async (directory: BytePath): Promise<Buffer[]> =>
+  (await readdir(directory, { encoding: "buffer" })).map((name) =>
+    Buffer.from(name),
+  );
+
+const namesInSync = (directory: BytePath): Buffer[] =>
+  readdirSync(directory, { encoding: "buffer" }).map((name) =>
+    Buffer.from(name),
+  );
+
+/** Give a tree back to its owner: a script may have closed a directory to its own user. */
+async function unlock(directory: BytePath): Promise<void> {
+  await chmod(directory, 0o700).catch(() => {});
+  const names = await namesIn(directory).catch(() => []);
+  for (const name of names) {
+    const path = under(directory, name);
+    // The entry's own kind: a link to a directory is a link, and is not followed.
+    const entry = await lstat(path).catch(() => null);
+    if (entry?.isDirectory()) await unlock(path);
+  }
+}
+
+/** Remove a path and everything under it. Throws when it could not. */
+export async function removeTree(path: BytePath): Promise<void> {
   try {
     await rm(path, { recursive: true, force: true });
     return;
@@ -198,26 +243,29 @@ export async function removeTree(path: string): Promise<void> {
 }
 
 /** {@link unlock}, for the two moments nothing may be awaited: a daemon starting, a daemon leaving. */
-function unlockSync(directory: string): void {
+function unlockSync(directory: BytePath): void {
   try {
     chmodSync(directory, 0o700);
   } catch {
     // Not this user's to open; the removal after this says so.
   }
-  const entries = (() => {
+  const names = (() => {
     try {
-      return readdirSync(directory, { withFileTypes: true });
+      return namesInSync(directory);
     } catch {
       return [];
     }
   })();
-  for (const entry of entries) {
-    if (entry.isDirectory()) unlockSync(join(directory, entry.name));
+  for (const name of names) {
+    const path = under(directory, name);
+    if (lstatSync(path, { throwIfNoEntry: false })?.isDirectory()) {
+      unlockSync(path);
+    }
   }
 }
 
 /** {@link removeTree}, synchronously. Whatever is at the path — a file, a socket, a link, a tree. */
-export function removeTreeSync(path: string): void {
+export function removeTreeSync(path: BytePath): void {
   try {
     rmSync(path, { recursive: true, force: true });
     return;
@@ -243,33 +291,40 @@ export function emptyDirectorySync(
   } catch {
     // Not there, or not this user's: the listing below says which.
   }
-  let names: string[];
+  let names: Buffer[];
   try {
-    names = readdirSync(directory);
+    names = namesInSync(directory);
   } catch (error) {
     if (errnoOf(error) === "ENOENT") return;
     throw error;
   }
   for (const name of names) {
-    if (!keep.includes(name)) removeTreeSync(join(directory, name));
+    if (!kept(keep, name)) removeTreeSync(under(directory, name));
   }
+  const left = namesInSync(directory).filter((name) => !kept(keep, name));
+  if (left.length > 0) throw new LeftBehindError(left.length);
 }
 
-/** Remove everything in a directory but the names given. A directory that is not there is empty. */
+/**
+ * Remove everything in a directory but the names given. A directory that is not there is empty.
+ * Throws when something is still there afterwards.
+ */
 export async function emptyDirectory(
   directory: string,
   keep: readonly string[] = [],
 ): Promise<void> {
-  let names: string[];
+  let names: Buffer[];
   try {
-    names = await readdir(directory);
+    names = await namesIn(directory);
   } catch (error) {
     if (errnoOf(error) === "ENOENT") return;
     throw error;
   }
   for (const name of names) {
-    if (!keep.includes(name)) await removeTree(join(directory, name));
+    if (!kept(keep, name)) await removeTree(under(directory, name));
   }
+  const left = (await namesIn(directory)).filter((name) => !kept(keep, name));
+  if (left.length > 0) throw new LeftBehindError(left.length);
 }
 
 type Collected = {
