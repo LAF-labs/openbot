@@ -22,7 +22,14 @@
   },
   "workspaces": {
     ".": {
-      "entry": ["scripts/*.ts", "evals/*.ts", "tests/**/*.test.ts"],
+      "entry": [
+        "scripts/*.ts",
+        "evals/*.ts",
+        "tests/**/*.test.ts",
+        // The workbench service's own process: `docker-compose.yml` starts it from source, out of
+        // `shared/`, so no workspace's entry reaches it.
+        "shared/workbench/main.ts"
+      ],
       "project": [
         "scripts/**/*.ts",
         "evals/**/*.ts",

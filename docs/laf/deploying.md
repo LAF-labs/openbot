@@ -55,6 +55,7 @@ mode of each is the whole deployment stopping, not one service misbehaving.
   | `agent-bot` | 512m | 31–45MB |
   | `migrate` | 512m | one-shot, under 200MB |
   | `web` | 256m | 13–14MB |
+  | `workbench` | 768m, no swap (+ `shm_size: 1m`) | **not started** — behind a profile; 17–18MiB when started by hand (measured 2026-10-06, the rehearsal's arm64 runner) |
 
   Ceilings, not reservations: the long-lived five sum to 6.25g and the box has
   6g, and that is fine because a service is killed at *its* ceiling long before
@@ -259,6 +260,48 @@ endpoints off on OCI) — that is set at launch by the fleet tool, not here.
 512 MB. It shares one volume with the server — its socket — and nothing else. A
 production server without `LAF_CONVERTER_SOCKET` refuses every file
 (`laf:attachment_converter_unavailable`) rather than parsing it as root.
+
+**A script a Bot wrote will run in the `workbench` service — which no deployment
+starts yet** (2026-10-06). It is behind a compose profile: `docker compose up`
+and `scripts/upgrade.sh` do not know the service unless `.env` says
+`COMPOSE_PROFILES=workbench`, and nothing should say so today, because nothing
+sends it a script — no tool, no turn, and the server is not handed its socket.
+It is the sandbox, laid before anything is connected to it so that its walls
+can be read and measured alone. What they are:
+
+- **The converter's**: the server's image as nobody (65534), `network_mode:
+  none`, `read_only`, `cap_drop: [ALL]`, no new privileges.
+- **A function of what it is sent.** No volume but its socket's. The server
+  hands over a script and the bytes of the files it may read, and gets back how
+  the script ended, what it printed and the bytes of the files it left in
+  `out/`. The Bot's folder is never mounted there.
+- **Everything a script writes is memory**: `/work` is a tmpfs of the
+  container's own (96 MB, not executable, 4,096 names), the socket's volume is a
+  tmpfs of one megabyte, and both — with `/dev/shm` — are emptied after every
+  run.
+- **One script at a time, and nothing of it left running.** The daemon is
+  process 1 of its container (no `init:`, on purpose: a script is the daemon's
+  own user, and process 1 is what its own namespace cannot stop or kill). When a
+  run is over it ends every other process in the container. That call —
+  `kill(-1, SIGKILL)` — would end everything its user runs anywhere else, so the
+  function that makes it refuses unless it is process 1, as 65534, on Linux,
+  with no network, no capability, a read-only root and `/work` a tmpfs; there is
+  no flag that skips the check, and no test reaches the call
+  (`shared/workbench/sweep.ts`, `tests/workbench-sweep.test.ts`).
+- **Bounds**, proposals until measured on a VM: 20 s by default and 60 s at
+  most, 512 MB resident, a 16 KB script, eight files in (10 MB each, 20 MB
+  together), eight files out (5 MB each, 10 MB together), 256 KB of each output
+  stream.
+- **When in doubt it stops.** A sweep that left something, a directory that
+  would not go, a socket that no longer leads to it, a System V segment a script
+  left in the kernel: the daemon ends, and compose starts a fresh container —
+  a new tmpfs, a new process table, a new IPC namespace.
+
+It runs from source out of `shared/workbench/`, which the server's image and the
+computer's both carry, so which image runs it is the service's `image:` line;
+the language a script is written in is `shared/workbench/runner.ts` (TypeScript
+on Bun with SheetJS today). **A laptop has no workbench**: there is no local
+stand-in for those walls, and none is pretended.
 
 ## Images: CI bakes, deployments pull
 
@@ -761,6 +804,16 @@ outside. What it holds the upgrade to:
 - **The dump `upgrade.sh` took is a way back**: `restore.sh --dry-run` on it
   opens nothing, and restored beside the live database it holds every table with
   the row counts the photograph had.
+- **The upgrade started no workbench** — and then the rehearsal starts one by
+  hand and tries it, because the service's container on Linux is the only place
+  its walls can be measured at all (`scripts/workbench-probe.ts`). A second
+  container on the same socket volume, holding the server's own client, sends
+  scripts that try to leave: by the network, by writing outside `/work`, by
+  leaving a process or a note for the next run, by running past their time or
+  their memory, by stopping the daemon, by taking the socket's place. Each is a
+  check with what was measured beside it; the first run of it found that the
+  sweep's call answers "nobody was there" as an error, which no test on a
+  laptop could have.
 
 Then it takes away every container, volume and network it made and every image
 it pulled or built, and puts back a tag a pull moved.

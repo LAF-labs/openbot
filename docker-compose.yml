@@ -645,6 +645,75 @@ services:
     pids_limit: 128
     restart: unless-stopped
 
+  # WHERE A SCRIPT A BOT WROTE WILL RUN — AND NOT YET STARTED ANYWHERE (2026-10-06).
+  #
+  # Behind a profile: `docker compose up` and `scripts/upgrade.sh` do not know this service unless a
+  # deployment names it (`COMPOSE_PROFILES=workbench` in .env). NOTHING SENDS IT A SCRIPT YET — no
+  # tool, no turn; the server is not even handed its socket — so a deployment that started it today
+  # would hold a process in memory for nothing. The profile comes off with the change that gives a
+  # Bot the tool.
+  #
+  # The converter's walls, and five more, because what runs here is not a parser over a stranger's
+  # file but the stranger's code itself:
+  #
+  #   - A FUNCTION OF WHAT IT IS SENT. No volume but its socket's: a script reads the bytes the
+  #     server handed over and hands back the bytes it made (shared/workbench/protocol.ts). The Bot's
+  #     folder is not mounted, so there is nothing here to damage and nowhere for a file to go.
+  #   - EVERYTHING IT WRITES IS MEMORY. /work is a tmpfs of this container's own, gone with it; the
+  #     socket's volume and /dev/shm are a megabyte each and emptied after every run.
+  #   - THE DAEMON IS PROCESS 1 — no `init:` here, on purpose. A script runs as the daemon's own
+  #     user and may signal it; process 1 is the one process its own namespace cannot stop or kill.
+  #     After every run the daemon ends every other process in the container (shared/workbench/sweep.ts).
+  #   - NO SWAP (`memswap_limit` = `mem_limit`): the daemon bounds a run by what it holds resident,
+  #     and memory swapped out is memory it cannot see.
+  #   - A QUARTER OF A SHARE OF THE PROCESSOR when something else wants it: a script in a loop for a
+  #     minute must not be what the person's own turn waits behind.
+  #
+  # The daemon checks all of it before it listens and before every run, and there is no flag that
+  # skips the check (shared/workbench/main.ts). It runs from SOURCE, out of `shared/`, which both
+  # this image and the computer's carry: which image runs it is the `image:` line below and
+  # nothing else.
+  workbench:
+    image: ghcr.io/laf-labs/openbot-server:${IMAGE_TAG:-stable}
+    profiles:
+      - workbench
+    command:
+      [
+        "bun",
+        "--no-env-file",
+        "--no-install",
+        "/app/shared/workbench/main.ts",
+        "--socket",
+        "/run/laf-workbench/workbench.sock",
+      ]
+    user: "65534:65534"
+    network_mode: none
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      # Nowhere to keep a transpiled copy of its own source: the root is read-only.
+      BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0"
+    tmpfs:
+      # Where each run's directory is made. Not executable: a script may write a program here, and
+      # may not start it. 4,096 names is thousands more than a run needs and far fewer than it
+      # takes to hold the daemon up clearing them.
+      - /work:size=96m,nr_inodes=4096,mode=0700,uid=65534,gid=65534,noexec,nosuid,nodev
+    shm_size: 1m
+    volumes:
+      - workbench-socket:/run/laf-workbench
+    logging: *logging
+    # One run bounded at 512 MB by the daemon, what that run wrote to /work, and the daemon itself
+    # with one request's files in hand.
+    mem_limit: 768m
+    memswap_limit: 768m
+    # The daemon and one script, each a bun with its threads; a script that forks is stopped here.
+    pids_limit: 128
+    cpu_shares: 256
+    restart: unless-stopped
+
 volumes:
   caddy-data:
   caddy-config:
@@ -654,6 +723,17 @@ volumes:
   # The converter's socket, shared with the server and nothing else. Owned by 65534 in the image,
   # which a fresh volume takes on first mount (server/Dockerfile).
   converter-socket:
+  # The workbench's socket. A megabyte of memory rather than a directory on the disk, because a
+  # script — the daemon's own user — can write here: what it leaves is bounded, emptied after every
+  # run, and gone with the last container that mounts it. The mount's own options give it to 65534,
+  # so no image has to carry a directory for it. It holds nothing, and is mounted nowhere, until a
+  # container that names it runs — which no service outside the `workbench` profile does.
+  workbench-socket:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=1m,mode=0700,uid=65534,gid=65534"
 
 networks:
   # Every service but the computer, as it always was.
