@@ -585,10 +585,12 @@ describe("the spreadsheet to the table", () => {
       name: "동네예보지점좌표(위경도)_260701.xlsx",
       sha256: "0".repeat(64),
     });
-    // Only names and cells: no coordinate, no administrative code, nothing else of the sheet.
-    expect(text).not.toContain("126.98");
+    // Names, cells and each row's coordinate to four decimals: no administrative code, none of
+    // the degree-minute-second columns, nothing else of the sheet. (The coordinate was left out
+    // until 2026-10-06, and a point could then be named only by its cell.)
     expect(text).not.toContain("1100000000");
-    expect(text).toContain("서울특별시|종로구||60|127");
+    expect(text).not.toContain("48.03");
+    expect(text).toContain("서울특별시|종로구||60|127|37.5704|126.9816");
 
     // The text is a module: written to disk and imported, it is the table.
     const directory = mkdtempSync(join(tmpdir(), "kma-places-"));
@@ -613,6 +615,19 @@ describe("the spreadsheet to the table", () => {
         "3: 서울특별시 / 종로구 / 가회동 @60,127",
         "3: 서울특별시 / 동대문구 / 신설동 @61,127",
         "3: 경기도 / 수원시 / 장안구 / 파장동 @60,121",
+      ]);
+      // And each row's coordinate comes back with it.
+      expect(
+        parseKmaPlaces(written.KMA_PLACES_TABLE).map((row) => [
+          row.latitude,
+          row.longitude,
+        ]),
+      ).toEqual([
+        [37.5636, 126.98],
+        [37.5704, 126.9816],
+        [37.5773, 126.9869],
+        [37.574, 127.0257],
+        [37.3056, 126.9969],
       ]);
     } finally {
       rmSync(directory, { recursive: true, force: true });
@@ -803,5 +818,62 @@ describe("the table this deployment ships", () => {
       "전남광주통합특별시 서구",
     );
     expect(KMA_PLACES.nameOf({ nx: 1, ny: 1 })).toBeNull();
+  });
+
+  test("a point is called by the districts of the 동 nearest it, which its cell alone could not say", () => {
+    /*
+     * MEASURED 2026-10-06 ON THE OWNER'S OWN DEVICE, in 가산동 (금천구), kept as two decimals: the
+     * place was drawn as "서울특별시 구로구, 경기도 광명시 등 부근". A cell is five kilometres; 금천구
+     * was the "등". The table kept no coordinates then, so the cell was all there was to ask.
+     *
+     * BOTH SIDES OF A BORDER, because the kept point is a kilometre's rounding of where the device
+     * is: 37.48, 126.89 is 300 m from a 동 of 구로구 and 700 m from 가산동's own, and the nearest
+     * alone would tell somebody in 금천구 that they are in 구로구.
+     */
+    const gasan = { latitude: 37.48, longitude: 126.89 };
+    expect(KMA_PLACES.nameAt(gasan)).toBe("서울특별시 구로구·금천구");
+    expect(KMA_PLACES.nameOf({ nx: 58, ny: 125 })).toBe(
+      "서울특별시 구로구, 경기도 광명시 등",
+    );
+    expect(KMA_PLACES.nameAt({ latitude: 37.5, longitude: 127.03 })).toBe(
+      "서울특별시 서초구·강남구",
+    );
+    // Well inside a district there is one name, where the cell had three.
+    expect(KMA_PLACES.nameAt({ latitude: 35.18, longitude: 129.08 })).toBe(
+      "부산광역시 연제구",
+    );
+    expect(KMA_PLACES.nameOf({ nx: 98, ny: 76 })).toBe(
+      "부산광역시 연제구·동래구 등",
+    );
+    // Across two cities, each is said whole.
+    expect(KMA_PLACES.nameAt({ latitude: 37.25, longitude: 127.07 })).toBe(
+      "경기도 수원시 영통구·용인시 기흥구",
+    );
+    // 세종's 동 stand directly under it, so the district is 세종 itself.
+    expect(KMA_PLACES.nameAt({ latitude: 36.48, longitude: 127.26 })).toBe(
+      "세종특별자치시",
+    );
+    // Far out at sea, and abroad, no row is near: the cell's name, or none, is the answer there.
+    expect(
+      KMA_PLACES.nameAt({ latitude: 33.05, longitude: 126.28 }),
+    ).toBeNull();
+    expect(
+      KMA_PLACES.nameAt({ latitude: 35.68, longitude: 139.65 }),
+    ).toBeNull();
+  });
+
+  test("a table without coordinates names no point, and half a coordinate is not one", () => {
+    const point = { latitude: 37.48, longitude: 126.89 };
+    const before = createKmaPlaces(
+      parseKmaPlaces("서울특별시|금천구|가산동|58|125"),
+    );
+    expect(before.nameAt(point)).toBeNull();
+    const [half] = parseKmaPlaces("서울특별시|금천구|가산동|58|125|37.4741|");
+    expect(half?.latitude).toBeUndefined();
+    expect(half?.longitude).toBeUndefined();
+    const whole = createKmaPlaces(
+      parseKmaPlaces("서울특별시|금천구|가산동|58|125|37.4741|126.8938"),
+    );
+    expect(whole.nameAt(point)).toBe("서울특별시 금천구");
   });
 });

@@ -10,8 +10,8 @@ import {
 } from "bun:test";
 import { ko } from "../src/lib/i18n-ko";
 import {
-  type ApiRequest,
   APP_DOM_TIMEOUT_MS,
+  type ApiRequest,
   CURRENT_USER,
   installAppDom,
   json,
@@ -88,8 +88,8 @@ type Kept = {
  * unnamed here.
  */
 const NAMES: Record<string, string> = {
-  "37.5,127.03": "서울특별시 강남구·서초구",
-  "35.16,129.16": "부산광역시 수영구·해운대구",
+  "37.5,127.03": "서울특별시 서초구·강남구",
+  "35.16,129.16": "부산광역시 해운대구",
   "33.2,126.28": "제주특별자치도 서귀포시 부근",
 };
 
@@ -317,7 +317,7 @@ describe("Settings → 내 정보 → 위치", () => {
       "the device's place, by name",
     );
     expect(view.host.querySelector("[data-device-place]")?.textContent).toBe(
-      "This device's location: around 서울특별시 강남구·서초구",
+      "This device's location: around 서울특별시 서초구·강남구",
     );
     expect(view.host.textContent).toContain(GOES_BY.device);
     // A person reads a place. No coordinate is drawn anywhere on this screen.
@@ -366,7 +366,7 @@ describe("Settings → 내 정보 → 위치", () => {
     // The box is empty, the place is named, and the sentence says the device is what is used.
     await view.waitFor(() => placeField(view)?.value === "", "an empty box");
     expect(view.host.querySelector("[data-device-place]")?.textContent).toBe(
-      "This device's location: around 부산광역시 수영구·해운대구",
+      "This device's location: around 부산광역시 해운대구",
     );
     expect(view.host.textContent).toContain(GOES_BY.device);
     expect(view.host.textContent).not.toContain(GOES_BY.words);
@@ -508,7 +508,7 @@ describe("Settings → 내 정보 → 위치", () => {
       "the device's place, by name",
     );
     expect(view.host.querySelector("[data-device-place]")?.textContent).toBe(
-      "This device's location: around 서울특별시 강남구·서초구",
+      "This device's location: around 서울특별시 서초구·강남구",
     );
     await view.unmount();
 
@@ -542,7 +542,7 @@ describe("Settings → 내 정보 → 위치", () => {
         place: "강원 춘천시",
         coordinates: { latitude: 37.5, longitude: 127.03 },
       },
-      { nameAnyway: "서울특별시 강남구·서초구" },
+      { nameAnyway: "서울특별시 서초구·강남구" },
     );
     const view = await mountApp({ path: "/settings/shop", api });
     await view.waitFor(
@@ -625,7 +625,7 @@ describe("Settings → 내 정보 → 위치", () => {
     await view.waitFor(
       () =>
         view.host.querySelector("[data-device-place]")?.textContent ===
-        "This device's location: around 서울특별시 강남구·서초구",
+        "This device's location: around 서울특별시 서초구·강남구",
       "the place the device just gave, by name",
     );
     expect(view.host.textContent).not.toMatch(NO_NUMBERS);

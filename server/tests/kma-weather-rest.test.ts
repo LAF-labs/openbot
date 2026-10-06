@@ -1816,10 +1816,12 @@ describe("where, by the table that ships", () => {
     expect(made.asked.at(-1)?.cell).toBe("85,145");
   });
 
-  test("coordinates come back with the districts that cell is", async () => {
+  test("coordinates come back with the districts of the 동 nearest them", async () => {
+    // The cell's commonest districts until 2026-10-06 ("종로구·중구 등"): a cell is five
+    // kilometres, and the table now keeps each row's own coordinate (`kma-places.ts`, `nameAt`).
     const { facts } = await weatherOf(shipped(), SEOUL);
     expect(facts.place).toBe(
-      "서울특별시 종로구·중구 등 (위도 37.57, 경도 126.98)",
+      "서울특별시 종로구·중구 (위도 37.57, 경도 126.98)",
     );
   });
 

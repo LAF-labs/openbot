@@ -42,13 +42,20 @@ export function withPersonContext(
 
 /**
  * What the place a device's coordinates fall in is called, where 기상청's table has a name for it:
- * the districts whose 동 sit in that forecast cell ("서울특별시 강남구·서초구"). Null abroad, at sea,
- * and on a deployment whose table is empty.
+ * the districts of the 동 nearest it ("서울특별시 구로구·금천구" on a border, one name inside a
+ * district), and where no row is near, what the forecast cell is called ("… 부근"). Null abroad, at
+ * sea, and on a deployment whose table is empty.
+ *
+ * IT WAS THE CELL'S NAME ALONE UNTIL 2026-10-06 — the districts whose 동 sit in five kilometres of
+ * map, commonest first — and somebody in 가산동 read "구로구, 광명시 등" over their own location
+ * (`kma-places.ts`, `nameAt`).
  *
  * The same name the weather tool hands back with an answer for coordinates
  * (`kma-weather-rest.ts`, `located`) — read from the table, never worked out from the numbers.
  */
 export function nameNear(coordinates: Coordinates): string | null {
+  const named = KMA_PLACES.nameAt(coordinates);
+  if (named) return named;
   const cell = kmaCellOf(coordinates.latitude, coordinates.longitude);
   return cell ? KMA_PLACES.nameOf(cell) : null;
 }

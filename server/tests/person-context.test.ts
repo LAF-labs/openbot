@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { WEATHER_TOOL_NAME } from "../../shared/tools/bridge";
 import { NO_WHEREABOUTS, type Whereabouts } from "../../shared/whereabouts";
 import {
   nameNear,
   promptPersonOf,
   withPersonContext,
 } from "../src/agents/person-context";
-import { WEATHER_TOOL_NAME } from "../../shared/tools/bridge";
 import { buildAgents, type RegisteredAgent } from "../src/copilot";
 
 /**
@@ -249,11 +249,16 @@ describe("the kept facts as the prompt takes them", () => {
      * shipped table — the one the weather tool answers coordinates with — never worked out.
      */
     const here = { latitude: 37.5, longitude: 127.03 };
-    expect(nameNear(here)).toBe("서울특별시 강남구·서초구");
+    // The districts of the 동 nearest it, nearest first — the cell's commonest until 2026-10-06.
+    expect(nameNear(here)).toBe("서울특별시 서초구·강남구");
     expect(promptPersonOf({ ...NO_WHEREABOUTS, coordinates: here })).toEqual({
       coordinates: here,
-      near: "서울특별시 강남구·서초구",
+      near: "서울특별시 서초구·강남구",
     });
+    // The owner's own device, in 가산동 (금천구): its cell said "구로구, 광명시 등".
+    expect(nameNear({ latitude: 37.48, longitude: 126.89 })).toBe(
+      "서울특별시 구로구·금천구",
+    );
     // What the person said is the place: it is not annotated with where a device happens to be.
     expect(
       promptPersonOf({
@@ -275,8 +280,11 @@ describe("the kept facts as the prompt takes them", () => {
      * South of 서귀포 the forecast grid goes on and the table's rows do not: the cell is named by
      * the nearest row, as "… 부근" (`kma-places.ts`, `nameOf`). The place line added its own after
      * it — "제주특별자치도 서귀포시 부근 부근" (review of pull request 91).
+     *
+     * Further out than it was: since 2026-10-06 a point within reach of a 동's own coordinate is
+     * named by that 동's district, with no 부근 of its own, and only past that is the cell asked.
      */
-    const offTheCoast = { latitude: 33.2, longitude: 126.28 };
+    const offTheCoast = { latitude: 33.05, longitude: 126.28 };
     expect(nameNear(offTheCoast)).toBe("제주특별자치도 서귀포시 부근");
     await using endpoint = fakeAgUiEndpoint();
     const registered = await loadedFor(endpoint.url, {
@@ -285,7 +293,7 @@ describe("the kept facts as the prompt takes them", () => {
     });
     const prompt = await systemMessageOf(endpoint, registered);
     expect(prompt).toContain(
-      "이 사람의 위치: 제주특별자치도 서귀포시 부근(위도 33.20, 경도 126.28, 이 사람 기기에서 받은 대략적인 값).",
+      "이 사람의 위치: 제주특별자치도 서귀포시 부근(위도 33.05, 경도 126.28, 이 사람 기기에서 받은 대략적인 값).",
     );
     expect(prompt).not.toContain("부근 부근");
   });
@@ -298,7 +306,7 @@ describe("the kept facts as the prompt takes them", () => {
     });
     const prompt = await systemMessageOf(endpoint, registered);
     expect(prompt).toContain(
-      "이 사람의 위치: 서울특별시 강남구·서초구 부근(위도 37.50, 경도 127.03, 이 사람 기기에서 받은 대략적인 값).",
+      "이 사람의 위치: 서울특별시 서초구·강남구 부근(위도 37.50, 경도 127.03, 이 사람 기기에서 받은 대략적인 값).",
     );
     expect(prompt).toContain("먼저 묻지 말고 이 곳 이름을 검색어에 넣어 찾고");
   });

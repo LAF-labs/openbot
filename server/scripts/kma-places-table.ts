@@ -12,7 +12,14 @@
  * THE SPREADSHEET IS NOT FETCHED HERE AND NOT COMMITTED. It is published on apihub.kma.go.kr
  * (예특보 → 4. 동네예보 조회 → "동네예보 지점 좌표(위경도)" 참고자료). Bringing a file onto somebody's
  * machine is theirs to decide, so this takes a path. What is committed is the output: the three
- * names and the two grid numbers of each row, and none of the other columns.
+ * names, the two grid numbers and the coordinate of each row, and none of the other columns.
+ *
+ * THE COORDINATE IS WRITTEN SINCE 2026-10-06 (the owner: "동네별 좌표 파일 받고, 서버에 저장"). It
+ * was read from the first day, to check the projection, and thrown away — so a device's place could
+ * only be named by its forecast CELL, five kilometres holding a dozen 동, and somebody in 가산동
+ * was told "구로구, 광명시 등". With each row's own coordinate the nearest 동 can be asked instead
+ * (`kma-places.ts`, `nameAt`). Four decimals, about eleven metres: the sheet's own are finer than
+ * the offices they point at.
  *
  * THE COLUMNS ARE FOUND BY THEIR HEADINGS, NOT BY POSITION. The 2026-07-01 edition's are 구분,
  * 행정구역코드, 1단계, 2단계, 3단계, 격자 X, 격자 Y, each coordinate as 시·분·초 and once more as a
@@ -211,8 +218,12 @@ export function tableModule(
       throw new Error(`A name cannot be written into the table: ${bad}`);
     }
   }
+  // A row with no coordinate (이어도's two) ends in two empty cells rather than in fewer of them.
+  const degrees = (value: number | null) =>
+    value === null ? "" : value.toFixed(4);
   const lines = places.map(
-    (place) => `${place.levels.join("|")}|${place.nx}|${place.ny}`,
+    (place) =>
+      `${place.levels.join("|")}|${place.nx}|${place.ny}|${degrees(place.latitude)}|${degrees(place.longitude)}`,
   );
   return `/**
  * 기상청's table of 시·도, 시·군·구 and 읍·면·동 with the forecast cell each one sits in.
@@ -221,7 +232,7 @@ export function tableModule(
  *
  *   source  ${source.name}
  *   sha256  ${source.sha256}
- *   rows    ${lines.length}, each \`시도|시군구|읍면동|nx|ny\` — nothing else of the spreadsheet is kept
+ *   rows    ${lines.length}, each \`시도|시군구|읍면동|nx|ny|위도|경도\` — nothing else of the spreadsheet is kept
  *
  * One string and not an array of rows, because a formatter leaves a string alone: the file stays
  * one row a line whatever the line width is set to.

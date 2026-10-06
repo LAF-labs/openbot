@@ -131,10 +131,10 @@ describe("the name beside the coordinates", () => {
     ]) {
       const kept = await named(await send(app, "/api/me/place", "PUT", body));
       expect(kept.coordinates).toEqual(here);
-      expect(kept.near).toBe("서울특별시 강남구·서초구");
+      expect(kept.near).toBe("서울특별시 서초구·강남구");
     }
     // The same name wherever the person's screen reads it from.
-    expect((await me(app)).near).toBe("서울특별시 강남구·서초구");
+    expect((await me(app)).near).toBe("서울특별시 서초구·강남구");
     expect(
       (
         await named(
@@ -144,9 +144,9 @@ describe("the name beside the coordinates", () => {
           }),
         )
       ).near,
-    ).toBe("서울특별시 강남구·서초구");
+    ).toBe("서울특별시 서초구·강남구");
 
-    // The other cell the surface's own tests stand in (`app/tests/settings-shop-location.test.tsx`):
+    // The other point the surface's own tests stand in (`app/tests/settings-shop-location.test.tsx`):
     // its fake server answers with these two names, and they are the table's.
     expect(
       (
@@ -156,10 +156,11 @@ describe("the name beside the coordinates", () => {
           }),
         )
       ).near,
-    ).toBe("부산광역시 수영구·해운대구");
+    ).toBe("부산광역시 해운대구");
 
-    // A cell the table has no row in is named by its neighbour, and says 부근 once.
-    const offTheCoast = { latitude: 33.2, longitude: 126.28 };
+    // Out of reach of any 동's own coordinate, the cell is named by its neighbour, and says 부근
+    // once. (Nearer the coast than this a point is named by the 동 itself since 2026-10-06.)
+    const offTheCoast = { latitude: 33.05, longitude: 126.28 };
     const near = (
       await named(
         await send(app, "/api/me/place", "PUT", { coordinates: offTheCoast }),

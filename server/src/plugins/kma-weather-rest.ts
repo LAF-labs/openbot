@@ -1071,7 +1071,9 @@ export function createKmaWeatherTransport(input: {
     const located = (latitude: number, longitude: number) => {
       const cell = kmaCellOf(latitude, longitude);
       if (!cell) return null;
-      const near = places.nameOf(cell);
+      // The nearest 동's district, and the cell's own name only where no row is near (`nameAt`).
+      const near =
+        places.nameAt({ latitude, longitude }) ?? places.nameOf(cell);
       const said = `위도 ${latitude.toFixed(2)}, 경도 ${longitude.toFixed(2)}`;
       return {
         cell,

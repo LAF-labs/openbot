@@ -1346,12 +1346,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * runtime's doors are held to the megabyte like any other. The rate tests knock where a message
  * goes, and hold that a knock on the closed run door spends none of the count.
  *
+ * RAISED AGAIN 2026-10-06 with a place named by the 동 nearest it, by exactly two to `server`, in
+ * `kma-places.test.ts`, on the table this deployment ships: a point is called by the districts of
+ * the rows nearest it — the owner's own device in 가산동, which its five-kilometre cell called
+ * "구로구, 광명시 등", both sides of a border, one name well inside a district, none far at sea or
+ * abroad — and a table written before it kept coordinates names no point.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3592, roots: ["server"] },
+  { name: "server", floor: 3594, roots: ["server"] },
   { name: "app", floor: 2109, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 718, roots: ["tests", "agent-bot"] },

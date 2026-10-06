@@ -49,6 +49,9 @@ export type KmaPlace = {
   column: 1 | 2 | 3;
   nx: number;
   ny: number;
+  /** Where 기상청 puts the row, in decimal degrees. Absent from a table written before 2026-10-06. */
+  latitude?: number;
+  longitude?: number;
 };
 
 export type KmaPlaceAnswer =
@@ -68,6 +71,12 @@ export type KmaPlaces = {
   find(query: string): KmaPlaceAnswer;
   /** What to call a cell: the districts whose 동 sit in it, or the nearest row and "부근". */
   nameOf(cell: KmaCell): string | null;
+  /**
+   * What to call a point: the districts of the rows nearest it that have a coordinate of their own
+   * — one name inside a district, both sides on a border. Null when the table carries no
+   * coordinates, or none is near: the cell's name is the answer then.
+   */
+  nameAt(point: { latitude: number; longitude: number }): string | null;
 };
 
 /**
@@ -81,16 +90,28 @@ const CITY_WITH_DISTRICT = /^(.+?시)\s*(.+구)$/;
 export function parseKmaPlaces(table: string): KmaPlace[] {
   const places: KmaPlace[] = [];
   for (const line of table.split("\n")) {
-    const [first = "", second = "", third = "", x = "", y = ""] =
-      line.split("|");
+    const [
+      first = "",
+      second = "",
+      third = "",
+      x = "",
+      y = "",
+      north = "",
+      east = "",
+    ] = line.split("|");
     const nx = Number(x);
     const ny = Number(y);
     if (!first.trim() || !x.trim() || !isKmaCell(nx, ny)) continue;
+    // Both or neither: half a coordinate is not somewhere.
+    const latitude = north.trim() ? Number(north) : Number.NaN;
+    const longitude = east.trim() ? Number(east) : Number.NaN;
+    const isSomewhere = Number.isFinite(latitude) && Number.isFinite(longitude);
     places.push({
       levels: levelsOf(first, second, third),
       column: third.trim() ? 3 : second.trim() ? 2 : 1,
       nx,
       ny,
+      ...(isSomewhere ? { latitude, longitude } : {}),
     });
   }
   return places;
@@ -209,6 +230,19 @@ const SAME_PLACE_CELLS = 2;
 const NEAR_CELLS = 6;
 /** The most candidates a tie names. More than this is a 동 name half the country has. */
 const MAX_CANDIDATES = 8;
+/**
+ * How far a point may be from the nearest row's own coordinate and still be named by it. A 면 in
+ * the mountains is wider than a city's 구, and a device's place arrives rounded to a kilometre;
+ * past this the point is at sea or abroad, and the cell's name ("… 부근", or none) is the honest one.
+ */
+const NEAR_KM = 12;
+/** One degree of latitude, in kilometres. Near enough for telling one 동 from the next. */
+const KM_PER_DEGREE = 111;
+/**
+ * How far the point a device is kept as may be from where the device is: two decimals of a degree
+ * are 1.1 km north to south and 0.9 km east to west here, so up to 0.7 km from corner to centre.
+ */
+const ROUNDING_KM = 0.75;
 
 type Entry = {
   levels: readonly string[];
@@ -220,6 +254,8 @@ type Entry = {
   ny: number;
   /** A city this file put together from its districts, which 기상청 has no row for. */
   made: boolean;
+  /** The row's own coordinate, when the table carries one. A city put together here has none. */
+  at?: { latitude: number; longitude: number };
   /**
    * How coarse a place this is to somebody saying its name: 1 a 시·도, 2 a 시·군·구, 3 an 읍·면·동.
    * The sheet's column for a row of 기상청's; 2 for a city put together here; and 1 for a city that
@@ -267,7 +303,11 @@ export function createKmaPlaces(rows: readonly KmaPlace[]): KmaPlaces {
     levels: readonly string[],
     cell: KmaCell,
     rank: number,
-    extra: { made?: boolean; own?: readonly string[] } = {},
+    extra: {
+      made?: boolean;
+      own?: readonly string[];
+      at?: { latitude: number; longitude: number };
+    } = {},
   ): Entry => ({
     levels,
     own:
@@ -276,11 +316,19 @@ export function createKmaPlaces(rows: readonly KmaPlace[]): KmaPlaces {
     nx: cell.nx,
     ny: cell.ny,
     made: extra.made ?? false,
+    ...(extra.at ? { at: extra.at } : {}),
     rank,
   });
 
   const entries: Entry[] = rows.map((row) =>
-    entryOf(row.levels, row, row.column),
+    entryOf(
+      row.levels,
+      row,
+      row.column,
+      row.latitude !== undefined && row.longitude !== undefined
+        ? { at: { latitude: row.latitude, longitude: row.longitude } }
+        : {},
+    ),
   );
   const paths = new Set(entries.map((entry) => display(entry.levels)));
   const inTheMiddleOf = (districts: readonly Entry[]): KmaCell => ({
@@ -449,6 +497,52 @@ export function createKmaPlaces(rows: readonly KmaPlace[]): KmaPlaces {
       : null;
   }
 
+  /*
+   * A POINT IS NAMED BY THE NEAREST 동, NOT BY ITS CELL. A forecast cell is five kilometres and
+   * holds a dozen 동 of several districts, and `nameOf` can only say which districts are commonest
+   * in it. Measured 2026-10-06 on the owner's own device, in 가산동: "서울특별시 구로구, 경기도
+   * 광명시 등" — 금천구, where the device was, was the "등". Each row's own coordinate answers the
+   * question that was being asked. Only 기상청's rows below a 시·도: a province's row is its office.
+   */
+  const somewhere = entries.filter(
+    (entry): entry is Entry & { at: { latitude: number; longitude: number } } =>
+      entry.at !== undefined && !entry.made && entry.levels.length >= 2,
+  );
+  function nameAt(point: {
+    latitude: number;
+    longitude: number;
+  }): string | null {
+    // East–west degrees are shorter than north–south ones by the cosine of where you stand.
+    const narrowing = Math.cos((point.latitude * Math.PI) / 180);
+    /** Each district's nearest 동, in kilometres. */
+    const reach = new Map<string, number>();
+    for (const entry of somewhere) {
+      const north = entry.at.latitude - point.latitude;
+      const east = (entry.at.longitude - point.longitude) * narrowing;
+      const km = Math.sqrt(north * north + east * east) * KM_PER_DEGREE;
+      if (km > NEAR_KM) continue;
+      const district = districtOf(entry);
+      if (km < (reach.get(district) ?? Number.POSITIVE_INFINITY)) {
+        reach.set(district, km);
+      }
+    }
+    const byReach = [...reach.entries()].sort(([, a], [, b]) => a - b);
+    const [nearest] = byReach;
+    if (!nearest) return null;
+    /*
+     * ON A BORDER, BOTH SIDES ARE SAID. A device's place is kept to two decimals, a kilometre, on
+     * purpose, so the point that is asked about is not the point the person stands on: the owner's
+     * device in 가산동 (금천구) is kept as 37.48, 126.89, which is 300 m from a 동 of 구로구 and 700 m
+     * from 가산동's own. Naming the nearest alone would say 구로구 to somebody in 금천구. Every
+     * district with a 동 within that rounding of the nearest one is named, nearest first.
+     */
+    const [first = "", second, third] = byReach
+      .filter(([, km]) => km <= nearest[1] + ROUNDING_KM)
+      .map(([name]) => name);
+    if (!second) return first;
+    return `${together(first, second)}${third ? " 등" : ""}`;
+  }
+
   /**
    * What a found row is called in the answer.
    *
@@ -471,6 +565,7 @@ export function createKmaPlaces(rows: readonly KmaPlace[]): KmaPlaces {
   return {
     size: rows.length,
     nameOf,
+    nameAt,
     find(query) {
       const asked = squeeze(query);
       if ([...asked].length < 2) return { kind: "unknown" };
