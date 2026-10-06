@@ -1010,6 +1010,55 @@ describe("a script's run and the policy", () => {
     expect(sent).toHaveLength(1);
   });
 
+  /*
+   * ONE ANSWER A CALL, WHICH IS WHAT THE FLAT ORDER COSTS (`acts.ts`, `runScript`). Held here as
+   * what happens, so that it is decided on and not discovered: a deployment that asks about a
+   * file's read AND about the run cannot be got through on "this once" alone.
+   */
+  test("a call that meets two questions spends one answer an attempt, and gets through only when one answer is for longer", async () => {
+    const rule = 'intent == "read_file"';
+    const { gateway, approvals, standing, sent } = stack({
+      policy: asking(rule, 'intent == "run_script"'),
+      folder: { "uploads/a.csv": bytes("1") },
+    });
+    const input = { script: SCRIPT, files: ["uploads/a.csv"] };
+    const attempt = (approvalId?: string) =>
+      failure(
+        gateway.runScript(COMPUTER, BOT, ACTOR, input, undefined, approvalId),
+      ) as Promise<ActionNeedsApprovalError>;
+
+    const aboutTheRead = await attempt();
+    expect(aboutTheRead.subject.intent).toBe("read_file");
+    await approvals.answer(aboutTheRead.approvalId, BOT, MANAGER.id, true);
+    // With that answer the read goes through, and the run is the second question.
+    const aboutTheRun = await attempt(aboutTheRead.approvalId);
+    expect(aboutTheRun.subject.intent).toBe("run_script");
+    await approvals.answer(aboutTheRun.approvalId, BOT, MANAGER.id, true);
+    // With the run's answer, the read — whose own answer was spent — is asked about again.
+    const again = await attempt(aboutTheRun.approvalId);
+    expect(again.subject.intent).toBe("read_file");
+    expect(again.approvalId).not.toBe(aboutTheRead.approvalId);
+    expect(sent).toEqual([]);
+
+    // An answer for longer about the file, and the run's answer — never burned — is spent at last.
+    await standing.grant({
+      botId: BOT,
+      rule,
+      scope: { kind: "file", value: "uploads/a.csv" },
+      subject: again.subject,
+      grantedBy: MANAGER.id,
+    });
+    await gateway.runScript(
+      COMPUTER,
+      BOT,
+      ACTOR,
+      input,
+      undefined,
+      aboutTheRun.approvalId,
+    );
+    expect(sent).toHaveLength(1);
+  });
+
   test("nothing a run is asked with reaches the policy, an allowance or an instruction", async () => {
     const policy = Object.freeze({
       deny: Object.freeze([]) as unknown as string[],
@@ -1434,6 +1483,63 @@ describe("the files a script made", () => {
     ]);
     // The cost of the order, as the method says it: the script ran once for each attempt.
     expect(sent).toHaveLength(2);
+  });
+
+  /*
+   * THE OTHER COST OF THE ORDER: a question about a file comes after the files before it were
+   * filed, and the call made again runs the script again. What is there from the first time is
+   * never written over — the second attempt's copy of it is refused, and says so.
+   */
+  test("a question about the second file: the same call again files it, and the first, filed already, is left as it was", async () => {
+    let attempts = 0;
+    const { gateway, approvals, rows, computer } = stack({
+      policy: asking('intent == "write_file" && file.name == "two.csv"'),
+      answer: () => {
+        attempts += 1;
+        return made(
+          ["one.csv", `from attempt ${attempts}`],
+          ["two.csv", `from attempt ${attempts}`],
+        );
+      },
+    });
+    const input = { script: SCRIPT, files: [] };
+
+    const asked = (await failure(
+      gateway.runScript(COMPUTER, BOT, actor, input),
+    )) as ActionNeedsApprovalError;
+    expect(asked.subject.file?.path).toBe(`${folder}/two.csv`);
+    // The first was filed before the question about the second was reached.
+    expect([...computer.files.keys()]).toEqual([`${folder}/one.csv`]);
+
+    await approvals.answer(asked.approvalId, BOT, MANAGER.id, true);
+    const run = await gateway.runScript(
+      COMPUTER,
+      BOT,
+      actor,
+      input,
+      undefined,
+      asked.approvalId,
+    );
+
+    expect(run.products).toEqual([
+      { name: "one.csv", bytes: 14, unfiled: "laf:file_exists" },
+      { name: "two.csv", bytes: 14, path: `${folder}/two.csv` },
+    ]);
+    const held = (name: string) =>
+      new TextDecoder().decode(computer.files.get(`${folder}/${name}`));
+    expect(held("one.csv")).toBe("from attempt 1");
+    expect(held("two.csv")).toBe("from attempt 2");
+    // And the trail says each: allowed and not happened for the one, allowed by a person for the other.
+    const second = rows.slice(-2);
+    expect(second.map((row) => row.eventType)).toEqual([
+      "computer.action_failed",
+      "computer.action_allowed",
+    ]);
+    expect(second[0]?.payload.failure).toBe("laf:file_exists");
+    expect(second[1]?.payload.decision).toMatchObject({
+      source: "ask",
+      approvedBy: MANAGER.id,
+    });
   });
 
   test("a run with no call behind it gets a folder of its own each time", async () => {
