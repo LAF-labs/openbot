@@ -38,15 +38,26 @@ export type ScriptOnTrail = {
   files: readonly string[];
 };
 
-/** The fields a row about a run carries for its script: never more than these. */
-function scriptForTrail(script: ScriptOnTrail | undefined) {
-  return script
-    ? {
-        script: { sha256: script.sha256, bytes: script.bytes },
-        // The paths it was to read, as the Bot named them. Each read has its own row as well.
-        files: [...script.files],
-      }
-    : {};
+/**
+ * The fields a row carries about a script: for the run's own rows what identifies it, and for a
+ * file read or filed on its behalf the digest alone — which run this row belongs to. Never more
+ * than these.
+ */
+function scriptForTrail(
+  script: ScriptOnTrail | undefined,
+  forScript: string | undefined,
+) {
+  return {
+    ...(script
+      ? {
+          script: { sha256: script.sha256, bytes: script.bytes },
+          // The paths it was to read, as the Bot named them. Each read has its own row as well.
+          files: [...script.files],
+        }
+      : {}),
+    // Until 2026-10-07 a run's reads and files were tied to it by nothing but the order of rows.
+    ...(forScript ? { forScript } : {}),
+  };
 }
 
 /**
@@ -73,6 +84,8 @@ export async function write(
     filePath: string | undefined;
     /** The script, for a run: what identifies it. See {@link ScriptOnTrail}. */
     script?: ScriptOnTrail | undefined;
+    /** The digest of the script a file was read or filed for. See `govern`'s `forScript`. */
+    forScript?: string | undefined;
     pageUrl: string;
     decision: PolicyDecision;
     /**
@@ -138,7 +151,7 @@ export async function write(
       // The path, never the contents. A Bot writes down what it was told, so a file body is exactly as
       // sensitive as text typed into a form field, and for the same reason it is not put here.
       ...(entry.filePath ? { file: entry.filePath } : {}),
-      ...scriptForTrail(entry.script),
+      ...scriptForTrail(entry.script, entry.forScript),
       element: entry.element
         ? {
             role: entry.element.role,
@@ -453,6 +466,8 @@ export async function writeApprovalEvent(
     filePath?: string | undefined;
     /** The script a question about a run is bound to, by its digest. See {@link ScriptOnTrail}. */
     script?: ScriptOnTrail | undefined;
+    /** The digest of the script a file's question arose for. See `govern`'s `forScript`. */
+    forScript?: string | undefined;
     /**
      * What the Bot's own instruction made of this, when there was one.
      *
@@ -490,7 +505,7 @@ export async function writeApprovalEvent(
       // is as often as not the one a form sent by GET, or an OAuth return, just landed on.
       ...(entry.pageUrl ? { page: pageForTrail(entry.pageUrl) } : {}),
       ...(entry.filePath ? { file: entry.filePath } : {}),
-      ...scriptForTrail(entry.script),
+      ...scriptForTrail(entry.script, entry.forScript),
       // An empty reason is the judge having failed rather than having decided, and the two are said
       // differently: "could not be reached" is somebody's provider being down, not their rule being
       // too narrow, and only one of those is worth editing the rule over.

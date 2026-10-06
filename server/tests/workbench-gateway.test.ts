@@ -16,6 +16,7 @@ import { REPEAT_RULE } from "../../shared/policy-rules";
 import { WORKBENCH_LIMITS } from "../../shared/workbench/protocol";
 import type { AuditEventInput, AuditFactCode, AuditStore } from "../src/audit";
 import { createApprovalRegistry } from "../src/computer/approvals";
+import { DEFAULT_ACTION_POLICY } from "../src/computer/default-policy";
 import { ComputerUnavailableError } from "../src/computer/client";
 import {
   ActionNeedsApprovalError,
@@ -202,6 +203,22 @@ describe("a script's run, allowed", () => {
       null,
       null,
       `${folder}/by-day.csv`,
+    ]);
+    // And every one of them names the run it belongs to, by the script's digest: the files it
+    // read and the file it made as `forScript`, its own two rows as `script`.
+    expect(
+      rows.map(
+        (row) =>
+          row.payload.forScript ??
+          (row.payload.script as { sha256?: string } | undefined)?.sha256,
+      ),
+    ).toEqual(Array.from({ length: 5 }, () => sha256(SCRIPT)));
+    expect(rows.map((row) => "forScript" in row.payload)).toEqual([
+      true,
+      true,
+      false,
+      false,
+      true,
     ]);
     // And the computer, in the same order — each call under the asking Bot's own name.
     expect(computer.asked).toEqual([
@@ -1693,22 +1710,42 @@ describe("a script's run, again and again", () => {
     expect(built.sent).toHaveLength(5);
   });
 
-  test("one file read for two scripts is two reads, not the same read again", async () => {
+  /*
+   * WHAT IS COUNTED IS THE RUN. A file read for a run was counted too, under the script's digest,
+   * and this test said so — its second half stopped one script at its fifth READ. That is the
+   * two-questions-in-one-call the shipped policy could not be got through (the describe below);
+   * the read is decided, by every rule about its path, and is not a second count.
+   */
+  test("a file read for a run is not a call of its own to count: the run is what comes round again", async () => {
+    // Five scripts over one file are five runs, and the file's five reads are nobody's repeat.
     const built = circling();
-    for (let attempt = 1; attempt <= 4; attempt += 1) {
+    for (let attempt = 1; attempt <= 6; attempt += 1) {
       await built.gateway.runScript(COMPUTER, BOT, ACTOR, {
         script: `console.log(${attempt})`,
         files: ["uploads/a.csv"],
       });
     }
-    // A fifth script over the same file: its read is that script's first.
-    await built.gateway.runScript(COMPUTER, BOT, ACTOR, {
-      script: "console.log(5)",
-      files: ["uploads/a.csv"],
-    });
-    expect(built.sent).toHaveLength(5);
+    expect(built.sent).toHaveLength(6);
 
-    // And one script over one file, five times, is stopped at its fifth read — before it runs.
+    // One script handed six lists of files that share one: six runs, and the shared file's six
+    // reads — once counted under that script, and a question at the fifth — are nobody's repeat.
+    const others = ["b", "c", "d", "e", "f", "g"];
+    const shared = stack({
+      policy: asking(REPEAT_RULE),
+      folder: Object.fromEntries(
+        ["a", ...others].map((name) => [`uploads/${name}.csv`, bytes(name)]),
+      ),
+    });
+    for (const other of others) {
+      await shared.gateway.runScript(COMPUTER, BOT, ACTOR, {
+        script: SCRIPT,
+        files: ["uploads/a.csv", `uploads/${other}.csv`],
+      });
+    }
+    expect(shared.sent).toHaveLength(6);
+
+    // And one script over one file, five times, is stopped at its fifth RUN: the file was read
+    // for it — which is the order's cost — and nothing was sent.
     const same = circling();
     for (let attempt = 1; attempt <= 4; attempt += 1) {
       await same.gateway.runScript(COMPUTER, BOT, ACTOR, {
@@ -1720,11 +1757,161 @@ describe("a script's run, again and again", () => {
       "uploads/a.csv",
     ])) as ActionNeedsApprovalError;
     expect(fifth.subject).toMatchObject({
-      intent: "read_file",
+      intent: "run_script",
       reason: "repeat",
       repeatCount: 5,
     });
     expect(same.sent).toHaveLength(4);
+    expect(
+      same.computer.asked.filter((call) => call === "fileBytes uploads/a.csv"),
+    ).toHaveLength(5);
+    // No row says a read was repeated; the one that says a Bot is going round is the run's.
+    expect(
+      same.rows
+        .filter((row) => row.eventType === "computer.action_repeated")
+        .map((row) => row.payload.action),
+    ).toEqual([RUN_SCRIPT_TOOL]);
+  });
+});
+
+/*
+ * THE SHIPPED POLICY, AND A RUN THAT COMES ROUND AGAIN (the independent read of 2026-10-07). The
+ * policy every deployment starts with asks about one thing a run can meet: the same call a fifth
+ * time (`repeat.count >= 5`). A file read on a script's behalf was counted as a call of its own,
+ * and so was the run — so the fifth identical run was TWO questions in one call, and a call
+ * carries one answer. Measured then, with this policy and one script over one file: four runs,
+ * then eight attempts each answered "yes, this once" went read/5, run/5, read/7, run/6 … and it
+ * never ran again, the file read four more times for nothing.
+ *
+ * So what is counted is the RUN — the script and the files it names. What it reads and what it
+ * files are decided as the file acts they are, by every rule about a path, and are not a second
+ * count of the same call.
+ */
+describe("a script's run under the policy every deployment starts with", () => {
+  const input = { script: SCRIPT, files: ["uploads/a.csv"] };
+  const shipped = (options: Parameters<typeof stack>[0] = {}) =>
+    stack({
+      policy: DEFAULT_ACTION_POLICY,
+      folder: { "uploads/a.csv": bytes("1") },
+      ...options,
+    });
+
+  test("the fifth identical run is one question, about the run, and one yes lets it run — every time after, too", async () => {
+    const { gateway, approvals, sent, computer } = shipped();
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
+      await gateway.runScript(COMPUTER, BOT, ACTOR, input);
+    }
+    expect(sent).toHaveLength(4);
+
+    // The reviewer's sequence from here: each attempt answered "yes, this once".
+    for (let round = 1; round <= 4; round += 1) {
+      const asked = (await failure(
+        gateway.runScript(COMPUTER, BOT, ACTOR, input),
+      )) as ActionNeedsApprovalError;
+      expect(asked).toBeInstanceOf(ActionNeedsApprovalError);
+      // About the run, as the same call again — never about the file it reads.
+      expect({ round, intent: asked.subject.intent }).toEqual({
+        round,
+        intent: "run_script",
+      });
+      expect(asked.subject.reason).toBe("repeat");
+      expect(asked.subject.files).toEqual([{ path: "uploads/a.csv" }]);
+      await approvals.answer(asked.approvalId, BOT, MANAGER.id, true);
+      // One answer, presented once, and it runs.
+      const run = await gateway.runScript(
+        COMPUTER,
+        BOT,
+        ACTOR,
+        input,
+        undefined,
+        asked.approvalId,
+      );
+      expect(run.exitCode).toBe(0);
+      expect(sent).toHaveLength(4 + round);
+    }
+    // What the order costs, said: the file is read for the attempt that was asked about and
+    // again for the one that ran. Twelve attempts, twelve reads, eight runs.
+    expect(
+      computer.asked.filter((call) => call === "fileBytes uploads/a.csv"),
+    ).toHaveLength(12);
+    expect(sent).toHaveLength(8);
+  });
+
+  test("the first question is about the run, with the count the run has reached", async () => {
+    const { gateway, rows } = shipped();
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
+      await gateway.runScript(COMPUTER, BOT, ACTOR, input);
+    }
+    const fifth = (await failure(
+      gateway.runScript(COMPUTER, BOT, ACTOR, input),
+    )) as ActionNeedsApprovalError;
+    expect(fifth.subject).toEqual({
+      kind: "file",
+      intent: "run_script",
+      files: [{ path: "uploads/a.csv" }],
+      repeatCount: 5,
+      reason: "repeat",
+    });
+    // The one row that says a Bot is going round is the run's: no read was counted as a repeat.
+    const repeated = rows.filter(
+      (row) => row.eventType === "computer.action_repeated",
+    );
+    expect(repeated.map((row) => row.payload.action)).toEqual([
+      RUN_SCRIPT_TOOL,
+    ]);
+  });
+
+  test("a run filing the same name into the same folder again is not a second question either", async () => {
+    // A provider that names every call `call_1`: the same script, the same files, the same folder.
+    const actor = { ...ACTOR, toolCallId: "call_1" };
+    const { gateway, approvals, sent } = shipped({
+      answer: () => made(["out.csv", "1"]),
+    });
+    const outcomes: string[] = [];
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
+      const run = await gateway.runScript(COMPUTER, BOT, actor, input);
+      outcomes.push(run.products[0]?.unfiled ?? "filed");
+    }
+    // Filed once; after that the put, which never replaces, says the name is taken.
+    expect(outcomes).toEqual([
+      "filed",
+      "laf:file_exists",
+      "laf:file_exists",
+      "laf:file_exists",
+    ]);
+    const asked = (await failure(
+      gateway.runScript(COMPUTER, BOT, actor, input),
+    )) as ActionNeedsApprovalError;
+    expect(asked.subject.intent).toBe("run_script");
+    await approvals.answer(asked.approvalId, BOT, MANAGER.id, true);
+    // It was a second question here, about the file — the fifth write of one path.
+    const run = await gateway.runScript(
+      COMPUTER,
+      BOT,
+      actor,
+      input,
+      undefined,
+      asked.approvalId,
+    );
+    expect(run.products).toEqual([
+      { name: "out.csv", bytes: 1, unfiled: "laf:file_exists" },
+    ]);
+    expect(sent).toHaveLength(5);
+  });
+
+  test("a rule about a path still holds for what a run reads and files, counted or not", async () => {
+    const { gateway, sent } = shipped({
+      policy: {
+        ...DEFAULT_ACTION_POLICY,
+        deny: [...DEFAULT_ACTION_POLICY.deny, 'file.name == "a.csv"'],
+      },
+    });
+    const refused = (await failure(
+      gateway.runScript(COMPUTER, BOT, ACTOR, input),
+    )) as ActionRefusedError;
+    expect(refused).toBeInstanceOf(ActionRefusedError);
+    expect(refused.code).toBe("laf:policy_denied");
+    expect(sent).toEqual([]);
   });
 });
 

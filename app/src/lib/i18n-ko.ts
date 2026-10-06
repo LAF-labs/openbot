@@ -1887,6 +1887,7 @@ export const ko: Record<string, string> = {
   "The files it left were too large together, so none was kept":
     "남긴 파일을 합치면 너무 커서 하나도 보관하지 않음",
   "{ms} ms · printed {bytes} bytes": "{ms}ms · 출력 {bytes}바이트",
+  "For the small program": "작은 프로그램을 위해",
   "Handed back {count} files": "파일 {count}개를 내놓음",
   "The place programs run did not answer, so nothing ran":
     "프로그램을 돌리는 곳이 응답하지 않아 아무것도 돌리지 못함",

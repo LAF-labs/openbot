@@ -346,7 +346,21 @@ function Row({
           // the fingerprint names in full.
           <Id>{payload.fingerprint}</Id>
         ) : typeof payload.file === "string" ? (
-          <Id>{payload.file}</Id>
+          <span>
+            <Id>{payload.file}</Id>
+            {/*
+             * A file read or filed FOR A RUN says which run: the same chip the run's own rows
+             * carry, so a reader finds the rows of one run by more than their order.
+             */}
+            {typeof payload.forScript === "string" && payload.forScript ? (
+              <span className="mt-0.5 block text-muted-foreground text-xs">
+                {t("For the small program")}{" "}
+                <span title={payload.forScript}>
+                  <Id>{payload.forScript.slice(0, 12)}</Id>
+                </span>
+              </span>
+            ) : null}
+          </span>
         ) : script ? (
           // Which script, by the start of its digest — the whole of it is the chip's title, for
           // finding the same run in a conversation. Beneath it, the files it was handed.

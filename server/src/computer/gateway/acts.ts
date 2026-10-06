@@ -364,15 +364,18 @@ export function createActs(deps: {
      * made again once a question is answered reads the files again and runs the script again:
      * two rows a file, bounded by how many files a run may name.
      *
-     * AND TWO MORE, WHICH ONLY A DEPLOYMENT THAT ASKS ABOUT FILES MEETS — the shipped policy asks
-     * about none of this. ONE ANSWER A CALL: a call that meets a second question (a rule that asks
-     * about a read and about the run, or about each of two files a run made) has spent the first
-     * answer by then, and made again it is asked the first again. "This once" gets such a call
-     * nowhere; one of the answers has to be for longer. And A QUESTION ABOUT A FILE COMES AFTER
-     * THE FILES BEFORE IT WERE FILED: made again with the answer, the same call names the same
-     * folder (`madeDirectoryFor`), the file that was asked about is filed, and each one filed the
-     * first time is refused by the put as already there (`laf:file_exists`), untouched. Whoever
-     * offers this to a Bot has both to settle first.
+     * AND TWO MORE, WHICH A DEPLOYMENT MEETS ONLY WHERE ITS OWN RULES ASK ABOUT FILES. The policy
+     * every deployment starts with asks about one thing here — the same RUN a fifth time — and
+     * that is one question: a file read or filed for a run is not counted as a call of its own
+     * (`forScript`), so nothing but the run can come round again. It was two, until 2026-10-07,
+     * and no number of yeses ran the script again. ONE ANSWER A CALL: a call that meets a second
+     * question (a rule that asks about a read and about the run, or about each of two files a
+     * run made) has spent the first answer by then, and made again it is asked the first again.
+     * "This once" gets such a call nowhere; one of the answers has to be for longer. And A
+     * QUESTION ABOUT A FILE COMES AFTER THE FILES BEFORE IT WERE FILED: made again with the
+     * answer, the same call names the same folder (`madeDirectoryFor`), the file that was asked
+     * about is filed, and each one filed the first time is refused by the put as already there
+     * (`laf:file_exists`), untouched. Whoever offers this to a Bot has both to settle first.
      */
     async runScript(
       computerId: string,
@@ -414,8 +417,9 @@ export function createActs(deps: {
        * 1. EACH FILE THE SCRIPT IS TO READ, READ AS THE BOT'S OWN READ IS: the same decision, the
        * same row, the same rules about paths (`readFile` above). Whole and as bytes, because a
        * workbook cannot be summed from the first of it as text. A refusal or a question about any
-       * one of them ends the call here, before any code runs. `part` is the script's digest, so
-       * two scripts over one file are counted as two reads and not as the same read twice.
+       * one of them ends the call here, before any code runs. `forScript` says whose read it is:
+       * the row carries the digest, and the read is not counted as a call of its own — the run
+       * is what comes round again, and the run is what is counted (`govern.ts`).
        */
       const files: WorkbenchFile[] = [];
       let together = 0;
@@ -425,7 +429,7 @@ export function createActs(deps: {
           "computer_read_file",
           botId,
           actor,
-          { filePath: path, part: script.sha256, ...carried },
+          { filePath: path, forScript: script.sha256, ...carried },
           () => as(botId).fileBytes(path),
         );
         /*
@@ -542,7 +546,7 @@ export function createActs(deps: {
             "computer_write_file",
             botId,
             actor,
-            { filePath: path, ...carried },
+            { filePath: path, forScript: script.sha256, ...carried },
             async () => {
               held ??= await madeHeldBy(as(botId));
               if (held + size > MADE_MAX_BYTES) throw madeFull(held, size);
