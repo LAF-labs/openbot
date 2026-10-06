@@ -19,7 +19,8 @@ export type RequestActors = {
   resolve: (request: Request) => Promise<RequestActor>;
   /**
    * The same person, or null. For the reads that decide WHOSE data is about to be served — the
-   * runtime's thread routes and the live-screen upgrade — which refuse rather than guess.
+   * live-screen upgrade, and the runtime's thread routes until they closed (2026-10-06) — which
+   * refuse rather than guess.
    */
   resolveOrNull: (request: Request) => Promise<RequestActor | null>;
   /** The authorization projection, with the anonymous fallback. See {@link ANONYMOUS_ACTOR}. */
@@ -33,10 +34,12 @@ export type RequestActors = {
  * anonymous deployment check; `/api/copilotkit/*` is behind `requireUser` now (app.ts), so no
  * unauthenticated request reaches this at all. What is left is the transient case — a session read
  * or a role lookup failing under an authenticated request — and it is kept here, and only here,
- * because this one runs INSIDE the vendored runtime's agent factory: throwing there takes the run
- * down with a 500, while resolving to somebody who owns nothing takes it down by name. It grants
- * nothing — no private profile matches, and it is not an administrator — and the two places that
- * decide whose data is served (the live-screen upgrade and the thread priming) refuse instead.
+ * because this one runs INSIDE the vendored runtime's agent factory: throwing there took a run
+ * down with a 500, while resolving to somebody who owns nothing took it down by name — and for
+ * `info`, the one door of the runtime left open since 2026-10-06, it is the same choice: a 500, or
+ * a roster with nothing private on it. It grants nothing — no private profile matches, and it is
+ * not an administrator — and the place that decides whose data is served refuses instead: the
+ * live-screen upgrade, and the thread priming while there was one.
  */
 const ANONYMOUS_ACTOR = { id: "", role: "user" } as const;
 

@@ -10,9 +10,10 @@
  *   POST /api/turns/:threadId/answers/:call    a person's choice on a card the Bot is waiting on
  *   POST /api/turns/skips                      건너뛰기 on a help request
  *
- * Every one of them is the conversation's owner's alone, read from `channel_threads` — the same
- * fact the runtime's thread routes and the runner's roster asked — and the Bot has to be one they
- * may drive.
+ * Every one of them that names a conversation is the conversation's owner's alone, read from
+ * `channel_threads` — the same fact the runtime's thread routes and the runner's roster asked —
+ * and the Bot has to be one they may drive. 건너뛰기 names no conversation, only a Bot and a call:
+ * that the Bot is one they may drive is all it asks.
  */
 import type { Message, Tool } from "@ag-ui/client";
 import { and, eq } from "drizzle-orm";

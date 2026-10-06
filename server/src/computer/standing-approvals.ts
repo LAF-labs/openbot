@@ -539,12 +539,15 @@ async function withCurrentTasks(
 /**
  * The person's newest message in a conversation, by its id: the task that conversation is on.
  *
- * Every run hands the whole history back and `appendMessages` writes each message once, at the
- * start of the run whose input first carries it — so the person's message is in the table before
- * the Bot does anything about it, and a browser step carried on by a fresh run (`waiting`, then the
- * next run) adds no person's message and leaves the task where it was. Measured shape, not assumed:
- * a turn appends when it is handed over and again as it ends (`turns/engine.ts`), both idempotent
- * by id — as the window's runner did at each run's start and finish.
+ * `appendMessages` writes each message once, by its id, and what the person said is filed as the
+ * turn is accepted, before the Bot is asked anything (`turns/engine.ts`, `send`) — so the person's
+ * message is in the table before the Bot does anything about it. Everything the turn files after
+ * that — each step and each result as it lands, and its end — adds no person's message and leaves
+ * the task where it was. That much is read off the engine. The shape was MEASURED, not assumed, on
+ * the window's runner it replaced (gone with the run door, 2026-10-06): every run handed the whole
+ * history back, the runner appended at a run's start and again at its finish, both idempotent by
+ * id, and a browser step carried on by a fresh run (`waiting`, then the next run) added no person's
+ * message.
  */
 export async function currentTaskIn(
   database: Database,

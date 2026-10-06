@@ -388,8 +388,9 @@ export function createDayReader(options: {
     }
 
     /*
-     * A call's answer, wherever it was written. A browser carries a step's result into the NEXT run,
-     * and a step that never got one is answered with a placeholder at the start of the person's next
+     * A call's answer, wherever it was written. A browser carried a step's result into the NEXT run
+     * (the window's runner, gone 2026-10-06; a day that began under it still holds such rows), and
+     * a step that never got one is answered with a placeholder at the start of the person's next
      * turn — so a turn's own runs do not hold all of its answers.
      */
     const answerOf = new Map<string, MessageRow>();

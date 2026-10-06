@@ -126,12 +126,13 @@ describe("one turn over a 500-message conversation", () => {
       lafAgentId: BOT,
     } as Message;
 
-    // `beginRun`: the whole history back, and the question.
+    // As the window's runner began a run (`beginRun`, gone 2026-10-06): the whole history back,
+    // and the question.
     const begin = sent.length;
     await appendMessages(database, THREAD, [...said, question]);
     const started = await statementsSince(begin);
 
-    // `finishRun`: the same history again, and the answer.
+    // As it finished one (`finishRun`): the same history again, and the answer.
     const finish = sent.length;
     await appendMessages(database, THREAD, [...said, question, answer]);
     const finished = await statementsSince(finish);

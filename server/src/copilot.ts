@@ -517,10 +517,10 @@ function filedToolResult(
  * is called once per run, and it is where the stall guard already ends a run with one RUN_ERROR. A
  * refused run never reaches the endpoint (`usage/daily-budget.ts`).
  *
- * WHAT A RUN COST IS WRITTEN HERE, by a subscriber on the agent. Subscribers ride along when the
- * runtime copies an agent to run it (`AbstractAgent.clone`) and every path calls `runAgent`, so this
+ * WHAT A RUN COST IS WRITTEN HERE, by a subscriber on the agent. Subscribers rode along when the
+ * runtime copied an agent to run it (`AbstractAgent.clone`) and every path calls `runAgent`, so this
  * sees a chat turn, a room's, a routine's and a coworker's alike — which the runner the chat endpoint
- * drives, where the row used to be written, never could.
+ * drove, where the row used to be written, never could (it went with the run door, 2026-10-06).
  */
 function remoteAgentWithPrompt(
   agent: RegisteredRemoteAgent,

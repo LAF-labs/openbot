@@ -952,10 +952,11 @@ async function runRounds(context: RunContext): Promise<void> {
 
 /**
  * What this turn cost, said inside the stream because that is the only channel this service
- * has: it holds no server URL and no database, on purpose. The runner tees every run's events
- * and writes this one to the audit trail — the number the per-Bot monthly cost KPI is computed
- * from. Counts only, never content. One per request: a run that looked twice paid three times,
- * and the audit row says so.
+ * has: it holds no server URL and no database, on purpose. The server reads it off the stream, by
+ * a subscriber on the agent it built (`server/src/copilot.ts` — the runner that teed every run's
+ * events went with the run door, 2026-10-06), and writes this one to the audit trail — the number
+ * the per-Bot monthly cost KPI is computed from. Counts only, never content. One per request: a
+ * run that looked twice paid three times, and the audit row says so.
  */
 function emitUsage(context: RunContext, turn: Turn): number {
   const { usage } = turn;
