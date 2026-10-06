@@ -15,7 +15,10 @@ import { join } from "node:path";
 import { REPEAT_RULE } from "../../shared/policy-rules";
 import { WORKBENCH_LIMITS } from "../../shared/workbench/protocol";
 import type { AuditEventInput, AuditFactCode, AuditStore } from "../src/audit";
-import { createApprovalRegistry } from "../src/computer/approvals";
+import {
+  createApprovalRegistry,
+  fingerprintOf,
+} from "../src/computer/approvals";
 import { DEFAULT_ACTION_POLICY } from "../src/computer/default-policy";
 import { ComputerUnavailableError } from "../src/computer/client";
 import {
@@ -30,6 +33,12 @@ import {
 } from "../src/computer/gateway/script-run";
 import type { ActionPolicy } from "../src/computer/policy";
 import { createStandingApprovalStore } from "../src/computer/standing-approvals";
+import { callFingerprintOf } from "../src/plugins/call";
+import {
+  customServerNameRefusal,
+  SERVER_NAME_TAKEN,
+} from "../src/plugins/servers";
+import { toolNameFor } from "../src/plugins/store";
 import { outcomeOfError } from "../src/runner/unattended";
 import type { WorkbenchAnswer } from "../src/workbench/client";
 import {
@@ -1912,6 +1921,116 @@ describe("a script's run under the policy every deployment starts with", () => {
     expect(refused).toBeInstanceOf(ActionRefusedError);
     expect(refused.code).toBe("laf:policy_denied");
     expect(sent).toEqual([]);
+  });
+});
+
+/*
+ * A RUN, AND A TOOL OF THE SAME NAME ON SOMEBODY ELSE'S SERVER (the independent read of
+ * 2026-10-07). A run is recorded under `mcp__workbench__run_script`, and that is exactly what a
+ * server somebody added by address under the name `workbench`, with a tool `run_script`, is
+ * offered as. Nothing reserved the name. And an answer was bound to the Bot, the name and the
+ * arguments — so a question opened about that server's tool was SPENT by the gateway's run of the
+ * same script, and the other way round: two different things, one consent.
+ */
+describe("a run and a tool of the same name on somebody else's server", () => {
+  const REF = "workbench/run_script";
+  const input = { script: SCRIPT, files: ["uploads/a.csv"] };
+  /** What that server's tool would be called with to look like this run. */
+  const args = { script: sha256(SCRIPT), files: ["uploads/a.csv"] };
+
+  test("the two are offered under one name, which is why the rest of this has to hold", () => {
+    expect(toolNameFor(REF)).toBe(RUN_SCRIPT_TOOL);
+  });
+
+  test("a yes about that server's tool is not a yes about a run of the same script", async () => {
+    const { gateway, approvals, sent, rows } = stack({
+      policy: asking('intent == "run_script"'),
+      folder: { "uploads/a.csv": bytes("1") },
+    });
+    // A question as the call path opens one (`plugins/call.ts`), answered yes.
+    const theirs = await approvals.request({
+      botId: BOT,
+      actor: ACTOR.id,
+      rule: "a rule about that server",
+      subject: {
+        kind: "tool",
+        intent: "call_tool",
+        tool: { server: "workbench", name: "run_script" },
+        reason: "policy_ask",
+      },
+      fingerprint: callFingerprintOf({ botId: BOT, ref: REF, args }),
+      target: { type: "mcp_tool", id: REF },
+    });
+    await approvals.answer(theirs.id, BOT, MANAGER.id, true);
+
+    // Presented to the gateway's run. It ran, with "approved by" on its row: that yes was spent.
+    const outcome = await failure(
+      gateway.runScript(COMPUTER, BOT, ACTOR, input, undefined, theirs.id),
+    );
+    expect(outcome).toBeInstanceOf(ActionNeedsApprovalError);
+    expect(sent).toEqual([]);
+    expect(
+      rows.filter((row) => row.eventType === "computer.action_allowed"),
+    ).toHaveLength(1); // the file's read, and no run
+    // And it is still there for the call it was given for.
+    expect(
+      await approvals.consume(
+        theirs.id,
+        callFingerprintOf({ botId: BOT, ref: REF, args }),
+      ),
+    ).toMatchObject({ ok: true });
+  });
+
+  test("a yes about a run is not a yes about that server's tool", async () => {
+    const { gateway, approvals } = stack({
+      policy: asking('intent == "run_script"'),
+      folder: { "uploads/a.csv": bytes("1") },
+    });
+    const ours = (await failure(
+      gateway.runScript(COMPUTER, BOT, ACTOR, input),
+    )) as ActionNeedsApprovalError;
+    await approvals.answer(ours.approvalId, BOT, MANAGER.id, true);
+
+    expect(
+      await approvals.consume(
+        ours.approvalId,
+        callFingerprintOf({ botId: BOT, ref: REF, args }),
+      ),
+    ).toEqual({ ok: false, reason: "a different action" });
+    // Left where it was, for the run.
+    await gateway.runScript(
+      COMPUTER,
+      BOT,
+      ACTOR,
+      input,
+      undefined,
+      ours.approvalId,
+    );
+  });
+
+  test("whatever a call to another server is called and says, its answer is not one a gateway act can spend", () => {
+    // Not only the run: the same name, the same arguments, and every other field left out.
+    const theirs = callFingerprintOf({ botId: BOT, ref: REF, args: {} });
+    const ours = fingerprintOf({
+      botId: BOT,
+      toolName: toolNameFor(REF),
+      arguments: {},
+    });
+    expect(theirs).not.toBe(ours);
+    // And two servers' tools of one name and one saying are two things.
+    expect(
+      callFingerprintOf({ botId: BOT, ref: "one/send", args: { to: "a" } }),
+    ).not.toBe(
+      callFingerprintOf({ botId: BOT, ref: "other/send", args: { to: "a" } }),
+    );
+  });
+
+  test("a server added by address may not be called workbench", () => {
+    expect(customServerNameRefusal("workbench")).toBe(SERVER_NAME_TAKEN);
+    // A curated entry's slug still may not be taken, and an ordinary name still may.
+    expect(customServerNameRefusal("gmail")).toBe(SERVER_NAME_TAKEN);
+    expect(customServerNameRefusal("my-own-server")).toBeNull();
+    expect(customServerNameRefusal("workbench-2")).toBeNull();
   });
 });
 

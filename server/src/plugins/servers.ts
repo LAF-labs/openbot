@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { recordAuditEvent } from "../audit";
+import { WORKBENCH_FAMILY } from "../computer/gateway/intent";
 import {
   credentials as credentialRows,
   mcpServers,
@@ -133,6 +134,41 @@ export function effectiveUrl(
  * the boot's own reconciliation writes into the trail.
  */
 const SHIPPED_WITH_THE_BUILD = "deployment";
+
+/**
+ * The names a server added by address may not take although no curated entry has them: what this
+ * deployment's own acts are named under, behind the prefix every connected service's tools have.
+ *
+ * `workbench`: a script's run is decided, counted, allowed and recorded as
+ * `mcp__workbench__run_script` (`computer/gateway/intent.ts`), which is to the letter what a
+ * server called `workbench` with a tool `run_script` would be offered as. A rule written about
+ * that name, and the trail's row under it, would be about two different things.
+ *
+ * NOT HERE, AND THE SAME SHAPE: `goals` — the goal tools are `mcp__goals__…` and no curated entry
+ * has that name either. It was so before this list and is not this change's to decide.
+ */
+export const RESERVED_SERVER_IDS: ReadonlySet<string> = new Set([
+  WORKBENCH_FAMILY,
+]);
+
+/**
+ * Why a server added by address may not have this name, or null when it may.
+ *
+ * A custom server may not take a curated entry's slug. The slug prefixes tool names and is what a
+ * grant and a policy rule are written against, so allowing a shadow would let a custom server
+ * inherit rules an operator wrote about the vendor. Nor a name this deployment keeps for an act of
+ * its own, for the same reason ({@link RESERVED_SERVER_IDS}).
+ */
+export function customServerNameRefusal(
+  id: string,
+): typeof SERVER_NAME_TAKEN | typeof SERVER_NAME_INVALID | null {
+  if (catalogueEntry(id) || RESERVED_SERVER_IDS.has(id)) {
+    return SERVER_NAME_TAKEN;
+  }
+  // Lower-case letters, numbers and hyphens, two to forty.
+  if (!/^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$/.test(id)) return SERVER_NAME_INVALID;
+  return null;
+}
 
 export function createServers(
   context: PluginContext,
@@ -1060,16 +1096,8 @@ export function createServers(
       const refusal = await resolvedCustomUrlRefusal(input.url);
       if (refusal) throw new CustomServerRefusedError(refusal);
 
-      // A custom server may not take a curated entry's slug. The slug prefixes tool names and is
-      // what a grant and a policy rule are written against, so allowing a shadow would let a custom
-      // server inherit rules an operator wrote about the vendor.
-      if (catalogueEntry(input.id)) {
-        throw new CustomServerRefusedError(SERVER_NAME_TAKEN);
-      }
-      // Lower-case letters, numbers and hyphens, two to forty.
-      if (!/^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$/.test(input.id)) {
-        throw new CustomServerRefusedError(SERVER_NAME_INVALID);
-      }
+      const nameRefusal = customServerNameRefusal(input.id);
+      if (nameRefusal) throw new CustomServerRefusedError(nameRefusal);
 
       /*
        * A credential is spent at the address it was given to, or not spent.
@@ -1164,6 +1192,35 @@ export function createServers(
      * A person looked at the changed definition and consented to it as it now
      * is. The current hash becomes the consented one; nothing else moves.
      */
+    /**
+     * The servers ALREADY added by address under a name this deployment now keeps for itself
+     * ({@link RESERVED_SERVER_IDS}): added before the name was kept, when nothing refused it.
+     *
+     * WHAT BECOMES OF ONE, DECIDED AND NOT GUESSED. A row is loaded by its id and nothing else
+     * (`requireServer`), a custom one with no catalogue entry beside it — so such a server loads,
+     * is offered and is called exactly as it was, and this change does not stop it: nothing of the
+     * deployment's own is offered under the name yet, an answer about its tool can no longer be
+     * spent on a run or the reverse (`ApprovalSubject.server`), and the trail's page words a row
+     * by what the row is. Withholding its tools today would take a working connector away from a
+     * person for a clash that has not happened. What IS owed is that somebody knows before it
+     * does: the day a tool of the deployment's own is offered under `mcp__workbench__…`, a model
+     * would be handed two tools of one name. So a boot says which names are held
+     * (`boot/announce.ts`), and removing the server — which never looks at its name — is the
+     * remedy.
+     */
+    async reservedNamesHeld(): Promise<string[]> {
+      const rows = await database
+        .select({ id: mcpServers.id })
+        .from(mcpServers)
+        .where(
+          and(
+            eq(mcpServers.provenance, "custom"),
+            inArray(mcpServers.id, [...RESERVED_SERVER_IDS]),
+          ),
+        );
+      return rows.map((row) => row.id).sort();
+    },
+
     async approveToolDefinition(
       serverId: string,
       toolName: string,

@@ -9,6 +9,7 @@ import type { BuiltInSkillsRuntime } from "../plugins/built-in-skill-sync";
 import type { DeploymentKeyRuntime } from "../plugins/deployment-key-runtime";
 import type { PluginStore } from "../plugins/store";
 import type { RoutineService } from "../routines/service";
+import { sayReservedServerNamesHeld } from "./announce";
 
 /** A minute is the finest grain a routine is ever due at. */
 const ROUTINE_TICK_MS = 60_000;
@@ -119,6 +120,19 @@ export function startBackgroundWork(input: {
       log.error("shipped_definitions_not_refreshed", {
         server: "*",
         reason: error instanceof Error ? error.name : "unknown",
+      });
+    });
+  /*
+   * A server added by address under a name this deployment now keeps for itself, said once
+   * (`sayReservedServerNamesHeld`). A read, never fatal: a boot that could not look says so and
+   * goes on.
+   */
+  void input.pluginStore
+    .reservedNamesHeld()
+    .then(sayReservedServerNamesHeld)
+    .catch((error: unknown) => {
+      log.warn("reserved_server_names_not_read", {
+        reason: describeFailure(error),
       });
     });
   // The package's skills, the same way: once, at boot, never fatal (built-in-skill-sync.ts).

@@ -167,6 +167,29 @@ function argumentOffSchema(
   return null;
 }
 
+/**
+ * What an answer about a call to somebody else's server is bound to: the Bot, the tool by the
+ * name it is offered under, what the call says — and THAT IT IS A CALL TO THAT SERVER, which is
+ * what keeps it from being an answer about anything this deployment does itself under the same
+ * name (`ApprovalSubject.server`).
+ *
+ * Its own function so that the one place this is computed can be asked from outside it — a test
+ * that opens a question the way this path does should not be writing the recipe out again.
+ */
+export function callFingerprintOf(call: {
+  botId: string;
+  /** `<server>/<tool>`, as a grant is stored. A slash cannot appear in either half. */
+  ref: string;
+  args: Record<string, unknown>;
+}): string {
+  return fingerprintOf({
+    botId: call.botId,
+    toolName: toolNameFor(call.ref),
+    arguments: call.args,
+    server: call.ref.slice(0, call.ref.indexOf("/")),
+  });
+}
+
 export function createCallPath(
   context: PluginContext,
   servers: Servers,
@@ -222,11 +245,7 @@ export function createCallPath(
         subject: question.subject,
         preview: question.preview,
         action: question.ref,
-        fingerprint: fingerprintOf({
-          botId: question.botId,
-          toolName: toolNameFor(question.ref),
-          arguments: question.args,
-        }),
+        fingerprint: callFingerprintOf(question),
         /*
          * A call to somebody else's server has no host and no path, only a name, so an allowance
          * here is always about the tool. Note what that widens: the approval it stands in for is
