@@ -356,7 +356,11 @@ export type DeploymentConfig = {
     baseUrl: string;
     /** The secret every computer requires of its caller. */
     token?: string;
-    /** True on a laptop, where browsing the deployment's own services is the point. */
+    /**
+     * True on a laptop, where browsing the deployment's own services is the point. And so the mark
+     * of a developer's stack: only where it is true is an endpoint of a person's own taken for a
+     * Bot (`agents/routes.ts`), or a Bot dialled anywhere but this deployment's agent (`main.ts`).
+     */
     allowPrivateHosts: boolean;
     /**
      * This deployment's own addresses — the app, and where people sign in to it — which a Bot's

@@ -706,6 +706,10 @@ export const ko: Record<string, string> = {
   "A description can be up to 1,000 characters.":
     "설명은 1,000자까지 쓸 수 있어요.",
   "That address cannot be used.": "그 주소는 쓸 수 없어요.",
+  // 이 서버, as the endpoints page already says it ("이 서버에서 실행"): a refusal is read by
+  // anybody, and 배포 is an operator's word.
+  "Every Bot runs on this deployment. It cannot be pointed at another server here.":
+    "모든 봇은 이 서버에서 실행돼요. 여기서는 다른 서버로 연결할 수 없어요.",
   "That face cannot be used.": "그 얼굴은 쓸 수 없어요.",
   "Choose how hard this Bot thinks.": "봇이 얼마나 깊이 생각할지 골라 주세요.",
   "That instruction can be up to 1,000 characters.":

@@ -562,6 +562,19 @@ export function createApp({
   app.notFound((context) => context.json({ code: NOT_FOUND }, 404));
 
   /**
+   * Whether this deployment takes an endpoint of somebody's own for a Bot: a developer's stack, and
+   * nowhere else (the owner, 2026-10-06).
+   *
+   * The private-host opt-in, which is the switch that already said which kind of deployment this
+   * is — a laptop legitimately talks to its own services, a hosted deployment must not — and which
+   * compose never hands this process. Read once, here, for the two places below that must agree:
+   * the agent routes, which refuse an endpoint where this is false, and what the app is told, so
+   * that it does not draw the screen for one. `main.ts` reads the same switch for the third: where
+   * a Bot is dialled.
+   */
+  const takesBotEndpoints = config.computer?.allowPrivateHosts ?? false;
+
+  /**
    * What the deployment can do, asked per request and answered from a cache.
    *
    * One function so that a second place cannot answer differently, which is how a control comes to
@@ -583,6 +596,12 @@ export function createApp({
      * once no deployment can be upgraded from a build that reads it.
      */
     serverTurns: true,
+    /*
+     * Whether the endpoints page has anything to offer (`/admin/bots`). False on a hosted
+     * deployment, where the form it would post is refused: the app then draws no way to it, and
+     * the page itself says only that every Bot runs here. An app that is not told reads NO.
+     */
+    botEndpoints: takesBotEndpoints,
     /*
      * NO `seats` ANY MORE. It told the roster how many Bots fit so it could say "3/5"; since
      * 2026-09-24 a person has one Bot, the number is not a setting, and nothing on the surface
@@ -1084,8 +1103,9 @@ export function createApp({
         requireUser,
         // The same stance the computer uses: a laptop legitimately talks to its own services, a hosted
         // deployment must not. Passed from configuration rather than defaulted here, so "hosted and
-        // permissive" cannot happen by forgetting something.
-        config.computer?.allowPrivateHosts ?? false,
+        // permissive" cannot happen by forgetting something. And the same answer the app is given
+        // above: where this is false the routes take no endpoint for a Bot at all.
+        takesBotEndpoints,
         // What the roster shows as busy, read from the one ledger every run path writes.
         readWorking,
         // What each Bot has learned, and the three endpoints that let a person read and undo it.

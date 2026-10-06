@@ -107,9 +107,11 @@ const requireUser: MiddlewareHandler<{ Variables: AppVariables }> = async (
 function appFor(
   store: AgentProfileStore,
   middleware: MiddlewareHandler<{ Variables: AppVariables }> = requireUser,
+  /** A developer's stack, where a Bot may be pointed at an agent of one's own. Hosted by default. */
+  allowPrivateHosts = false,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
-  app.route("/", createAgentRoutes(store, middleware));
+  app.route("/", createAgentRoutes(store, middleware, allowPrivateHosts));
   return app;
 }
 
@@ -181,23 +183,27 @@ describe("agent input parser", () => {
 
   test("trims every accepted field and ignores forged fields", () => {
     expect(
-      parseAgentInput({
-        name: "  Expense Manager  ",
-        // A field until 2026-09-24 and a column until migration 0047; an older client may still
-        // send it, and it is read like any other key the parser does not know.
-        title: "  Finance Operations  ",
-        roleDescription: "  Reviews receipts.  ",
-        id: "forged-agent",
-        ownerUserId: "attacker",
-        deletedAt: "now",
-        systemOwned: true,
-        // `endpoint` is a real field for BYO-agent; validation protects it rather than refusing it
-        // as a forged field. See agent-endpoint.test.ts.
-        endpoint: "https://agents.example.com/ag-ui",
-        // So is `avatarSeed`. A face is a display value like the name beside it, not a fact about
-        // who owns the Bot, and the person looking at it is the person who gets to choose it.
-        avatarSeed: "  r2c6  ",
-      }),
+      parseAgentInput(
+        {
+          name: "  Expense Manager  ",
+          // A field until 2026-09-24 and a column until migration 0047; an older client may still
+          // send it, and it is read like any other key the parser does not know.
+          title: "  Finance Operations  ",
+          roleDescription: "  Reviews receipts.  ",
+          id: "forged-agent",
+          ownerUserId: "attacker",
+          deletedAt: "now",
+          systemOwned: true,
+          // `endpoint` is a real field for BYO-agent; validation protects it rather than refusing it
+          // as a forged field. See agent-endpoint.test.ts.
+          endpoint: "https://agents.example.com/ag-ui",
+          // So is `avatarSeed`. A face is a display value like the name beside it, not a fact about
+          // who owns the Bot, and the person looking at it is the person who gets to choose it.
+          avatarSeed: "  r2c6  ",
+        },
+        // A developer's stack: the one place an endpoint is a field at all (see the last describe).
+        true,
+      ),
     ).toEqual({
       ok: true,
       value: {
@@ -409,7 +415,8 @@ describe("agent lifecycle routes", () => {
 
   test("never forwards forged create or update fields", async () => {
     const store = fakeStore();
-    const app = appFor(store);
+    // A developer's stack, since the body carries an endpoint: a hosted one refuses it whole.
+    const app = appFor(store, requireUser, true);
     const body = {
       name: "  Expense Manager  ",
       title: "  Finance Operations  ",
@@ -1135,5 +1142,242 @@ describe("the connection test's key", () => {
     } finally {
       agent.stop();
     }
+  });
+});
+
+/*
+ * A HOSTED DEPLOYMENT TAKES NO ENDPOINT OF A PERSON'S OWN FOR A BOT (the owner, 2026-10-06).
+ *
+ * A person could point their Bot at an AG-UI agent they host: create and the edit form's PATCH took
+ * `endpoint` and a key for it. Everything that endpoint then said was filed as fact — each turn's
+ * usage (provider, model, tokens, dollars: the rows a trial's daily budget is judged on) and a
+ * run's ending code. Three independent reads of the control plane's fleet report ended at that
+ * door. So where the private-host opt-in does not mark a developer's stack, the door is shut: a
+ * supplied endpoint is refused, and so is a key for one, by a code of its own — "that address
+ * cannot be used" would not be what is true. Everything a person's own screens send is untouched:
+ * they send no endpoint, and an absent or empty one never was a request to move a Bot.
+ */
+describe("a hosted deployment takes no endpoint of a person's own for a Bot", () => {
+  const NOT_TAKEN = {
+    ok: false,
+    code: "laf:agent_endpoint_not_taken",
+  } as const;
+  const A_KEY = { header: "Authorization", value: "Bearer abc-def" };
+
+  test.each([
+    ["a public address", { endpoint: "https://agents.example.com/ag-ui" }],
+    ["an address on this machine", { endpoint: "http://127.0.0.1:8123/ag-ui" }],
+    [
+      "the deployment's own agent, named",
+      { endpoint: "http://agent-bot:4200/ag-ui" },
+    ],
+    ["something that is no address", { endpoint: "not a url" }],
+    ["a key and no address", { auth: A_KEY }],
+    [
+      "an address and its key",
+      { endpoint: "https://agents.example.com/ag-ui", auth: A_KEY },
+    ],
+    // Not judged as a key first: there is no key to take here, sendable or not.
+    [
+      "a key that could not be sent",
+      { auth: { header: "Authorization", value: "Bearer abc–def" } },
+    ],
+    [
+      "a key under a header that is none",
+      { auth: { header: "X-Bad\nInjected: yes", value: "abc" } },
+    ],
+  ])("the form is refused with %s, by the code of its own", (_what, fields) => {
+    expect(parseAgentInput({ ...validInput, ...fields }, false)).toEqual(
+      NOT_TAKEN,
+    );
+    // And by default, which is what a caller that forgot to say gets: hosted.
+    expect(parseAgentInput({ ...validInput, ...fields })).toEqual(NOT_TAKEN);
+  });
+
+  test.each([
+    ["neither", {}],
+    ["an empty address, which is a cleared field", { endpoint: "" }],
+    [
+      "an empty key, which is a box nobody typed in",
+      { auth: { header: "Authorization", value: "   " } },
+    ],
+    ["no key at all, said as null", { auth: null }],
+  ])("and is taken as it always was with %s", (_what, fields) => {
+    for (const allowPrivateHosts of [false, true]) {
+      expect(
+        parseAgentInput({ ...validInput, ...fields }, allowPrivateHosts),
+      ).toEqual({ ok: true, value: validInput });
+    }
+  });
+
+  test("a developer's stack takes both, checked as they were — and still refuses an address that is none", () => {
+    expect(
+      parseAgentInput(
+        {
+          ...validInput,
+          endpoint: "http://127.0.0.1:8123/ag-ui",
+          auth: A_KEY,
+        },
+        true,
+      ),
+    ).toEqual({
+      ok: true,
+      value: {
+        ...validInput,
+        endpoint: "http://127.0.0.1:8123/ag-ui",
+        auth: A_KEY,
+      },
+    });
+    // The older code keeps its meaning there: an address this server will not dial.
+    for (const endpoint of [
+      "not a url",
+      "ftp://agents.example.com/",
+      "http://169.254.169.254/",
+    ]) {
+      expect(parseAgentInput({ ...validInput, endpoint }, true)).toEqual({
+        ok: false,
+        code: "laf:agent_endpoint_refused",
+      });
+    }
+  });
+
+  const send = (
+    app: ReturnType<typeof appFor>,
+    method: "POST" | "PATCH",
+    body: object,
+  ) =>
+    app.request(`http://laf.test${method === "POST" ? "/" : "/agent-1"}`, {
+      method,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  test("create and the edit form's save are refused with one, 400 and the code, before the store is asked", async () => {
+    const store = fakeStore();
+    const hosted = appFor(store);
+    for (const method of ["POST", "PATCH"] as const) {
+      for (const fields of [
+        { endpoint: "https://agents.example.com/ag-ui" },
+        { auth: A_KEY },
+      ]) {
+        const response = await send(hosted, method, {
+          ...validInput,
+          ...fields,
+        });
+        expect(response.status).toBe(400);
+        expect(await json(response)).toEqual({
+          error: "laf:agent_endpoint_not_taken",
+          code: "laf:agent_endpoint_not_taken",
+        });
+      }
+    }
+    expect(store.calls).toEqual([]);
+  });
+
+  test("the ordinary save — a name, a description, a face, how hard it thinks, what it need not ask about — goes through as it did", async () => {
+    const store = fakeStore();
+    const hosted = appFor(store);
+    const ordinary = {
+      ...validInput,
+      avatarSeed: "r2c6",
+      effort: "thorough",
+      autoReview: "Reading a page needs no question.",
+    };
+    expect((await send(hosted, "PATCH", ordinary)).status).toBe(200);
+    // And with the field a form sends when its address box is empty.
+    expect(
+      (await send(hosted, "PATCH", { ...ordinary, endpoint: "" })).status,
+    ).toBe(200);
+    expect((await send(hosted, "POST", validInput)).status).toBe(201);
+    expect(store.calls).toEqual([
+      ["update", actor, "agent-1", ordinary],
+      ["update", actor, "agent-1", ordinary],
+      ["create", actor, validInput],
+    ]);
+  });
+
+  /*
+   * THE CONNECTION TEST IS THE SAME DOOR. It makes this server dial an address a person typed, so
+   * on a hosted deployment it is refused before anything is read of the request — the address, or
+   * a key that could not be sent. A real server on a real port, so "nothing was dialled" is a fact.
+   */
+  test("the connection test dials nothing: 400 and the same code, whatever was typed", async () => {
+    const state = { dialled: 0 };
+    const agent = Bun.serve({
+      port: 0,
+      fetch() {
+        state.dialled += 1;
+        return new Response('data: {"type":"RUN_STARTED"}\n\n', {
+          headers: { "content-type": "text/event-stream" },
+        });
+      },
+    });
+    const test = (app: ReturnType<typeof appFor>, body: object) =>
+      app.request("http://laf.test/test-connection", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    try {
+      const url = `http://127.0.0.1:${agent.port}/ag-ui`;
+      const hosted = appFor(fakeStore());
+      for (const body of [
+        { endpoint: url },
+        { endpoint: "https://agents.example.com/ag-ui" },
+        { endpoint: url, headers: { Authorization: "Bearer abc–def" } },
+        {},
+      ]) {
+        const response = await test(hosted, body);
+        expect(response.status).toBe(400);
+        expect(await json(response)).toEqual({
+          error: "laf:agent_endpoint_not_taken",
+          code: "laf:agent_endpoint_not_taken",
+        });
+      }
+      expect(state.dialled).toBe(0);
+      // Not vacuous: the same request on a developer's stack reaches the agent.
+      const developers = appFor(fakeStore(), requireUser, true);
+      expect(await json(await test(developers, { endpoint: url }))).toEqual({
+        ok: true,
+        events: ["RUN_STARTED"],
+        status: 200,
+      });
+      expect(state.dialled).toBe(1);
+    } finally {
+      agent.stop(true);
+    }
+  });
+
+  /*
+   * WHAT THE APP IS TOLD OF A BOT. The row's address was published "so the edit form can show it",
+   * as "an address the person supplied" — and for nearly every Bot it is the deployment's own
+   * internal one (`http://agent-bot:4200/…`), which nobody supplied. On a hosted deployment there
+   * is no form to show it in and no address to speak of: every Bot runs here.
+   */
+  test("the app is told no address and no key of a Bot there, whatever its row holds — and both on a developer's stack", async () => {
+    const pointed = profile({
+      endpoint: "https://agents.example.com/ag-ui",
+      hasAuth: true,
+    });
+    const store = () =>
+      fakeStore({ get: async () => pointed, list: async () => [pointed] });
+    const told = async (app: ReturnType<typeof appFor>) => {
+      const one = (await json(await app.request("http://laf.test/agent-1")))
+        .agent as { endpoint: unknown; hasAuth: unknown };
+      const listed = (await json(await app.request("http://laf.test/")))
+        .agents as { endpoint: unknown; hasAuth: unknown }[];
+      return [one, ...listed].map(({ endpoint, hasAuth }) => ({
+        endpoint,
+        hasAuth,
+      }));
+    };
+    expect(await told(appFor(store()))).toEqual([
+      { endpoint: null, hasAuth: false },
+      { endpoint: null, hasAuth: false },
+    ]);
+    expect(await told(appFor(store(), requireUser, true))).toEqual([
+      { endpoint: "https://agents.example.com/ag-ui", hasAuth: true },
+      { endpoint: "https://agents.example.com/ag-ui", hasAuth: true },
+    ]);
   });
 });
