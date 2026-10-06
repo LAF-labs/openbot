@@ -32,7 +32,10 @@ const channelStore = createChannelStore(
   profileStore,
   createThreadIdentity("test-deployment"),
 );
-const loadAgents = createRuntimeAgentLoader(database);
+// Hosted, as a deployment runs: none of the tests of who may run which Bot is about its address.
+const loadAgents = createRuntimeAgentLoader(database, {
+  home: managedEndpoint,
+});
 
 const testPrefix = `runtime-agents-${randomUUID()}`;
 const createdUserIds: string[] = [];
@@ -332,14 +335,44 @@ describe("where a Bot is dialled", () => {
     return seen;
   }
 
+  /*
+   * THE LOADER'S DEFAULT WAS THE OPEN ONE (the independent read of #121). Where Bots run was an
+   * optional third argument, and left out it meant a developer's stack: each Bot dialled where its
+   * row says, with its key. The routes default shut; this did the opposite, so a second caller
+   * that forgot the argument would have reopened the door for every row from before the upgrade
+   * with every test here still passing. It is required now and has no default: the compiler asks
+   * each caller, and each test that builds a loader says which setting it means.
+   */
+  test("a loader is not built without saying where Bots run: the compiler refuses the call, and so does the loader", () => {
+    // Typecheck covers this file, so the directive IS the assertion: were the argument optional
+    // again, it would be an unused directive and the gate would fail on it.
+    // @ts-expect-error the second argument — where Bots run — is required
+    expect(() => createRuntimeAgentLoader(database)).toThrow("where Bots run");
+    // A caller that gets past the compiler is not given the open setting by way of a default.
+    for (const forgotten of [undefined, null, {}, "", "anywhere"]) {
+      expect(() =>
+        createRuntimeAgentLoader(database, forgotten as never),
+      ).toThrow("where Bots run");
+    }
+    // The two answers there are.
+    expect(
+      createRuntimeAgentLoader(database, { home: managedEndpoint }),
+    ).toBeFunction();
+    expect(
+      createRuntimeAgentLoader(database, "where each row says"),
+    ).toBeFunction();
+  });
+
   test("on a hosted deployment a Bot whose row holds another address is dialled at the deployment's own agent, with no key of the person's — and its row is left as it was", async () => {
     const owner = await createUser();
     const profile = await createCoworker(owner);
     await pointElsewhere(profile.id);
     const { asked, vault } = vaultOf();
-    const hosted = createRuntimeAgentLoader(database, vault, {
-      home: managedEndpoint,
-    });
+    const hosted = createRuntimeAgentLoader(
+      database,
+      { home: managedEndpoint },
+      vault,
+    );
 
     const loaded = (await hosted(owner)).find(
       (agent) => agent.id === profile.id,
@@ -367,7 +400,11 @@ describe("where a Bot is dialled", () => {
     const profile = await createCoworker(owner);
     await pointElsewhere(profile.id);
     const { asked, vault } = vaultOf();
-    const developers = createRuntimeAgentLoader(database, vault);
+    const developers = createRuntimeAgentLoader(
+      database,
+      "where each row says",
+      vault,
+    );
 
     const loaded = (await developers(owner)).find(
       (agent) => agent.id === profile.id,
@@ -382,10 +419,16 @@ describe("where a Bot is dialled", () => {
     const owner = await createUser();
     const profile = await createCoworker(owner);
     for (const load of [
-      createRuntimeAgentLoader(database, vaultOf().vault),
-      createRuntimeAgentLoader(database, vaultOf().vault, {
-        home: managedEndpoint,
-      }),
+      createRuntimeAgentLoader(
+        database,
+        "where each row says",
+        vaultOf().vault,
+      ),
+      createRuntimeAgentLoader(
+        database,
+        { home: managedEndpoint },
+        vaultOf().vault,
+      ),
     ]) {
       const loaded = (await load(owner)).find(
         (agent) => agent.id === profile.id,
@@ -417,15 +460,21 @@ describe("where a Bot is dialled", () => {
         .set({ configuration })
         .where(eq(agents.id, profile.id));
 
-      const developers = createRuntimeAgentLoader(database, vaultOf().vault);
+      const developers = createRuntimeAgentLoader(
+        database,
+        "where each row says",
+        vaultOf().vault,
+      );
       expect(
         (await developers(owner)).find((agent) => agent.id === profile.id),
       ).toBeUndefined();
 
       const { asked, vault } = vaultOf();
-      const hosted = createRuntimeAgentLoader(database, vault, {
-        home: managedEndpoint,
-      });
+      const hosted = createRuntimeAgentLoader(
+        database,
+        { home: managedEndpoint },
+        vault,
+      );
       const loaded = (await hosted(owner)).find(
         (agent) => agent.id === profile.id,
       );

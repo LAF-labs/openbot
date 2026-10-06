@@ -35,7 +35,10 @@ const profileStore = createAgentProfileStore(
   10,
 );
 const loadAgents = withShopProfile(
-  createRuntimeAgentLoader(database),
+  // Hosted, as a deployment runs: where a Bot is dialled is not what this file is about.
+  createRuntimeAgentLoader(database, {
+    home: new URL("https://managed.example.test/ag-ui"),
+  }),
   shops.read,
   shops.readPerson,
 );
