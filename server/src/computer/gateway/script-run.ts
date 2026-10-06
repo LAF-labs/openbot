@@ -239,20 +239,53 @@ export const MADE_MAX_BYTES = 200 * 1024 * 1024;
  * `made/<day>-<id8>`: the folder one run's files are filed in, named by this server and never by
  * the script, which chooses only each file's own name.
  *
- * The day and eight characters, as an attachment's place is named (`attachments/files.ts`). The
- * eight are of the Bot's tool call where the caller named one, so that the SAME call made again
- * — which is what happens once a person has answered a question about it — names the same folder:
- * a question about one file is bound to that file's path (`approvals.ts`, `fingerprintOf`), and
- * an answer could never be spent on a path that had moved. A digest of the id rather than a piece
- * of it, because the id is whatever a model's provider wrote and this is a folder's name. A run
- * with no call behind it gets a folder of its own each time.
+ * The day and eight characters, as an attachment's place is named (`attachments/files.ts`).
+ *
+ * THE EIGHT ARE OF THE CALL, SO THAT THE SAME CALL MADE AGAIN NAMES THE SAME FOLDER — which is
+ * what happens once a person has answered a question about it: a question about one file is
+ * bound to that file's path (`approvals.ts`, `fingerprintOf`), and an answer could never be spent
+ * on a path that had moved.
+ *
+ * AND A CALL IS MORE THAN THE ID ITS PROVIDER GAVE IT. The eight were a digest of the tool call's
+ * id alone until 2026-10-07, and some providers name every call `call_1`: two different runs
+ * that day shared a folder, and the second one's file was refused as already there. A call is the
+ * Bot, the conversation, the id, the script and the files it names (in one order, as an answer
+ * about it is bound) — all of them the same when a call is made again, and not all the same for
+ * two calls unless they are the same run of the same script in the same conversation, whose
+ * files are the same files. A digest, because half of that is whatever a model's provider wrote
+ * and this is a folder's name.
+ *
+ * WHAT IS LEFT, SAID. A caller that names no call gets a folder of its own each time — there is
+ * nothing to tell "again" from "another" by — so a question about a file it made can never be
+ * answered into the same path; whoever wires a caller passes the call's id. And the day is the
+ * clock's: a call made again across midnight UTC names another folder, and a question about its
+ * file is asked once more. A question is open for ten minutes.
  */
-export function madeDirectoryFor(at: Date, callId: string | undefined): string {
+export function madeDirectoryFor(
+  at: Date,
+  call: {
+    botId: string;
+    /** The conversation, where the call came from one. */
+    threadId?: string | undefined;
+    /** The Bot's tool call. Absent, the folder is this attempt's alone. */
+    toolCallId?: string | undefined;
+    /** The script's SHA-256, and the files it names. */
+    sha256: string;
+    files: readonly string[];
+  },
+): string {
   const day = at.toISOString().slice(0, 10);
-  const id8 = createHash("sha256")
-    .update(callId ?? randomUUID())
-    .digest("hex")
-    .slice(0, 8);
+  const whose =
+    call.toolCallId === undefined
+      ? randomUUID()
+      : [
+          call.botId,
+          call.threadId ?? "",
+          call.toolCallId,
+          call.sha256,
+          ...[...call.files].sort(),
+        ].join("\u0000");
+  const id8 = createHash("sha256").update(whose).digest("hex").slice(0, 8);
   return `${MADE_DIRECTORY}/${day}-${id8}`;
 }
 

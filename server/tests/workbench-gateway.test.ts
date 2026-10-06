@@ -81,8 +81,29 @@ const denying = (...deny: string[]): ActionPolicy => ({ ...PERMISSIVE, deny });
 const SCRIPT = 'console.log("the total is", 42);';
 const sha256 = (text: string) =>
   createHash("sha256").update(text, "utf8").digest("hex");
-const id8 = (callId: string) =>
-  createHash("sha256").update(callId).digest("hex").slice(0, 8);
+/**
+ * The folder a call's files go to, worked out here and not asked of the code: the day, and eight
+ * characters of a digest over the Bot, the conversation, the call's id, the script's digest and
+ * the files it names in one order.
+ */
+const folderOf = (call: {
+  toolCallId: string;
+  script?: string;
+  files?: string[];
+  threadId?: string;
+}) =>
+  `made/2026-10-07-${createHash("sha256")
+    .update(
+      [
+        BOT,
+        call.threadId ?? "",
+        call.toolCallId,
+        sha256(call.script ?? SCRIPT),
+        ...[...(call.files ?? [])].sort(),
+      ].join("\u0000"),
+    )
+    .digest("hex")
+    .slice(0, 8)}`;
 
 function fakeAudit(refuses: (event: AuditEventInput) => boolean = () => false) {
   const rows: AuditEventInput[] = [];
@@ -164,7 +185,10 @@ describe("a script's run, allowed", () => {
       },
     );
 
-    const folder = `made/2026-10-07-${id8("call-1")}`;
+    const folder = folderOf({
+      toolCallId: "call-1",
+      files: ["uploads/sales.csv", "uploads/costs.csv"],
+    });
     // The sandbox got the script as written and each file's bytes at the path the Bot knows it by.
     expect(sent).toHaveLength(1);
     expect(sent[0]?.script).toBe(SCRIPT);
@@ -1383,7 +1407,7 @@ describe("a script's run that produced no ending", () => {
 describe("the files a script made", () => {
   const three = () =>
     made(["report.xlsx", "r"], ["tool.exe", "t"], ["notes.txt", "n"]);
-  const folder = `made/2026-10-07-${id8("call-1")}`;
+  const folder = folderOf({ toolCallId: "call-1" });
   const actor = { ...ACTOR, toolCallId: "call-1" };
 
   test("a rule denying one file's name keeps that file out, and the others are filed", async () => {
@@ -1579,6 +1603,59 @@ describe("the files a script made", () => {
       source: "ask",
       approvedBy: MANAGER.id,
     });
+  });
+
+  /*
+   * THE FOLDER IS THE CALL'S, AND A CALL IS MORE THAN THE ID ITS PROVIDER GAVE IT (the independent
+   * read of 2026-10-07). The folder was a digest of the tool call's id alone, and some providers
+   * name every call `call_1`: two different runs that day shared a folder, and the second one's
+   * `out.csv` was refused as already there.
+   */
+  test("two runs under one provider's reused call id file to two folders; the same call made again, to the same one", async () => {
+    const reused = { ...ACTOR, threadId: "thread-1", toolCallId: "call_1" };
+    const { gateway } = stack({
+      folder: { "uploads/a.csv": bytes("1"), "uploads/b.csv": bytes("2") },
+      answer: () => made(["out.csv", "1"]),
+    });
+    const filed = async (
+      actor: typeof reused,
+      script: string,
+      files: string[],
+    ) => {
+      const run = await gateway.runScript(COMPUTER, BOT, actor, {
+        script,
+        files,
+      });
+      return run.products[0]?.path ?? run.products[0]?.unfiled;
+    };
+
+    const first = await filed(reused, SCRIPT, ["uploads/a.csv"]);
+    expect(first).toMatch(/^made\/2026-10-07-[0-9a-f]{8}\/out\.csv$/);
+    // Another script under the same id, the same script over another file, the same in another
+    // conversation: each its own folder, and each one's file filed.
+    const another = await filed(reused, "console.log(2)", ["uploads/a.csv"]);
+    const otherFile = await filed(reused, SCRIPT, ["uploads/b.csv"]);
+    const otherThread = await filed(
+      { ...reused, threadId: "thread-2" },
+      SCRIPT,
+      ["uploads/a.csv"],
+    );
+    expect(new Set([first, another, otherFile, otherThread]).size).toBe(4);
+    for (const path of [another, otherFile, otherThread]) {
+      expect(path).toMatch(/^made\/2026-10-07-[0-9a-f]{8}\/out\.csv$/);
+    }
+    // And the very same call again — what a retry after an answer is — names the folder it named
+    // before, where the put, which never replaces, finds its own file.
+    expect(await filed(reused, SCRIPT, ["uploads/a.csv"])).toBe(
+      "laf:file_exists",
+    );
+    // The files in whatever order they were written are the same call.
+    const pair = ["uploads/a.csv", "uploads/b.csv"];
+    const forwards = await filed(reused, SCRIPT, pair);
+    expect(forwards).toMatch(/^made\//);
+    expect(await filed(reused, SCRIPT, [...pair].reverse())).toBe(
+      "laf:file_exists",
+    );
   });
 
   test("a run with no call behind it gets a folder of its own each time", async () => {
@@ -2286,7 +2363,7 @@ describe("a path a rule read one way and the computer would read another", () =>
     const { gateway, root } = overTheDisk(PERMISSIVE, () =>
       made(["   ", "x"], ["report.csv", "r"]),
     );
-    const folder = `made/2026-10-07-${id8("call-1")}`;
+    const folder = folderOf({ toolCallId: "call-1" });
     const outcome = await gateway
       .runScript(
         COMPUTER,
