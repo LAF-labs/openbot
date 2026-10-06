@@ -39,19 +39,37 @@
  * parts than a run can have, no part with more header than a part has — and holds no part its
  * report does not name.
  *
+ * NOTHING IS BELIEVED WITHOUT ITS PROOF, AND NOTHING IS SENT BEFORE ONE. A script can put a listener
+ * of its own where the daemon's socket was (`shared/workbench/protocol.ts`, "WHO ANSWERS AT THE
+ * SOCKET'S PATH" — measured on the service: this client's `health()` was answered by a script, and
+ * the run waiting behind one that was given up on was handed, script and file, to what that one
+ * had left running). So every request carries a number used once, and an answer is believed only
+ * with the daemon's proof over that number and its own bytes, checked before anything is parsed —
+ * a run, a refusal and `/health` alike. And BEFORE A RUN IS SENT the path is asked who is there
+ * and whether it is running anything: only a proven "idle" lets the script and the files go. The
+ * daemon says busy until everything the run before started has been ended and cleared up after,
+ * so that one answer is also what keeps the run behind an abandoned one from leaving while what
+ * the abandoned one left is still alive to receive it. Between that answer and the run it lets go
+ * nothing else can start a script: a script cannot — the daemon runs one at a time and they are
+ * all ended — and this process is the deployment's one sender (one API server process per
+ * deployment, `docs/laf/deployment-model.md`). A second sender would have to be told of the first.
+ *
  * ONE RUN AT A TIME, FROM THIS SIDE TOO. The daemon refuses a second run while one is in progress;
  * this queues a few behind the one in flight so that two callers in one process do not meet that
- * refusal, and so that no request of this server's is ever on its way to the socket while a
- * script — which can reach the socket's file — is running.
+ * refusal.
  */
 import type { Logger } from "../../../shared/log";
 import {
   filePart,
   type InvalidField,
   isProductName,
+  isProven,
   isRunPath,
   JOB_PART,
   type Job,
+  NONCE_HEADER,
+  newNonce,
+  PROOF_HEADER,
   type ProductsRefusal,
   REPORT_PART,
   type RunEnding,
@@ -63,8 +81,10 @@ import {
 /**
  * Why there is no run to report.
  *
- * - `unavailable` — nothing answers at the socket: the service is not running here.
- * - `busy` — it is running something, and enough is already waiting behind that.
+ * - `unavailable` — nothing answers at the socket, or what answers cannot prove it is the
+ *   service: the service is not there to be sent anything.
+ * - `busy` — it is running something, and enough is already waiting behind that; or it is still
+ *   clearing up after a run and did not finish in the time it is given.
  * - `invalid` — the request is not one the service takes; `field` says which part.
  * - `stopped` — the caller gave up, and the run was ended.
  * - `not_isolated` — the service found itself outside its walls and ran nothing.
@@ -96,8 +116,12 @@ export type WorkbenchAnswer =
   | { ok: false; failure: WorkbenchFailure; field?: InvalidField };
 
 export type Workbench = {
-  /** Whether the service answers, and whether it is running something. Null when it does not. */
-  health(): Promise<{ busy: boolean } | null>;
+  /**
+   * Whether the service answers — provably the service — whether it is running something, and the
+   * name its daemon gave itself at start (another name is another daemon). Null when nothing
+   * answers, or what answers cannot prove it is the service.
+   */
+  health(): Promise<{ busy: boolean; boot: string } | null>;
   run(
     request: WorkbenchRequest,
     signal?: AbortSignal,
@@ -112,8 +136,34 @@ const WAITING = 4;
 /**
  * What the daemon needs beyond the script's own time: the files across the socket, the sweep, the
  * files back, its directory removed. Past the script's bound plus this, the daemon is not well.
+ * The same is what it is given to finish clearing up after the run before, when a run finds it
+ * still busy with that.
  */
 const MARGIN_MS = 10_000;
+
+/** How long the daemon's own name may be: it is twenty-four characters of hex. */
+const BOOT_LENGTH = 64;
+
+/** What answers at the socket's path, asked to prove itself. */
+type Knocked =
+  /** The daemon, by its proof, and what it says of itself. */
+  | { kind: "daemon"; busy: boolean; boot: string }
+  /** Nothing: no socket there, or nobody behind it. */
+  | { kind: "nobody" }
+  /** Something that did not prove it is the daemon. */
+  | { kind: "unproven" };
+
+/** Wait `ms`, or until the caller gives up. */
+const pause = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal?.addEventListener("abort", done, { once: true });
+  });
 
 const ENDINGS: ReadonlySet<unknown> = new Set<RunEnding>([
   "exited",
@@ -161,8 +211,7 @@ const isEncoded = (response: Response) =>
 /** A refusal's and `/health`'s type, as the daemon's runtime writes it. */
 const JSON_TYPE = /^application\/json(?:;\s*charset=utf-8)?$/i;
 
-const saysJson = (response: Response) =>
-  JSON_TYPE.test(response.headers.get("content-type") ?? "");
+const isJsonType = (type: string) => JSON_TYPE.test(type);
 
 /**
  * A run's answer's type, with the line between its parts: seventy characters at most, of the ones
@@ -251,17 +300,43 @@ async function bodyWithin(
   return whole;
 }
 
-/** A small JSON answer, or null when it was not small, not JSON, or did not say it was plain JSON. */
-async function smallJson(
+/** Why an answer is not believed: what it said it was, how long it was, or that it proved nothing. */
+type Disbelief = "encoded" | "type" | "too_long" | "unproven";
+
+/**
+ * An answer's bytes, once everything about it has been held to what it must be — in the order that
+ * costs least: what it says it is, how long it is, and then, over the very bytes and before any
+ * parser sees them, its proof. Otherwise the name of what was wrong with it.
+ */
+async function believed(
+  key: string,
+  asked: { route: string; nonce: string },
   response: Response,
+  most: number,
+  isType: (type: string) => boolean,
   hangUp: () => void,
-): Promise<unknown> {
-  if (isEncoded(response) || !saysJson(response)) {
+): Promise<Uint8Array<ArrayBuffer> | Disbelief> {
+  if (isEncoded(response)) {
     hangUp();
-    return null;
+    return "encoded";
   }
-  const bytes = await bodyWithin(response, SMALL_ANSWER_BYTES, hangUp);
-  if (!bytes) return null;
+  const type = response.headers.get("content-type") ?? "";
+  if (!isType(type)) {
+    hangUp();
+    return "type";
+  }
+  const bytes = await bodyWithin(response, most, hangUp);
+  if (!bytes) return "too_long";
+  const proven = isProven(
+    key,
+    { ...asked, status: response.status, type, body: bytes },
+    response.headers.get(PROOF_HEADER),
+  );
+  return proven ? bytes : "unproven";
+}
+
+/** Bytes that were believed, as the JSON they are; null when they are not JSON. */
+function jsonOf(bytes: Uint8Array): unknown {
   try {
     return JSON.parse(new TextDecoder().decode(bytes));
   } catch {
@@ -396,12 +471,8 @@ async function runFrom(
   };
 }
 
-/** What a refusal's body says, as this side's word for it. */
-async function failureFrom(
-  response: Response,
-  hangUp: () => void,
-): Promise<Extract<WorkbenchAnswer, { ok: false }>> {
-  const body = await smallJson(response, hangUp);
+/** What a refusal's body — believed already — says, as this side's word for it. */
+function failureFrom(body: unknown): Extract<WorkbenchAnswer, { ok: false }> {
   const code = isRecord(body) ? body.code : null;
   if (code === "laf:workbench_busy") return { ok: false, failure: "busy" };
   if (code === "laf:workbench_not_isolated") {
@@ -413,10 +484,6 @@ async function failureFrom(
       failure: "invalid",
       ...(FIELDS.has(body.field) ? { field: body.field as InvalidField } : {}),
     };
-  }
-  // Bun's own answer to a body over the daemon's bound, before the daemon saw it.
-  if (response.status === 413) {
-    return { ok: false, failure: "invalid", field: "files" };
   }
   return { ok: false, failure: "failed" };
 }
@@ -432,6 +499,11 @@ export function createWorkbench(options: {
   /** The service's socket (`/run/laf-workbench/workbench.sock` in a deployment). */
   socketPath: string;
   /**
+   * What the daemon proves its answers under: the deployment's `WORKBENCH_KEY`, the same value the
+   * service was started with. It is never sent, and never logged.
+   */
+  key: string;
+  /**
    * Where a refusal or an answer that could not be believed is written: the log of whoever holds
    * this client. Handed in rather than imported, so that the rehearsal can hold one without
    * becoming the server (`../log` reports this process's crashes as the server's).
@@ -442,9 +514,82 @@ export function createWorkbench(options: {
   /** See `MARGIN_MS`. A test shortens it. */
   marginMs?: number;
 }): Workbench {
-  const { socketPath, log } = options;
+  const { socketPath, key, log } = options;
   const limits = options.limits ?? WORKBENCH_LIMITS;
   const marginMs = options.marginMs ?? MARGIN_MS;
+
+  /** Ask the path who is there. Believed only with a proof, like everything else it answers. */
+  const knock = async (signal?: AbortSignal): Promise<Knocked> => {
+    const asked = { route: "GET /health", nonce: newNonce() };
+    const own = new AbortController();
+    try {
+      const response = await fetch("http://workbench/health", {
+        unix: socketPath,
+        headers: { ...PLAIN, [NONCE_HEADER]: asked.nonce },
+        decompress: false,
+        redirect: "error",
+        signal: AbortSignal.any([
+          own.signal,
+          AbortSignal.timeout(2_000),
+          ...(signal ? [signal] : []),
+        ]),
+      });
+      const bytes = await believed(
+        key,
+        asked,
+        response,
+        SMALL_ANSWER_BYTES,
+        isJsonType,
+        () => own.abort(),
+      );
+      if (typeof bytes === "string" || !response.ok)
+        return { kind: "unproven" };
+      const body = jsonOf(bytes);
+      return isRecord(body) &&
+        body.status === "ok" &&
+        typeof body.busy === "boolean" &&
+        typeof body.boot === "string" &&
+        body.boot.length <= BOOT_LENGTH
+        ? { kind: "daemon", busy: body.busy, boot: body.boot }
+        : { kind: "unproven" };
+    } catch (error) {
+      return neverConnected(error) ? { kind: "nobody" } : { kind: "unproven" };
+    }
+  };
+
+  /**
+   * Wait for the daemon, proven, to say it is running nothing — or say why a run cannot be sent.
+   *
+   * Nothing there is `unavailable` at once: a deployment without the service must not make every
+   * caller wait. Something there that is busy, or that cannot prove itself, is asked again for as
+   * long as the daemon is given to clear up after a run: busy is what it says while it ends what a
+   * run that was given up on had started, and unproven is what such a thing looks like from here
+   * until it has been ended.
+   */
+  const idle = async (
+    signal: AbortSignal | undefined,
+  ): Promise<WorkbenchFailure | null> => {
+    const patience = performance.now() + marginMs;
+    for (let wait = 20; ; wait = Math.min(wait * 2, 250)) {
+      if (signal?.aborted) return "stopped";
+      const there = await knock(signal);
+      if (signal?.aborted) return "stopped";
+      if (there.kind === "daemon" && !there.busy) return null;
+      if (there.kind === "nobody") {
+        log.warn("workbench_unreachable", {
+          failure: "unavailable",
+          reason: "nobody",
+        });
+        return "unavailable";
+      }
+      if (performance.now() >= patience) {
+        const failure = there.kind === "daemon" ? "busy" : "unavailable";
+        log.warn("workbench_unreachable", { failure, reason: there.kind });
+        return failure;
+      }
+      await pause(wait, signal);
+    }
+  };
   /** The run in flight and those behind it. */
   let held = 0;
   let last: Promise<unknown> = Promise.resolve();
@@ -454,6 +599,10 @@ export function createWorkbench(options: {
     signal: AbortSignal | undefined,
   ): Promise<WorkbenchAnswer> => {
     if (signal?.aborted) return { ok: false, failure: "stopped" };
+    // Who is there, proven, and that it is running nothing — before a byte of the run leaves.
+    const cannot = await idle(signal);
+    if (cannot) return { ok: false, failure: cannot };
+    const asked = { route: "POST /run", nonce: newNonce() };
     const form = new FormData();
     const job: Job = {
       ...(request.timeoutMs === undefined
@@ -482,7 +631,7 @@ export function createWorkbench(options: {
         method: "POST",
         unix: socketPath,
         body: form,
-        headers: PLAIN,
+        headers: { ...PLAIN, [NONCE_HEADER]: asked.nonce },
         decompress: false,
         redirect: "error",
         signal: AbortSignal.any([
@@ -501,35 +650,59 @@ export function createWorkbench(options: {
       return { ok: false, failure };
     }
     if (!response.ok) {
-      const refused = await failureFrom(response, hangUp);
+      /*
+       * A refusal is the daemon's word only with its proof, like anything else. One without —
+       * the runtime's own 413 for a body over the daemon's bound is one, sent before the daemon
+       * saw the request — says only that there was no run.
+       */
+      const refusal = await believed(
+        key,
+        asked,
+        response,
+        SMALL_ANSWER_BYTES,
+        isJsonType,
+        hangUp,
+      );
+      const refused: Extract<WorkbenchAnswer, { ok: false }> =
+        typeof refusal === "string"
+          ? { ok: false, failure: "failed" }
+          : failureFrom(jsonOf(refusal));
       log.warn("workbench_refused", {
         status: response.status,
         failure: refused.failure,
+        ...(typeof refusal === "string" ? { disbelieved: refusal } : {}),
       });
       return refused;
     }
     /** Not an answer this side passes on, and why — by a name, never by anything it held. */
     const malformed = (
-      reason: "encoded" | "not_a_form" | "too_long" | "form" | "report",
+      reason:
+        | "encoded"
+        | "not_a_form"
+        | "too_long"
+        | "unproven"
+        | "form"
+        | "report",
     ): WorkbenchAnswer => {
       log.warn("workbench_answer_malformed", { reason });
       return { ok: false, failure: "malformed" };
     };
-    // What it says it is, before a byte of it: an encoding is not undone, and not read past.
-    if (isEncoded(response)) {
-      hangUp();
-      return malformed("encoded");
-    }
     const type = response.headers.get("content-type") ?? "";
     const boundary = FORM_TYPE.exec(type)?.[1];
-    if (!boundary) {
-      hangUp();
-      return malformed("not_a_form");
-    }
-    // Read to the bound first, parsed second: a form is parsed from bytes this side already holds.
-    const bytes = await bodyWithin(response, answerBytes(limits), hangUp);
+    // What it says it is, its length, its proof — and only then is a byte of it parsed.
+    const bytes = await believed(
+      key,
+      asked,
+      response,
+      answerBytes(limits),
+      () => boundary !== undefined,
+      hangUp,
+    );
     if (signal?.aborted) return { ok: false, failure: "stopped" };
-    if (!bytes) return malformed("too_long");
+    if (typeof bytes === "string") {
+      return malformed(bytes === "type" ? "not_a_form" : bytes);
+    }
+    if (!boundary) return malformed("not_a_form");
     // The report, and a part for each file a run may hand back.
     if (!isModestForm(bytes, boundary, 1 + limits.products)) {
       return malformed("form");
@@ -545,25 +718,10 @@ export function createWorkbench(options: {
 
   return {
     async health() {
-      try {
-        const own = new AbortController();
-        const response = await fetch("http://workbench/health", {
-          unix: socketPath,
-          headers: PLAIN,
-          decompress: false,
-          redirect: "error",
-          signal: AbortSignal.any([own.signal, AbortSignal.timeout(2_000)]),
-        });
-        const body = await smallJson(response, () => own.abort());
-        return response.ok &&
-          isRecord(body) &&
-          body.status === "ok" &&
-          typeof body.busy === "boolean"
-          ? { busy: body.busy }
-          : null;
-      } catch {
-        return null;
-      }
+      const there = await knock();
+      return there.kind === "daemon"
+        ? { busy: there.busy, boot: there.boot }
+        : null;
     },
     run(request, signal) {
       const wrong = wrongPartOf(request, limits);

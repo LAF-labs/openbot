@@ -21,8 +21,13 @@ import {
 import type { Logger } from "../../shared/log";
 import {
   type InvalidField,
+  isNonce,
   JOB_PART,
+  NONCE_HEADER,
+  PROOF_HEADER,
+  proofOf,
   REPORT_PART,
+  routeOf,
   SCRIPT_PART,
   WORKBENCH_LIMITS,
 } from "../../shared/workbench/protocol";
@@ -40,20 +45,70 @@ afterEach(() => {
   }
 });
 
-/** A daemon that answers every `/run` with whatever `answer` makes of the request. */
+/** The key the client under test holds, and — unless a test says otherwise — the far side too. */
+const KEY = "a-key-for-tests-0123456789abcdef-0123456789";
+
+/** An answer with the proof a daemon holding `key` would put on it, for the request it answers. */
+async function provenBy(
+  key: string,
+  request: Request,
+  response: Response,
+): Promise<Response> {
+  const nonce = request.headers.get(NONCE_HEADER);
+  if (!isNonce(nonce)) return response;
+  // The type and the other headers before the body: a form's type is gone once its body is read.
+  const type = response.headers.get("content-type") ?? "";
+  const headers = new Headers(response.headers);
+  const body = new Uint8Array(await response.arrayBuffer());
+  headers.set(
+    PROOF_HEADER,
+    proofOf(key, {
+      route: routeOf(request),
+      nonce,
+      status: response.status,
+      type,
+      body,
+    }),
+  );
+  return new Response(body, { status: response.status, headers });
+}
+
+const idle = () => Response.json({ status: "ok", busy: false, boot: "fake" });
+
+/**
+ * A daemon that answers every `/run` with whatever `answer` makes of the request.
+ *
+ * IT LIES AS A DAEMON WOULD HAVE TO: with the key. Every answer carries its proof, so that what
+ * each test says of a shape or a size is what the client is refusing — a daemon that has been got
+ * into, not a stranger at its socket. `bare` names the answers sent as they are instead: a body
+ * that never ends cannot be hashed, and a redirect is refused before a proof is looked for. A fake
+ * with no key at all (`key: null`) is the stranger, and has tests of its own.
+ */
 function fakeDaemon(
   answer: (request: Request) => Response | Promise<Response>,
-  health: () => Response = () => Response.json({ status: "ok", busy: false }),
+  health: (request: Request) => Response | Promise<Response> = idle,
+  options: { key?: string | null; bare?: ("run" | "health")[] } = {},
 ) {
   const root = mkdtempSync(join(tmpdir(), "wc-"));
   const socketPath = join(root, "w.sock");
+  const key = options.key === undefined ? KEY : options.key;
   let asked = 0;
+  const said = async (
+    which: "run" | "health",
+    request: Request,
+    response: Response,
+  ) =>
+    key === null || options.bare?.includes(which)
+      ? response
+      : provenBy(key, request, response);
   const server = Bun.serve({
     unix: socketPath,
-    fetch(request) {
-      if (new URL(request.url).pathname === "/health") return health();
+    async fetch(request) {
+      if (new URL(request.url).pathname === "/health") {
+        return said("health", request, await health(request));
+      }
       asked += 1;
-      return answer(request);
+      return said("run", request, await answer(request));
     },
   });
   opened.push({ stop: () => server.stop(true), root });
@@ -105,7 +160,11 @@ test("a run that came back whole is handed on: how it ended, what it said, the f
       { product0: "PK-xl", product1: "ok" },
     ),
   );
-  const answer = await createWorkbench({ socketPath, log: quiet }).run({
+  const answer = await createWorkbench({
+    key: KEY,
+    socketPath,
+    log: quiet,
+  }).run({
     script,
     files: [],
   });
@@ -151,7 +210,7 @@ test("what is sent is the script as it was written, each file's bytes, and where
     return honest();
   });
   const written = "const a = `x\ny`;\r\nconsole.log(a);\n";
-  await createWorkbench({ socketPath, log: quiet }).run({
+  await createWorkbench({ key: KEY, socketPath, log: quiet }).run({
     script: written,
     files: [
       { path: "uploads/매출.xlsx", bytes: new Uint8Array([0, 13, 10, 255]) },
@@ -177,6 +236,7 @@ test("what is sent is the script as it was written, each file's bytes, and where
 test("a request the daemon could only refuse is refused here, unsent", async () => {
   const { socketPath, asked } = fakeDaemon(() => honest());
   const workbench = createWorkbench({
+    key: KEY,
     socketPath,
     log: quiet,
     limits: {
@@ -406,7 +466,7 @@ for (const [name, lie] of lies) {
   test(`an answer that is ${name} is not passed on, in whole or in part`, async () => {
     const { socketPath } = fakeDaemon(lie);
     expect(
-      await createWorkbench({ socketPath, log: quiet }).run({
+      await createWorkbench({ key: KEY, socketPath, log: quiet }).run({
         script,
         files: [],
       }),
@@ -428,6 +488,7 @@ test("files that fit one by one and not together are not passed on either", asyn
   );
   const run = (productsBytes: number) =>
     createWorkbench({
+      key: KEY,
       socketPath,
       log: quiet,
       limits: { ...WORKBENCH_LIMITS, productBytes: 6, productsBytes },
@@ -441,7 +502,7 @@ test("each refusal of the daemon's is this side's word for it", async () => {
     Response.json({ error: code, code, ...extra }, { status });
   const told = async (response: Response) => {
     const { socketPath } = fakeDaemon(() => response);
-    return createWorkbench({ socketPath, log: quiet }).run({
+    return createWorkbench({ key: KEY, socketPath, log: quiet }).run({
       script,
       files: [],
     });
@@ -469,12 +530,20 @@ test("each refusal of the daemon's is this side's word for it", async () => {
     ok: false,
     failure: "failed",
   });
-  // Bun's own refusal of a body over the daemon's bound, which carries no code of ours.
-  expect(await told(new Response("too large", { status: 413 }))).toEqual({
-    ok: false,
-    failure: "invalid",
-    field: "files",
-  });
+  // The runtime's own refusal of a body over the daemon's bound is sent before the daemon saw the
+  // request: it carries no code of ours and no proof, so it says only that there was no run.
+  const runtimes = fakeDaemon(
+    () => new Response("too large", { status: 413 }),
+    idle,
+    { bare: ["run"] },
+  );
+  expect(
+    await createWorkbench({
+      key: KEY,
+      socketPath: runtimes.socketPath,
+      log: quiet,
+    }).run({ script, files: [] }),
+  ).toEqual({ ok: false, failure: "failed" });
   // Anything else that is not a yes.
   expect(await told(new Response("<html>", { status: 502 }))).toEqual({
     ok: false,
@@ -490,6 +559,7 @@ test("no socket, or nobody behind it, is `unavailable` — the service is not ru
   const root = mkdtempSync(join(tmpdir(), "wc-"));
   opened.push({ stop: () => {}, root });
   const missing = createWorkbench({
+    key: KEY,
     socketPath: join(root, "none.sock"),
     log: quiet,
   });
@@ -502,6 +572,7 @@ test("no socket, or nobody behind it, is `unavailable` — the service is not ru
   writeFileSync(join(root, "stale.sock"), "");
   expect(
     await createWorkbench({
+      key: KEY,
       socketPath: join(root, "stale.sock"),
       log: quiet,
     }).run({ script, files: [] }),
@@ -516,7 +587,11 @@ test("a daemon that goes away during a run is `failed`, not `unavailable`: somet
     return honest();
   });
   expect(
-    await createWorkbench({ socketPath: daemon.socketPath, log: quiet }).run({
+    await createWorkbench({
+      key: KEY,
+      socketPath: daemon.socketPath,
+      log: quiet,
+    }).run({
       script,
       files: [],
     }),
@@ -530,7 +605,12 @@ test("a daemon that never answers is given the script's own time and a margin, a
   });
   const started = performance.now();
   expect(
-    await createWorkbench({ socketPath, log: quiet, marginMs: 100 }).run({
+    await createWorkbench({
+      key: KEY,
+      socketPath,
+      log: quiet,
+      marginMs: 100,
+    }).run({
       script,
       files: [],
       timeoutMs: 200,
@@ -546,7 +626,7 @@ test("a caller that gives up is told `stopped`, before sending or during", async
     await Bun.sleep(10_000);
     return honest();
   });
-  const workbench = createWorkbench({ socketPath, log: quiet });
+  const workbench = createWorkbench({ key: KEY, socketPath, log: quiet });
   const already = new AbortController();
   already.abort();
   expect(await workbench.run({ script, files: [] }, already.signal)).toEqual({
@@ -572,7 +652,7 @@ test("one run is in flight and four may wait; a sixth caller is told `busy` at o
     inFlight -= 1;
     return honest();
   });
-  const workbench = createWorkbench({ socketPath, log: quiet });
+  const workbench = createWorkbench({ key: KEY, socketPath, log: quiet });
   const runs = Array.from({ length: 6 }, () =>
     workbench.run({ script, files: [] }),
   );
@@ -586,18 +666,25 @@ test("one run is in flight and four may wait; a sixth caller is told `busy` at o
   expect((await workbench.run({ script, files: [] })).ok).toBe(true);
 });
 
-test("health says whether the service answers and whether it is running something", async () => {
+test("health says whether the service answers, whether it is running something, and which daemon it is", async () => {
   let body: unknown = { status: "ok", busy: true, boot: "abc" };
   const { socketPath } = fakeDaemon(
     () => honest(),
     () => Response.json(body),
   );
-  const workbench = createWorkbench({ socketPath, log: quiet });
-  expect(await workbench.health()).toEqual({ busy: true });
-  body = { status: "ok", busy: false };
-  expect(await workbench.health()).toEqual({ busy: false });
+  const workbench = createWorkbench({ key: KEY, socketPath, log: quiet });
+  expect(await workbench.health()).toEqual({ busy: true, boot: "abc" });
+  body = { status: "ok", busy: false, boot: "def" };
+  expect(await workbench.health()).toEqual({ busy: false, boot: "def" });
   // Anything that is not that shape is no answer.
-  for (const other of [{ status: "ok" }, { status: "no", busy: false }, []]) {
+  for (const other of [
+    { status: "ok" },
+    { status: "ok", busy: false },
+    { status: "no", busy: false, boot: "abc" },
+    { status: "ok", busy: false, boot: "x".repeat(65) },
+    { status: "ok", busy: "no", boot: "abc" },
+    [],
+  ]) {
     body = other;
     expect(await workbench.health()).toBeNull();
   }
@@ -643,8 +730,11 @@ test("an answer that never ends is let go of at the bound: what the daemon serve
       new Response(flood.body, {
         headers: { "content-type": "multipart/form-data; boundary=x" },
       }),
+    idle,
+    { bare: ["run"] },
   );
   const answer = await createWorkbench({
+    key: KEY,
     socketPath,
     log: quiet,
     limits: {
@@ -670,12 +760,16 @@ test("an answer that never ends is let go of at the bound: what the daemon serve
 });
 
 test("a refusal that never ends, and a health answer that never ends, are let go of too", async () => {
+  const asJson = { "content-type": "application/json" };
   const refusal = endless();
   const refusing = fakeDaemon(
-    () => new Response(refusal.body, { status: 503 }),
+    () => new Response(refusal.body, { status: 503, headers: asJson }),
+    idle,
+    { bare: ["run"] },
   );
   expect(
     await createWorkbench({
+      key: KEY,
       socketPath: refusing.socketPath,
       log: quiet,
       marginMs: 1_000,
@@ -684,10 +778,12 @@ test("a refusal that never ends, and a health answer that never ends, are let go
   const health = endless();
   const answering = fakeDaemon(
     () => honest(),
-    () => new Response(health.body),
+    () => new Response(health.body, { headers: asJson }),
+    { bare: ["health"] },
   );
   expect(
     await createWorkbench({
+      key: KEY,
       socketPath: answering.socketPath,
       log: quiet,
     }).health(),
@@ -717,16 +813,33 @@ test("a redirect is not followed: the socket's answer cannot send this server an
         status,
         headers: { location: `http://127.0.0.1:${network.port}/run` },
       });
-    const { socketPath, asked } = fakeDaemon(elsewhereOf, elsewhereOf);
-    const workbench = createWorkbench({ socketPath, log: quiet });
-    const answer = await workbench.run({
-      script,
-      files: [{ path: "a", bytes: new Uint8Array([1]) }],
+    // The run's answer points elsewhere: asked once, and followed nowhere.
+    const running = fakeDaemon(elsewhereOf, idle, { bare: ["run"] });
+    expect(
+      await createWorkbench({
+        key: KEY,
+        socketPath: running.socketPath,
+        log: quiet,
+      }).run({ script, files: [{ path: "a", bytes: new Uint8Array([1]) }] }),
+      String(status),
+    ).toEqual({ ok: false, failure: "failed" });
+    expect(running.asked(), String(status)).toBe(1);
+    // Health's does: no answer — and so nothing to send a run to.
+    const asking = fakeDaemon(() => honest(), elsewhereOf, {
+      bare: ["health"],
     });
-    expect(answer.ok, String(status)).toBe(false);
-    expect(await workbench.health()).toBeNull();
-    // Asked once for the run and once for health, and nobody else was asked anything.
-    expect(asked(), String(status)).toBe(1);
+    const workbench = createWorkbench({
+      key: KEY,
+      socketPath: asking.socketPath,
+      log: quiet,
+      marginMs: 60,
+    });
+    expect(await workbench.health(), String(status)).toBeNull();
+    expect(await workbench.run({ script, files: [] }), String(status)).toEqual({
+      ok: false,
+      failure: "unavailable",
+    });
+    expect(asking.asked(), String(status)).toBe(0);
   }
   expect(elsewhere).toBe(0);
 });
@@ -736,7 +849,11 @@ test("the signal a run ended by is a signal's name or the answer is not passed o
     const { socketPath } = fakeDaemon(() =>
       honest({ ending: "timed_out", exitCode: null, signal }),
     );
-    const answer = await createWorkbench({ socketPath, log: quiet }).run({
+    const answer = await createWorkbench({
+      key: KEY,
+      socketPath,
+      log: quiet,
+    }).run({
       script,
       files: [],
     });
@@ -755,7 +872,7 @@ test("the signal a run ended by is a signal's name or the answer is not passed o
       honest({ ending: "timed_out", exitCode: null, signal }),
     );
     expect(
-      await createWorkbench({ socketPath, log: quiet }).run({
+      await createWorkbench({ key: KEY, socketPath, log: quiet }).run({
         script,
         files: [],
       }),
@@ -769,7 +886,7 @@ test("a caller that gives up while waiting its turn is told at once, and its run
     await Bun.sleep(600);
     return honest();
   });
-  const workbench = createWorkbench({ socketPath, log: quiet });
+  const workbench = createWorkbench({ key: KEY, socketPath, log: quiet });
   const first = workbench.run({ script, files: [] });
   const gaveUp = new AbortController();
   const started = performance.now();
@@ -918,7 +1035,7 @@ test("an answer that names an encoding is refused by that name and never inflate
     const { log, events } = recorded();
     const began = performance.now();
     const { value, grew } = await grownBy(() =>
-      createWorkbench({ socketPath, log }).run({ script, files: [] }),
+      createWorkbench({ key: KEY, socketPath, log }).run({ script, files: [] }),
     );
     expect(value, encoding).toEqual({ ok: false, failure: "malformed" });
     expect(events, encoding).toContainEqual([
@@ -936,7 +1053,11 @@ test("an answer that names an encoding is refused by that name and never inflate
     return answer;
   });
   expect(
-    await createWorkbench({ socketPath: named.socketPath, log: quiet }).run({
+    await createWorkbench({
+      key: KEY,
+      socketPath: named.socketPath,
+      log: quiet,
+    }).run({
       script,
       files: [],
     }),
@@ -952,7 +1073,7 @@ test("no encoding is asked for, of a run or of health", async () => {
     },
     // Health's request is not handed to this fake: the header is read off the next run instead.
   );
-  const workbench = createWorkbench({ socketPath, log: quiet });
+  const workbench = createWorkbench({ key: KEY, socketPath, log: quiet });
   expect((await workbench.run({ script, files: [] })).ok).toBe(true);
   expect(asked).toEqual(["identity"]);
 });
@@ -967,14 +1088,22 @@ test("a refusal or a health answer that names an encoding is not believed either
         "content-encoding": "gzip",
       },
     });
-  const { socketPath } = fakeDaemon(
-    () => encoded(503),
+  const refusing = fakeDaemon(() => encoded(503));
+  const answering = fakeDaemon(
+    () => honest(),
     () => encoded(200),
   );
-  const workbench = createWorkbench({ socketPath, log: quiet });
   const { value, grew } = await grownBy(async () => [
-    await workbench.run({ script, files: [] }),
-    await workbench.health(),
+    await createWorkbench({
+      key: KEY,
+      socketPath: refusing.socketPath,
+      log: quiet,
+    }).run({ script, files: [] }),
+    await createWorkbench({
+      key: KEY,
+      socketPath: answering.socketPath,
+      log: quiet,
+    }).health(),
   ]);
   expect(value).toEqual([{ ok: false, failure: "failed" }, null]);
   expect(grew / MEBIBYTE).toBeLessThan(64);
@@ -991,11 +1120,14 @@ test("only a form is read as a run, and only JSON as a refusal or as health", as
       new Response(flood.body, {
         headers: { "content-type": "application/x-www-form-urlencoded" },
       }),
+    idle,
+    // As it comes, a piece at a time: what is counted is how much of it was ever taken.
+    { bare: ["run"] },
   );
   const { log, events } = recorded();
   const began = performance.now();
   const { value, grew } = await grownBy(() =>
-    createWorkbench({ socketPath: urlencoded.socketPath, log }).run({
+    createWorkbench({ key: KEY, socketPath: urlencoded.socketPath, log }).run({
       script,
       files: [],
     }),
@@ -1024,7 +1156,7 @@ test("only a form is read as a run, and only JSON as a refusal or as health", as
       () => new Response(honestBytes, { headers: { "content-type": type } }),
     );
     expect(
-      await createWorkbench({ socketPath, log: quiet }).run({
+      await createWorkbench({ key: KEY, socketPath, log: quiet }).run({
         script,
         files: [],
       }),
@@ -1034,33 +1166,42 @@ test("only a form is read as a run, and only JSON as a refusal or as health", as
 
   // A refusal's code is read out of JSON that says it is JSON, and out of nothing else.
   const busy = JSON.stringify({ code: "laf:workbench_busy" });
-  const said = (type: string) =>
+  const there = JSON.stringify({ status: "ok", busy: false, boot: "fake" });
+  const refusing = (type: string) =>
     fakeDaemon(
       () =>
         new Response(busy, { status: 503, headers: { "content-type": type } }),
-      () =>
-        new Response(JSON.stringify({ status: "ok", busy: false }), {
-          headers: { "content-type": type },
-        }),
     );
-  const json = said("application/json");
-  const asJson = createWorkbench({ socketPath: json.socketPath, log: quiet });
-  expect(await asJson.run({ script, files: [] })).toEqual({
-    ok: false,
-    failure: "busy",
-  });
-  expect(await asJson.health()).toEqual({ busy: false });
-  for (const type of ["text/html", "application/x-www-form-urlencoded"]) {
-    const other = said(type);
-    const asOther = createWorkbench({
-      socketPath: other.socketPath,
-      log: quiet,
+  const answering = (type: string) =>
+    fakeDaemon(
+      () => honest(),
+      () => new Response(there, { headers: { "content-type": type } }),
+    );
+  const client = (socketPath: string) =>
+    createWorkbench({ key: KEY, socketPath, log: quiet, marginMs: 60 });
+  for (const type of ["application/json", "application/json;charset=utf-8"]) {
+    expect(
+      await client(refusing(type).socketPath).run({ script, files: [] }),
+      type,
+    ).toEqual({ ok: false, failure: "busy" });
+    expect(await client(answering(type).socketPath).health(), type).toEqual({
+      busy: false,
+      boot: "fake",
     });
-    expect(await asOther.run({ script, files: [] }), type).toEqual({
-      ok: false,
-      failure: "failed",
-    });
-    expect(await asOther.health(), type).toBeNull();
+  }
+  for (const type of ["text/html", "application/x-www-form-urlencoded", ""]) {
+    expect(
+      await client(refusing(type).socketPath).run({ script, files: [] }),
+      type,
+    ).toEqual({ ok: false, failure: "failed" });
+    const unsaid = answering(type);
+    expect(await client(unsaid.socketPath).health(), type).toBeNull();
+    // And a daemon whose health is not believed is sent no run.
+    expect(
+      await client(unsaid.socketPath).run({ script, files: [] }),
+      type,
+    ).toEqual({ ok: false, failure: "unavailable" });
+    expect(unsaid.asked(), type).toBe(0);
   }
 });
 
@@ -1081,7 +1222,10 @@ test("a form with more parts than a run can have, or a part nobody named, is not
     );
     const { log, events } = recorded();
     expect(
-      await createWorkbench({ socketPath, log }).run({ script, files: [] }),
+      await createWorkbench({ key: KEY, socketPath, log }).run({
+        script,
+        files: [],
+      }),
       what,
     ).toEqual({ ok: false, failure: "malformed" });
     expect(
@@ -1095,7 +1239,11 @@ test("a form with more parts than a run can have, or a part nobody named, is not
   );
   expect(
     (
-      await createWorkbench({ socketPath: alone.socketPath, log: quiet }).run({
+      await createWorkbench({
+        key: KEY,
+        socketPath: alone.socketPath,
+        log: quiet,
+      }).run({
         script,
         files: [],
       })
@@ -1110,10 +1258,281 @@ test("a part with a megabyte of headers is not passed on", async () => {
   );
   const { log, events } = recorded();
   expect(
-    await createWorkbench({ socketPath, log }).run({ script, files: [] }),
+    await createWorkbench({ key: KEY, socketPath, log }).run({
+      script,
+      files: [],
+    }),
   ).toEqual({ ok: false, failure: "malformed" });
   expect(events).toContainEqual([
     "workbench_answer_malformed",
     { reason: "form" },
   ]);
+});
+
+/*
+ * WHO ANSWERS AT THE PATH IS PROVEN (the second independent read of 2026-10-06). A script runs as
+ * the daemon's own user and can put a listener of its own where the daemon's socket was. Measured
+ * on the service before this: this client's `health()` was answered by a script, and the run
+ * waiting behind one that was given up on was handed — script and file — to a child that one had
+ * left running, whose answer came back as the run, three times of three. Every fake above holds
+ * the key; these are the ones that do not, or that prove the wrong thing.
+ */
+
+const next = {
+  path: "uploads/next.csv",
+  bytes: text("the next run's workbook"),
+};
+
+function text(value: string) {
+  return new TextEncoder().encode(value);
+}
+
+test("what answers at the path without the key is believed about nothing, and is sent nothing", async () => {
+  let received = 0;
+  const taking = async (request: Request) => {
+    received += (await request.arrayBuffer()).byteLength;
+    return honest({ stdout: "a stranger answered" });
+  };
+  for (const [who, key] of [
+    ["no key at all", null],
+    ["another deployment's key", "another-deployment's-key-0123456789abcdef"],
+  ] as const) {
+    // It says what an idle daemon says, and answers a run as a run is answered.
+    const stranger = fakeDaemon(taking, idle, { key });
+    const { log, events } = recorded();
+    const workbench = createWorkbench({
+      key: KEY,
+      socketPath: stranger.socketPath,
+      log,
+      marginMs: 120,
+    });
+    expect(await workbench.health(), who).toBeNull();
+    const began = performance.now();
+    expect(await workbench.run({ script, files: [next] }), who).toEqual({
+      ok: false,
+      failure: "unavailable",
+    });
+    // Asked again for as long as a daemon is given to clear up after a run, then given up on.
+    expect(performance.now() - began, who).toBeGreaterThanOrEqual(110);
+    expect(events, who).toContainEqual([
+      "workbench_unreachable",
+      { failure: "unavailable", reason: "unproven" },
+    ]);
+    // Not a byte of the run left this process.
+    expect(stranger.asked(), who).toBe(0);
+  }
+  expect(received).toBe(0);
+});
+
+test("a proof is of one answer to one request: any other answer under it is not believed", async () => {
+  /** The proof a daemon with the key would give, of something else than what is sent. */
+  const proving = (
+    how: (right: Parameters<typeof proofOf>[1]) => string | null,
+    status = 200,
+  ) =>
+    fakeDaemon(
+      async (request) => {
+        const answer =
+          status === 200
+            ? honest()
+            : Response.json({ code: "laf:workbench_busy" }, { status });
+        const type = answer.headers.get("content-type") ?? "";
+        const headers = new Headers(answer.headers);
+        const body = new Uint8Array(await answer.arrayBuffer());
+        const proof = how({
+          route: routeOf(request),
+          nonce: request.headers.get(NONCE_HEADER) ?? "",
+          status,
+          type,
+          body,
+        });
+        if (proof !== null) headers.set(PROOF_HEADER, proof);
+        return new Response(body, { status, headers });
+      },
+      idle,
+      { bare: ["run"] },
+    );
+  const answered = async (fake: ReturnType<typeof fakeDaemon>) => {
+    const { log, events } = recorded();
+    const answer = await createWorkbench({
+      key: KEY,
+      socketPath: fake.socketPath,
+      log,
+    }).run({ script, files: [] });
+    return { answer, events };
+  };
+  // The control: the right proof of the right thing is a run.
+  expect(
+    (await answered(proving((right) => proofOf(KEY, right)))).answer.ok,
+  ).toBe(true);
+  const wrong: [
+    string,
+    (right: Parameters<typeof proofOf>[1]) => string | null,
+  ][] = [
+    ["no proof", () => null],
+    ["not a proof", () => "yes"],
+    ["a proof under another key", (right) => proofOf(`${KEY}x`, right)],
+    [
+      "of another request",
+      (right) => proofOf(KEY, { ...right, nonce: "0".repeat(32) }),
+    ],
+    [
+      "of another route",
+      (right) => proofOf(KEY, { ...right, route: "GET /health" }),
+    ],
+    ["of another status", (right) => proofOf(KEY, { ...right, status: 201 })],
+    [
+      "of another type",
+      (right) =>
+        proofOf(KEY, { ...right, type: "multipart/form-data; boundary=y" }),
+    ],
+    [
+      "of other bytes",
+      (right) =>
+        proofOf(KEY, { ...right, body: new Uint8Array([...right.body, 0x0a]) }),
+    ],
+  ];
+  for (const [what, how] of wrong) {
+    const run = await answered(proving(how));
+    expect(run.answer, what).toEqual({ ok: false, failure: "malformed" });
+    expect(run.events, what).toEqual([
+      ["workbench_answer_malformed", { reason: "unproven" }],
+    ]);
+    // A refusal nobody proved is not the daemon's word: no run, and no more is said of why.
+    const refusal = await answered(proving(how, 503));
+    expect(refusal.answer, what).toEqual({ ok: false, failure: "failed" });
+  }
+  // And the daemon's word, proven: busy.
+  expect(
+    (await answered(proving((right) => proofOf(KEY, right), 503))).answer,
+  ).toEqual({ ok: false, failure: "busy" });
+});
+
+test("every request carries a number used once", async () => {
+  const numbers: (string | null)[] = [];
+  const { socketPath } = fakeDaemon(
+    (request) => {
+      numbers.push(request.headers.get(NONCE_HEADER));
+      return honest();
+    },
+    (request) => {
+      numbers.push(request.headers.get(NONCE_HEADER));
+      return idle();
+    },
+  );
+  const workbench = createWorkbench({ key: KEY, socketPath, log: quiet });
+  await workbench.health();
+  await workbench.run({ script, files: [] });
+  await workbench.run({ script, files: [] });
+  // Health, then for each run: who is there, and the run.
+  expect(numbers).toHaveLength(5);
+  expect(numbers.every(isNonce)).toBe(true);
+  expect(new Set(numbers).size).toBe(5);
+});
+
+test("the run behind one that was given up on is not sent until the daemon, proven, says it has cleared up", async () => {
+  let inFlight = false;
+  let clearing = false;
+  let sentMeanwhile = 0;
+  const scripts: string[] = [];
+  const { socketPath } = fakeDaemon(
+    async (request) => {
+      if (clearing) sentMeanwhile += 1;
+      const form = await request.formData();
+      const sent = await (form.get(SCRIPT_PART) as Blob).text();
+      scripts.push(sent);
+      if (sent !== "first") return honest({ stdout: sent });
+      inFlight = true;
+      // The caller gives up; and then ending what the run had started takes a while (the sweep).
+      await new Promise<void>((resolve) =>
+        request.signal.addEventListener("abort", () => resolve(), {
+          once: true,
+        }),
+      );
+      clearing = true;
+      await Bun.sleep(300);
+      clearing = false;
+      inFlight = false;
+      return new Response(null, { status: 499 });
+    },
+    () => Response.json({ status: "ok", busy: inFlight, boot: "fake" }),
+  );
+  const workbench = createWorkbench({ key: KEY, socketPath, log: quiet });
+  const gaveUp = new AbortController();
+  const first = workbench.run({ script: "first", files: [] }, gaveUp.signal);
+  const second = workbench.run({ script: "second", files: [next] });
+  await Bun.sleep(100);
+  const at = performance.now();
+  gaveUp.abort();
+  expect(await first).toEqual({ ok: false, failure: "stopped" });
+  // The caller is told at once: the daemon's clearing up is not its wait.
+  expect(performance.now() - at).toBeLessThan(150);
+  const answer = await second;
+  // What the fake was sent while it cleared up: nothing. It was the next run, whole.
+  expect(sentMeanwhile).toBe(0);
+  expect(answer.ok && answer.run.stdout).toBe("second");
+  expect(performance.now() - at).toBeGreaterThanOrEqual(280);
+  expect(scripts).toEqual(["first", "second"]);
+});
+
+test("an unproven voice saying it has cleared up lets nothing go", async () => {
+  // The daemon is still ending what a run left; what that run left answers at the path meanwhile.
+  let sent = 0;
+  const stranger = fakeDaemon(
+    async (request) => {
+      sent += (await request.arrayBuffer()).byteLength;
+      return honest();
+    },
+    idle,
+    { key: null },
+  );
+  const workbench = createWorkbench({
+    key: KEY,
+    socketPath: stranger.socketPath,
+    log: quiet,
+    marginMs: 200,
+  });
+  const gaveUp = new AbortController();
+  const behind = workbench.run({ script, files: [next] }, gaveUp.signal);
+  await Bun.sleep(80);
+  // Still asking who is there, and a caller that gives up meanwhile is told at once.
+  const at = performance.now();
+  gaveUp.abort();
+  expect(await behind).toEqual({ ok: false, failure: "stopped" });
+  expect(performance.now() - at).toBeLessThan(100);
+  expect(sent).toBe(0);
+});
+
+test("a daemon still busy is waited for as long as it is given to clear up, and no longer", async () => {
+  let busyUntil = performance.now() + 150;
+  const { socketPath, asked } = fakeDaemon(
+    () => honest(),
+    () =>
+      Response.json({
+        status: "ok",
+        busy: performance.now() < busyUntil,
+        boot: "fake",
+      }),
+  );
+  const began = performance.now();
+  expect(
+    (
+      await createWorkbench({ key: KEY, socketPath, log: quiet }).run({
+        script,
+        files: [],
+      })
+    ).ok,
+  ).toBe(true);
+  expect(performance.now() - began).toBeGreaterThanOrEqual(140);
+  // One that stays busy past that: `busy`, and the run was never sent.
+  busyUntil = Number.POSITIVE_INFINITY;
+  expect(
+    await createWorkbench({
+      key: KEY,
+      socketPath,
+      log: quiet,
+      marginMs: 100,
+    }).run({ script, files: [] }),
+  ).toEqual({ ok: false, failure: "busy" });
+  expect(asked()).toBe(1);
 });

@@ -64,11 +64,16 @@ export type SandboxFacts = IsolationFacts & {
   /** The kind of filesystem mounted at the work directory. Null where nothing is mounted there. */
   workFilesystem: string | null;
   /**
-   * Whether another process of this user is kept out of this one's memory — by this process
-   * having made itself undumpable (`./undumpable.ts`), or by the host refusing a trace of anything
-   * but one's own descendants (Yama, `ptrace_scope` 1 or more). Either holds the daemon against
-   * the scripts it runs, which are its children and never its ancestors. Without one, a script
-   * could write into the daemon and be there for every run after its own.
+   * Whether another process of this user is kept out of this one — its memory, and what it was
+   * started with — by this process having made itself undumpable (`./undumpable.ts`). Without
+   * that, a script could write into the daemon and be there for every run after its own.
+   *
+   * THE HOST'S RULE IS NOT ENOUGH ANY MORE. Until 2026-10-07 this was also true where the host
+   * refuses a trace of anything but one's own descendants (Yama, `ptrace_scope` 1 or more), which
+   * does keep a script out of the daemon's memory: a script is the daemon's child, never its
+   * ancestor. But Yama governs attaching, and `/proc/1/environ` asks only to READ: on a daemon
+   * that is not undumpable its own user may read it. That is where the key every answer is proven
+   * under now arrives (`./protocol.ts`), so only the daemon's own closing of itself counts.
    */
   memoryKept: boolean;
 };
@@ -108,7 +113,7 @@ export function readSandboxFacts(workRoot: string): SandboxFacts {
     platform: process.platform,
     pid: process.pid,
     workFilesystem: filesystemAt(workRoot),
-    memoryKept: isUndumpable() === true || (ptraceScope() ?? 0) >= 1,
+    memoryKept: isUndumpable() === true,
   };
 }
 

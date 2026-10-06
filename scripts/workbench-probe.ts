@@ -25,6 +25,7 @@
  * The second half is never started anywhere but there. Its first act is to ask a script where it
  * is, and when the answer is not the sandbox it stops, having sent nothing else.
  */
+import { randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import {
@@ -32,6 +33,7 @@ import {
   type WorkbenchAnswer,
 } from "../server/src/workbench/client";
 import { createLogger } from "../shared/log";
+import { isKey, KEY_VARIABLE } from "../shared/workbench/protocol";
 
 /** One thing measured. `ok: null` is "could not be measured here", said rather than passed. */
 export type ProbeCheck = { name: string; ok: boolean | null; detail: string };
@@ -426,7 +428,18 @@ async function probe(socketPath: string, checks: ProbeCheck[]): Promise<void> {
     checks.push({ name, ok, detail });
   };
   const log = createLogger("workbench-probe");
-  const workbench = createWorkbench({ socketPath, log });
+  // The deployment's key, from this container's environment as the server will have it from its
+  // own. Never printed: what is reported of it is whether there was one.
+  const key = process.env[KEY_VARIABLE];
+  if (!isKey(key)) {
+    check(
+      "everything about the workbench",
+      false,
+      `the probe's container was started without ${KEY_VARIABLE}, so it could believe nothing it was answered and sent nothing`,
+    );
+    return;
+  }
+  const workbench = createWorkbench({ socketPath, key, log });
   const run = (script: string, extra: { timeoutMs?: number } = {}) =>
     workbench.run({ script, files: [], ...extra });
   const said = (answer: WorkbenchAnswer) =>
@@ -439,8 +452,16 @@ async function probe(socketPath: string, checks: ProbeCheck[]): Promise<void> {
       return null;
     }
   };
-  /** Which daemon answers, by the name it gave itself at start; null while none does. */
-  const health = async () => {
+  /**
+   * Which daemon answers, by the name it gave itself at start — PROVEN to be the daemon, as the
+   * client believes nothing else; null while none does.
+   */
+  const health = () => workbench.health();
+  /**
+   * Whatever answers at the path, asked as nothing of ours asks: no number, no proof looked for.
+   * Only to show what a script put there; nothing here acts on it.
+   */
+  const whoSays = async () => {
     try {
       const response = await fetch("http://workbench/health", {
         unix: socketPath,
@@ -456,13 +477,7 @@ async function probe(socketPath: string, checks: ProbeCheck[]): Promise<void> {
     const deadline = Date.now() + ms;
     for (;;) {
       const now = await health();
-      if (
-        now?.busy === false &&
-        typeof now.boot === "string" &&
-        now.boot !== AS_A_SCRIPT
-      ) {
-        return now.boot;
-      }
+      if (now?.busy === false) return now.boot;
       if (Date.now() > deadline) {
         throw new Error(`no idle daemon answered within ${ms / 1000} s`);
       }
@@ -474,13 +489,7 @@ async function probe(socketPath: string, checks: ProbeCheck[]): Promise<void> {
     const deadline = Date.now() + ms;
     for (;;) {
       const now = await health();
-      if (
-        now?.busy === false &&
-        typeof now.boot === "string" &&
-        now.boot !== AS_A_SCRIPT
-      ) {
-        if (now.boot !== was) return now.boot;
-      }
+      if (now?.busy === false && now.boot !== was) return now.boot;
       if (Date.now() > deadline) {
         throw new Error(`the same daemon still answers after ${ms / 1000} s`);
       }
@@ -680,14 +689,18 @@ async function probe(socketPath: string, checks: ProbeCheck[]): Promise<void> {
   );
   const long = run("await Bun.sleep(3000); console.log('done')");
   await Bun.sleep(1_000);
-  // Another caller entirely: this client would have queued behind its own run.
-  const meanwhile = await createWorkbench({ socketPath, log }).run({
-    script: "console.log(2)",
-    files: [],
-  });
+  // Another caller entirely: this client would have queued behind its own run. It asks who is
+  // there before it sends, is shown a daemon that is busy, and — given half a second here, where a
+  // server gives ten — says so without having sent its script at all.
+  const meanwhile = await createWorkbench({
+    socketPath,
+    key,
+    log,
+    marginMs: 500,
+  }).run({ script: "console.log(2)", files: [] });
   const finished = await long;
   check(
-    "one script at a time: a second run meanwhile is refused",
+    "one script at a time: a second caller meanwhile is told it is busy",
     !meanwhile.ok && meanwhile.failure === "busy" && said(finished) === "done",
     `the second caller: ${meanwhile.ok ? "ran" : meanwhile.failure}; the first: ${said(finished)}`,
   );
@@ -1025,8 +1038,8 @@ console.log(made.exitCode === 0 ? "made" : "refused: " + made.stderr.toString().
   boot = await settled(180_000);
   const taking = run(TAKE, { timeoutMs: 20_000 });
   await Bun.sleep(2_500);
-  const atThePath = await health();
-  const believed = await workbench.health();
+  const atThePath = await whoSays();
+  const believed = await health();
   const took = await taking;
   await Bun.sleep(1_000);
   boot = await settled(180_000);
@@ -1048,7 +1061,7 @@ console.log(made.exitCode === 0 ? "made" : "refused: " + made.stderr.toString().
     );
     let taken = false;
     for (const until = Date.now() + 15_000; Date.now() < until; ) {
-      if ((await health())?.boot === AS_A_SCRIPT) {
+      if ((await whoSays())?.boot === AS_A_SCRIPT) {
         taken = true;
         break;
       }
@@ -1113,6 +1126,10 @@ export function probeOverride(input: {
     "    pull_policy: missing",
     "    network_mode: none",
     '    restart: "no"',
+    "    environment:",
+    "      # The deployment's key, as the server will be handed it: from the environment compose",
+    "      # reads, never written into this file.",
+    `      ${KEY_VARIABLE}: \${${KEY_VARIABLE}:?the rehearsal sets it}`,
     "    volumes:",
     `      - workbench-socket:${SOCKET_DIRECTORY}`,
     `      - ${input.probePath}:/app/scripts/workbench-probe.ts:ro`,
@@ -1305,6 +1322,9 @@ export async function rehearseWorkbench(tools: {
   );
   tools.environment.COMPOSE_FILE = `${tools.environment.COMPOSE_FILE ?? "docker-compose.yml"}:${PROBE_COMPOSE_FILE}`;
   tools.environment.COMPOSE_PROFILES = "workbench";
+  // A key minted for this run, handed to both containers the way a deployment's `.env` would hand
+  // its own: through the environment compose reads. It opens nothing outside this run.
+  tools.environment[KEY_VARIABLE] = randomBytes(24).toString("hex");
   try {
     const up = await compose(["up", "--detach", "--no-deps", "workbench"]);
     const logs = async () =>
@@ -1465,6 +1485,26 @@ export async function rehearseWorkbench(tools: {
         refusal !== undefined &&
         refusal.includes("runs_as_root"),
       `exit ${asRoot.code}: ${(refusal ?? asRoot.stderr.trim()).slice(-400)}`,
+    );
+
+    // WITHOUT ITS KEY IT DOES NOT START EITHER. The same service, the same walls, and an empty
+    // key where the deployment's was: a daemon that could prove nothing is not one to listen.
+    const keyless = await compose([
+      "run",
+      "--rm",
+      "--no-TTY",
+      "--no-deps",
+      "--env",
+      `${KEY_VARIABLE}=`,
+      "workbench",
+    ]);
+    const unkeyed = `${keyless.stdout}\n${keyless.stderr}`
+      .split("\n")
+      .find((line) => line.includes("workbench_refused"));
+    check(
+      "started without its key, the same service refuses to listen and says why",
+      keyless.code !== 0 && unkeyed !== undefined && unkeyed.includes("no_key"),
+      `exit ${keyless.code}: ${(unkeyed ?? keyless.stderr.trim()).slice(-400)}`,
     );
   } finally {
     await compose(["rm", "--stop", "--force", "workbench"]);

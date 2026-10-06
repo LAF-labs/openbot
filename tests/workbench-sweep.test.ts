@@ -27,6 +27,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { Glob } from "bun";
+import { KEY_VARIABLE } from "../shared/workbench/protocol";
 import {
   otherProcesses,
   readSandboxFacts,
@@ -246,9 +247,37 @@ test("the service's entry takes one argument and has no way to skip its check", 
   );
   // Every flag it reads is `--socket`.
   expect(entry.match(/"--[a-z-]+"/g)).toEqual(['"--socket"']);
-  expect(entry).not.toMatch(/process\.env\b/);
+  // And of its environment it takes ONE thing — the key every answer is proven under
+  // (`shared/workbench/protocol.ts`), read once and taken out — so nothing there can be a switch.
+  // It read nothing at all of it until 2026-10-07; a second name here is a second thing to ask
+  // about before this line is changed.
+  expect(entry.match(/process\.env\b[^\n;]*/g)).toEqual([
+    "process.env[KEY_VARIABLE]",
+    "process.env[KEY_VARIABLE]",
+  ]);
+  expect(entry).toContain("const key = process.env[KEY_VARIABLE];");
+  expect(entry).toContain("delete process.env[KEY_VARIABLE];");
+  expect(KEY_VARIABLE).toBe("WORKBENCH_KEY");
   // And it only runs when it is the program that was started.
   expect(entry).toContain("if (import.meta.main) void main();");
+});
+
+/*
+ * The key arrives in the daemon's environment, and `/proc/1/environ` asks only to READ: the host's
+ * rule about tracing (Yama) keeps a script out of the daemon's memory and not out of that. So the
+ * host's rule, which used to be enough, no longer counts at all — only the daemon having closed
+ * itself does. Measured on the service: a script's read of `/proc/1/environ` is refused (EACCES).
+ */
+test("only the daemon's own closing of itself counts as its memory being kept", () => {
+  const source = withoutComments(
+    readFileSync(join(repository, "shared/workbench/sweep.ts"), "utf8"),
+  );
+  expect(source).toContain("memoryKept: isUndumpable() === true,");
+  // The host's rule is still read, for the line the daemon logs when it listens — and by nothing
+  // that decides anything: its one mention in this file is its own definition.
+  expect(source.match(/ptraceScope\b/g)).toEqual(["ptraceScope"]);
+  // A machine that is not the sandbox keeps nothing, whatever its host's rule is.
+  expect(readSandboxFacts(tmpdir()).memoryKept).toBe(false);
 });
 
 test("the service's files import nothing but Bun, node and their neighbours in shared/", () => {

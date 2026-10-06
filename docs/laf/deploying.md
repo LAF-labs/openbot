@@ -296,6 +296,21 @@ can be read and measured alone. What they are:
   would not go, a socket that no longer leads to it, a System V segment a script
   left in the kernel: the daemon ends, and compose starts a fresh container —
   a new tmpfs, a new process table, a new IPC namespace.
+- **Every answer proven, under `WORKBENCH_KEY`.** A script runs as the daemon's
+  own user, so it can remove the daemon's socket and bind a listener of its own
+  at the same path — no owner or mode keeps one's own user out of a directory,
+  and a unix socket's peer credentials name only that user. So the daemon proves
+  each answer (a run, a refusal, `/health`) with an HMAC under a key, over a
+  number the request brought and the answer's own bytes; the server believes
+  nothing without one, checks it before it parses anything, and sends a run only
+  after a proven "idle" — which the daemon says only once everything the run
+  before started has been ended. The key is thirty-two characters or more
+  (`openssl rand -hex 32`), in `.env` beside the profile, given to the service
+  and (with the change that gives a Bot the tool) to the server; the service
+  does not start without it. It never crosses the socket, and a script cannot
+  read it: it is in no command line, in no file, not in a script's environment,
+  and the daemon's own is closed to its user (`/proc/1/environ` answers EACCES —
+  the rehearsal reads it from a script).
 
 It runs from source out of `shared/workbench/`, which the server's image and the
 computer's both carry, so which image runs it is the service's `image:` line;

@@ -21,6 +21,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -40,8 +41,12 @@ import {
 } from "../shared/workbench/daemon";
 import {
   filePart,
+  isProven,
   isRunPath,
   JOB_PART,
+  NONCE_HEADER,
+  newNonce,
+  PROOF_HEADER,
   RUN_PATH_SEGMENTS,
   SCRIPT_PART,
   WORKBENCH_LIMITS,
@@ -57,6 +62,9 @@ const repository = join(import.meta.dir, "..");
 
 /** The daemon's log, unread: what it writes is facts about runs, and the tests ask the runs. */
 const quiet: Logger = { svc: "workbench", info() {}, warn() {}, error() {} };
+
+/** The key both ends are given, as compose gives a deployment's to both from its environment. */
+const KEY = "the-key-of-a-deployment-in-tests-0123456789abcdef";
 
 /** The runner the service has, pointed at this checkout's own SheetJS. */
 const runner = bunTypeScript({
@@ -106,6 +114,7 @@ function bench(
   const limits = { ...WORKBENCH_LIMITS, ...overrides.limits };
   const daemon = startWorkbenchDaemon({
     socketPath,
+    key: KEY,
     workRoot,
     runner,
     problems: overrides.problems ?? (() => []),
@@ -128,7 +137,7 @@ function bench(
   started.push({ daemon, root });
   return {
     daemon,
-    workbench: createWorkbench({ socketPath, limits, log: quiet }),
+    workbench: createWorkbench({ socketPath, key: KEY, limits, log: quiet }),
     socketPath,
     workRoot,
     scratch,
@@ -550,14 +559,22 @@ test("one script at a time: a second run meanwhile is refused, and health says w
     files: [],
   });
   await until(async () => (await workbench.health())?.busy === true);
-  // Another caller entirely — this process's own client would have queued behind the first.
-  const second = await createWorkbench({ socketPath, log: quiet }).run({
-    script: "console.log(2)",
-    files: [],
-  });
-  expect(second).toEqual({ ok: false, failure: "busy" });
+  // Asked by hand, as nothing of ours asks: the daemon itself refuses a second run.
+  const second = await rawRun(socketPath, { files: [] });
+  expect(second.status).toBe(503);
+  expect(await second.json()).toMatchObject({ code: "laf:workbench_busy" });
+  // Another caller entirely — this process's own client would have queued behind the first. It
+  // asks who is there before it sends, is told (and shown) that the daemon is busy, and says so
+  // once the little time it was given here has gone.
+  const other = await createWorkbench({
+    socketPath,
+    key: KEY,
+    log: quiet,
+    marginMs: 100,
+  }).run({ script: "console.log(2)", files: [] });
+  expect(other).toEqual({ ok: false, failure: "busy" });
   expect(ran(await long).run.stdout).toBe("done\n");
-  expect(await workbench.health()).toEqual({ busy: false });
+  expect(await workbench.health()).toMatchObject({ busy: false });
 });
 
 test("two runs from one client go one after the other, and both are answered", async () => {
@@ -821,6 +838,7 @@ test("a stale socket from a daemon that was killed does not stop the next one bi
   writeFileSync(socketPath, "left behind");
   const daemon = startWorkbenchDaemon({
     socketPath,
+    key: KEY,
     workRoot: join(root, "work"),
     runner,
     problems: () => [],
@@ -829,9 +847,9 @@ test("a stale socket from a daemon that was killed does not stop the next one bi
     quit: () => {},
   });
   started.push({ daemon, root });
-  expect(await createWorkbench({ socketPath, log: quiet }).health()).toEqual({
-    busy: false,
-  });
+  expect(
+    await createWorkbench({ socketPath, key: KEY, log: quiet }).health(),
+  ).toMatchObject({ busy: false });
   expect(existsSync(socketPath)).toBe(true);
 });
 
@@ -845,6 +863,7 @@ function daemonOn(socketPath: string, workRoot: string) {
   const quits: QuitReason[] = [];
   const daemon = startWorkbenchDaemon({
     socketPath,
+    key: KEY,
     workRoot,
     runner,
     problems: () => [],
@@ -858,7 +877,7 @@ function daemonOn(socketPath: string, workRoot: string) {
   return {
     daemon,
     quits,
-    workbench: createWorkbench({ socketPath, log: quiet }),
+    workbench: createWorkbench({ socketPath, key: KEY, log: quiet }),
   };
 }
 
@@ -884,7 +903,7 @@ test("a DIRECTORY a script left where the socket belongs does not keep the next 
   // so it is the same directory — and until 2026-10-06 the new daemon threw on the first line that
   // touched it, every time it was started: a loop only removing the volume by hand would end.
   const second = daemonOn(socketPath, first.workRoot);
-  expect(await second.workbench.health()).toEqual({ busy: false });
+  expect(await second.workbench.health()).toMatchObject({ busy: false });
   expect(readdirSync(dirname(socketPath))).toEqual(["w.sock"]);
   expect(
     ran(
@@ -915,7 +934,7 @@ test("a daemon starts with nothing beside its socket, whatever a run it did not 
   chmodSync(socketDirectory, 0o000);
 
   const { workbench } = daemonOn(join(socketDirectory, "w.sock"), workRoot);
-  expect(await workbench.health()).toEqual({ busy: false });
+  expect(await workbench.health()).toMatchObject({ busy: false });
   expect(readdirSync(socketDirectory)).toEqual(["w.sock"]);
   expect(readdirSync(workRoot)).toEqual([]);
 });
@@ -1019,5 +1038,214 @@ test("a file that cannot be placed for want of room is the request's fault; a di
   }
   for (const code of ["EACCES", "EIO", "EROFS", "EPERM", ""]) {
     expect(isRequestsFault(code), code).toBe(false);
+  }
+});
+
+/*
+ * WHAT THE SECOND INDEPENDENT READ OF 2026-10-06 FOUND: A SCRIPT CAN MEET THE SOCKET. It runs as
+ * the daemon's own user, so the directory the socket is bound in is its to write: it can remove
+ * the socket and bind a listener of its own at the path. Measured on the service before the fix —
+ * the server's `health()` answered by a script, and the run behind an abandoned one handed to what
+ * that one left running, three times of three. No owner or mode keeps one's own user out, so the
+ * daemon proves each answer under a key a script cannot read, and the client believes nothing
+ * without that and sends nothing before it (`shared/workbench/protocol.ts`).
+ */
+
+/** Ask the socket's path as nothing of ours does: no number, and whatever answers is read. */
+const whoSays = async (socketPath: string): Promise<unknown> => {
+  try {
+    const response = await fetch("http://workbench/health", {
+      unix: socketPath,
+      signal: AbortSignal.timeout(1_000),
+    });
+    return ((await response.json()) as { boot?: unknown }).boot;
+  } catch {
+    return null;
+  }
+};
+
+test("the daemon proves every answer it gives, to the request it gives it to", async () => {
+  const { socketPath, logged } = bench();
+  const asked = async (
+    method: "GET" | "POST",
+    path: string,
+    body?: FormData,
+  ) => {
+    const nonce = newNonce();
+    const response = await fetch(`http://workbench${path}`, {
+      unix: socketPath,
+      method,
+      headers: { [NONCE_HEADER]: nonce },
+      ...(body ? { body } : {}),
+    });
+    const answered = {
+      route: `${method} ${path}`,
+      nonce,
+      status: response.status,
+      type: response.headers.get("content-type") ?? "",
+      body: new Uint8Array(await response.arrayBuffer()),
+    };
+    return { answered, proof: response.headers.get(PROOF_HEADER) };
+  };
+  const form = (job: string, script: string) => {
+    const made = new FormData();
+    made.set(JOB_PART, job);
+    made.set(SCRIPT_PART, new Blob([script]));
+    return made;
+  };
+  const each = [
+    await asked("GET", "/health"),
+    // The refusals: a route there is none of, and a request that is not a run.
+    await asked("GET", "/nothing"),
+    await asked("POST", "/run", form("{", "console.log(1)")),
+    // And a run, whose answer is a form of the report and a file.
+    await asked(
+      "POST",
+      "/run",
+      form(
+        JSON.stringify({ files: [] }),
+        'await Bun.write("out/made.txt", "made"); console.log(1)',
+      ),
+    ),
+  ];
+  expect(each.map(({ answered }) => answered.status)).toEqual([
+    200, 404, 400, 200,
+  ]);
+  for (const { answered, proof } of each) {
+    expect(isProven(KEY, answered, proof), answered.route).toBe(true);
+    // Of that answer to that request, and of nothing else.
+    expect(isProven(`${KEY}x`, answered, proof)).toBe(false);
+    expect(isProven(KEY, { ...answered, nonce: newNonce() }, proof)).toBe(
+      false,
+    );
+    expect(
+      isProven(
+        KEY,
+        { ...answered, body: new Uint8Array([...answered.body, 0x20]) },
+        proof,
+      ),
+    ).toBe(false);
+  }
+  expect(each[3]?.answered.type).toStartWith("multipart/form-data; boundary=");
+  // A proof of health is not a proof of a run that says the same bytes.
+  const health = each[0];
+  expect(
+    health &&
+      isProven(KEY, { ...health.answered, route: "POST /run" }, health.proof),
+  ).toBe(false);
+  // Whoever brings no number is answered, and proven nothing.
+  const bare = await fetch("http://workbench/health", { unix: socketPath });
+  expect(bare.status).toBe(200);
+  expect(bare.headers.get(PROOF_HEADER)).toBeNull();
+  // The key crosses nothing: not an answer, not the log.
+  expect(logged.join("\n")).not.toContain(KEY);
+  for (const { answered } of each) {
+    expect(new TextDecoder().decode(answered.body)).not.toContain(KEY);
+  }
+});
+
+test("while a script sits where the socket was, what it says there is believed by nobody", async () => {
+  const { workbench, socketPath, quits } = bench();
+  const taking = workbench.run({
+    script: `
+      import { unlinkSync } from "node:fs";
+      unlinkSync(${JSON.stringify(socketPath)});
+      Bun.serve({
+        unix: ${JSON.stringify(socketPath)},
+        fetch: () => Response.json({ status: "ok", busy: false, boot: "a script" }),
+      });
+      console.log("took it");
+      await Bun.sleep(1200);
+      process.exit(0);
+    `,
+    files: [],
+    timeoutMs: 20_000,
+  });
+  await until(async () => (await whoSays(socketPath)) === "a script");
+  // It says it is an idle daemon. It was believed: `health()` answered `{ busy: false }`.
+  expect(await workbench.health()).toBeNull();
+  // The script's own run is still answered — its connection was made before it ran — and then
+  // the daemon, finding its path no longer its own, stops.
+  expect(ran(await taking).run.stdout).toBe("took it\n");
+  await until(() => quits.length > 0);
+  expect(quits).toEqual(["socket_replaced"]);
+});
+
+test("the run behind one that was given up on is not handed to what that one left at the socket's path", async () => {
+  // Where what the script leaves running says which process it is, and keeps what it is sent.
+  const left = mkdtempSync(join(tmpdir(), "wb-left-"));
+  started.push({ daemon: { stop: async () => {} }, root: left });
+  const program = join(left, "taker.ts");
+  const pidFile = join(left, "pid");
+  const got = join(left, "got");
+  /** End the one process this test left, and only if it is that process. */
+  const endWhatWasLeft = () => {
+    if (!existsSync(pidFile)) return;
+    const pid = Number.parseInt(readFileSync(pidFile, "utf8"), 10);
+    if (!Number.isInteger(pid) || pid <= 1) return;
+    const command = Bun.spawnSync(["ps", "-o", "command=", "-p", String(pid)])
+      .stdout.toString()
+      .trim();
+    if (command.includes(program)) process.kill(pid, "SIGKILL");
+  };
+  try {
+    const { workbench, socketPath, quits } = bench({
+      // What the real sweep does, as far as this run needs it done: a moment later — the window —
+      // the one process the run left is ended.
+      sweep: async () => {
+        await Bun.sleep(300);
+        endWhatWasLeft();
+      },
+    });
+    const taker = `
+      import { appendFileSync, unlinkSync, writeFileSync } from "node:fs";
+      try { unlinkSync(${JSON.stringify(socketPath)}); } catch {}
+      Bun.serve({
+        unix: ${JSON.stringify(socketPath)},
+        async fetch(request) {
+          if (new URL(request.url).pathname === "/health") {
+            return Response.json({ status: "ok", busy: false, boot: "a script" });
+          }
+          appendFileSync(${JSON.stringify(got)}, new Uint8Array(await request.arrayBuffer()));
+          const answer = new FormData();
+          answer.set("report", JSON.stringify({ ending: "exited", exitCode: 0, signal: null, ms: 1, stdout: "A SCRIPT ANSWERED", stderr: "", stdoutBytes: 17, stderrBytes: 0, products: [], skipped: 0 }));
+          return new Response(answer);
+        },
+      });
+      writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
+      setInterval(() => {}, 1000);
+    `;
+    const gaveUp = new AbortController();
+    const given = workbench.run(
+      {
+        script: `
+          import { writeFileSync } from "node:fs";
+          writeFileSync(${JSON.stringify(program)}, ${JSON.stringify(taker)});
+          Bun.spawn([process.execPath, "--no-install", ${JSON.stringify(program)}], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }).unref();
+          await Bun.sleep(30_000);
+        `,
+        files: [],
+        timeoutMs: 60_000,
+      },
+      gaveUp.signal,
+    );
+    await until(async () => (await whoSays(socketPath)) === "a script");
+    const behind = workbench.run({
+      script: 'console.log("the daemon ran this")',
+      files: [
+        { path: "uploads/next.csv", bytes: text("the next run's workbook") },
+      ],
+    });
+    gaveUp.abort();
+    expect(await given).toEqual({ ok: false, failure: "stopped" });
+    // It came back as the child's answer, "A SCRIPT ANSWERED", with the run's script and file in
+    // the child's hands. Now: what is there proves nothing, is sent nothing, and once it has been
+    // ended nothing is there at all — the daemon's path is no longer its own, and it has stopped.
+    expect(await behind).toEqual({ ok: false, failure: "unavailable" });
+    expect(existsSync(got)).toBe(false);
+    await until(() => quits.length > 0);
+    expect(quits).toEqual(["socket_replaced"]);
+  } finally {
+    endWhatWasLeft();
   }
 });

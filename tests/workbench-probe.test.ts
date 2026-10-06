@@ -43,6 +43,11 @@ test("the rehearsal's compose file adds one container on the workbench's socket 
     pull_policy: "missing",
     network_mode: "none",
     restart: "no",
+    // The deployment's key, read by compose from the environment the rehearsal runs it with — and
+    // refused, not defaulted, should the rehearsal forget to set one.
+    environment: {
+      WORKBENCH_KEY: "${WORKBENCH_KEY:?the rehearsal sets it}",
+    },
     volumes: [
       // The service's own volume, by the name the deployment gives it, where the server will find it.
       "workbench-socket:/run/laf-workbench",

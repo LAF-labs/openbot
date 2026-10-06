@@ -14,11 +14,19 @@
  * part's own `filename`: what that field means is whatever a parser decides, and these are names a
  * model and a script chose.
  *
+ * And every answer proves who gave it (below, "WHO ANSWERS AT THE SOCKET'S PATH").
+ *
  * In `shared/` because three things read it and no two of them share a workspace: the daemon
  * (`./daemon.ts`, which runs from this directory in whichever image compose names), the server's
  * client (`server/src/workbench/client.ts`) and the rehearsal that drives the real service
  * (`scripts/workbench-probe.ts`).
  */
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from "node:crypto";
 import { ATTACHMENT_MAX_BYTES } from "../attachments";
 import { HANDOFF_MAX_BYTES } from "../workspace-files";
 
@@ -138,6 +146,98 @@ export type WorkbenchRefusal =
 
 /** The part of a request a refusal is about. */
 export type InvalidField = "job" | "script" | "files" | "timeoutMs";
+
+/*
+ * WHO ANSWERS AT THE SOCKET'S PATH IS PROVEN, EVERY TIME.
+ *
+ * A script runs as the daemon's own user — the sweep that ends everything a run started reaches
+ * "every process of this user" and nothing else, so they cannot be two — and so the directory the
+ * daemon binds its socket in is the script's to write as well: it can remove the socket and bind a
+ * listener of its own at the same path. Measured on the service, 2026-10-07: a script did; while
+ * it ran, the server's `health()` was answered by it; and when its run was given up on with a
+ * child of it sitting there, the run waiting behind — script and file — was handed to that child,
+ * whose answer came back as the run (three times of three).
+ *
+ * No owner or mode keeps one's own user out of a directory, and a unix socket's peer credentials
+ * say only that user (and no process id across two containers). So the daemon PROVES itself, with
+ * a key a script cannot read: both sides are given it in their environment (`WORKBENCH_KEY`), the
+ * daemon's environment is closed to a script because the daemon is undumpable (`./undumpable.ts`;
+ * the rehearsal reads `/proc/1/environ` from a script and is refused), and a script is started
+ * with an environment of its own that has none of it.
+ *
+ * THE KEY NEVER CROSSES THE SOCKET. Every request carries a number used once; every answer carries
+ * an HMAC, under the key, of that number, the route, the status, the type and the very bytes of
+ * the body. The server believes nothing that does not carry one — not a run, not a refusal, not
+ * `/health` — and checks it over the bytes before it parses them. A listener without the key can
+ * make none; one that passes the daemon's own answers along can pass only what the daemon said,
+ * to the request it said it to. And the daemon says `busy` in that answer until everything a run
+ * started has been ended and cleared up after, so "idle", proven, means nothing a script started
+ * is alive to be listening anywhere: the server asks for exactly that before each run it sends
+ * (`server/src/workbench/client.ts`).
+ */
+
+/** The variable both sides read the key from. Never a flag: a command line is anybody's to read. */
+export const KEY_VARIABLE = "WORKBENCH_KEY";
+
+/** The fewest characters a key may be: `openssl rand -hex 16` is thirty-two. */
+export const KEY_MIN_LENGTH = 32;
+
+export const isKey = (value: unknown): value is string =>
+  typeof value === "string" && value.length >= KEY_MIN_LENGTH;
+
+/** The request header that carries the number used once. */
+export const NONCE_HEADER = "x-laf-workbench-nonce";
+/** The answer header that carries the proof. */
+export const PROOF_HEADER = "x-laf-workbench-proof";
+
+export const newNonce = (): string => randomBytes(16).toString("hex");
+
+export const isNonce = (value: unknown): value is string =>
+  typeof value === "string" && /^[0-9a-f]{32}$/.test(value);
+
+/** What an answer is, as far as its proof covers it: all of it. */
+export type Answered = {
+  /** The request's method and path: `GET /health`, `POST /run`. */
+  route: string;
+  nonce: string;
+  status: number;
+  /** The `Content-Type` header, exactly; empty when there is none. */
+  type: string;
+  body: Uint8Array;
+};
+
+/** The proof of an answer: an HMAC-SHA256 under the key, in hex. */
+export function proofOf(key: string, answered: Answered): string {
+  const digest = createHash("sha256").update(answered.body).digest("hex");
+  return createHmac("sha256", key)
+    .update(
+      [
+        answered.route,
+        answered.nonce,
+        String(answered.status),
+        answered.type,
+        digest,
+      ].join("\n"),
+    )
+    .digest("hex");
+}
+
+/** Whether `proof` is the proof of this answer under this key. */
+export function isProven(
+  key: string,
+  answered: Answered,
+  proof: unknown,
+): boolean {
+  if (typeof proof !== "string" || !/^[0-9a-f]{64}$/.test(proof)) return false;
+  return timingSafeEqual(
+    Buffer.from(proofOf(key, answered), "hex"),
+    Buffer.from(proof, "hex"),
+  );
+}
+
+/** A request's route as a proof names it. */
+export const routeOf = (request: { method: string; url: string }): string =>
+  `${request.method} ${new URL(request.url).pathname}`;
 
 /** A file part's name in a request: `file0`, `file1`, … */
 export const filePart = (index: number) => `file${index}`;

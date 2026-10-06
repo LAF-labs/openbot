@@ -494,6 +494,14 @@ test("the workbench is behind a profile, walled, process 1 of a container that k
   expect(workbench.mem_limit).toBe("768m");
   expect(workbench.pids_limit).toBe(128);
   expect(workbench.cpu_shares).toBe(256);
+  // The key every answer is proven under comes from the deployment's environment and from nowhere
+  // else: not a default, which every deployment would share, and not the command line, which a
+  // script can read (shared/workbench/protocol.ts).
+  expect(workbench.environment).toEqual({
+    BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
+    WORKBENCH_KEY: "${WORKBENCH_KEY:-}",
+  });
+  expect(JSON.stringify(workbench.command)).not.toContain("KEY");
   // Nothing else in the file knows it: no service waits for it, mounts its socket or is told its
   // path. The server is handed the socket in the change that gives a Bot the tool, not before.
   for (const [name, service] of Object.entries(parsedCompose.services)) {
