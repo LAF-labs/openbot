@@ -178,15 +178,22 @@ function argumentOffSchema(
  */
 export function callFingerprintOf(call: {
   botId: string;
-  /** `<server>/<tool>`, as a grant is stored. A slash cannot appear in either half. */
+  /** `<server>/<tool>`, as a grant is stored: the server is what stands before the first slash. */
   ref: string;
   args: Record<string, unknown>;
 }): string {
+  /*
+   * NEVER NOTHING, WHATEVER ARRIVES. Nothing is what a gateway act's fingerprint ends in, and the
+   * two are told apart by that alone. `callTool` has refused a reference with no slash, or with
+   * nothing before it, long before a question is opened; this does not rest on that. Such a
+   * reference stands in whole, behind a mark no server's id can begin with.
+   */
+  const slash = call.ref.indexOf("/");
   return fingerprintOf({
     botId: call.botId,
     toolName: toolNameFor(call.ref),
     arguments: call.args,
-    server: call.ref.slice(0, call.ref.indexOf("/")),
+    server: slash > 0 ? call.ref.slice(0, slash) : `?${call.ref}`,
   });
 }
 

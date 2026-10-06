@@ -2248,6 +2248,20 @@ describe("a run and a tool of the same name on somebody else's server", () => {
     ).not.toBe(
       callFingerprintOf({ botId: BOT, ref: "other/send", args: { to: "a" } }),
     );
+    // And that does not rest on the reference being well formed: one with no server before a
+    // slash, or no slash, or nothing in it, is still not nobody's.
+    for (const ref of ["", "/", "/run_script", "run_script", "x"]) {
+      expect({
+        ref,
+        same:
+          callFingerprintOf({ botId: BOT, ref, args: {} }) ===
+          fingerprintOf({
+            botId: BOT,
+            toolName: toolNameFor(ref),
+            arguments: {},
+          }),
+      }).toEqual({ ref, same: false });
+    }
     // Nor are the two COUNTED as one call coming round again: a call to another server is
     // counted by its reference (`plugins/call.ts`), a run by its script, and neither has both.
     expect(countedAs({ tool: toolNameFor(REF), ref: REF })).toBe(
