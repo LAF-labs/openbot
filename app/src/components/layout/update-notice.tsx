@@ -108,13 +108,17 @@ function UpdateControl({
   /*
    * The first of the person's Bots: there is one (docs/laf/deployment-model.md). The same answer
    * as the pill under its face and the tray's line (`ShellSync`), folded the way the tray folds
-   * it: anything but at rest is a turn somebody is in the middle of.
+   * it — and held only while the Bot is WORKING. A Bot waiting on the person (a question, a
+   * request for help) is not working: the sentence under a held control says it is and to wait
+   * until it is done, which told somebody to wait for a Bot that was waiting for them, for as long
+   * as the question stood (review of pull request 112). The question is the server's and is drawn
+   * again by the page a reload brings.
    */
   const { bots } = useMyBots();
   const presence = usePresence(bots?.[0]?.id);
   const offer = updateOffer({
     ...facts,
-    isBotBusy: shellStatusOf(presence.kind) !== "idle",
+    isBotBusy: shellStatusOf(presence.kind) === "working",
   });
   const [isRestarting, setIsRestarting] = useState(false);
   const [hasFailed, setHasFailed] = useState(false);

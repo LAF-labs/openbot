@@ -89,7 +89,8 @@ export type UpdateOffer =
  * image and the server's pulled apart, or the press landing in the seconds of an upgrade before the
  * new files are served — would leave a control that reloads into itself for ever. A control that
  * does nothing is worse than none, so having reloaded once for that commit the page stops offering
- * it; the next commit the server names is offered again.
+ * it — until the connection next returns (`watchBuild`, `handleBack`), or the server names another
+ * commit.
  */
 export function updateOffer(
   facts: BuildFacts & { isBotBusy: boolean },
@@ -220,7 +221,24 @@ export function watchBuild(): () => void {
   const handleSeen = () => {
     void look();
   };
+  /*
+   * THE CONNECTION RETURNING IS WHEN A RELOAD CAN WORK AGAIN, so the mark of one that did not is
+   * dropped first. The fleet's upgrade replaces the server, waits for it, and replaces the front
+   * door last: in between, this page reconnects through the old front door and offers the reload,
+   * and a press there brings the OLD page back and marks the new commit as tried. With the mark
+   * kept, the control then stayed silent for that whole release — in the installed app, until it
+   * was quit — though the new page was seconds away (review of pull request 112). The front door
+   * cannot be replaced without dropping this page's socket, so its return is the moment to ask
+   * again; a deployment whose two halves really have pulled apart offers once per reconnect, and
+   * falls silent again on a press that does not help.
+   */
   const handleBack = () => {
+    try {
+      deps.storage()?.removeItem(RELOADED_FOR_KEY);
+    } catch {
+      // Storage refused: what is remembered in this page is still forgotten below.
+    }
+    learn({ reloadedFor: null });
     void look(true);
   };
   /*

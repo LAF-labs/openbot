@@ -403,6 +403,40 @@ describe("the press", () => {
     await again.seen();
     expect(again.offer()).toEqual({ kind: "reload", isHeld: false });
   });
+
+  test("…but it is offered again when the connection returns: the front door was replaced after the server", async () => {
+    /*
+     * The fleet's upgrade order. The server is replaced first, so the page reconnects through the
+     * OLD front door and offers the reload; a press there brings the old page back. Seconds later
+     * the front door is replaced, which drops this page's socket — and a mark that outlived that
+     * kept the control silent for the whole release (review of pull request 112).
+     */
+    const storage = memory();
+    const first = await watching({ storage });
+    first.reload.configureBuildReload({
+      reload: () => {},
+      storage: () => storage,
+    });
+    first.world.answer = { revision: NEWER };
+    await first.seen();
+    first.reloadIntoNewBuild();
+    stop?.();
+
+    // The old front door served the old page: the same bundle, the mark kept, nothing offered.
+    const again = await watching({ storage });
+    again.world.answer = { revision: NEWER };
+    await again.seen();
+    expect(again.offer()).toEqual({ kind: "none" });
+    expect(storage.getItem("laf:reloaded-for-revision")).toBe(NEWER);
+
+    // The front door is replaced: the socket drops and comes back.
+    again.events.socketState.dispatchEvent(
+      new Event(again.events.SOCKET_RECONNECTED),
+    );
+    await tick();
+    expect(storage.getItem("laf:reloaded-for-revision")).toBeNull();
+    expect(again.offer()).toEqual({ kind: "reload", isHeld: false });
+  });
 });
 
 describe("the shell's half", () => {
