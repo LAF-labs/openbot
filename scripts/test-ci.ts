@@ -1601,15 +1601,50 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * says "not used here" where nothing reads it, with its Revoke button still to press and a
  * retired key and a model's key as they were; and "in use" on a developer's stack.
  *
+ * RAISED 2026-10-06 with the workbench — the sandbox a Bot's script will run in, offered to nobody
+ * yet — by exactly what was added: `root` from 737 to 788 and `server` from 3620 to 3656.
+ * Fifty-one to `root`. Twenty-four in the new `tests/workbench-daemon.test.ts`, the real daemon
+ * and the server's real client joined by a real socket, running real scripts in real children —
+ * with a sweep that only counts its calls, because the real one ends every process its user owns:
+ * a file read with SheetJS and a workbook handed back; a script sent byte for byte; nothing of the
+ * daemon's environment in a script's; a failed script handing nothing back; the bound on time, on
+ * memory, on what is printed; only plain visible files directly in `out/` going back, never
+ * through a link left at `out/` or above it, and all of them or none; a file that may not land on
+ * a name the daemon or the interpreter reads; the daemon holding a hand-built request to every
+ * bound itself; one script at a time and two from one client in turn; a caller that gives up; the
+ * walls asked before every run; a failed sweep ending the service; what a script left outside its
+ * own directory gone, with both directories it closed taken back; a socket a script replaced; a
+ * directory or a file it locked; the daemon retiring; a log that holds no path, name or word a
+ * script said; a stale socket. Twenty-one in the new
+ * `tests/workbench-sweep.test.ts`, which never makes the call it is about: the judgement of the
+ * sandbox's facts, thirteen ways of not being the sandbox each refused before a counting stand-in
+ * is touched, this machine's own facts refused, the call made once and the sweep waiting until
+ * nothing else runs, a sweep that left something saying so — and the sources read to hold that the
+ * call is one line in one unexported function, that only the service's entry asks for the real
+ * sweep, that the entry has no flag to skip its check, that the service's files import nothing
+ * outside `shared/`, and (in a child of its own) that the daemon closes its memory where there is
+ * a kernel to ask. Five in the new `tests/workbench-probe.test.ts`: the compose file the rehearsal
+ * adds, how it reads what the containers printed and what the engine says one holds, and that it
+ * tries the workbench once, after the upgrade's own checks. One in `tests/compose.test.ts`: the
+ * service behind its profile, walled, process 1, with no volume but its socket's, and known to no
+ * other service.
+ * Thirty-six to `server`, in the new `server/tests/workbench-client.test.ts`, against a daemon that
+ * lies: a whole run handed on; what is sent; a request refused unsent; twenty-five answers no real
+ * daemon sends, each coming back `malformed` and none in part; files that fit one by one and not
+ * together; each refusal as this side's word for it; no socket; a daemon gone mid-run; one that
+ * never answers; a caller that gives up; one run in flight and four waiting; health.
+ * What none of them can show — the walls, and the sweep itself — is the rehearsal's
+ * (`scripts/workbench-probe.ts`), in the service's own container on Linux.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3620, roots: ["server"] },
+  { name: "server", floor: 3656, roots: ["server"] },
   { name: "app", floor: 2158, roots: ["app"] },
   { name: "agent-computer", floor: 529, roots: ["agent-computer"] },
-  { name: "root", floor: 737, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 788, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

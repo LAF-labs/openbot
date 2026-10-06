@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { OWN_ADDRESS_VARIABLES } from "../shared/net/own-addresses";
@@ -217,13 +217,13 @@ test("every built service names its published image, on one switchable channel",
   expect(compose).toContain(
     "image: ${COMPUTER_IMAGE:-ghcr.io/laf-labs/openbot-agent-computer:${IMAGE_TAG:-stable}}",
   );
-  // The migration one-shot and the file converter run the server image, so a pull-mode deployment
-  // builds nothing at all and pulls nothing new for them.
+  // The migration one-shot, the file converter and the workbench run the server image, so a
+  // pull-mode deployment builds nothing at all and pulls nothing new for them.
   expect(
     compose.match(
       /image: ghcr\.io\/laf-labs\/openbot-server:\$\{IMAGE_TAG:-stable\}/g,
     ),
-  ).toHaveLength(3);
+  ).toHaveLength(4);
 });
 
 /*
@@ -251,6 +251,7 @@ const parsedCompose = parseYaml(
       environment?: Record<string, string>;
     }
   >;
+  volumes: Record<string, unknown>;
 };
 
 /**
@@ -411,6 +412,70 @@ test("reads uploaded files as nobody, with no network and nothing to escalate wi
   expect(
     (server.environment as Record<string, string>).LAF_CONVERTER_SOCKET,
   ).toBe("/run/laf-converter/converter.sock");
+});
+
+/**
+ * Where a script a Bot wrote will run — and, until a Bot is given the tool, where nothing does.
+ *
+ * The converter's walls and what a stranger's CODE needs beyond them (the comment over the service
+ * in docker-compose.yml has each reason). The daemon reads the same facts before it listens and
+ * before every run and has no flag that skips the reading; this keeps compose from quietly
+ * dropping one, and holds the two things only compose can say: that no deployment starts the
+ * service yet, and that nothing else in the file knows it is there.
+ */
+test("the workbench is behind a profile, walled, process 1 of a container that keeps nothing, and known to no other service", () => {
+  const workbench = parsedCompose.services.workbench as Record<string, unknown>;
+  expect(workbench).toBeDefined();
+  // NOT STARTED BY `up` OR BY AN UPGRADE: nothing sends it a script yet.
+  expect(workbench.profiles).toEqual(["workbench"]);
+  expect(workbench.user).toBe("65534:65534");
+  expect(workbench.network_mode).toBe("none");
+  expect(workbench.read_only).toBe(true);
+  expect(workbench.cap_drop).toEqual(["ALL"]);
+  expect(workbench.security_opt).toEqual(["no-new-privileges:true"]);
+  expect(workbench.ports).toBeUndefined();
+  // THE DAEMON IS PROCESS 1. Under an init a script — the daemon's own user — could stop it and
+  // outlive its time; process 1 is what its own namespace cannot stop (shared/workbench/sweep.ts).
+  expect(workbench.init).toBeUndefined();
+  // From source, out of `shared/`, which the server's image and the computer's both carry — and
+  // with the socket as its only argument: there is no flag for running outside the walls.
+  expect(workbench.command).toEqual([
+    "bun",
+    "--no-env-file",
+    "--no-install",
+    "/app/shared/workbench/main.ts",
+    "--socket",
+    "/run/laf-workbench/workbench.sock",
+  ]);
+  expect(
+    existsSync(join(import.meta.dir, "..", "shared/workbench/main.ts")),
+  ).toBe(true);
+  // A FUNCTION OF WHAT IT IS SENT: no volume but its socket's. Not the Bot's folder, not a profile.
+  expect(workbench.volumes).toEqual(["workbench-socket:/run/laf-workbench"]);
+  // Everything a script writes is memory of this container's own, not executable, and few.
+  expect(workbench.tmpfs).toEqual([
+    "/work:size=96m,nr_inodes=4096,mode=0700,uid=65534,gid=65534,noexec,nosuid,nodev",
+  ]);
+  expect(workbench.shm_size).toBe("1m");
+  expect(parsedCompose.volumes["workbench-socket"]).toEqual({
+    driver: "local",
+    driver_opts: {
+      type: "tmpfs",
+      device: "tmpfs",
+      o: "size=1m,mode=0700,uid=65534,gid=65534",
+    },
+  });
+  // No swap: the daemon bounds a run by what it holds resident, and cannot see what was swapped out.
+  expect(workbench.memswap_limit).toBe(workbench.mem_limit);
+  expect(workbench.mem_limit).toBe("768m");
+  expect(workbench.pids_limit).toBe(128);
+  expect(workbench.cpu_shares).toBe(256);
+  // Nothing else in the file knows it: no service waits for it, mounts its socket or is told its
+  // path. The server is handed the socket in the change that gives a Bot the tool, not before.
+  for (const [name, service] of Object.entries(parsedCompose.services)) {
+    if (name === "workbench") continue;
+    expect(JSON.stringify(service), name).not.toContain("workbench");
+  }
 });
 
 /**
