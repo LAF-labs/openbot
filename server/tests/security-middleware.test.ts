@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
+import { ATTACHMENT_UPLOAD_MAX_BYTES } from "../../shared/attachments";
 import { createApp } from "../src/app";
 import type { AuthService } from "../src/auth/guards";
 import { loadConfig } from "../src/config";
@@ -237,6 +238,51 @@ describe("a body has a ceiling", () => {
       body: JSON.stringify({ note: "z".repeat(900_000) }),
     });
     expect(response.status).toBe(204);
+  });
+
+  test("a file a person attaches is allowed the upload door's own ceiling — for a declared length, and for that door alone", async () => {
+    const big = "f".repeat(1_500_000);
+    const at = (path: string, body: string) =>
+      app().request(`${ORIGIN}${path}`, {
+        method: "POST",
+        ...declaring(body, {
+          origin: ORIGIN,
+          "content-type": "multipart/form-data; boundary=x",
+        }),
+      });
+    // Not 413. (404: no upload door is mounted in this app, which is the router saying so.)
+    expect((await at("/api/channels/c-1/attachments", big)).status).not.toBe(
+      413,
+    );
+    // Past the door's ceiling it is this limit that answers, without reading a byte.
+    const past = await at(
+      "/api/channels/c-1/attachments",
+      "f".repeat(ATTACHMENT_UPLOAD_MAX_BYTES + 1),
+    );
+    expect(past.status).toBe(413);
+    expect(await past.json()).toEqual(BODY_TOO_LARGE);
+    // Its neighbours are doors like any other: a megabyte.
+    for (const path of [
+      "/api/channels/c-1/attachments/11111111-1111-4111-8111-111111111111",
+      "/api/channels/c-1/read",
+      "/api/channels/c-1/attachments/extra/segment",
+    ]) {
+      expect({ path, status: (await at(path, big)).status }).toEqual({
+        path,
+        status: 413,
+      });
+    }
+    // And a body that does not say how long it is gets the megabyte here too.
+    const undeclared = await app().request(
+      `${ORIGIN}/api/channels/c-1/attachments`,
+      {
+        method: "POST",
+        headers: { origin: ORIGIN },
+        body: chunked(1_500_000),
+        duplex: "half",
+      } as RequestInit,
+    );
+    expect(undeclared.status).toBe(413);
   });
 
   test("a conversation turn carries its thread, so it is allowed more — and an anonymous one is still refused unread", async () => {

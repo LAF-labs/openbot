@@ -8,7 +8,7 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import {
-  ATTACHMENT_MAX_BYTES,
+  ATTACHMENT_UPLOAD_MAX_BYTES,
   isAttachmentId,
 } from "../../../shared/attachments";
 import type { AppVariables } from "../auth/guards";
@@ -25,9 +25,6 @@ const STATUS: Record<AttachmentRefusal, 400 | 413 | 415 | 422 | 503> = {
   // The file is fine; nothing here may read it right now (no converter). Not the person's doing.
   "laf:attachment_converter_unavailable": 503,
 };
-
-/** Room for the multipart envelope around the largest file allowed. */
-const ENVELOPE_BYTES = 256 * 1024;
 
 /** RFC 6266/5987: the stored name is Korean more often than not, so it goes percent-encoded. */
 function dispositionOf(kind: "inline" | "attachment", name: string): string {
@@ -49,7 +46,7 @@ export function createAttachmentRoutes(
      * memory; this stops reading at the limit, whatever `content-length` claimed.
      */
     bodyLimit({
-      maxSize: ATTACHMENT_MAX_BYTES + ENVELOPE_BYTES,
+      maxSize: ATTACHMENT_UPLOAD_MAX_BYTES,
       onError: (context) =>
         context.json(
           {

@@ -1277,12 +1277,20 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * nothing. Every other test that pressed one of the sixteen to state such a fact was moved onto a
  * door that stays or onto the store, and is counted as before.
  *
+ * RAISED AGAIN 2026-10-06 with a file over a megabyte, by exactly what was added: two to `server`.
+ * One in `attachments.test.ts` sends a sheet through the upload door WHERE IT STANDS, behind the
+ * server's own body limit — over a megabyte it lands, the largest the picker allows still fits, and
+ * one past the door's ceiling is stopped before the service sees it. One in
+ * `security-middleware.test.ts` holds the table's row: the door's own ceiling for a declared
+ * length, the megabyte for its neighbours and for a body that does not say how long it is. Until
+ * then each side was asked alone, and a person's every file over a megabyte was refused in the app.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3616, roots: ["server"] },
+  { name: "server", floor: 3618, roots: ["server"] },
   { name: "app", floor: 2107, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 718, roots: ["tests", "agent-bot"] },

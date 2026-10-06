@@ -42,6 +42,7 @@ import type { Context, MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { getConnInfo } from "hono/bun";
 import { every } from "hono/combine";
+import { ATTACHMENT_UPLOAD_MAX_BYTES } from "../../../shared/attachments";
 
 export const BODY_LIMIT_BYTES = 1_000_000;
 
@@ -53,6 +54,13 @@ export const BODY_LIMIT_BYTES = 1_000_000;
  *   grows with the conversation, and a megabyte here would one day refuse somebody's every message
  *   to a Bot they had talked to for months. Behind the session guard, and only for a declared
  *   length, so an anonymous caller is refused before a byte of it is read.
+ * - A file a person hands their Bot. The upload door has a ceiling of its own — ten megabytes and
+ *   the envelope around them, the number the composer's picker says — and stands behind the session
+ *   guard like the turn. MEASURED 2026-10-06, in the app: this table did not name it, so the
+ *   megabyte above refused every sheet and PDF over a megabyte with `laf:body_too_large`, a code the
+ *   composer had no words for but "다시 시도해 주세요". So it had been in every release since the
+ *   door was built: the door's tests asked the door alone and this file's tests asked the
+ *   middleware alone, and nothing sent a large file through both (`attachments.test.ts` does now).
  */
 export const LARGER_BODIES: ReadonlyArray<{
   name: string;
@@ -63,6 +71,11 @@ export const LARGER_BODIES: ReadonlyArray<{
     name: "conversation-turn",
     matches: (path) => path.startsWith("/api/copilotkit/"),
     maxBytes: 32_000_000,
+  },
+  {
+    name: "attachment",
+    matches: (path) => /^\/api\/channels\/[^/]+\/attachments\/?$/.test(path),
+    maxBytes: ATTACHMENT_UPLOAD_MAX_BYTES,
   },
 ];
 
