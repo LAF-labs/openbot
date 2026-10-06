@@ -985,7 +985,11 @@ export const TOOL_RESULT_KO: Record<string, string> = {
 
 /** 코드에 해당하는 모델용 문장. 모르는 코드는 그대로 돌려준다 — 사실은 사실이므로 삼키지 않는다. */
 export function toolResultText(code: string): string {
-  return TOOL_RESULT_KO[code] ?? code;
+  // 표가 가진 이름일 때만 표의 문장이다. 코드는 컴퓨터나 커넥터가 보낸 글자이고, `constructor`라는
+  // 코드에 `TABLE[code]`는 모든 객체가 그 이름으로 가진 것(함수)을 돌려준다(2026-10-06).
+  return Object.hasOwn(TOOL_RESULT_KO, code)
+    ? (TOOL_RESULT_KO[code] ?? code)
+    : code;
 }
 
 /** 요일 이름, 0 = 일요일. 서버가 `dailyDays`에 저장하는 숫자와 같은 순서다. */
