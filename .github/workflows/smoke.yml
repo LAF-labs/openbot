@@ -103,8 +103,11 @@ jobs:
             # the host firewall), so the computer's check for them is off here, as on a laptop.
             echo "AGENT_COMPUTER_EGRESS_FIREWALL=off"
             echo "OPENAI_API_KEY=$OPENAI_API_KEY"
-            [ -n "$OPENAI_BASE_URL" ] && echo "OPENAI_BASE_URL=$OPENAI_BASE_URL"
-            [ -n "$BOT_MODEL" ] && echo "BOT_MODEL=$BOT_MODEL"
+            # `if`, not `[ … ] && echo`: a test that is false is the group's last status, and the step
+            # then fails for the variable that is ALLOWED to be absent. It did, on 2026-10-06, the
+            # first time this ran in eight nights — with no model named, which is the package's default.
+            if [ -n "$OPENAI_BASE_URL" ]; then echo "OPENAI_BASE_URL=$OPENAI_BASE_URL"; fi
+            if [ -n "$BOT_MODEL" ]; then echo "BOT_MODEL=$BOT_MODEL"; fi
           } > .env
 
       # agent-computer is BUILT, not pulled: a nightly that checked the published `:stable` image
