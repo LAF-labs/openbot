@@ -1,4 +1,8 @@
-import { resolveTimeZone, zoneLabel } from "../../../shared/prompt/zone";
+import {
+  isKnownTimeZone,
+  resolveTimeZone,
+  zoneLabel,
+} from "../../../shared/prompt/zone";
 import type { CallPreview } from "../computer/approvals";
 import { dayAfter, instantOf, wallClockAt } from "../routines/zoned-clock";
 import {
@@ -147,22 +151,26 @@ function eventLine(event: CalendarEvent, timeZone: string): string {
 }
 
 /**
- * When an event starts, on the person's clock — or null where its start cannot be read.
+ * When an event starts — or null where its start cannot be read.
  *
- * An all-day event carries a date and no zone: it starts when that date does where the person is,
- * which is the reading {@link localEdge} leaves it in. One that is tomorrow's therefore starts at
- * tomorrow's own midnight, at the end of today and not inside it.
+ * AN ALL-DAY EVENT CARRIES A DATE AND NO ZONE, AND GOOGLE BEGINS THAT DATE IN THE CALENDAR'S OWN
+ * ZONE: "The calendar time zone is used to calculate start and end times of all-day events to
+ * determine whether they fall within the filter specification" (its guide, Calendars & events,
+ * Time zones). `allDayZone` is that zone, read off the answer itself ({@link allDayZoneOf}). So an
+ * all-day event is placed before or after a stretch's end exactly where Google's own filter
+ * placed it, and a stretch with something on it reads to the byte as it did before the request
+ * was widened — whatever zone the calendar is kept in.
  *
- * WHERE GOOGLE ITSELF BEGINS THAT DATE IS NOT WRITTEN DOWN, AND WAS NOT MEASURED. Its reference
- * for `events.list` says nothing of an all-day event under `timeMin` and `timeMax`, and no
- * account was at hand to ask (2026-10-07). If it is the calendar's own zone, and that is the
- * person's, this reading and Google's filter agree event for event. Where they do not — a calendar
- * kept in another zone, a date begun in UTC — an all-day event within hours of a stretch's end is
- * placed here by the person's clock and not by Google's: west of that zone a day's listing no
- * longer carries tomorrow's all-day event, which Google's filter let into it; east of it, a
- * stretch that ends partway through a day now lists that day's.
+ * THE FIRST VERSION OF THIS BEGAN THE DATE WHERE THE PERSON IS, and said of Google's rule that it
+ * was written nowhere: one page had been read, the reference for `events.list`, which is silent,
+ * and not the guide. With a device in New York and a calendar kept in Seoul, tomorrow's all-day
+ * event — on today by Google's filter, and listed so before — was set aside as "after", and the
+ * day read `일정 2건` where it had read 3 (2026-10-07, found by the second read of that change).
+ *
+ * STILL NOT MEASURED: no Google account was at hand, so that the filter runs as that sentence
+ * says, and that every answer carries `timeZone`, are the documentation's word.
  */
-function startOf(event: CalendarEvent, timeZone: string): Date | null {
+function startOf(event: CalendarEvent, allDayZone: string): Date | null {
   const edge = event.start;
   if (edge?.dateTime) {
     const at = new Date(edge.dateTime);
@@ -174,8 +182,24 @@ function startOf(event: CalendarEvent, timeZone: string): Date | null {
     { year: Number(date[1]), month: Number(date[2]), day: Number(date[3]) },
     0,
     0,
-    timeZone,
+    allDayZone,
   );
+}
+
+/**
+ * The zone an all-day event's date begins in: the calendar's, which an `events.list` answer
+ * carries as `timeZone` ("The time zone of the calendar. Read-only."). Where an answer names
+ * none, or one this runtime does not know, the person's stands in — it is the same zone for
+ * nearly everybody.
+ *
+ * THE REQUEST MUST NOT ASK FOR A `timeZone` OF ITS OWN ("Time zone used in the response") without
+ * this being looked at again: the answer's field may then be the request's, and what is read here
+ * as the calendar's zone would be whatever was asked for.
+ */
+function allDayZoneOf(answered: unknown, personZone: string): string {
+  return typeof answered === "string" && isKnownTimeZone(answered)
+    ? answered
+    : personZone;
 }
 
 /** How far past the stretch it was asked for a listing also looks, in the person's own days. */
@@ -336,8 +360,10 @@ export async function callTool(
     const body = await readJson<{
       items?: CalendarEvent[];
       nextPageToken?: string;
+      timeZone?: unknown;
     }>(result.response);
     if (!body) return failure("구글 캘린더가 읽을 수 없는 답을 보냈습니다.");
+    const allDayZone = allDayZoneOf(body.timeZone, timeZone);
 
     /*
      * BY ITS START, AS GOOGLE'S OWN `timeMax` IS: an event that starts before the stretch ends is
@@ -349,7 +375,7 @@ export async function callTool(
     const items: CalendarEvent[] = [];
     const after: CalendarEvent[] = [];
     for (const event of body.items ?? []) {
-      const startsAt = looksAhead ? startOf(event, timeZone) : null;
+      const startsAt = looksAhead ? startOf(event, allDayZone) : null;
       if (startsAt !== null && startsAt.getTime() >= until.getTime()) {
         after.push(event);
       } else {
