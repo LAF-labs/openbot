@@ -81,10 +81,11 @@ export function packageOf(id: string): string | null {
 /**
  * The lazy-only package a module belongs to, if it is JavaScript from one.
  *
- * JAVASCRIPT ONLY, and that was learned the first time the check ran: `main.tsx` imports
- * `@copilotkit/react-core/v2/styles.css`, whose module id sits in the entry chunk's module list, and
- * the check refused a build whose JavaScript was clean. A stylesheet is not the megabyte this is
- * about, and it is not in any `.js` file the browser has to parse.
+ * JAVASCRIPT ONLY, and that was learned the first time the check ran: `main.tsx` imported
+ * `@copilotkit/react-core/v2/styles.css` then, whose module id sat in the entry chunk's module list,
+ * and the check refused a build whose JavaScript was clean. A stylesheet is not the megabyte this is
+ * about, and it is not in any `.js` file the browser has to parse. (That import left the entry on
+ * 2026-10-06, since nothing in the app wore a rule of it; the reason holds for any stylesheet.)
  */
 export function lazyOnlyPackageOf(moduleId: string): string | null {
   const path = moduleId.split("?")[0] ?? "";
