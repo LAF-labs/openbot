@@ -1577,15 +1577,14 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * and `POST /api/agents/test-connection` left the matrix's list of what a colleague reaches,
  * since on the matrix's deployment it answers everybody 400 with a code.
  *
- * AND AGAIN THE SAME DAY from the independent read of that change, by exactly the ten added,
- * each written before its fix: `server` from 3611 to 3619 and `app` from 2156 to 2158. Eight to
- * `server`. Five in the new `private-hosts-refusal.test.ts`: the switch that marks a stack as a
- * developer's was only read, and production refuses to start with it now, by name — with a
- * computer configured,
- * and with none, where the line opens nothing yet; everywhere that is not production it is
- * allowed; only the word turns it on, so only the word is refused; and the refusal's sentence is
- * whole in the one line a crash writes — started as production through the real entry point, the
- * first wording was cut off at 200 characters, before what to do about it. Two more in
+ * AND AGAIN THE SAME DAY from the independent read of that change, by exactly the eleven added:
+ * `server` from 3611 to 3620 and `app` from 2156 to 2158. Nine to `server`. Five in the new
+ * `private-hosts-refusal.test.ts`: the switch that marks a stack as a developer's was only read,
+ * and production refuses to start with it now, by name — with a computer configured, and with
+ * none, where the line opens nothing yet; everywhere that is not production it is allowed; only
+ * the word turns it on, so only the word is refused; and the refusal's sentence is whole in the
+ * one line a crash writes — started as production through the real entry point, the first
+ * wording was cut off at 200 characters, before what to do about it. Two more in
  * `boot-line.test.ts`, which holds four things where it held two: the switch itself said on
  * every boot by the name the app is told; the count on a hosted boot, zero included; a count
  * that could not be read said as `null` — there, and not a number; and no count at all on a
@@ -1593,8 +1592,11 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `runtime-agents.integration.test.ts`: a loader is not built without saying where Bots run —
  * the compiler refuses the call (a `@ts-expect-error`, which an argument made optional again
  * turns into an unused directive) and so does the loader, for anything that is neither answer.
- * The loader's other tests, and the three files that build one for memory and the shop's
- * profile, say which setting they mean in place. Two to `app`, in
+ * And one in `log-hygiene.integration.test.ts`: a second real server, started with the opt-in
+ * beside the first, says `botEndpoints: true` on its boot line and to the app, with no count,
+ * while the first still says the other thing — the developer's setting through the real
+ * `main.ts`. The loader's other tests, and the three files that build one for memory and the
+ * shop's profile, say which setting they mean in place. Two to `app`, in
  * `admin-bot-endpoints.test.tsx`: on the credentials page a key stored for a Bot's own server
  * says "not used here" where nothing reads it, with its Revoke button still to press and a
  * retired key and a model's key as they were; and "in use" on a developer's stack.
@@ -1604,7 +1606,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3619, roots: ["server"] },
+  { name: "server", floor: 3620, roots: ["server"] },
   { name: "app", floor: 2158, roots: ["app"] },
   { name: "agent-computer", floor: 529, roots: ["agent-computer"] },
   { name: "root", floor: 737, roots: ["tests", "agent-bot"] },

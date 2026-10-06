@@ -175,6 +175,10 @@ let providerSawKey = false;
 let bot: Captured | undefined;
 let server: Captured | undefined;
 let api = "";
+/** What the API server was started with, kept for the one test that starts a second. */
+let serverEnvironment: Record<string, string> | undefined;
+/** That second server, so a test that never reached its own stop does not leave it running. */
+let developers: Captured | undefined;
 
 const sse = (chunks: object[]) =>
   `${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}`).join("\n\n")}\n\ndata: [DONE]\n\n`;
@@ -321,7 +325,7 @@ afterAll(async () => {
       for (const line of captured?.lines ?? []) console.log(line);
     }
   }
-  for (const captured of [server, bot]) {
+  for (const captured of [server, bot, developers]) {
     if (!captured || captured.process.exitCode !== null) continue;
     captured.process.kill("SIGKILL");
     await captured.process.exited;
@@ -398,7 +402,7 @@ describe("a running deployment's log", () => {
     });
     const botBoot = await bot.event("boot");
 
-    server = spawn("server", resolve(root, "server"), {
+    serverEnvironment = {
       PORT: "0",
       DATABASE_URL,
       KEY_ENCRYPTION_KEY: EXAMPLE_ENCRYPTION_KEY,
@@ -414,7 +418,8 @@ describe("a running deployment's log", () => {
       BOT_MODEL: MODEL,
       AUDIT_RETENTION_DAYS: "0",
       IMAGE_TAG,
-    });
+    };
+    server = spawn("server", resolve(root, "server"), serverEnvironment);
     const serverBoot = await server.event("boot", 60_000);
     api = `http://127.0.0.1:${serverBoot.port}`;
 
@@ -563,6 +568,50 @@ describe("a running deployment's log", () => {
     expect(botBoot.model).toBe(MODEL);
     expect(botBoot.baseUrl).toContain("127.0.0.1");
   });
+
+  /*
+   * THE OTHER KIND OF DEPLOYMENT, THROUGH THE SAME REAL PROCESS (the independent read of #121).
+   * A server handed the private-host opt-in is a developer's stack: it takes an endpoint of a
+   * person's own for a Bot and dials each Bot where its row says. Compose never hands the server
+   * that line and production refuses to start with it — but an API started any other way has it
+   * if its environment does, and its boot line used to look exactly like a hosted deployment
+   * whose count could not be read: no `botsBroughtHome`, and nothing else. It says which it is
+   * now, on the line and to the app, from one reading of the switch (`botEndpointsTaken`).
+   *
+   * A second server beside the first, on a port of its own, for as long as it takes to read its
+   * first line. The computer it is pointed at is nowhere, and nothing asks for one at boot.
+   */
+  test("a server started with the private-host opt-in says so on its boot line, and to the app", async () => {
+    running();
+    if (!serverEnvironment) {
+      throw new Error("The boot test above never built the environment.");
+    }
+    developers = spawn("server (developer's)", resolve(root, "server"), {
+      ...serverEnvironment,
+      AGENT_COMPUTER_URL: "http://127.0.0.1:9",
+      AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS: "true",
+    });
+    const boot = await developers.event("boot", 60_000);
+    expect(boot.botEndpoints).toBe(true);
+    // No Bot is brought anywhere there, so there is no count — and that is all a missing one means.
+    expect(boot.raw).not.toContain("botsBroughtHome");
+    expect(boot.computer).toBe("one shared computer");
+
+    const me = (await (
+      await fetch(`http://127.0.0.1:${boot.port}/api/me`)
+    ).json()) as { deployment?: { botEndpoints?: unknown } };
+    expect(me.deployment?.botEndpoints).toBe(true);
+    // And the first server, beside it on the same database, still says the other thing.
+    const hosted = await json<{ deployment: { botEndpoints: unknown } }>(
+      "/api/me",
+    );
+    expect(hosted.deployment.botEndpoints).toBe(false);
+
+    developers.process.kill("SIGTERM");
+    const stopped = await developers.event("shutdown", 15_000);
+    expect(stopped.reason).toBe("SIGTERM");
+    expect(await developers.process.exited).toBe(0);
+  }, 90_000);
 
   test("says why it stopped when it is told to", async () => {
     const { bot, server } = running();
