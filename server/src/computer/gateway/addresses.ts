@@ -72,7 +72,46 @@ export function pathOf(url: string): string {
 }
 
 /**
+ * A path in the Bot's folder in its ONE spelling, or null when it is not a path there at all.
+ *
+ * WHAT A RULE JUDGES HAS TO BE WHAT THE COMPUTER ACTS ON. The computer does not act on the string
+ * it is sent: it trims it and resolves it (`agent-computer/src/workspace.ts`, `resolvePath`), so
+ * `"private/pay.csv "`, `"./private/pay.csv"`, `"private//pay.csv"` and `"private/pay.csv/."` are
+ * one file there. Here they were four strings, and a rule was asked about whichever one a model
+ * wrote: `matches(file.path, "^private/")` did not see `./private/…`, `file.name == ".env"` did not
+ * see `.env/`, `file.extension == "exe"` did not see `tool.exe/.` or `tool.exe ` — and the row said
+ * "allowed" under a path that is not the one that was read. The chat's door trimmed; a routine's
+ * did not even do that (found by an independent read of the script act, 2026-10-07, in the reads a
+ * script names, and then here in the Bot's own). The shipped policy has no rule about a file's
+ * path, so nothing shipped was walked past; a deployment that wrote one was.
+ *
+ * So `govern` reads every path this way before anything is decided, and the policy, the question,
+ * an allowance's scope, the count of "the same call again" and the row all get the computer's own
+ * reading: the ends trimmed, `.` and empty segments and a trailing slash gone. It is that reading
+ * and nothing stricter — a name with a space or a backslash inside it is a name there, and here.
+ *
+ * NULL IS EXACTLY WHAT THE COMPUTER REFUSES AS A PATH: blank, a NUL, an absolute path, a `..`
+ * segment. Such a string has no file behind it whatever a rule says of it, so it is left as it was
+ * written — judged as written, refused by the computer (`laf:file_path_refused`), and on the trail
+ * as an act that was allowed and did not happen, which is what it was before.
+ */
+export function workspacePathOf(requested: string): string | null {
+  const wanted = requested.trim();
+  if (wanted === "" || wanted.includes("\0") || wanted.startsWith("/")) {
+    return null;
+  }
+  const segments = wanted
+    .split("/")
+    .filter((segment) => segment !== "" && segment !== ".");
+  if (segments.includes("..")) return null;
+  // Nothing left is the folder itself, which is how a listing of the whole of it is asked for.
+  return segments.length === 0 ? "." : segments.join("/");
+}
+
+/**
  * Split a path into the parts a rule wants to match on.
+ *
+ * Handed a path in its one spelling ({@link workspacePathOf}) by `govern`, whoever named the file.
  *
  * Lower-cased, because a rule forbidding `.env` must also catch `.ENV`; the
  * operator should have anticipated. Same reasoning as the case-insensitive `contains` in policy.ts.

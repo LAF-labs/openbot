@@ -18,6 +18,7 @@ import type {
   UploadFileInput,
   WriteFileInput,
 } from "../schema";
+import { workspacePathOf } from "./addresses";
 import type { ActionActor } from "./caller";
 import type { Govern, JudgedElement } from "./govern";
 
@@ -42,6 +43,20 @@ function heldTo<I extends { element?: JudgedElement }>(
 ): I {
   const { element: _fromCaller, ...rest } = input;
   return (judged ? { ...rest, element: judged } : rest) as I;
+}
+
+/**
+ * A file act's input with its path in the one spelling the computer acts on, where it has one
+ * (`addresses.ts`, `workspacePathOf`).
+ *
+ * `govern` reads the path that way itself before it decides, whoever calls it; this is the other
+ * half, so that the string the computer is SENT is the string that was judged and the one its
+ * answer names — not merely another spelling of the same file. A string that is no path at all
+ * goes on as it was written, for the computer to refuse.
+ */
+function spelled<I extends { path: string }>(input: I): I {
+  const path = workspacePathOf(input.path);
+  return path === null || path === input.path ? input : { ...input, path };
 }
 
 export function createActs(deps: {
@@ -187,6 +202,7 @@ export function createActs(deps: {
       signal?: AbortSignal,
       approvalId?: string,
     ) {
+      const file = spelled(input);
       return govern(
         computerId,
         "computer_upload_file",
@@ -196,11 +212,11 @@ export function createActs(deps: {
           ref: input.ref,
           // The file is part of the subject, so a rule about which files may leave the workspace has
           // something to match on, and so the audit row names what was handed over.
-          filePath: input.path,
+          filePath: file.path,
           ...(signal ? { signal } : {}),
           ...(approvalId ? { approvalId } : {}),
         },
-        (judged) => as(botId).uploadFile(heldTo(input, judged), signal),
+        (judged) => as(botId).uploadFile(heldTo(file, judged), signal),
       );
     },
 
@@ -218,19 +234,20 @@ export function createActs(deps: {
       input: ReadFileInput,
       approvalId?: string,
     ) {
+      const file = spelled(input);
       return govern(
         computerId,
         "computer_read_file",
         botId,
         actor,
         {
-          filePath: input.path,
-          ...(input.offset !== undefined || input.limit !== undefined
-            ? { part: `${input.offset ?? 0}+${input.limit ?? ""}` }
+          filePath: file.path,
+          ...(file.offset !== undefined || file.limit !== undefined
+            ? { part: `${file.offset ?? 0}+${file.limit ?? ""}` }
             : {}),
           ...(approvalId ? { approvalId } : {}),
         },
-        () => as(botId).readFile(input),
+        () => as(botId).readFile(file),
       );
     },
 
@@ -246,16 +263,24 @@ export function createActs(deps: {
       input: ListFilesInput,
       approvalId?: string,
     ) {
+      /*
+       * No path is the whole folder: judged as `.`, as it always was, and sent to the computer as
+       * it always was — with no path at all, so its answer names the folder the way it did.
+       */
+      const listed =
+        input.path === undefined
+          ? undefined
+          : spelled({ ...input, path: input.path });
       return govern(
         computerId,
         "computer_list_files",
         botId,
         actor,
         {
-          filePath: input.path ?? ".",
+          filePath: listed?.path ?? ".",
           ...(approvalId ? { approvalId } : {}),
         },
-        () => as(botId).listFiles(input),
+        () => as(botId).listFiles(listed ?? input),
       );
     },
 
@@ -266,13 +291,14 @@ export function createActs(deps: {
       input: WriteFileInput,
       approvalId?: string,
     ) {
+      const file = spelled(input);
       return govern(
         computerId,
         "computer_write_file",
         botId,
         actor,
-        { filePath: input.path, ...(approvalId ? { approvalId } : {}) },
-        () => as(botId).writeFile(input),
+        { filePath: file.path, ...(approvalId ? { approvalId } : {}) },
+        () => as(botId).writeFile(file),
       );
     },
   };

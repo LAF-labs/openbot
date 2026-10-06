@@ -393,6 +393,7 @@
   "server/tests/fleet-webhook.test.ts",
   "server/tests/frame-routes.test.ts",
   "server/tests/frames.integration.test.ts",
+  "server/tests/gateway-file-paths.test.ts",
   "server/tests/gateway-high-risk.test.ts",
   "server/tests/goal-approvals.test.ts",
   "server/tests/goals.integration.test.ts",
