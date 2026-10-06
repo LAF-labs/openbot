@@ -63,7 +63,7 @@ async function turn(
 ) {
   const sent: Sent[] = [];
   const pluginStore = {
-    listForAgent: async () => ({
+    offeredToModel: async () => ({
       tools: [
         {
           ref: REF,

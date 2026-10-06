@@ -150,7 +150,13 @@ export type SkillRecord = {
  */
 export type SkillActor = { id: string; isAdmin: boolean };
 
-/** What one Bot holds. Everything the runtime needs to offer it, and nothing it does not. */
+/**
+ * What one Bot holds: every grant, with the row behind it as it is stored.
+ *
+ * THE BOOKKEEPING'S ANSWER, NOT A MODEL'S (`listForAgent`). It was both until 2026-10-06, and "as
+ * it is stored" includes a vendor's definition nobody has reviewed yet — see {@link OfferedPlugins}
+ * for what a model is given instead.
+ */
 export type GrantedPlugins = {
   tools: {
     ref: string;
@@ -165,6 +171,32 @@ export type GrantedPlugins = {
     summary: string;
     instructions: string;
   }[];
+};
+
+/**
+ * What a MODEL is offered of what one Bot holds (`offeredToModel`): the grants, less everything a
+ * vendor wrote that no person has consented to.
+ *
+ * A tool waiting for review is refused when it is called (`call.ts`), and until 2026-10-06 that was
+ * all the pause did: the row holds the vendor's NEW description and schema from the moment the
+ * refresh sees them, and every list a model was given was built from the row. So a description
+ * changed to carry an instruction reached the model at its next lookup, and the lookup ranked by
+ * the description's own words, while the person had not yet read a word of it (found by the review
+ * of #110). Here a tool whose definition changed keeps its name — that name was consented to — and
+ * is worded by this deployment (`shared/tools/paused.ts`), and a tool that appeared after
+ * registration is not here at all: nobody ever consented to its name either.
+ */
+export type OfferedPlugins = {
+  tools: (GrantedPlugins["tools"][number] & {
+    /**
+     * Present, and true, only on a tool that waits for review. Its words are this deployment's, so
+     * whoever builds a model's list takes them from here and from no other copy — a window that
+     * read this tool before it was paused, or under a build that still handed the vendor's text
+     * over, declares its own (`turns/chat-tools.ts`).
+     */
+    waitsForReview?: true;
+  })[];
+  skills: GrantedPlugins["skills"];
 };
 
 /**
@@ -778,7 +810,10 @@ export function createPluginStore(options: PluginStoreOptions) {
     uninstallSkill: grants.uninstallSkill,
     grant: grants.grant,
     revoke: grants.revoke,
+    /** Every grant a Bot holds, rows as stored. The bookkeeping's read; never a model's. */
     listForAgent: grants.listForAgent,
+    /** What a model is offered of them. The turn's, the routine's and the window's read. */
+    offeredToModel: grants.offeredToModel,
     viewSkill: grants.viewSkill,
     decide: grants.decide,
 

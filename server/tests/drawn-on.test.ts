@@ -25,7 +25,7 @@ type CallInput = Parameters<PluginStore["callTool"]>[0];
 function recordingStore() {
   const calls: CallInput[] = [];
   const store = {
-    listForAgent: async () => ({
+    offeredToModel: async () => ({
       tools: [
         {
           ref: REF,

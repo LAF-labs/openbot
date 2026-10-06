@@ -13,7 +13,7 @@ const actor = { id: "person-1", userId: "person-1" };
 function fakeStore(skills: string[], allowed = true) {
   const viewed: unknown[] = [];
   const store = {
-    listForAgent: async () => ({
+    offeredToModel: async () => ({
       tools: [],
       skills: skills.map((slug) => ({
         slug,

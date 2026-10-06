@@ -453,6 +453,7 @@
   "server/tests/plugin-oauth.test.ts",
   "server/tests/plugin-one-shape.test.ts",
   "server/tests/plugin-outward-send.test.ts",
+  "server/tests/plugin-paused-text.integration.test.ts",
   "server/tests/plugin-relay-connect.test.ts",
   "server/tests/plugin-relay.test.ts",
   "server/tests/plugin-rest-adapters.test.ts",

@@ -1,4 +1,8 @@
 import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import {
+  PAUSED_TOOL_DESCRIPTION,
+  PAUSED_TOOL_PARAMETERS,
+} from "../../../shared/tools/paused";
 import { normalizeSkillName } from "../../../shared/tools/skills";
 import {
   recordAuditEvent,
@@ -9,13 +13,14 @@ import type { Database } from "../db/client";
 import { agentProfiles, mcpTools, pluginGrants, skills } from "../db/schema";
 import type {
   GrantedPlugins,
+  OfferedPlugins,
   PluginContext,
   PluginDecision,
   PluginKind,
   SkillActor,
   SkillRecord,
 } from "./store";
-import { toolNameFor } from "./store";
+import { REVIEW_CHANGED, toolNameFor } from "./store";
 
 /**
  * Who holds what: the skills this deployment has written down, and the grants that say which Bot may
@@ -113,6 +118,53 @@ export function createSkillsAndGrants(context: PluginContext) {
       byRef.set(row.ref, [...(byRef.get(row.ref) ?? []), row.agentId]);
     }
     return byRef;
+  }
+
+  /**
+   * The grants one Bot holds and the rows behind them, read once for both listings below.
+   *
+   * ONE READ, so a row's text and its review flag are the same moment's: a listing that took the
+   * text from one query and the flag from another could hand over a description the vendor changed
+   * in between, unflagged.
+   */
+  async function heldBy(agentId: string) {
+    const held = await database
+      .select()
+      .from(pluginGrants)
+      .where(eq(pluginGrants.agentId, agentId));
+    if (held.length === 0) return { toolRows: [], skills: [] };
+
+    const toolRefs = held
+      .filter((row) => row.kind === "mcp")
+      .map((row) => row.ref);
+    const skillSlugs = held
+      .filter((row) => row.kind === "skill")
+      .map((row) => row.ref);
+
+    const toolRows =
+      toolRefs.length === 0
+        ? []
+        : await database.select().from(mcpTools).orderBy(asc(mcpTools.name));
+
+    const skillRows =
+      skillSlugs.length === 0
+        ? []
+        : await database
+            .select()
+            .from(skills)
+            .where(inArray(skills.slug, skillSlugs));
+
+    return {
+      toolRows: toolRows.filter((row) =>
+        toolRefs.includes(`${row.serverId}/${row.name}`),
+      ),
+      skills: skillRows.map((row) => ({
+        slug: row.slug,
+        title: row.title,
+        summary: row.summary,
+        instructions: row.instructions,
+      })),
+    };
   }
 
   /**
@@ -371,28 +423,19 @@ export function createSkillsAndGrants(context: PluginContext) {
       });
     },
 
-    /** Everything one Bot may use. The runtime asks this and offers exactly what comes back. */
+    /**
+     * Everything one Bot HOLDS: each grant, and the row behind it as it is stored.
+     *
+     * THE BOOKKEEPING'S READ. Whoever keeps grants in step asks this — a key's tools at boot
+     * (`deployment-key-runtime.ts`), a partner's on a connect (`partners.ts`) — and needs every
+     * grant there is, a paused tool's included, or it grants again at every boot. It was also what
+     * the runtime offered a model until 2026-10-06, which is how a vendor's unreviewed description
+     * reached one: a model is given {@link offeredToModel} and never this.
+     */
     async listForAgent(agentId: string): Promise<GrantedPlugins> {
-      const held = await database
-        .select()
-        .from(pluginGrants)
-        .where(eq(pluginGrants.agentId, agentId));
-      if (held.length === 0) return { tools: [], skills: [] };
-
-      const toolRefs = held
-        .filter((row) => row.kind === "mcp")
-        .map((row) => row.ref);
-      const skillSlugs = held
-        .filter((row) => row.kind === "skill")
-        .map((row) => row.ref);
-
-      const toolRows =
-        toolRefs.length === 0
-          ? []
-          : await database.select().from(mcpTools).orderBy(asc(mcpTools.name));
-      const grantedTools = toolRows
-        .filter((row) => toolRefs.includes(`${row.serverId}/${row.name}`))
-        .map((row) => {
+      const { toolRows, skills: held } = await heldBy(agentId);
+      return {
+        tools: toolRows.map((row) => {
           const ref = `${row.serverId}/${row.name}`;
           return {
             ref,
@@ -400,24 +443,56 @@ export function createSkillsAndGrants(context: PluginContext) {
             description: row.description,
             inputSchema: row.inputSchema as Record<string, unknown>,
           };
-        });
+        }),
+        skills: held,
+      };
+    },
 
-      const skillRows =
-        skillSlugs.length === 0
-          ? []
-          : await database
-              .select()
-              .from(skills)
-              .where(inArray(skills.slug, skillSlugs));
-
+    /**
+     * What a MODEL is offered of what one Bot holds: the turn's read, the routine's, and the one
+     * the window fetches its list through (`OfferedPlugins` says what went wrong before it).
+     *
+     * WHILE A TOOL WAITS FOR REVIEW, NOTHING ITS VENDOR WROTE SINCE THE LAST CONSENT IS HERE.
+     *
+     *  - Its definition CHANGED: it is offered under its name, which was consented to, with this
+     *    deployment's own description and an empty schema (`shared/tools/paused.ts`). The name
+     *    stays because the Bot saying "this is paused, review it" is the one way a person learns
+     *    of the pause today; a call is still refused by `call.ts`, with its row and its sentence.
+     *  - It APPEARED after registration, or waits for any reason this build does not know: it is
+     *    not offered at all. Nobody consented to its name, and a name is a vendor's text too — it
+     *    stands in every turn's context and is what a lookup matches first.
+     *
+     * The description and the schema are the whole of what a row gives a model: this shape has
+     * never carried a vendor's annotations.
+     */
+    async offeredToModel(agentId: string): Promise<OfferedPlugins> {
+      const { toolRows, skills: held } = await heldBy(agentId);
       return {
-        tools: grantedTools,
-        skills: skillRows.map((row) => ({
-          slug: row.slug,
-          title: row.title,
-          summary: row.summary,
-          instructions: row.instructions,
-        })),
+        tools: toolRows.flatMap((row) => {
+          const ref = `${row.serverId}/${row.name}`;
+          if (!row.needsReview) {
+            return [
+              {
+                ref,
+                toolName: toolNameFor(ref),
+                description: row.description,
+                inputSchema: row.inputSchema as Record<string, unknown>,
+              },
+            ];
+          }
+          if (row.reviewReason !== REVIEW_CHANGED) return [];
+          return [
+            {
+              ref,
+              toolName: toolNameFor(ref),
+              description: PAUSED_TOOL_DESCRIPTION,
+              // A copy: what a caller does to its own list is not done to the next caller's.
+              inputSchema: { ...PAUSED_TOOL_PARAMETERS, properties: {} },
+              waitsForReview: true as const,
+            },
+          ];
+        }),
+        skills: held,
       };
     },
 

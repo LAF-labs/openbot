@@ -333,7 +333,11 @@ const withNotes = <T extends Record<string, unknown>>(result: T) => {
 export type UnattendedToolsOptions = {
   /** Absent when no computer is configured; the Bot then runs with plugin tools only. */
   gateway?: ComputerGateway;
-  pluginStore?: Pick<PluginStore, "listForAgent" | "callTool" | "viewSkill">;
+  /**
+   * `offeredToModel`, never `listForAgent`: what is listed here is read by a model, and a tool that
+   * waits for review is listed without a word its vendor wrote (`OfferedPlugins`, `store.ts`).
+   */
+  pluginStore?: Pick<PluginStore, "offeredToModel" | "callTool" | "viewSkill">;
 };
 
 /**
@@ -349,7 +353,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
   ): Promise<UnattendedToolkit> => {
     const { gateway, pluginStore } = options;
     const granted = pluginStore
-      ? await pluginStore.listForAgent(botId)
+      ? await pluginStore.offeredToModel(botId)
       : { tools: [], skills: [] };
 
     const pluginByName = new Map(

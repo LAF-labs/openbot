@@ -1423,6 +1423,27 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * registration" — the refresh had rewritten it to "definition changed", the reason that means its
  * name was consented to.
  *
+ * RAISED 2026-10-06 with a paused tool that says nothing of its own, `server` from 3601 to 3611
+ * and `root` from 718 to 719, by exactly the eleven written for it. A vendor's tool waiting for
+ * review could not be called, and its changed description and schema were still handed to the
+ * model, which also found tools by those words (the review of #110). Ten in the new
+ * `plugin-paused-text.integration.test.ts`, against a real database with a sentinel planted in a
+ * changed description, another in a changed schema's field and a third in a new tool's name:
+ * registration offering the vendor's own words; the change and the new tool leaving none of the
+ * three in anything a model is given — a turn with no window, with a window that read its list
+ * now and with one that read it before the fix, a routine, and the window's route, each put
+ * through the Bot service's own schema, context names, lookups and calls by name; the changed
+ * tool still offered under its name with this deployment's description and an empty schema; a
+ * lookup for the vendor's words not finding it and one for its name finding it described as
+ * paused, with the new tool's exact name answered as a name that does not exist; the call
+ * refused with its row and its sentence, and an unoffered name answered as no tool; a routine's
+ * Bot looking for the tool and calling it over the real wire, with every request the provider
+ * was sent searched whole; a tool nobody consented to left out when it changes again; a paused
+ * row with an unknown reason not offered; the bookkeeping still seeing every grant, so a boot
+ * grants nothing again; and after approval the vendor's words offered again. One for `root` in
+ * `owner-words-prompt.test.ts`: the description that stands in, pinned whole, naming nobody and
+ * carrying no slot for a vendor's text.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
