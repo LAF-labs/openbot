@@ -746,6 +746,7 @@ export function createPluginStore(options: PluginStoreOptions) {
     approveToolDefinition: servers.approveToolDefinition,
     removeServer: servers.removeServer,
     refreshTools: servers.refreshTools,
+    refreshShippedDefinitions: servers.refreshShippedDefinitions,
     listServers: servers.listServers,
     /** What a connect and a disconnect do beyond the credential. See `servers.ts`. */
     offerToolsTo: servers.offerToolsTo,

@@ -54,7 +54,6 @@ export type DeploymentKeyStore = Pick<
   PluginStore,
   | "ensureCatalogueServer"
   | "refreshTools"
-  | "approveToolDefinition"
   | "grant"
   | "revoke"
   | "removeServer"
@@ -166,19 +165,12 @@ export function createDeploymentKeyRuntime(input: {
       }
 
       await store.ensureCatalogueServer({ key: service.key, by });
-      const refreshed = await store.refreshTools(service.key);
       /*
-       * A definition that changed since the row was made is paused by the refresh for a person to
-       * review — right for somebody else's server, and a dead tool here, because the definition is
-       * this repository's own reviewed code and nobody is going to press Approve on every shop
-       * owner's machine after every upgrade. The trail still records the change and the
-       * acceptance, one row each.
+       * The refresh accepts a definition that changed since the row was made, because it is this
+       * repository's own code (`servers.ts`, `refreshTools`). It was done here, after the refresh,
+       * until 2026-10-06 — for these entries alone.
        */
-      if ((refreshed.paused ?? 0) > 0) {
-        for (const tool of service.tools) {
-          await store.approveToolDefinition(service.key, tool.name, by);
-        }
-      }
+      await store.refreshTools(service.key);
       for (const botId of await input.listBots()) {
         await grantMissing(store, service, botId, by);
       }

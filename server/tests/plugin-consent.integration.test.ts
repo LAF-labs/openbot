@@ -33,12 +33,13 @@ const stubbedVendor = () => ({
 
 mock.module("../src/plugins/mcp", stubbedVendor);
 
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { createAuditStore } from "../src/audit";
 import { createApprovalRegistry } from "../src/computer/approvals";
 import { createDatabase } from "../src/db/client";
 import {
   agents,
+  auditEvents,
   mcpServers,
   mcpTools,
   pluginGrants,
@@ -218,5 +219,202 @@ describeDb("plugin definition consent", () => {
       .then((rows) => rows.filter((r) => r.name === "orders.export"));
     expect(row?.needsReview).toBe(true);
     expect(row?.reviewReason).toBe("appeared after registration");
+  });
+
+  /*
+   * A DEFINITION THAT SHIPS WITH THIS BUILD IS NOT A VENDOR'S (the owner, 2026-10-06). The two
+   * tests above are somebody else's server, and stay as they are. Here the server is one whose tool
+   * list is this repository's own code — a catalogue adapter, no vendor asked — standing as a
+   * previous build left it: one definition different, one tool that did not exist yet.
+   *
+   * Until this rule, a description edited in a release paused the tool for everybody already
+   * connected, and nothing told them (the review of #90 put six definitions back rather than
+   * ship that). Only the weather and web-search entries were spared, by a loop of their own.
+   */
+  describe("a definition that ships with this build", () => {
+    const shippedId = "google-business-profile";
+    let mine = false;
+    const rowsOf = () =>
+      database.select().from(mcpTools).where(eq(mcpTools.serverId, shippedId));
+    /** The trail's rows about these tools — every one, or only those not seen before. */
+    const trailRows = (names: string[]) =>
+      database
+        .select()
+        .from(auditEvents)
+        .where(
+          inArray(
+            auditEvents.targetId,
+            names.map((name) => `${shippedId}/${name}`),
+          ),
+        );
+    /*
+     * BY IDENTITY, NOT BY THE CLOCK. The rows are stamped by the database, whose clock is a
+     * container's; "everything since a moment this process noted" loses a row to a second of drift
+     * one run in a few (seen on the first afternoon of this test).
+     */
+    const newSince = async (names: string[], seen: ReadonlySet<string>) =>
+      (await trailRows(names))
+        .filter((event) => !seen.has(event.id))
+        .map((event) => ({
+          what: event.eventType,
+          tool: event.targetId?.slice(shippedId.length + 1),
+          by: (event.payload as { actor?: string }).actor ?? null,
+        }))
+        .sort((a, b) =>
+          `${a.tool} ${a.what}`.localeCompare(`${b.tool} ${b.what}`),
+        );
+
+    beforeAll(async () => {
+      const made = await database
+        .insert(mcpServers)
+        .values({
+          id: shippedId,
+          title: "Google Business Profile",
+          vendor: "Google",
+          url: "https://mybusiness.googleapis.com/v4",
+          provenance: "first-party",
+        })
+        .onConflictDoNothing()
+        .returning({ id: mcpServers.id });
+      mine = made.length > 0;
+      // The registration: everything this build offers lands approved.
+      await store.refreshTools(shippedId);
+    });
+
+    afterAll(async () => {
+      // Only what this suite made: another suite's row under the same catalogue key is not ours.
+      if (mine) {
+        await database.delete(mcpServers).where(eq(mcpServers.id, shippedId));
+      }
+    });
+
+    test("a changed one and a new one are accepted as they arrive, and the trail holds the change and the acceptance", async () => {
+      const [changed, appeared] = await rowsOf();
+      if (!changed || !appeared) throw new Error("the adapter lists two tools");
+      expect([changed.needsReview, appeared.needsReview]).toEqual([
+        false,
+        false,
+      ]);
+      await database
+        .update(mcpTools)
+        .set({ definitionHash: "what-the-last-build-shipped" })
+        .where(
+          and(
+            eq(mcpTools.serverId, shippedId),
+            eq(mcpTools.name, changed.name),
+          ),
+        );
+      await database
+        .delete(mcpTools)
+        .where(
+          and(
+            eq(mcpTools.serverId, shippedId),
+            eq(mcpTools.name, appeared.name),
+          ),
+        );
+
+      const seen = new Set(
+        (await trailRows([changed.name, appeared.name])).map(
+          (event) => event.id,
+        ),
+      );
+      const result = await store.refreshTools(shippedId);
+      expect(result.paused ?? 0).toBe(0);
+
+      const after = await rowsOf();
+      expect(
+        after.filter((row) => row.needsReview).map((row) => row.name),
+      ).toEqual([]);
+      // This build's definition is the one held again, and the new tool is there.
+      expect(
+        after.find((row) => row.name === changed.name)?.definitionHash,
+      ).toBe(changed.definitionHash);
+      expect(after.some((row) => row.name === appeared.name)).toBe(true);
+      // What changed, and that the deployment accepted it — never a person who did not.
+      expect(await newSince([changed.name, appeared.name], seen)).toEqual(
+        [
+          {
+            what: "mcp.tool_definition_approved",
+            tool: appeared.name,
+            by: "deployment",
+          },
+          {
+            what: "mcp.tool_definition_changed",
+            tool: appeared.name,
+            by: null,
+          },
+          {
+            what: "mcp.tool_definition_approved",
+            tool: changed.name,
+            by: "deployment",
+          },
+          { what: "mcp.tool_definition_changed", tool: changed.name, by: null },
+        ].sort((a, b) =>
+          `${a.tool} ${a.what}`.localeCompare(`${b.tool} ${b.what}`),
+        ),
+      );
+    });
+
+    test("one left waiting by an earlier build is accepted at the next refresh", async () => {
+      const [waiting] = await rowsOf();
+      if (!waiting) throw new Error("the adapter lists a tool");
+      await database
+        .update(mcpTools)
+        .set({ needsReview: true, reviewReason: "definition changed" })
+        .where(
+          and(
+            eq(mcpTools.serverId, shippedId),
+            eq(mcpTools.name, waiting.name),
+          ),
+        );
+      await store.refreshTools(shippedId);
+      expect((await rowsOf()).filter((row) => row.needsReview)).toEqual([]);
+    });
+
+    test("at boot every shipped service is brought up to this build in one pass, and a vendor's is not asked", async () => {
+      const [stale] = await rowsOf();
+      if (!stale) throw new Error("the adapter lists a tool");
+      await database
+        .update(mcpTools)
+        .set({ definitionHash: "what-the-last-build-shipped" })
+        .where(
+          and(eq(mcpTools.serverId, shippedId), eq(mcpTools.name, stale.name)),
+        );
+      // The vendor's server, with something new on it that only a person may accept.
+      const vendorBefore = await database
+        .select()
+        .from(mcpTools)
+        .where(eq(mcpTools.serverId, serverId));
+      toolsOnServer = [
+        ...toolsOnServer,
+        {
+          name: "orders.delete",
+          description: "Delete",
+          inputSchema: {},
+          annotations: {},
+        },
+      ];
+
+      await store.refreshShippedDefinitions();
+
+      const row = (await rowsOf()).find((tool) => tool.name === stale.name);
+      expect(row?.definitionHash).toBe(stale.definitionHash);
+      expect(row?.needsReview).toBe(false);
+      const vendorAfter = await database
+        .select()
+        .from(mcpTools)
+        .where(eq(mcpTools.serverId, serverId));
+      expect(vendorAfter.map((tool) => tool.name).sort()).toEqual(
+        vendorBefore.map((tool) => tool.name).sort(),
+      );
+      // And what a person had not reviewed there is still waiting for one.
+      expect(
+        vendorAfter.filter((tool) => tool.needsReview).map((tool) => tool.name),
+      ).toEqual(
+        vendorBefore
+          .filter((tool) => tool.needsReview)
+          .map((tool) => tool.name),
+      );
+    });
   });
 });

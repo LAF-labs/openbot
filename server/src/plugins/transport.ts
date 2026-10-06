@@ -139,6 +139,22 @@ export type VendorTransport = {
 };
 
 /**
+ * Whether a transport's tool definitions are this build's own code.
+ *
+ * THE SAME FACT AS `listNeedsCredential`, READ FOR A SECOND REASON — and written down as one, so the
+ * two cannot drift apart quietly. A list needs nobody's credential exactly when there is no vendor
+ * to ask: when the list IS this code. What follows from it is the consent rule in `servers.ts`: a
+ * vendor's changed definition is paused until a person has read it, and one that ships with this
+ * build is not, because it arrived with the release that also ships the rule. If a transport ever
+ * lists anonymously from a remote server, this line is what has to change.
+ */
+export function definitionsShipWithThisBuild(
+  transport: Pick<VendorTransport, "listNeedsCredential">,
+): boolean {
+  return !transport.listNeedsCredential;
+}
+
+/**
  * The protocols a catalogue entry may name.
  *
  * A closed union rather than a string, so adding one is a change to this file and to the registry

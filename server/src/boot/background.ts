@@ -105,7 +105,15 @@ export function startBackgroundWork(input: {
    * restart. Never fatal: a store that could not be written leaves the tools missing, which the
    * log says.
    */
-  void input.deploymentKeys.reconcile(input.pluginStore, "deployment");
+  /*
+   * Then every service whose tool definitions are this build's own code is brought up to this
+   * build (`refreshShippedDefinitions`): a calendar somebody connected under the last build keeps
+   * that build's descriptions otherwise. After the keys' reconciliation and never beside it — both
+   * write the same rows for the entries the keys hold.
+   */
+  void input.deploymentKeys
+    .reconcile(input.pluginStore, "deployment")
+    .then(() => input.pluginStore.refreshShippedDefinitions());
   // The package's skills, the same way: once, at boot, never fatal (built-in-skill-sync.ts).
   void input.builtInSkills?.reconcile(input.pluginStore, "deployment");
 

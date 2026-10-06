@@ -7,6 +7,7 @@ import {
   mcpUserCredentials,
   pluginGrants,
 } from "../db/schema";
+import { log } from "../log";
 import {
   type CatalogueEntry,
   catalogueEntry,
@@ -22,7 +23,6 @@ import {
   definitionHashOf,
   type ToolAnnotations,
 } from "./laf-contract";
-import { log } from "../log";
 import { McpServerError, trimDetail } from "./mcp";
 import { botsOwnedBy, type SkillsAndGrants } from "./skills-and-grants";
 import {
@@ -32,6 +32,7 @@ import {
   type PluginContext,
   type ServerRecord,
 } from "./store";
+import { definitionsShipWithThisBuild } from "./transport";
 
 /**
  * Which servers this deployment will talk to, and what each of them says it offers.
@@ -124,6 +125,12 @@ export function effectiveUrl(
   if (!entry || entry.host === null) return row.url;
   return resolveServerUrl(row.id)?.url ?? row.url;
 }
+
+/**
+ * Who accepted a definition that shipped with this build: the deployment, the same name the boot's
+ * own reconciliation writes into the trail.
+ */
+const SHIPPED_WITH_THE_BUILD = "deployment";
 
 export function createServers(
   context: PluginContext,
@@ -221,6 +228,33 @@ export function createServers(
     if (named[0]?.kind !== kind || named[0].provider !== serverId) {
       throw new CustomServerRefusedError(CREDENTIAL_NOT_FOR_SERVER);
     }
+  }
+
+  /**
+   * A definition accepted as it now is: by a person who read it, or by the deployment for one that
+   * shipped with this build (`refreshTools`). The current hash becomes the consented one; nothing
+   * else moves.
+   */
+  async function acceptDefinition(
+    serverId: string,
+    toolName: string,
+    by: string,
+  ): Promise<boolean> {
+    const updated = await database
+      .update(mcpTools)
+      .set({ needsReview: false, reviewReason: null })
+      .where(and(eq(mcpTools.serverId, serverId), eq(mcpTools.name, toolName)))
+      .returning({ name: mcpTools.name });
+    if (updated.length === 0) {
+      return false;
+    }
+    await recordAuditEvent(auditStore, {
+      eventType: "mcp.tool_definition_approved",
+      targetType: "mcp_tool",
+      targetId: `${serverId}/${toolName}`,
+      payload: { actor: by, server: serverId, tool: toolName },
+    });
+    return true;
   }
 
   /**
@@ -449,6 +483,38 @@ export function createServers(
             note: "Advertised by this server and not named in its reviewed write list, so each is offered to models as a read. This vendor has no read-only scope behind that list, so anything here that writes should be added to the entry.",
           },
         });
+      }
+
+      /*
+       * A DEFINITION THAT SHIPS WITH THIS BUILD IS ACCEPTED AS IT ARRIVES (the owner, 2026-10-06:
+       * "도구 설명은 같은 규칙으로 자동 승인"). The pause above protects a person from a VENDOR
+       * changing what a tool is behind a consent already given. Where the tool list is this
+       * repository's own reviewed code there is no vendor: the change arrived with a release, and
+       * nobody is going to press Approve on every person's machine after every upgrade — so a
+       * paused tool here was simply a dead tool. The weather and web-search entries had this rule
+       * since they were built, written after their own refresh at boot; the adapters a person
+       * connects (calendar, mail, sheets, a shop) did not, and a description edited in a release
+       * would have stopped them for everybody already connected (found by the review of #90, which
+       * put six definitions back to their old bytes rather than ship that).
+       *
+       * The trail still holds both halves, one row each: what changed, and that it was accepted —
+       * by the deployment, not by a person. And one left waiting by an earlier build is accepted
+       * here too.
+       */
+      if (definitionsShipWithThisBuild(transport)) {
+        const waiting = await database
+          .select({ name: mcpTools.name })
+          .from(mcpTools)
+          .where(
+            and(
+              eq(mcpTools.serverId, serverId),
+              eq(mcpTools.needsReview, true),
+            ),
+          );
+        for (const tool of waiting) {
+          await acceptDefinition(serverId, tool.name, SHIPPED_WITH_THE_BUILD);
+        }
+        paused = 0;
       }
 
       return { tools: tools.length, paused };
@@ -1040,28 +1106,40 @@ export function createServers(
      * A person looked at the changed definition and consented to it as it now
      * is. The current hash becomes the consented one; nothing else moves.
      */
-    async approveToolDefinition(
-      serverId: string,
-      toolName: string,
-      by: string,
-    ): Promise<boolean> {
-      const updated = await database
-        .update(mcpTools)
-        .set({ needsReview: false, reviewReason: null })
-        .where(
-          and(eq(mcpTools.serverId, serverId), eq(mcpTools.name, toolName)),
-        )
-        .returning({ name: mcpTools.name });
-      if (updated.length === 0) {
-        return false;
-      }
-      await recordAuditEvent(auditStore, {
-        eventType: "mcp.tool_definition_approved",
-        targetType: "mcp_tool",
-        targetId: `${serverId}/${toolName}`,
-        payload: { actor: by, server: serverId, tool: toolName },
+    approveToolDefinition: acceptDefinition,
+
+    /**
+     * Every server whose tool definitions are this build's own code, brought up to this build.
+     *
+     * ONCE, AT BOOT, because that is when the code changed. A person's connected calendar keeps the
+     * definitions that were stored when they connected, and nothing asked again until somebody
+     * pressed refresh: after an upgrade the Bot was offered the last build's descriptions for this
+     * build's code. A vendor's server is never asked here — its list needs somebody's credential
+     * and its changes need somebody's eyes. One that will not refresh stops no other.
+     */
+    async refreshShippedDefinitions(): Promise<void> {
+      // Never thrown: this runs unawaited at boot, and a store that cannot be read is said, once.
+      const servers = await listServers().catch((error: unknown) => {
+        log.error("shipped_definitions_not_refreshed", {
+          server: "*",
+          reason: error instanceof Error ? error.name : "unknown",
+        });
+        return [];
       });
-      return true;
+      for (const server of servers) {
+        try {
+          const { entry } = await requireServer(server.id);
+          if (!definitionsShipWithThisBuild(context.transportFor(entry))) {
+            continue;
+          }
+          await refreshTools(server.id);
+        } catch (error) {
+          log.error("shipped_definitions_not_refreshed", {
+            server: server.id,
+            reason: error instanceof Error ? error.name : "unknown",
+          });
+        }
+      }
     },
 
     /**

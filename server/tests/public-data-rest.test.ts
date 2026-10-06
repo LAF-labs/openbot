@@ -16,11 +16,11 @@ import { kstStamp } from "../src/plugins/kst";
 import {
   BIDS_URL,
   createPublicDataTransport,
-  plainText,
   PROGRAMS_URL,
   PUBLIC_DATA_KEY,
   PUBLIC_DATA_SERVICE,
   PUBLIC_DATA_TOOLS,
+  plainText,
   RAW_RESPONSE_CAP_CHARS,
 } from "../src/plugins/public-data-rest";
 import { createPluginRoutes } from "../src/plugins/routes";
@@ -594,7 +594,6 @@ function createPublicDataRuntime(input: {
 type StoreCalls = {
   ensured: string[];
   refreshed: string[];
-  approved: string[];
   granted: { ref: string; botId: string }[];
   revoked: { ref: string; botId: string }[];
   removed: string[];
@@ -603,7 +602,6 @@ type StoreCalls = {
 const noCalls = (): StoreCalls => ({
   ensured: [],
   refreshed: [],
-  approved: [],
   granted: [],
   revoked: [],
   removed: [],
@@ -616,7 +614,6 @@ function fakeStore(input: {
   calls: StoreCalls;
   rows?: string[];
   holding?: Record<string, string[]>;
-  paused?: number;
 }): DeploymentKeyStore {
   const granted = (botId: string): GrantedPlugins => ({
     tools: (input.holding?.[botId] ?? []).map((ref) => ({
@@ -634,11 +631,7 @@ function fakeStore(input: {
     },
     refreshTools: async (serverId) => {
       input.calls.refreshed.push(serverId);
-      return { tools: 2, ...(input.paused ? { paused: input.paused } : {}) };
-    },
-    approveToolDefinition: async (_serverId, toolName) => {
-      input.calls.approved.push(toolName);
-      return true;
+      return { tools: 2 };
     },
     grant: async (_kind, ref, botId) => {
       input.calls.granted.push({ ref, botId });
@@ -711,7 +704,6 @@ describe("what a deployment does with the key at boot", () => {
 
     expect(calls.ensured).toEqual([PUBLIC_DATA_KEY]);
     expect(calls.refreshed).toEqual([PUBLIC_DATA_KEY]);
-    expect(calls.approved).toEqual([]);
     // A boot must not rewrite ten rows of trail: bot-a already held the first tool.
     expect(calls.granted).toEqual([
       { ref: REFS[1]!, botId: "bot-a" },
@@ -720,18 +712,6 @@ describe("what a deployment does with the key at boot", () => {
     ]);
     expect(calls.revoked).toEqual([]);
     expect(calls.removed).toEqual([]);
-  });
-
-  test("a shipped definition that changed is accepted as this repository's own word", async () => {
-    // The refresh pauses a changed tool for review, which is right for somebody else's server and
-    // a dead tool here: nobody presses Approve on every shop owner's machine after an upgrade.
-    const runtime = createPublicDataRuntime({
-      keys: { "data-go-kr": ENCODED_KEY },
-      listBots: async () => [],
-    });
-    const calls = noCalls();
-    await runtime.reconcile(fakeStore({ calls, paused: 2 }), "deployment");
-    expect(calls.approved).toEqual(["search_bids", "search_support_programs"]);
   });
 
   test("a Bot made after boot is offered the tools on the spot, and without the key it is not", async () => {
