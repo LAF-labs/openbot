@@ -1035,14 +1035,16 @@ describe("Google Calendar", () => {
   });
 
   /*
-   * A DEFINITION THAT CHANGES IS PAUSED FOR EVERYONE WHO HAS IT CONNECTED. `servers.ts` hashes each
-   * tool's name, description, schema and annotations (`definitionHashOf`), and on the next refresh
-   * of a server's tools a hash that differs from the stored one sets `needsReview` — the call is
-   * refused (`laf:tool_needs_review`) until somebody reviews it. That is right for a vendor's
-   * server and it applies to these too. So a change to any byte of a description or a schema here
-   * is an act with a cost on every deployment where the calendar or the mail is connected, and it
-   * is made by changing the hash below in the same commit, on purpose — which is why the calendar's
-   * `day` is read and not declared (`listingWindow`). A result's text is not part of a definition.
+   * A DEFINITION THAT CHANGES HERE REACHES EVERYONE WHO HAS IT CONNECTED, AT THEIR NEXT BOOT, AND
+   * NO PERSON THERE IS ASKED. `servers.ts` hashes each tool's name, description, schema and
+   * annotations (`definitionHashOf`). For a vendor's server a hash that differs sets `needsReview`
+   * and the call is refused (`laf:tool_needs_review`) until somebody has read it; until 2026-10-06
+   * that applied to these too, and this pin existed to keep a release from stopping the calendar
+   * and the mail on every deployment. Since then a definition that ships with the build is taken as
+   * it comes — which moves the whole of the review to this repository. So a change to any byte of
+   * a description or a schema is still made by changing the hash below in the same commit, on
+   * purpose: it is the one place the change is looked at before every connected Bot is told it.
+   * A result's text is not part of a definition.
    */
   test("the calendar's and the mail's definitions are the ones people consented to", async () => {
     const hashes: Record<string, string> = {};

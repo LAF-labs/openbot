@@ -1717,8 +1717,8 @@ description, schema, annotations — is hashed (`definitionHashOf`), and when a 
 next re-read a hash that differs from the stored one pauses that tool for review, for every person
 who already has it connected (`servers.ts`, "definition changed"). That held for this repository's
 own adapters too when this was written, and loosening it was the owner's decision — taken on
-2026-10-06: a definition that ships with the build is accepted as it arrives, with the change and
-the acceptance both in the trail, and only a vendor's is paused (`refreshTools`). So no byte of either adapter's
+2026-10-06: a definition that ships with the build is taken as it arrives, with one row in the
+trail that says so (`mcp.tool_definition_shipped`), and only a vendor's is paused (`refreshTools`). So no byte of either adapter's
 definitions changed: the six hashes are equal on `origin/main` (`80d423b0`) and on this branch,
 computed from both, and `plugin-rest-adapters.test.ts` pins them. `day` is an argument the schema
 does not advertise, sent only by the server's own first move. It arrives because the call path

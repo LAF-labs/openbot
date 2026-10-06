@@ -127,8 +127,8 @@ export function effectiveUrl(
 }
 
 /**
- * Who accepted a definition that shipped with this build: the deployment, the same name the boot's
- * own reconciliation writes into the trail.
+ * Who took a definition that shipped with this build as it arrived: the deployment, the same name
+ * the boot's own reconciliation writes into the trail.
  */
 const SHIPPED_WITH_THE_BUILD = "deployment";
 
@@ -231,33 +231,6 @@ export function createServers(
   }
 
   /**
-   * A definition accepted as it now is: by a person who read it, or by the deployment for one that
-   * shipped with this build (`refreshTools`). The current hash becomes the consented one; nothing
-   * else moves.
-   */
-  async function acceptDefinition(
-    serverId: string,
-    toolName: string,
-    by: string,
-  ): Promise<boolean> {
-    const updated = await database
-      .update(mcpTools)
-      .set({ needsReview: false, reviewReason: null })
-      .where(and(eq(mcpTools.serverId, serverId), eq(mcpTools.name, toolName)))
-      .returning({ name: mcpTools.name });
-    if (updated.length === 0) {
-      return false;
-    }
-    await recordAuditEvent(auditStore, {
-      eventType: "mcp.tool_definition_approved",
-      targetType: "mcp_tool",
-      targetId: `${serverId}/${toolName}`,
-      payload: { actor: by, server: serverId, tool: toolName },
-    });
-    return true;
-  }
-
-  /**
    * Ask a server what it offers and replace what we hold.
    *
    * Replaced wholesale on the name level, never merged — a tool a vendor withdrew has to stop
@@ -330,6 +303,44 @@ export function createServers(
       const fetchedNames = new Set(tools.map((tool) => tool.name));
       let paused = 0;
 
+      /*
+       * A DEFINITION THAT SHIPS WITH THIS BUILD IS TAKEN AS IT ARRIVES (the owner, 2026-10-06:
+       * "도구 설명은 같은 규칙으로 자동 승인"). The pause below protects a person from a VENDOR
+       * changing what a tool is behind a consent already given. Where the tool list is this
+       * repository's own reviewed code there is no vendor: the change arrived with a release, and
+       * nobody is going to press Approve on every person's machine after every upgrade — so a
+       * paused tool here was simply a dead tool. The weather and web-search entries had this rule
+       * since they were built, written after their own refresh at boot; the adapters a person
+       * connects (calendar, mail, sheets, a shop) did not, and a description edited in a release
+       * would have stopped them for everybody already connected (found by the review of #90, which
+       * put six definitions back to their old bytes rather than ship that).
+       *
+       * DECIDED AT THE WRITE, NEVER PAUSED AND THEN RELEASED. The first version of this marked the
+       * row for review and cleared the mark a few statements later; anything failing in between
+       * left a working tool refused until the next boot, with nobody told (review of #110). So the
+       * row is written accepted, and the trail says so in a row of its own kind
+       * (`mcp.tool_definition_shipped`) — not the pair a person's review leaves, which on the audit
+       * screen reads as a pause somebody then approved. That row goes in BEFORE the definition
+       * does: a trail that says it twice after a failed write is the mistake to prefer over a
+       * definition that changed with no row at all.
+       */
+      const shipped = definitionsShipWithThisBuild(transport);
+      const tookWithTheBuild = (
+        toolName: string,
+        change: "appeared" | "definition" | "waiting",
+      ) =>
+        recordAuditEvent(auditStore, {
+          eventType: "mcp.tool_definition_shipped",
+          targetType: "mcp_tool",
+          targetId: `${serverId}/${toolName}`,
+          payload: {
+            actor: SHIPPED_WITH_THE_BUILD,
+            server: serverId,
+            tool: toolName,
+            change,
+          },
+        });
+
       for (const tool of tools) {
         const hash = await definitionHashOf({
           name: tool.name,
@@ -338,6 +349,23 @@ export function createServers(
           annotations: tool.annotations,
         });
         const known = existingByName.get(tool.name);
+        if (!known && shipped) {
+          // The first sync is the registration itself, which has its own row.
+          if (!firstSync) {
+            await tookWithTheBuild(tool.name, "appeared");
+          }
+          await database.insert(mcpTools).values({
+            serverId,
+            name: tool.name,
+            description: tool.description,
+            inputSchema: tool.inputSchema,
+            annotations: tool.annotations,
+            definitionHash: hash,
+            needsReview: false,
+            reviewReason: null,
+          });
+          continue;
+        }
         if (!known) {
           const needsReview = !firstSync;
           if (needsReview) {
@@ -371,6 +399,27 @@ export function createServers(
           continue;
         }
         const changed = known.definitionHash !== hash;
+        if (shipped) {
+          // Changed with the release, or left waiting by a build that still paused these.
+          await tookWithTheBuild(tool.name, changed ? "definition" : "waiting");
+          await database
+            .update(mcpTools)
+            .set({
+              description: tool.description,
+              inputSchema: tool.inputSchema,
+              annotations: tool.annotations,
+              definitionHash: hash,
+              needsReview: false,
+              reviewReason: null,
+            })
+            .where(
+              and(
+                eq(mcpTools.serverId, serverId),
+                eq(mcpTools.name, tool.name),
+              ),
+            );
+          continue;
+        }
         if (changed) {
           paused += 1;
           await recordAuditEvent(auditStore, {
@@ -435,12 +484,25 @@ export function createServers(
        * nothing was denied and the refresh succeeded. Written after the tool list is replaced, so
        * what it names is what is actually left over.
        */
+      /*
+       * THE MOMENT, AND NOT EVERY REFRESH AFTER IT: only a grant whose tool THIS refresh removed.
+       * It used to name every grant pointing at nothing each time anybody refreshed, which was
+       * rare; now that every boot refreshes the servers whose definitions ship with the build, a
+       * grant left on a tool an adapter dropped would have written this row at every restart
+       * (review of #110).
+       */
       const advertised = new Set(tools.map((tool) => tool.name));
-      const stranded = [
-        ...(await grants.mcpGrantsForServers([serverId])).entries(),
-      ]
-        .filter(([ref]) => !advertised.has(ref.slice(serverId.length + 1)))
-        .sort(([left], [right]) => left.localeCompare(right));
+      const removedNow = new Set(
+        existing
+          .filter((known) => !fetchedNames.has(known.name))
+          .map((known) => known.name),
+      );
+      const stranded =
+        removedNow.size === 0
+          ? []
+          : [...(await grants.mcpGrantsForServers([serverId])).entries()]
+              .filter(([ref]) => removedNow.has(ref.slice(serverId.length + 1)))
+              .sort(([left], [right]) => left.localeCompare(right));
 
       if (stranded.length > 0) {
         await recordAuditEvent(auditStore, {
@@ -483,38 +545,6 @@ export function createServers(
             note: "Advertised by this server and not named in its reviewed write list, so each is offered to models as a read. This vendor has no read-only scope behind that list, so anything here that writes should be added to the entry.",
           },
         });
-      }
-
-      /*
-       * A DEFINITION THAT SHIPS WITH THIS BUILD IS ACCEPTED AS IT ARRIVES (the owner, 2026-10-06:
-       * "도구 설명은 같은 규칙으로 자동 승인"). The pause above protects a person from a VENDOR
-       * changing what a tool is behind a consent already given. Where the tool list is this
-       * repository's own reviewed code there is no vendor: the change arrived with a release, and
-       * nobody is going to press Approve on every person's machine after every upgrade — so a
-       * paused tool here was simply a dead tool. The weather and web-search entries had this rule
-       * since they were built, written after their own refresh at boot; the adapters a person
-       * connects (calendar, mail, sheets, a shop) did not, and a description edited in a release
-       * would have stopped them for everybody already connected (found by the review of #90, which
-       * put six definitions back to their old bytes rather than ship that).
-       *
-       * The trail still holds both halves, one row each: what changed, and that it was accepted —
-       * by the deployment, not by a person. And one left waiting by an earlier build is accepted
-       * here too.
-       */
-      if (definitionsShipWithThisBuild(transport)) {
-        const waiting = await database
-          .select({ name: mcpTools.name })
-          .from(mcpTools)
-          .where(
-            and(
-              eq(mcpTools.serverId, serverId),
-              eq(mcpTools.needsReview, true),
-            ),
-          );
-        for (const tool of waiting) {
-          await acceptDefinition(serverId, tool.name, SHIPPED_WITH_THE_BUILD);
-        }
-        paused = 0;
       }
 
       return { tools: tools.length, paused };
@@ -1106,7 +1136,29 @@ export function createServers(
      * A person looked at the changed definition and consented to it as it now
      * is. The current hash becomes the consented one; nothing else moves.
      */
-    approveToolDefinition: acceptDefinition,
+    async approveToolDefinition(
+      serverId: string,
+      toolName: string,
+      by: string,
+    ): Promise<boolean> {
+      const updated = await database
+        .update(mcpTools)
+        .set({ needsReview: false, reviewReason: null })
+        .where(
+          and(eq(mcpTools.serverId, serverId), eq(mcpTools.name, toolName)),
+        )
+        .returning({ name: mcpTools.name });
+      if (updated.length === 0) {
+        return false;
+      }
+      await recordAuditEvent(auditStore, {
+        eventType: "mcp.tool_definition_approved",
+        targetType: "mcp_tool",
+        targetId: `${serverId}/${toolName}`,
+        payload: { actor: by, server: serverId, tool: toolName },
+      });
+      return true;
+    },
 
     /**
      * Every server whose tool definitions are this build's own code, brought up to this build.
@@ -1129,7 +1181,13 @@ export function createServers(
       for (const server of servers) {
         try {
           const { entry } = await requireServer(server.id);
-          if (!definitionsShipWithThisBuild(context.transportFor(entry))) {
+          const transport = context.transportFor(entry);
+          // A stand-in lists nothing because nothing can be asked of it here, not because the entry
+          // offers nothing: refreshing it would delete what a person connected.
+          if (
+            transport.unavailable ||
+            !definitionsShipWithThisBuild(transport)
+          ) {
             continue;
           }
           await refreshTools(server.id);

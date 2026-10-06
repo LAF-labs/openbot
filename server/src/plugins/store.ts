@@ -672,6 +672,7 @@ export type PluginContext = {
  */
 const PARTNER_UNAVAILABLE: VendorTransport = {
   listNeedsCredential: false,
+  unavailable: true,
   listTools: async () => [],
   callTool: async () => {
     throw new PluginRefusedError(
@@ -692,6 +693,7 @@ const PARTNER_UNAVAILABLE: VendorTransport = {
  */
 const KEY_UNAVAILABLE: VendorTransport = {
   listNeedsCredential: false,
+  unavailable: true,
   listTools: async () => [],
   callTool: async () => {
     throw new PluginRefusedError(

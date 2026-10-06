@@ -456,6 +456,7 @@
   "server/tests/plugin-rest-adapters.test.ts",
   "server/tests/plugin-settle-switch.integration.test.ts",
   "server/tests/plugin-store.integration.test.ts",
+  "server/tests/plugin-transport-shipped.test.ts",
   "server/tests/plugin-user-credential.integration.test.ts",
   "server/tests/policy-durability.integration.test.ts",
   "server/tests/profile-text.test.ts",

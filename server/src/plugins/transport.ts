@@ -64,6 +64,13 @@ export type VendorTransport = {
    * sequence hinted that the middle step was doing no work.
    */
   listNeedsCredential: boolean;
+  /**
+   * Set on a stand-in: what a deployment answers with when it cannot serve an entry at all — a
+   * partner whose module was not built here, a key the VM was not given (`store.ts`). Its list is
+   * empty because nothing can be asked, which is a different thing from an entry that offers
+   * nothing, so the pass that brings shipped definitions up to the build at boot leaves it alone.
+   */
+  unavailable?: true;
   listTools(connection: {
     url: string;
     token?: string | undefined;
@@ -141,17 +148,25 @@ export type VendorTransport = {
 /**
  * Whether a transport's tool definitions are this build's own code.
  *
- * THE SAME FACT AS `listNeedsCredential`, READ FOR A SECOND REASON — and written down as one, so the
- * two cannot drift apart quietly. A list needs nobody's credential exactly when there is no vendor
- * to ask: when the list IS this code. What follows from it is the consent rule in `servers.ts`: a
- * vendor's changed definition is paused until a person has read it, and one that ships with this
- * build is not, because it arrived with the release that also ships the rule. If a transport ever
- * lists anonymously from a remote server, this line is what has to change.
+ * READ OFF `listNeedsCredential`, WHICH IS A DECLARATION AND NOT THE FACT ITSELF. Every adapter
+ * whose list is a constant of this repository declares false; the one transport that asks a remote
+ * server what it offers — MCP — declares true (`mcp.ts`), and that constant is what keeps a vendor's
+ * definition out of this rule. It is not that a remote list always needs a credential: a custom
+ * server added with no token is listed anonymously (`connections.ts`), and is still MCP, still
+ * true, still paused. So `server/tests/plugin-transport-shipped.test.ts` walks the whole catalogue
+ * and a custom server and holds the two apart; a transport that ever lists from somebody else's
+ * server while declaring false would be accepted without a person, and that test is what says so.
+ *
+ * What follows from the answer is the consent rule in `servers.ts`: a vendor's changed definition
+ * is paused until a person has read it, and one that ships with this build is not, because it
+ * arrived with the release that also ships the rule.
  */
 export function definitionsShipWithThisBuild(
   transport: Pick<VendorTransport, "listNeedsCredential">,
 ): boolean {
-  return !transport.listNeedsCredential;
+  // `=== false`, not `!`: a transport that declares nothing — a module replaced in a test, a new
+  // one that forgot the line — is a vendor's until it says otherwise, and waits for a person.
+  return transport.listNeedsCredential === false;
 }
 
 /**
