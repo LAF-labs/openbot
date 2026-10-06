@@ -363,6 +363,16 @@ export function createActs(deps: {
      * were read drops the bytes; the reads' rows stand, because the reads happened. And a call
      * made again once a question is answered reads the files again and runs the script again:
      * two rows a file, bounded by how many files a run may name.
+     *
+     * AND TWO MORE, WHICH ONLY A DEPLOYMENT THAT ASKS ABOUT FILES MEETS — the shipped policy asks
+     * about none of this. ONE ANSWER A CALL: a call that meets a second question (a rule that asks
+     * about a read and about the run, or about each of two files a run made) has spent the first
+     * answer by then, and made again it is asked the first again. "This once" gets such a call
+     * nowhere; one of the answers has to be for longer. And A QUESTION ABOUT A FILE COMES AFTER
+     * THE FILES BEFORE IT WERE FILED: made again with the answer, the same call names the same
+     * folder (`madeDirectoryFor`), the file that was asked about is filed, and each one filed the
+     * first time is refused by the put as already there (`laf:file_exists`), untouched. Whoever
+     * offers this to a Bot has both to settle first.
      */
     async runScript(
       computerId: string,
