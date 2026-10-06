@@ -70,6 +70,7 @@
   "app/tests/audit-labels.test.ts",
   "app/tests/audit-paging.test.ts",
   "app/tests/audit-rows.test.ts",
+  "app/tests/audit-script-rows.test.tsx",
   "app/tests/audit-silence.test.ts",
   "app/tests/auth-client.test.ts",
   "app/tests/auth-queries.test.ts",
