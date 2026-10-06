@@ -16,6 +16,7 @@
  */
 import { afterEach, expect, test } from "bun:test";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -25,7 +26,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   createWorkbench,
   type Workbench,
@@ -59,6 +60,7 @@ const runner = bunTypeScript({
 
 type Bench = {
   workbench: Workbench;
+  daemon: WorkbenchDaemon;
   socketPath: string;
   workRoot: string;
   scratch: string;
@@ -69,7 +71,7 @@ type Bench = {
   logged: string[];
 };
 
-const started: { daemon: WorkbenchDaemon; root: string }[] = [];
+const started: { daemon: Pick<WorkbenchDaemon, "stop">; root: string }[] = [];
 
 afterEach(async () => {
   for (const { daemon, root } of started.splice(0)) {
@@ -119,6 +121,7 @@ function bench(
   });
   started.push({ daemon, root });
   return {
+    daemon,
     workbench: createWorkbench({ socketPath, limits, log: quiet }),
     socketPath,
     workRoot,
@@ -777,4 +780,110 @@ test("a stale socket from a daemon that was killed does not stop the next one bi
     busy: false,
   });
   expect(existsSync(socketPath)).toBe(true);
+});
+
+/*
+ * WHAT THE INDEPENDENT READ OF 2026-10-06 FOUND ON THIS SIDE OF THE SOCKET. Each test below failed
+ * on the code as it was read, and is the reproduction of its finding.
+ */
+
+/** A daemon on a socket and a work root that are already there — as compose starts one on a volume that outlived the last. */
+function daemonOn(socketPath: string, workRoot: string) {
+  const quits: QuitReason[] = [];
+  const daemon = startWorkbenchDaemon({
+    socketPath,
+    workRoot,
+    runner,
+    problems: () => [],
+    sweep: async () => {},
+    log: quiet,
+    quit: (reason) => {
+      quits.push(reason);
+    },
+  });
+  started.push({ daemon, root: "/nonexistent-nothing" });
+  return {
+    daemon,
+    quits,
+    workbench: createWorkbench({ socketPath, log: quiet }),
+  };
+}
+
+test("a DIRECTORY a script left where the socket belongs does not keep the next daemon from binding", async () => {
+  const first = bench();
+  const { socketPath } = first;
+  const answer = ran(
+    await first.workbench.run({
+      script: `
+        import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+        rmSync(${JSON.stringify(socketPath)});
+        mkdirSync(${JSON.stringify(socketPath)});
+        writeFileSync(${JSON.stringify(join(socketPath, "held"))}, "so that it is not empty");
+        console.log("a directory now");
+      `,
+      files: [],
+    }),
+  );
+  expect(answer.run.stdout).toBe("a directory now\n");
+  await until(() => first.quits.length > 0);
+  expect(first.quits).toEqual(["socket_replaced"]);
+  // The container ends; compose starts another. The socket's volume is the server's too by then,
+  // so it is the same directory — and until 2026-10-06 the new daemon threw on the first line that
+  // touched it, every time it was started: a loop only removing the volume by hand would end.
+  const second = daemonOn(socketPath, first.workRoot);
+  expect(await second.workbench.health()).toEqual({ busy: false });
+  expect(readdirSync(dirname(socketPath))).toEqual(["w.sock"]);
+  expect(
+    ran(
+      await second.workbench.run({
+        script: "console.log('served')",
+        files: [],
+      }),
+    ).run.stdout,
+  ).toBe("served\n");
+});
+
+test("a daemon starts with nothing beside its socket, whatever a run it did not outlive left there", async () => {
+  // What a script wrote and then ended process 1 under — a signal the daemon takes, a crash: no
+  // cleanup ran, and the volume kept all of it for the next container.
+  const root = mkdtempSync(join(tmpdir(), "wb-"));
+  started.push({ daemon: { stop: async () => {} }, root });
+  const socketDirectory = join(root, "s");
+  const workRoot = join(root, "work");
+  mkdirSync(join(socketDirectory, "locked", "inner"), { recursive: true });
+  mkdirSync(join(workRoot, "run-left", "files"), { recursive: true });
+  writeFileSync(join(socketDirectory, "note-for-the-next-run"), "hello");
+  writeFileSync(join(socketDirectory, "locked", "inner", "note"), "hello");
+  writeFileSync(join(workRoot, "run-left", "files", "note"), "hello");
+  mkdirSync(join(socketDirectory, "w.sock"));
+  writeFileSync(join(socketDirectory, "w.sock", "held"), "x");
+  chmodSync(join(socketDirectory, "locked", "inner"), 0o000);
+  chmodSync(join(socketDirectory, "locked"), 0o000);
+  chmodSync(socketDirectory, 0o000);
+
+  const { workbench } = daemonOn(join(socketDirectory, "w.sock"), workRoot);
+  expect(await workbench.health()).toEqual({ busy: false });
+  expect(readdirSync(socketDirectory)).toEqual(["w.sock"]);
+  expect(readdirSync(workRoot)).toEqual([]);
+});
+
+test("a daemon told to leave takes what is beside its socket with it, mid-run or not", async () => {
+  // The service's own exit (`main.ts`, on the signal `docker stop` sends) goes through this:
+  // synchronous, because the process is ended on the line after.
+  const { workbench, socketPath, daemon } = bench();
+  const beside = join(dirname(socketPath), "note");
+  const running = workbench.run({
+    script: `
+      import { writeFileSync } from "node:fs";
+      writeFileSync(${JSON.stringify(beside)}, "for the next run");
+      await Bun.sleep(30_000);
+    `,
+    files: [],
+    timeoutMs: 60_000,
+  });
+  await until(() => existsSync(beside));
+  daemon.leave();
+  expect(readdirSync(dirname(socketPath))).toEqual([]);
+  // Whoever was waiting is told there is no run; nothing is left hanging on a socket that is gone.
+  expect((await running).ok).toBe(false);
 });
