@@ -859,3 +859,37 @@ describe("a tool call goes through the same settle step as a click", () => {
     expect(await rows()).toHaveLength(1);
   });
 });
+
+/*
+ * A SERVER ADDED BY ADDRESS UNDER A NAME THE DEPLOYMENT NOW KEEPS FOR ITSELF. `workbench` is kept
+ * since a script's run is recorded as `mcp__workbench__run_script`; a new server may not take it
+ * (`customServerNameRefusal`). This is the one that was there already — read off the table as a
+ * boot reads it, so that what a boot says of it is a fact about rows.
+ */
+describe("a server already here under a name the deployment keeps", () => {
+  const url = "https://workbench.reserved-name-test.invalid/mcp";
+  const mine = and(eq(mcpServers.id, "workbench"), eq(mcpServers.url, url));
+
+  afterAll(async () => {
+    await database.delete(mcpServers).where(mine);
+  });
+
+  test("is found by a boot's read, among the servers that are not", async () => {
+    // Its own row is custom, like the suite's server above — which has no such name.
+    await database
+      .insert(mcpServers)
+      .values({
+        id: "workbench",
+        title: "Somebody's own workbench",
+        vendor: "workbench.reserved-name-test.invalid",
+        url,
+        provenance: "custom",
+      })
+      .onConflictDoNothing();
+
+    expect(await store.reservedNamesHeld()).toEqual(["workbench"]);
+
+    await database.delete(mcpServers).where(mine);
+    expect(await store.reservedNamesHeld()).toEqual([]);
+  });
+});

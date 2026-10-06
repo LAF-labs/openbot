@@ -121,6 +121,20 @@ export type ApprovalSubject = {
    * asked again because a snapshot id moved on.
    */
   arguments?: Record<string, unknown> | undefined;
+  /**
+   * The server a call to SOMEBODY ELSE'S server is aimed at (`plugins/call.ts`). Left out for an
+   * act on the Bot's own computer — and that it is left out there is the point.
+   *
+   * A GATEWAY ACT AND A CALL TO ANOTHER SERVER ARE DIFFERENT THINGS, WHATEVER THEY ARE NAMED AND
+   * WHATEVER THEY SAY. Until 2026-10-07 nothing in the hash said which of the two an answer was
+   * for: both were a Bot, a name and arguments. One name is shared — a script's run is recorded
+   * as `mcp__workbench__run_script`, which is also what a server added under the name `workbench`
+   * offers a tool `run_script` as — and a question opened about that server's tool was spent by
+   * the gateway's run of the same script, and the reverse (the independent read of #123). A
+   * server's id is never empty, so a call's fingerprint always ends in a name and a gateway act's
+   * always ends in nothing: the two cannot be equal, by this field alone.
+   */
+  server?: string | undefined;
 };
 
 /**
@@ -483,6 +497,15 @@ export function fingerprintOf(subject: ApprovalSubject): string {
         subject.element
           ? `${subject.element.role}\u0001${subject.element.name}`
           : "",
+        /*
+         * Whose act it is: another server's by its name, the Bot's own computer by none. This
+         * moved every fingerprint there is by one field, and stranded nothing: a fingerprint is
+         * kept nowhere but this process — the questions and the Nos are in memory on purpose (the
+         * top of this file; migration 0025 dropped the tables that once held them), and what a
+         * person allowed for good is kept by its scope, not by a hash — so no question is open
+         * across a restart for an upgrade to orphan.
+         */
+        subject.server ?? "",
       ].join("\u0000"),
     )
     .digest("hex");

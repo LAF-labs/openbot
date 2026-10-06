@@ -63,6 +63,12 @@ const ACTIVATING_KEYS = new Set(["Enter", "NumpadEnter", "Space", " "]);
 export const RUN_SCRIPT_TOOL = "mcp__workbench__run_script";
 
 /**
+ * The part of that name a server added by address would have to be called to be offered a tool
+ * under it. Kept for this deployment's own (`plugins/servers.ts`, `RESERVED_SERVER_IDS`).
+ */
+export const WORKBENCH_FAMILY = "workbench";
+
+/**
  * The intents this gateway can produce, which is every one that is not about somebody else's server.
  *
  * Named so that both readers of an intent take the same value: the policy context, whose union also

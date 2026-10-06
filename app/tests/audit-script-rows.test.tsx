@@ -240,4 +240,59 @@ describe("the trail's page and a script's run", () => {
     expect(page).not.toContain(RUN_SCRIPT_TOOL);
     await view.unmount();
   });
+
+  /*
+   * A ROW IS WORDED BY WHAT IT IS, NOT BY A NAME TWO THINGS CAN CARRY (the independent read of
+   * 2026-10-07). A server somebody added by address under the name `workbench`, with a tool
+   * `run_script`, is offered as `mcp__workbench__run_script` — the very name a script's run is
+   * recorded under. Its rows are another server's calls, and were drawn as "Run a small
+   * program": the trail saying the deployment ran a script when a vendor's tool was called.
+   */
+  test("another server's tool of that same name is not called a small program", async () => {
+    const view = await mountApp({
+      path: "/admin/audit",
+      role: "admin",
+      api: (request) =>
+        request.pathname === "/api/admin/audit-events"
+          ? json({
+              events: [
+                {
+                  id: "row-theirs",
+                  actorUserId: null,
+                  eventType: "mcp.call_repeated",
+                  targetType: "mcp_tool",
+                  targetId: "workbench/run_script",
+                  createdAt: "2026-10-07T03:00:09.000Z",
+                  payload: {
+                    action: RUN_SCRIPT_TOOL,
+                    bot: "bot-1",
+                    actor: "user-1",
+                    server: "workbench",
+                    tool: "run_script",
+                    effect: "write",
+                    fingerprint: `${RUN_SCRIPT_TOOL} asked`,
+                    count: 3,
+                  },
+                },
+                // And the deployment's own run beside it, which is one.
+                EVENTS[4],
+              ],
+            })
+          : undefined,
+    });
+    await view.waitFor(
+      () => (view.main()?.querySelectorAll("tbody tr").length ?? 0) > 1,
+      "the trail's rows",
+    );
+    const what = [...(view.main()?.querySelectorAll("tbody tr") ?? [])]
+      .filter((row) => row.querySelectorAll("td").length === 5)
+      .map((row) =>
+        (row.querySelectorAll("td")[1]?.textContent ?? "")
+          .replace(/\s+/g, " ")
+          .trim(),
+      );
+    // Theirs by the identifier it arrived under, as any vendor's tool is; ours in words.
+    expect(what).toEqual([RUN_SCRIPT_TOOL, "Run a small program"]);
+    await view.unmount();
+  });
 });

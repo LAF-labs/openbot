@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { startBackgroundWork } from "../src/boot/background";
+import { recentLines } from "../src/log";
 
 /**
  * What the process starts on its own once the port is open — the routine clock, the retention
@@ -25,12 +26,15 @@ const settled = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 function started(
   fleet: boolean,
   reconciled: Promise<void> = Promise.resolve(),
+  /** Servers added by address under a name the deployment keeps, as the store would find them. */
+  held: () => Promise<string[]> = async () => [],
 ) {
   const calls: string[] = [];
   const pluginStore = {
     refreshShippedDefinitions: async () => {
       calls.push("shipped-definitions");
     },
+    reservedNamesHeld: held,
   } as Input["pluginStore"];
   startBackgroundWork({
     database: untouchable,
@@ -96,5 +100,44 @@ describe("the work a boot starts", () => {
       "public-data:true:deployment",
       "shipped-definitions",
     ]);
+  });
+
+  /*
+   * A SERVER ALREADY ADDED BY ADDRESS UNDER A NAME THE DEPLOYMENT NOW KEEPS (`workbench`, since a
+   * script's run is recorded under `mcp__workbench__run_script`). It is not stopped and not
+   * renamed; a boot says it is there, because the release that offers a tool of the deployment's
+   * own under that name is the day a model would be handed two tools of one name.
+   */
+  test("a server held under a name the deployment keeps is said once, with what to do — and nothing is said where there is none", async () => {
+    const said = async (held: () => Promise<string[]>) => {
+      const before = recentLines.lines().length;
+      started(false, Promise.resolve(), held);
+      await settled();
+      return recentLines
+        .lines()
+        .slice(before)
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+        .filter((line) => String(line.event).includes("reserved"));
+    };
+
+    const [line, ...rest] = await said(async () => ["workbench"]);
+    expect(rest).toEqual([]);
+    expect(line).toMatchObject({
+      level: "warn",
+      event: "custom_server_holds_reserved_name",
+      servers: ["workbench"],
+    });
+    expect(String(line?.note)).toContain("remove it");
+
+    expect(await said(async () => [])).toEqual([]);
+
+    // A boot that could not look says that, and still boots.
+    const [unread] = await said(async () => {
+      throw new Error("the table is not there");
+    });
+    expect(unread).toMatchObject({
+      level: "warn",
+      event: "reserved_server_names_not_read",
+    });
   });
 });

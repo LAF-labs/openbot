@@ -316,7 +316,7 @@ function Row({
           }
           label={
             typeof payload.action === "string"
-              ? own(TOOLS, payload.action)
+              ? toolWords(event.targetType, payload.action)
               : own(EVENTS, event.eventType)
           }
         />
@@ -1088,6 +1088,21 @@ export const TOOLS: Record<string, string> = {
   // writes rows under this name, so `audit-labels.test.ts` holds this entry to the server's name.
   mcp__workbench__run_script: "Run a small program",
 };
+
+/**
+ * The words for a tool's name ON A ROW ABOUT THE BOT'S OWN COMPUTER, and for no other row.
+ *
+ * A ROW IS WORDED BY WHAT IT IS, NOT BY A NAME TWO THINGS CAN CARRY. `payload.action` is also on
+ * the rows of calls to somebody else's server, as the name that server's tool is offered under —
+ * and a server added by address under the name `workbench`, with a tool `run_script`, is offered
+ * as the very name a script's run is recorded under. Read by the name alone, its rows said "Run a
+ * small program": the trail claiming the deployment ran a script when a vendor's tool was called
+ * (the independent read of #123). What the row is about is in its target, which the server sets
+ * and no tool's name can: the computer, or the tool on another server.
+ */
+function toolWords(targetType: string, action: string): string | undefined {
+  return targetType === "computer" ? own(TOOLS, action) : undefined;
+}
 
 /**
  * WHAT KIND OF THING EACH ROW IS, for the rows that are not a tool call.

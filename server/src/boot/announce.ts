@@ -61,6 +61,23 @@ export function sayConnectors(input: {
 }
 
 /**
+ * A server somebody added by address is called by a name this deployment keeps for an act of its
+ * own (`plugins/servers.ts`, `RESERVED_SERVER_IDS`) — added before the name was kept.
+ *
+ * Said, and nothing done: the server goes on working as it did (why is beside `reservedNamesHeld`
+ * there). Said at boot because that is where an operator looks after an upgrade, and because the
+ * clash it warns of comes with one: the release that offers a tool of the deployment's own under
+ * that name. Nothing where there is none — the usual boot.
+ */
+export function sayReservedServerNamesHeld(servers: readonly string[]): void {
+  if (servers.length === 0) return;
+  log.warn("custom_server_holds_reserved_name", {
+    servers: [...servers],
+    note: "A server added by address has a name this deployment keeps for an act of its own. It works as before, and an answer about its tool is not an answer about the deployment's. Before a tool of the deployment's own is offered under that name, remove it on the Plugins page and add it again under another name.",
+  });
+}
+
+/**
  * Whether a turn's first step may be taken before the Bot's model is asked (`turns/first-move.ts`).
  *
  * Said only when a move is on, and said as a warning (`first_move_does_nothing` when no named kind

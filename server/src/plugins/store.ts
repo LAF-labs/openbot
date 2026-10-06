@@ -811,6 +811,8 @@ export function createPluginStore(options: PluginStoreOptions) {
     removeServer: servers.removeServer,
     refreshTools: servers.refreshTools,
     refreshShippedDefinitions: servers.refreshShippedDefinitions,
+    /** Servers added by address under a name the deployment now keeps. See `servers.ts`. */
+    reservedNamesHeld: servers.reservedNamesHeld,
     listServers: servers.listServers,
     /** What a connect and a disconnect do beyond the credential. See `servers.ts`. */
     offerToolsTo: servers.offerToolsTo,
