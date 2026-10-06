@@ -223,6 +223,23 @@ describe("what counts as the same row", () => {
       );
     expect(decided(["uploads/a.csv"])).not.toBe(decided(["uploads/b.csv"]));
     expect(decided(["uploads/a.csv"])).toBe(decided(["uploads/a.csv"]));
+
+    // And a file read for a run names the run: one file read for two scripts is two rows, and
+    // neither is the row of a Bot reading that file for itself.
+    const read = (forScript?: string) =>
+      signatureOf(
+        event(noonOn("2026-10-07"), "computer.action_allowed", {
+          action: "computer_read_file",
+          bot: "bot-1",
+          file: "uploads/a.csv",
+          ...(forScript ? { forScript } : {}),
+          decision: { allowed: true, rule: "true" },
+        }),
+      );
+    expect(
+      new Set([read(), read("a".repeat(64)), read("b".repeat(64))]).size,
+    ).toBe(3);
+    expect(read("a".repeat(64))).toBe(read("a".repeat(64)));
   });
 
   test("the same row at a different time is the same row", () => {

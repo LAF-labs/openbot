@@ -114,6 +114,9 @@ describe("the rows a script's run leaves in the table", () => {
     ]);
     const [read, decided, ended, wrote] = rows;
     expect(read?.payload.file).toBe("uploads/매출.csv");
+    // The file it read and the file it made each say which run they were for.
+    expect(read?.payload.forScript).toBe(sha256(script));
+    expect(wrote?.payload.forScript).toBe(sha256(script));
     expect(decided?.payload).toMatchObject({
       bot: BOT,
       actor: ACTOR.id,
@@ -181,8 +184,9 @@ describe("the rows a script's run leaves in the table", () => {
         found: false,
       });
     }
-    // What identifies the run is there, on the decision and on the ending alike.
-    expect(written.split(sha256(script)).length - 1).toBe(2);
+    // What identifies the run is there, on every one of its rows: the read and the file it made
+    // (`forScript`), the decision and the ending (`script`).
+    expect(written.split(sha256(script)).length - 1).toBe(4);
   });
 
   test("say a refused file was refused and nothing more: no run was decided, and none is on the trail", async () => {

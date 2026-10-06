@@ -101,6 +101,7 @@ const EVENTS = [
       page: "",
       ref: null,
       file: "made/2026-10-07-763a3113/요일별 매출.csv",
+      forScript: SHA,
       decision,
     },
   },
@@ -202,7 +203,11 @@ describe("the trail's page and a script's run", () => {
     expect(rows[3]?.querySelector(".text-warning")).toBeNull();
     // And the file it made has a row of its own above it, with its path.
     expect(cells(2)[1]).toBe("Write a file");
-    expect(cells(2)[2]).toBe("made/2026-10-07-763a3113/요일별 매출.csv");
+    // … and says which run it was filed for, by the chip the run's own rows carry.
+    expect(cells(2)[2]).toBe(
+      `made/2026-10-07-763a3113/요일별 매출.csvFor the small program ${SHA.slice(0, 12)}`,
+    );
+    expect(rows[2]?.querySelector(`[title="${SHA}"]`)).not.toBeNull();
     await view.unmount();
   });
 

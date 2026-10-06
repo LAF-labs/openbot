@@ -28,7 +28,7 @@ import {
   type PolicyDecision,
   policyDecidesOnSnapshot,
 } from "../policy";
-import type { RepeatDetector } from "../repeat";
+import type { RepeatDetector, RepeatObservation } from "../repeat";
 import { settle } from "../settle";
 import {
   allowanceFor,
@@ -112,12 +112,22 @@ export function createGovern(options: {
     subject: {
       ref?: string;
       filePath?: string;
-      /**
-       * Which part of `filePath` a read asked for; counted apart, like a page's query. For a file
-       * read on a script's behalf it is that script's digest: two scripts over one file are not
-       * the same read twice (`acts.ts`, `runScript`).
-       */
+      /** Which part of `filePath` a read asked for; counted apart, like a page's query. */
       part?: string;
+      /**
+       * Set on a file read or filed FOR A RUN OF A SCRIPT, to that script's digest (`acts.ts`,
+       * `runScript`), and on nothing else. It does two things, and decides nothing:
+       *
+       *  - THE ACT IS NOT COUNTED AS A CALL OF ITS OWN. What comes round again when a Bot runs
+       *    one script five times is the run, and the run is what is counted (`script`, below). A
+       *    read counted beside it made the fifth identical run two questions in one call — and a
+       *    call carries one answer, so under the shipped `repeat.count >= 5` no number of "yes,
+       *    this once" ever ran it again (measured 2026-10-07: read/5, run/5, read/7, run/6 …).
+       *    Every rule about the path still decides it: this is the count, not the decision.
+       *  - THE ROW SAYS WHICH RUN IT WAS FOR. Without it nothing tied a run's reads and files to
+       *    its own rows but the order they were written in.
+       */
+      forScript?: string;
       /**
        * What a run of a script SAYS, for the one act identified by that and by nothing it touches
        * — no ref, no key, no path, no address: the script's SHA-256, its length, and the files it
@@ -232,17 +242,26 @@ export function createGovern(options: {
      * Reading a page never reaches this function, so nothing counts a Bot looking at the same screen
      * over and over. That is the cheapest thing it does and the one nobody minds.
      */
-    const repetition = await repeat.observe(botId, {
-      tool: toolName,
-      ref,
-      key: subject.key,
-      filePath,
-      targetUrl: subject.targetUrl,
-      // Five runs of five scripts are five different calls; five of one script over the same
-      // files are the same call five times, and over other files they are not.
-      part: script ? namedFiles.join("\u0000") : subject.part,
-      ...(script ? { script: script.sha256 } : {}),
-    });
+    const repetition: RepeatObservation = subject.forScript
+      ? /*
+         * A file read or filed for a run is not a call of its own to count: the run is (see
+         * `forScript`). One is the count that makes nothing happen (`repeat.ts`) — a rule about
+         * repetition reads it as a first attempt and stands aside, and every other rule decides
+         * as it would. What that gives up: ten scripts over one file are ten calls and never "the
+         * same read ten times" — as ten different presses on one page are ten calls.
+         */
+        { count: 1, fingerprint: null, threshold: null }
+      : await repeat.observe(botId, {
+          tool: toolName,
+          ref,
+          key: subject.key,
+          filePath,
+          targetUrl: subject.targetUrl,
+          // Five runs of five scripts are five different calls; five of one script over the same
+          // files are the same call five times, and over other files they are not.
+          part: script ? namedFiles.join("\u0000") : subject.part,
+          ...(script ? { script: script.sha256 } : {}),
+        });
 
     /*
      * EVERY FIELD, ON EVERY ACTION, EMPTY WHERE THERE IS NOTHING TO SAY.
@@ -540,6 +559,7 @@ export function createGovern(options: {
         pageUrl,
         filePath,
         script,
+        forScript: subject.forScript,
         ...(settled.autoReview ? { autoReview: settled.autoReview } : {}),
         ...(settled.highRisk ? { highRisk: settled.highRisk } : {}),
       });
@@ -571,6 +591,7 @@ export function createGovern(options: {
         ...(subject.key ? { key: subject.key } : {}),
         filePath,
         script,
+        forScript: subject.forScript,
         pageUrl,
         decision: refusal,
       });
@@ -604,6 +625,7 @@ export function createGovern(options: {
       ...(subject.key ? { key: subject.key } : {}),
       filePath,
       script,
+      forScript: subject.forScript,
       pageUrl,
       decision: carried,
       ...(approvedBy ? { approvedBy } : {}),
@@ -654,6 +676,7 @@ export function createGovern(options: {
         ref,
         filePath,
         script,
+        forScript: subject.forScript,
         pageUrl,
         decision: carried,
         ...(approvedBy ? { approvedBy } : {}),

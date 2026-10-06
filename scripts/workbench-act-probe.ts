@@ -274,6 +274,9 @@ async function probe(socketPath: string, checks: ProbeCheck[]): Promise<void> {
         "computer.action_allowed computer_write_file",
       ]) &&
       read?.payload.file === "uploads/sales.csv" &&
+      // The file it read and the file it made each say which run they were for.
+      read?.payload.forScript === whole.run?.sha256 &&
+      wrote?.payload.forScript === whole.run?.sha256 &&
       decided?.payload.page === "" &&
       digest.sha256 === whole.run?.sha256 &&
       digest.bytes === Buffer.byteLength(input.script) &&

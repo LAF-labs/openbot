@@ -120,6 +120,8 @@ export function signatureOf(event: AuditEvent): string {
     typeof payload.stderrBytes === "number" ? payload.stderrBytes : "",
     text(payload.productsRefused),
     Array.isArray(payload.products) ? JSON.stringify(payload.products) : "",
+    // A file read or filed for a run says which run: one file read for two scripts is two rows.
+    text(payload.forScript),
   ]);
 }
 
