@@ -97,7 +97,6 @@ import {
 import { createDatabase } from "./db/client";
 import { createFleetNotifier } from "./fleet/notify";
 import { deploymentHealthProbes } from "./health";
-import { readInsights } from "./insights/read";
 import {
   createLiveScreen,
   describePointOn,
@@ -1108,10 +1107,6 @@ const app = createApp({
     }),
     ratings: createAnswerRatingStore(database),
   },
-  // The fleet's counts, read per request over the window it asks for, in the Bot's own clock — the
-  // same zone "night" means in the approvals metric. Mounted only when the fleet gave this VM a token.
-  insights: (days: number) =>
-    readInsights(database, { days, timeZone: config.botTimeZone }),
   // Whether the person behind each session is still let in, asked by `requireUser` on every request.
   sessionAdmission: sessionRevocation,
   // A free trial's day, for `/api/me` to say whether it is spent — the judge the runs are refused by.

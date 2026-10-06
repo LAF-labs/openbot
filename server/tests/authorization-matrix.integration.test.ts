@@ -102,7 +102,6 @@ import { createRoutineService } from "../src/routines/service";
 import { createSuggestionDismissalStore } from "../src/routines/suggestions";
 import { createMessageTimeReader } from "../src/runner/message-times";
 import { createWorkingReader } from "../src/runner/working";
-import { readInsights } from "../src/insights/read";
 import { createAnswerRatingStore } from "../src/support/answer-ratings";
 import { createDiagnosticsSource } from "../src/support/diagnostics";
 import { createFeedbackStore } from "../src/support/feedback";
@@ -119,15 +118,9 @@ const database = createDatabase(
 );
 
 const TRUSTED = "https://matrix.agent.laf-co.test";
-/**
- * The fleet's read token, so its door is mounted and pressed like every other. None of the four
- * people holds it — a session is not the fleet — so every cell on it is a 401 with a code.
- */
-const FLEET_METRICS_TOKEN = `matrix-fleet-${"0".repeat(32)}`;
 const config = loadConfig(
   testEnvironment({
     TRUSTED_ORIGINS: `${TRUSTED},http://localhost:3000`,
-    LAF_FLEET_METRICS_TOKEN: FLEET_METRICS_TOKEN,
   }),
 );
 
@@ -368,8 +361,6 @@ function deployment() {
       // Mounted as `main.ts` mounts it, so its two routes are pressed by every person below.
       ratings: createAnswerRatingStore(database),
     },
-    insights: (days) =>
-      readInsights(database, { days, timeZone: "Asia/Seoul" }),
     sessionAdmission: admission,
     // No `dailyBudget` … `turnRoutes`: not what this matrix is about, and absent leaves them unmounted.
     // 만든 것: mounted, so its one door is pressed by every person below.
@@ -1138,19 +1129,6 @@ describe("the matrix", () => {
       (candidate) => keyOf(candidate) === "POST /api/me/first-task",
     );
     expect([press?.status, press?.code]).toEqual([404, "laf:agent_not_found"]);
-  });
-
-  test("the fleet's door opens for nobody holding a session, an administrator included", () => {
-    for (const who of ["anonymous", "B", "A", "admin"] as const) {
-      const cell = cellsOf(who).find(
-        (candidate) => keyOf(candidate) === "GET /api/admin/metrics/insights",
-      );
-      expect([who, cell?.status, cell?.code]).toEqual([
-        who,
-        401,
-        "laf:fleet_token_refused",
-      ]);
-    }
   });
 
   test("a colleague reaches exactly these, and none of them names the owner's Bot", () => {

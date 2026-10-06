@@ -128,8 +128,11 @@ export type UnattendedRunResult = {
   awaiting: string | null;
 };
 
-/** Exported for the one reader that counts runs which met it (`insights/read.ts`, `limits`). */
-export const DEFAULT_MAX_STEPS = 12;
+/**
+ * Exported, until 2026-10-06, for the one reader here that counted runs which met it
+ * (`insights/read.ts`, `limits`). laf-control's count of the same keeps its own copy of the number.
+ */
+const DEFAULT_MAX_STEPS = 12;
 
 /** A routine run's times as they travel on the run: an ISO instant, or null when not scheduled. */
 export function routineForwarded(run: { scheduledFor: Date | null }): {
