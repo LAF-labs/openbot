@@ -1391,13 +1391,32 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * and one for `root` in `dockerfiles.test.ts` (the web image sets the commit before the bundle is
  * built, in the stage that builds, and the build's config writes it into the page).
  *
+ * RAISED 2026-10-06 with the notice of a newer version, `app` from 2111 to 2143, by exactly the
+ * thirty-two written for it. Nothing had compared the page's build with the server's, so a window
+ * left open across an upgrade kept the old bundle — in the installed app, for days. Twenty-two in
+ * the new `build-watch.test.ts`: the decision as a table (the same build, another build, a server
+ * that has not said, a page with no commit, mid-turn, a newer shell in hand, and a build already
+ * reloaded for), the commit read back from the page's own document, every moment the page looks
+ * and does not (not as it begins; in sight or focused; never while hidden; once in half a
+ * minute; every few minutes; when the connection returns; a failed read as silence; a server
+ * gone back; a page with no commit never asking; nothing once stopped), the press (the one
+ * reload there is, with what was typed kept; a reload that did not bring the build not offered
+ * twice) and the shell's half (the held update read as the watch begins and when the shell says
+ * so; nothing in a browser tab). Eight in the new `update-notice.test.tsx`, the control mounted
+ * and pressed: its words in Korean; nothing drawn and nothing asked on an ordinary day; one row
+ * and a press that reloads with the draft kept; unpressable mid-turn and saying why, then
+ * pressable; a newer shell said by the same row and restarted through the shell; a refused
+ * restart said; a restart withheld mid-turn; the icon alone in the rail. And one each in
+ * `sidebar-rail.test.tsx` and `phone-nav.test.tsx`, for where it stands: a row over the foot's
+ * one button, and a row over the phone's tabs.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 3553, roots: ["server"] },
-  { name: "app", floor: 2111, roots: ["app"] },
+  { name: "app", floor: 2143, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
   { name: "root", floor: 719, roots: ["tests", "agent-bot"] },
 ] as const;

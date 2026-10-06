@@ -2872,17 +2872,17 @@ export const ko: Record<string, string> = {
   "Noted how you like to work": "일하는 방식 정리함",
   "Overnight: tidied {count} memories": "밤사이 기억 {count}개 정리함",
   "Tidied {count} memories": "기억 {count}개 정리함",
-  // shell
-  "A new version is ready": "새 버전이 준비됐어요",
-  "Restart to start using version {version}.":
-    "다시 시작하면 {version} 버전을 쓸 수 있어요.",
+  // a newer version: the page's (새로고침) and, in the installed app, the shell's (다시 시작)
+  "A new version is here": "새 버전이 있어요",
+  "Your Bot is working. Refresh once it is done.":
+    "봇이 일하는 중이에요. 일이 끝나면 새로고침해 주세요.",
+  "Restart to update": "다시 시작해서 업데이트",
   "Your Bot is working. Restart once it is done.":
     "봇이 일하는 중이에요. 일이 끝나면 다시 시작해 주세요.",
   "Could not restart. Quit the app and open it again.":
     "다시 시작하지 못했어요. 앱을 종료했다가 다시 열어 주세요.",
-  Later: "나중에",
-  "Restart now": "지금 다시 시작",
   "Restarting…": "다시 시작하는 중…",
+  // shell
   "Saved to your Downloads folder": "다운로드 폴더에 저장했어요",
   "Could not save the file": "파일을 저장하지 못했어요",
   "Check that this app may use your Downloads folder, then press it again.":

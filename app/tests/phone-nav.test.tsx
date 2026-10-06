@@ -269,6 +269,43 @@ describe("the phone's bar", () => {
     }
   });
 
+  test("a newer version is said on a row over the tabs, as part of the bar — and nothing is there otherwise", async () => {
+    /*
+     * A phone has no column whose foot could say it (`update-notice.tsx`, 2026-10-06). The row is
+     * inside the bar, so it is laid out under the screen and never over it, and it leaves with
+     * the bar while a keyboard is up.
+     */
+    const watch = await import("../src/lib/build-watch");
+    const { act } = await import("react");
+    watch.configureBuildWatch({
+      bundleRevision: () => "1bf325e4aaaa",
+      readBuild: async () => ({ revision: "e9be7221bbbb" }),
+      isVisible: () => true,
+      storage: () => null,
+      lookEveryMs: 3_600_000,
+    });
+    const stop = watch.watchBuild();
+    try {
+      const view = await bar("/");
+      expect(view.nav()?.querySelector("[data-update-notice]")).toBeNull();
+      expect(view.nav()?.querySelectorAll("button")).toHaveLength(0);
+
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await view.settle();
+      const row = view.nav()?.querySelector("[data-update-notice]");
+      expect(row?.textContent).toBe("A new version is hereRefresh");
+      expect(row?.querySelectorAll("button")).toHaveLength(1);
+      // Over the tabs, and the six tabs are as they were.
+      expect(view.nav()?.firstElementChild).toBe(row ?? null);
+      expect(view.tabs()).toHaveLength(6);
+    } finally {
+      stop();
+      watch.configureBuildWatch(null);
+    }
+  });
+
   test("the conversation's tab carries the unread mark", async () => {
     const quiet = await bar("/feed");
     expect(quiet.nav()?.querySelector("[data-mark]")).toBeNull();
