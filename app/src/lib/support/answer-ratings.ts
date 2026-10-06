@@ -12,6 +12,7 @@
  */
 import { queryOptions } from "@tanstack/react-query";
 import { t } from "@/lib/i18n";
+import { own } from "@/lib/own";
 
 export type AnswerRating = "up" | "down";
 
@@ -134,7 +135,7 @@ export async function rateAnswer(
   > | null;
   if (!response.ok) {
     const code = typeof body?.code === "string" ? body.code : "";
-    const known = RATING_REFUSALS[code];
+    const known = own(RATING_REFUSALS, code);
     throw new RatingRefusedError(
       code,
       known

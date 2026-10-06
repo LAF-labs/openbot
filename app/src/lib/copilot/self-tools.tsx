@@ -13,6 +13,7 @@ import { RoutineCard } from "@/components/routines/routine-card";
 import type { AgentEffort } from "@/lib/agents/effort-label";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
+import { own } from "@/lib/own";
 import { useDeclaredBotId } from "./active-bot";
 import { keptText } from "./kept-result";
 
@@ -209,7 +210,7 @@ export function SelfTools() {
  * nothing either way, and reads as it always did.
  */
 const opens = (code: string) =>
-  (TOOL_RESULT_KO[code] ?? "").split("{")[0] ?? "";
+  (own(TOOL_RESULT_KO, code) ?? "").split("{")[0] ?? "";
 
 /** What a profile line says once its call is over. */
 export function profileLineFor(result: string | undefined): {

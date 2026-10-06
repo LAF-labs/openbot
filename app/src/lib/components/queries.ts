@@ -1,5 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import { t } from "@/lib/i18n";
+import { own } from "@/lib/own";
 import { polled } from "@/lib/polling";
 
 /** A component as the Admin surface sees it: its state, its versions and who is held back from it. */
@@ -220,7 +221,7 @@ export const COMPONENT_ADMIN_REFUSALS: Record<string, string> = {
 export function refusalSaid(reason: string | undefined): string {
   if (!reason) return t("This cannot be shown here.");
   if (!reason.startsWith("laf:")) return reason;
-  const said = REFUSAL_SAID[reason];
+  const said = own(REFUSAL_SAID, reason);
   return said ? t(said) : t("This cannot be shown here.");
 }
 

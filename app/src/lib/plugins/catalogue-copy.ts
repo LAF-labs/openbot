@@ -1,4 +1,5 @@
 import { GENERIC_MARK } from "@/components/connections/connection-mark";
+import { own } from "@/lib/own";
 
 /**
  * The catalogue entries' words, as this surface's own.
@@ -121,12 +122,12 @@ export const NOT_A_SWITCH: readonly string[] = [
  * brand mark on a login row is worse than a plain one.
  */
 export function catalogueMark(key: string): string {
-  return CATALOGUE_COPY[key]?.mark ?? GENERIC_MARK;
+  return own(CATALOGUE_COPY, key)?.mark ?? GENERIC_MARK;
 }
 
 /** The English key `t()` should be handed for this entry's summary, or the server's own line. */
 export function catalogueSummaryKey(key: string, fallback: string): string {
-  return CATALOGUE_COPY[key]?.summary ?? fallback;
+  return own(CATALOGUE_COPY, key)?.summary ?? fallback;
 }
 
 /**
@@ -136,5 +137,5 @@ export function catalogueSummaryKey(key: string, fallback: string): string {
  * description rather than as a capability but is at least about the right vendor.
  */
 export function catalogueCanKey(key: string, fallback: string): string {
-  return CATALOGUE_COPY[key]?.can ?? catalogueSummaryKey(key, fallback);
+  return own(CATALOGUE_COPY, key)?.can ?? catalogueSummaryKey(key, fallback);
 }

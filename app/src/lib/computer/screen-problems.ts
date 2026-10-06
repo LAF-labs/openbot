@@ -1,4 +1,5 @@
 import { t } from "@/lib/i18n";
+import { own } from "@/lib/own";
 
 /**
  * Why the Bot's screen cannot be shown, in the person's words.
@@ -76,6 +77,6 @@ export const SCREEN_STALLED = "laf:screen_stalled";
  * caller hands this a code it chose itself, so a sentence arriving here IS the regression.
  */
 export function screenProblemText(code: string | null | undefined): string {
-  const said = code ? SCREEN_PROBLEM_SAID[code] : undefined;
+  const said = own(SCREEN_PROBLEM_SAID, code);
   return said ? t(said) : t("The screen is not available right now.");
 }

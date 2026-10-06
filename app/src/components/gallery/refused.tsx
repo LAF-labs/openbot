@@ -2,9 +2,10 @@ import { CARD_NOT_ASKED } from "@shared/tools/gallery";
 import { type StepFailure, stepFailureOf } from "@shared/tools/step-result";
 import { ToolLine } from "@/components/channels/tool-line";
 import { REFUSAL_SAID } from "@/lib/components/queries";
-import { OUTCOME_LABELS } from "@/lib/computer/outcome-labels";
+import { outcomeLabel } from "@/lib/computer/outcome-labels";
 import { keptText } from "@/lib/copilot/kept-result";
 import { t } from "@/lib/i18n";
+import { own } from "@/lib/own";
 
 /**
  * Visible component refusal, using the same blocked-action semantics as computer policy refusals.
@@ -72,9 +73,9 @@ export function CardNotShown({
   ending: StepFailure;
 }) {
   const code = ending.kind === "error" ? null : ending.code;
-  const why = code ? REFUSAL_SAID[code] : undefined;
+  const why = own(REFUSAL_SAID, code);
   if (why) return <RefusedCard reason={t(why)} title={title} />;
-  const words = code ? OUTCOME_LABELS[code] : undefined;
+  const words = outcomeLabel(code);
   return (
     <ToolLine
       detail={words ? t(words) : undefined}

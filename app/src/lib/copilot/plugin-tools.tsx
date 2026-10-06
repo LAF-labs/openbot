@@ -9,7 +9,7 @@ import {
   WithheldSecrets,
   withheldForDisplay,
 } from "@/components/channels/withheld-secrets";
-import { OUTCOME_LABELS } from "@/lib/computer/outcome-labels";
+import { outcomeLabel } from "@/lib/computer/outcome-labels";
 import { useDeclaredBotId } from "@/lib/copilot/active-bot";
 import { stepLineOf } from "@/lib/copilot/step-labels";
 import { t } from "@/lib/i18n";
@@ -183,7 +183,7 @@ function PluginTool({
         typeof stored === "string" && stored !== "" ? stored : undefined;
       const failure = kept === undefined ? null : stepFailureOf(kept);
       if (failure && failure.kind !== "error") {
-        const words = failure.code ? OUTCOME_LABELS[failure.code] : undefined;
+        const words = outcomeLabel(failure.code);
         return (
           <ToolLine
             detail={words ? t(words) : line.detail}

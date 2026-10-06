@@ -1,7 +1,8 @@
 import { SITE_REFUSED } from "@shared/task-ending";
 import type { TaskEnding } from "@/lib/computer/browsing";
-import { OUTCOME_LABELS } from "@/lib/computer/outcome-labels";
+import { outcomeLabel } from "@/lib/computer/outcome-labels";
 import { t } from "@/lib/i18n";
+import { own } from "@/lib/own";
 
 /**
  * THE WORDS FOR HOW A TASK STANDS, ONE SET, FOR EVERY PLACE THAT SAYS IT.
@@ -38,7 +39,7 @@ export function failureReason(
   code: string | null | undefined,
 ): string | undefined {
   if (!code) return undefined;
-  const key = REASONS[code] ?? OUTCOME_LABELS[code];
+  const key = own(REASONS, code) ?? outcomeLabel(code);
   return key ? t(key) : undefined;
 }
 

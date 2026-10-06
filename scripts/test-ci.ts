@@ -1535,13 +1535,20 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * code] }" and called a picture by its name), and a code with no sentence said as itself whatever
  * it is called.
  *
+ * RAISED 2026-10-07, `app` from 2146 to 2149, by the three in `own-keys.test.ts`: the same hole in
+ * the app, where the second read of the byte routes found it live — a connected service's answer
+ * can carry any `code`, and four readers indexed a table of sentences with it bare. Twenty-six
+ * lookups in twenty files read through `own()` now; the tests hold what `own()` answers, that
+ * every reader says an inherited name as it says a code it has never heard of, and — by walking
+ * `src/` — that no table there is indexed bare by a code from outside.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
   { name: "server", floor: 3582, roots: ["server"] },
-  { name: "app", floor: 2146, roots: ["app"] },
+  { name: "app", floor: 2149, roots: ["app"] },
   { name: "agent-computer", floor: 529, roots: ["agent-computer"] },
   { name: "root", floor: 736, roots: ["tests", "agent-bot"] },
 ] as const;

@@ -7,6 +7,7 @@ import { CATEGORIES, type Category, type Persona } from "@shared/persona";
 import { siteById } from "@shared/sites/catalogue";
 import { queryOptions } from "@tanstack/react-query";
 import { t } from "@/lib/i18n";
+import { own } from "@/lib/own";
 import { RequestRefusedError } from "@/lib/refusals";
 
 /**
@@ -42,7 +43,7 @@ async function ideaRequest(path: string, init?: RequestInit) {
   > | null;
   if (!response.ok) {
     const code = typeof body?.code === "string" ? body.code : "";
-    const known = IDEA_REFUSALS[code];
+    const known = own(IDEA_REFUSALS, code);
     throw new RequestRefusedError(
       known ? t(known) : t("That did not go through. Try again."),
       response.status,

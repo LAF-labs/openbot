@@ -20,6 +20,7 @@ import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { ensure } from "@/lib/ensure";
 import { t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
+import { own } from "@/lib/own";
 
 /**
  * Taking your data with you, and leaving.
@@ -83,7 +84,7 @@ async function askToLeave(
     if (!response.ok) {
       const known =
         typeof body?.code === "string"
-          ? ACCOUNT_REFUSALS[body.code]
+          ? own(ACCOUNT_REFUSALS, body.code)
           : undefined;
       return {
         error: known ? t(known) : t("That did not go through. Try again."),

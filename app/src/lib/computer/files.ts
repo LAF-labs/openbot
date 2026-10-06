@@ -1,6 +1,7 @@
 import { HANDOFF_MAX_BYTES } from "@shared/workspace-files";
 import { queryOptions } from "@tanstack/react-query";
 import { t } from "@/lib/i18n";
+import { own } from "@/lib/own";
 import { RequestRefusedError } from "@/lib/refusals";
 
 /**
@@ -53,7 +54,7 @@ export const FILE_CARD_SAID: Readonly<Record<string, string>> = {
 
 /** The same, for a card: its own sentence for a code it knows, else that it could not be checked. */
 export function fileCardSaid(code: string | null | undefined): string {
-  const known = code ? FILE_CARD_SAID[code] : undefined;
+  const known = own(FILE_CARD_SAID, code);
   return known ? t(known) : t("The file could not be checked just now.");
 }
 

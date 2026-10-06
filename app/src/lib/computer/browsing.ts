@@ -18,7 +18,7 @@ import {
   type TaskEnding as SharedEnding,
 } from "@shared/task-ending";
 import { siteNameOf } from "@/components/computer/task-title";
-import { OUTCOME_LABELS } from "@/lib/computer/outcome-labels";
+import { outcomeLabel } from "@/lib/computer/outcome-labels";
 import { t } from "@/lib/i18n";
 
 /**
@@ -101,7 +101,7 @@ export function labelForCode(
   code: unknown,
   fallback: unknown,
 ): string | undefined {
-  const known = typeof code === "string" ? OUTCOME_LABELS[code] : undefined;
+  const known = typeof code === "string" ? outcomeLabel(code) : undefined;
   if (known) return t(known);
   return typeof fallback === "string" && fallback.trim() ? fallback : undefined;
 }

@@ -26,6 +26,8 @@
  * a render that threw. Everything here is expected, and is said in the screen's own words instead.
  */
 
+import { own } from "@/lib/own";
+
 /** Why something cannot be had here, as far as the server has said. */
 export type Unavailability = "not_configured" | "not_allowed";
 
@@ -128,7 +130,8 @@ export function readingOf<T>(
      */
     const code = refusalCodeOf(query.error);
     const why = code
-      ? (unavailable?.[code] ?? UNAVAILABLE_REFUSALS[code])
+      ? ((unavailable ? own(unavailable, code) : undefined) ??
+        own(UNAVAILABLE_REFUSALS, code))
       : null;
     if (code && why) return { state: "unavailable", code, why };
     return {

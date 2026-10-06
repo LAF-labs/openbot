@@ -18,6 +18,7 @@
  */
 import type { ConnectionCheckFacts } from "@shared/support/connection-check";
 import { t } from "@/lib/i18n";
+import { own } from "@/lib/own";
 import type { RememberedFailure } from "./last-failure";
 
 /** The server's limit, repeated so the box can stop somebody before the refusal. */
@@ -130,7 +131,7 @@ export async function sendFeedback(
   > | null;
   if (!response.ok) {
     const code = typeof body?.error === "string" ? body.error : "";
-    const known = FEEDBACK_REFUSALS[code];
+    const known = own(FEEDBACK_REFUSALS, code);
     throw new FeedbackRefusedError(
       code,
       known
