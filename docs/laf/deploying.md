@@ -564,12 +564,13 @@ from a CDN. A console line naming the policy on any screen is a bug in the app
 or in the policy, not noise.
 
 The API refuses a body over a megabyte with `413 laf:body_too_large` before any
-route reads it — a Bot's file write is allowed 2.5 MB, and a conversation turn
-32 MB, because CopilotKit posts the whole thread with every turn; both only for
-a body that declares its length. Three doors answer `429 laf:rate_limited` with
-`Retry-After` past a minute's allowance: starting a sign-in (20 per address), a
-message (60 per session, 240 per address) and the routine trigger webhook
-(30 per token, 60 per address). The counts are in the one API process's
+route reads it — a file a person attaches is allowed ten megabytes and its
+multipart envelope, only for a body that declares its length. (A conversation
+turn had 32 MB while a window posted the whole thread with every run; a turn
+the server owns is handed one message.) Three doors answer
+`429 laf:rate_limited` with `Retry-After` past a minute's allowance: starting a
+sign-in (20 per address), a message (60 per session, 240 per address) and the
+routine trigger webhook (30 per token, 60 per address). The counts are in the one API process's
 memory, which on a one-VM deployment is all of them, and a restart zeroes them.
 
 ## Upgrading
