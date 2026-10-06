@@ -117,9 +117,12 @@ export const COMPUTER_CODES = {
   // A path it may name, and what is there does not fit the request.
   "laf:file_not_found": { status: 400, caller: "bot" },
   "laf:file_wrong_kind": { status: 400, caller: "bot" },
-  // More than the workspace takes in one write, or hands over in one download; `bytes` and `limit`
-  // ride beside it.
+  // More than the workspace takes in one write or one put, or hands over in one download or whole;
+  // `bytes` and `limit` ride beside it.
   "laf:file_too_large": { status: 400, caller: "bot" },
+  // Something is already at the path a put named (`/files/put`). A put creates and never replaces,
+  // so this is its answer to a path that is taken — and what is there is as it was.
+  "laf:file_exists": { status: 400, caller: "bot" },
   // The disk did not do it.
   "laf:file_failed": { status: 500, caller: "bot" },
 

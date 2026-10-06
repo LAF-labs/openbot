@@ -23,6 +23,7 @@
 import { createReadStream } from "node:fs";
 import {
   mkdir,
+  open,
   readdir,
   readFile,
   realpath,
@@ -31,6 +32,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { ATTACHMENT_MAX_BYTES } from "../../shared/attachments";
 import { HANDOFF_MAX_BYTES } from "../../shared/workspace-files";
 import { sliceOnCharacters } from "../../shared/sound-text";
 
@@ -57,6 +59,8 @@ export type WorkspaceFileCode =
   | "laf:file_not_found"
   | "laf:file_wrong_kind"
   | "laf:file_too_large"
+  /** Something is already at the path a `put` named. A put never replaces. */
+  | "laf:file_exists"
   | "laf:request_invalid";
 
 export class WorkspaceFileError extends Error {
@@ -91,6 +95,24 @@ export type WorkspaceLimits = {
    * may do, and a caller that sets those is saying nothing about a person's download.
    */
   downloadBytes?: number;
+  /**
+   * Most bytes one file hands the SERVER, whole (`whole`).
+   *
+   * Left out, it is the most a person may attach (`shared/attachments.ts`): whatever somebody could
+   * hand their Bot can be taken back out in one piece. Not the download's five megabytes, which is
+   * a bound on what a card offers a person, and not `readBytes`, which is what a model's context
+   * can take of a text.
+   */
+  wholeBytes?: number;
+  /**
+   * Most bytes one `put` takes.
+   *
+   * Left out, it is what one download hands over, for the reason `downloadBytes` gives: a file put
+   * here that no card could then hand to anybody is a file nobody can reach. NOT `writeBytes` — that
+   * megabyte bounds what a Bot may write by its own tool, in one call of a loop; a put is the
+   * server's, of bytes it already holds, and a workbook is routinely over a megabyte.
+   */
+  putBytes?: number;
 };
 
 /**
@@ -219,6 +241,8 @@ export function createWorkspace(
   }
 
   const downloadBytes = limits.downloadBytes ?? HANDOFF_MAX_BYTES;
+  const wholeBytes = limits.wholeBytes ?? ATTACHMENT_MAX_BYTES;
+  const putBytes = limits.putBytes ?? HANDOFF_MAX_BYTES;
 
   /**
    * A path that has to be a file: where it really is, and what the disk says about it.
@@ -240,6 +264,45 @@ export function createWorkspace(
       );
     }
     return { full, info };
+  }
+
+  /**
+   * A file's bytes exactly as they are on disk, and never more than `most` of them.
+   *
+   * BOUNDED WHILE IT IS READ, not only before. The size is asked first, so an oversized file is
+   * refused without touching it; but a page's download lands here whole before it is measured
+   * (`saveDownload`), and a file that was small when asked can be large by the time it is read.
+   * The read stops one byte past the bound and is refused there.
+   */
+  async function bytesOf(
+    requested: string,
+    most: number,
+  ): Promise<{ path: string; bytes: Buffer<ArrayBuffer> }> {
+    const { full, info } = await fileAt(requested);
+    const tooLarge = (bytes: number) =>
+      new WorkspaceFileError(
+        `That is ${bytes} bytes and at most ${most} are handed over.`,
+        "laf:file_too_large",
+        { bytes, limit: most },
+      );
+    if (info.size > most) throw tooLarge(info.size);
+
+    const chunks: Buffer[] = [];
+    let total = 0;
+    // `end` is the last byte read, inclusive: the bound and one more, which is how "over" is seen.
+    const stream: AsyncIterable<Buffer> = createReadStream(full, {
+      end: most,
+    });
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+      total += chunk.byteLength;
+    }
+    if (total > most) {
+      // What the disk says now, where it can; the file is at least this much either way.
+      const grown = await stat(full).catch(() => null);
+      throw tooLarge(Math.max(grown?.size ?? 0, total));
+    }
+    return { path: requested, bytes: Buffer.concat(chunks, total) };
   }
 
   return {
@@ -266,41 +329,114 @@ export function createWorkspace(
      *
      * NOT `read`. That one is a Bot's: UTF-8 text, cut to what a model's context can take, a
      * picture arriving as replacement characters on purpose. This hands over the file itself, so a
-     * sheet a page gave the browser and a note a Bot wrote both leave as what they are.
-     *
-     * BOUNDED WHILE IT IS READ, not only before. The size is asked first, so an oversized file is
-     * refused without touching it; but a page's download lands here whole before it is measured
-     * (`saveDownload`), and a file that was small when asked can be large by the time it is read.
-     * The read stops one byte past the bound and is refused there.
+     * sheet a page gave the browser and a note a Bot wrote both leave as what they are — and no
+     * more of it than a download may be (`bytesOf`).
      */
-    async download(
+    download(
       requested: string,
     ): Promise<{ path: string; bytes: Buffer<ArrayBuffer> }> {
-      const { full, info } = await fileAt(requested);
+      return bytesOf(requested, downloadBytes);
+    },
+
+    /**
+     * A file's bytes exactly as they are on disk, for the server itself.
+     *
+     * NOT `download`, though it is the same reading. That one is a person taking a file out, bound
+     * by what a card offers them and written down by the server as a file leaving. This is the
+     * server holding a file whole because something has to be done with all of it — a workbook
+     * cannot be summed from the first 64,000 bytes of it as text — and its bound is the largest
+     * file a person may attach, so that nothing they could hand their Bot is too big to take up
+     * again. Who may read which path is not asked here, as it is not for any route of this file:
+     * the gateway in front of this process decides that.
+     */
+    whole(
+      requested: string,
+    ): Promise<{ path: string; bytes: Buffer<ArrayBuffer> }> {
+      return bytesOf(requested, wholeBytes);
+    },
+
+    /**
+     * Bytes, to a path nothing is at.
+     *
+     * NEVER OVER ANYTHING. `write` replaces what is there, which is what a Bot keeping notes wants
+     * and exactly what must not happen to a file a person attached or a file an earlier task made.
+     * So this creates and does nothing else: the file is opened to be created (`wx`), and a path
+     * that already names something — a file, a folder, a link, wherever the link points — is
+     * refused as `laf:file_exists` with what is there untouched. The caller composes a path that is
+     * new; this is what stays true if it ever is not.
+     *
+     * BYTES, WHERE `write` TAKES TEXT. A workbook or a picture is neither a string nor under a
+     * megabyte, so the body is taken as it is and bounded by `putBytes`.
+     *
+     * BOUNDED BEFORE IT IS HELD. The path is judged first, so a path that may not be named costs
+     * nobody a body. Then what the caller declared is refused unread when it is over, and a body
+     * that said nothing, or less than it sent, is read no further than one piece past the bound.
+     *
+     * ALL OR NOTHING. The body is held whole before the file is opened, and a write that fails
+     * after the file was created takes the file away again — otherwise the next attempt would be
+     * refused by the half of a file the last one left.
+     */
+    async put(
+      requested: string,
+      body: AsyncIterable<Uint8Array>,
+      declared?: number,
+    ): Promise<{ path: string; kind: "file"; bytes: number }> {
+      const full = await resolvePath(requested, true);
       const tooLarge = (bytes: number) =>
         new WorkspaceFileError(
-          `That is ${bytes} bytes and a download is at most ${downloadBytes}.`,
+          `That is ${bytes} bytes and a put is at most ${putBytes}.`,
           "laf:file_too_large",
-          { bytes, limit: downloadBytes },
+          { bytes, limit: putBytes },
         );
-      if (info.size > downloadBytes) throw tooLarge(info.size);
+      if (declared !== undefined && declared > putBytes) {
+        throw tooLarge(declared);
+      }
 
-      const chunks: Buffer[] = [];
+      const chunks: Uint8Array[] = [];
       let total = 0;
-      // `end` is the last byte read, inclusive: the bound and one more, which is how "over" is seen.
-      const stream: AsyncIterable<Buffer> = createReadStream(full, {
-        end: downloadBytes,
-      });
-      for await (const chunk of stream) {
-        chunks.push(chunk);
+      for await (const chunk of body) {
         total += chunk.byteLength;
+        // Leaving the loop by a throw lets go of the body: nothing more of it is read.
+        if (total > putBytes) throw tooLarge(total);
+        chunks.push(chunk);
       }
-      if (total > downloadBytes) {
-        // What the disk says now, where it can; the file is at least this much either way.
-        const grown = await stat(full).catch(() => null);
-        throw tooLarge(Math.max(grown?.size ?? 0, total));
+
+      try {
+        await mkdir(dirname(full), { recursive: true });
+      } catch (error) {
+        // A file where a folder of the path has to be: the request's mistake, not the disk's.
+        if (errnoOf(error) === "EEXIST" || errnoOf(error) === "ENOTDIR") {
+          throw new WorkspaceFileError(
+            `${requested} is under something that is not a folder.`,
+            "laf:file_wrong_kind",
+          );
+        }
+        throw error;
       }
-      return { path: requested, bytes: Buffer.concat(chunks, total) };
+      let created = false;
+      try {
+        // Created or refused in one step: `x` fails on anything already there, a link included,
+        // without following it.
+        const file = await open(full, "wx");
+        created = true;
+        try {
+          await file.writeFile(Buffer.concat(chunks, total));
+        } finally {
+          await file.close();
+        }
+      } catch (error) {
+        // Only ever what THIS call created: a path that was taken is somebody else's file.
+        if (created) {
+          await rm(full, { force: true }).catch(() => undefined);
+        } else if (errnoOf(error) === "EEXIST") {
+          throw new WorkspaceFileError(
+            `Something is already at ${requested}.`,
+            "laf:file_exists",
+          );
+        }
+        throw error;
+      }
+      return { path: requested, kind: "file", bytes: total };
     },
 
     /**
@@ -573,4 +709,11 @@ async function nearestExistingAncestor(
       current = parent;
     }
   }
+}
+
+/** The system's own name for why a file call failed (`EEXIST`, `ENOTDIR`), where it gave one. */
+function errnoOf(error: unknown): string | undefined {
+  return error instanceof Error
+    ? (error as NodeJS.ErrnoException).code
+    : undefined;
 }

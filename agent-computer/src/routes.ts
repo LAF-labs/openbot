@@ -33,7 +33,9 @@ import {
 import { describePoint } from "./describe-point";
 import {
   downloadFile,
+  fileBytes,
   listFiles,
+  putFile,
   readFile,
   statFile,
   writeFile,
@@ -68,6 +70,8 @@ const BOT_ROUTES = new Map<string, BotRoute>([
   ["POST /files/write", writeFile],
   ["POST /files/stat", statFile],
   ["POST /files/download", downloadFile],
+  ["POST /files/bytes", fileBytes],
+  ["POST /files/put", putFile],
   ["GET /read", readPage],
   ["POST /describe-point", describePoint],
   ["POST /snapshot", snapshot],

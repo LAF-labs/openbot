@@ -1,3 +1,4 @@
+import { ATTACHMENT_MAX_BYTES } from "../../../shared/attachments";
 import {
   BOTS_LOOK,
   LOOK_HEADER,
@@ -8,7 +9,10 @@ import {
   geolocationHeaderOf,
   TIME_ZONE_HEADER,
 } from "../../../shared/whereabouts";
-import { HANDOFF_MAX_BYTES } from "../../../shared/workspace-files";
+import {
+  FILE_PATH_HEADER,
+  HANDOFF_MAX_BYTES,
+} from "../../../shared/workspace-files";
 import type { BrowserWhereabouts } from "../account/whereabouts";
 import { BotIdRefusedError, isBotId } from "./bot-id";
 import type {
@@ -142,7 +146,10 @@ export const FILE_PATH_REFUSED = "laf:file_path_refused";
 export const REQUEST_INVALID = "laf:request_invalid";
 /** Nothing is at that path. The one file fact a person's own door answers differently (routes.ts). */
 export const FILE_NOT_FOUND = "laf:file_not_found";
-/** More than a download hands over: said here too, of an answer that ran past the bound. */
+/**
+ * More than a download or a whole read hands over, or than a put takes: said here too — of an
+ * answer that ran past the bound, and of a put that is not sent because it is over it.
+ */
 const FILE_TOO_LARGE = "laf:file_too_large";
 
 /**
@@ -309,6 +316,7 @@ export const COMPUTER_ANSWERS = {
   "laf:file_not_found": WorkspaceRequestError,
   "laf:file_wrong_kind": WorkspaceRequestError,
   "laf:file_too_large": WorkspaceRequestError,
+  "laf:file_exists": WorkspaceRequestError,
   "laf:tab_missing": WorkspaceRequestError,
   "laf:request_invalid": WorkspaceRequestError,
   "laf:bot_id_invalid": BotIdRefusedError,
@@ -422,7 +430,8 @@ export function createComputerClient(options: ComputerClientOptions) {
     /**
      * One request to the computer: answered, or thrown as the failure it was. The body of an
      * answer that worked is left unread — JSON for every call (`call`) but a file's own bytes
-     * (`downloadFile`) — so there is one place that names the Bot, carries the token and gives up.
+     * (`downloadFile`, `fileBytes`) — so there is one place that names the Bot, carries the token
+     * and gives up.
      */
     async function send(
       path: string,
@@ -531,6 +540,23 @@ export function createComputerClient(options: ComputerClientOptions) {
     ): Promise<unknown> {
       const response = await send(path, init, caller);
       return (await response.json().catch(() => null)) as unknown;
+    }
+
+    /**
+     * The body of an answer that is a file, held whole and no further than `most`.
+     *
+     * Past the bound is a fact about the file; anything else is the answer breaking off.
+     */
+    async function wholeAnswer(
+      response: Response,
+      most: number,
+    ): Promise<Uint8Array<ArrayBuffer>> {
+      try {
+        return await bytesWithin(response, most);
+      } catch (error) {
+        if (error instanceof WorkspaceRequestError) throw error;
+        throw notAnswered(error);
+      }
     }
 
     /** A JSON body, as every call but a bare GET sends one. */
@@ -739,19 +765,58 @@ export function createComputerClient(options: ComputerClientOptions) {
       /**
        * One file's bytes, as they are on disk, for the person the Bot works for.
        *
-       * The one call whose answer is not JSON. Unguarded here like its siblings: the computer
-       * confines the path, and who may take a file out is the routes' question (`requireBotAccess`).
-       * A failure is still the computer's own fact, read off the JSON a refusal is written in.
+       * A call whose answer is not JSON, with `fileBytes` below. Unguarded here like its siblings:
+       * the computer confines the path, and who may take a file out is the routes' question
+       * (`requireBotAccess`). A failure is still the computer's own fact, read off the JSON a
+       * refusal is written in.
        */
       async downloadFile(path: string): Promise<Uint8Array<ArrayBuffer>> {
-        const response = await send("/files/download", posted({ path }));
-        try {
-          return await bytesWithin(response, HANDOFF_MAX_BYTES);
-        } catch (error) {
-          // Past the bound is a fact about the file; anything else is the answer breaking off.
-          if (error instanceof WorkspaceRequestError) throw error;
-          throw notAnswered(error);
+        return wholeAnswer(
+          await send("/files/download", posted({ path })),
+          HANDOFF_MAX_BYTES,
+        );
+      },
+
+      /**
+       * One file's bytes, whole, for this server itself — where the whole of a file is what some
+       * work is done on, and neither a text of it nor what a card hands a person will do.
+       *
+       * `downloadFile`'s sibling under the computer's other bound: the largest file a person may
+       * attach, so that nothing they could hand their Bot is too large to take up again. Unguarded
+       * here like every call in this file. A caller that reads a file FOR A BOT has to have had
+       * the gateway judge that read first, as it judges `readFile`.
+       */
+      async fileBytes(path: string): Promise<Uint8Array<ArrayBuffer>> {
+        return wholeAnswer(
+          await send("/files/bytes", posted({ path })),
+          ATTACHMENT_MAX_BYTES,
+        );
+      },
+
+      /**
+       * Bytes, to a path in the folder that nothing is at.
+       *
+       * The one call whose REQUEST is not JSON: the body is the file, and its path rides in a
+       * header, percent-encoded (`FILE_PATH_HEADER`). The computer creates and never replaces — a
+       * path that is taken is `laf:file_exists`, with what is there untouched — and answers the
+       * new file's facts.
+       *
+       * Refused here, unsent, when it is over what the computer takes: the same bound, the same
+       * fact, and nobody uploads megabytes to be told so.
+       */
+      async putFile(path: string, bytes: Uint8Array): Promise<FileFacts> {
+        if (bytes.byteLength > HANDOFF_MAX_BYTES) {
+          throw new WorkspaceRequestError(FILE_TOO_LARGE);
         }
+        return (await call("/files/put", {
+          method: "POST",
+          headers: {
+            "content-type": "application/octet-stream",
+            [FILE_PATH_HEADER]: encodeURIComponent(path),
+          },
+          // A copy on a plain ArrayBuffer: the body type wants one, and the bytes are the file's own.
+          body: new Uint8Array(bytes),
+        })) as FileFacts;
       },
 
       /** Who has the wheel, and whether the Bot is waiting for a person. */
