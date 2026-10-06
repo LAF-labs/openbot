@@ -87,6 +87,8 @@ export function actionState(subject: ReviewSubject): Record<string, unknown> {
       ? { element: { role: facts.element.role, label: facts.element.name } }
       : {}),
     ...(facts.file ? { file: facts.file.path } : {}),
+    // A script's run: the files it would be handed, by path. Never the script — a subject holds none.
+    ...(facts.files ? { files: facts.files.map((file) => file.path) } : {}),
     ...(facts.tool
       ? { other_server_tool: `${facts.tool.server}/${facts.tool.name}` }
       : {}),

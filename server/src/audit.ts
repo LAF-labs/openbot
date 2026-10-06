@@ -166,6 +166,25 @@ export const auditEventTypes = [
    */
   "computer.file_downloaded",
   /**
+   * A script a Bot wrote ran to an ending (`computer/gateway/acts.ts`, `runScript`).
+   *
+   * Its own type, between two rows that already exist: the decision to run it
+   * (`computer.action_allowed`, written before the script was sent anywhere) and a row for each
+   * file it made (`computer_write_file`, one decision each). This one is what came of the run, and
+   * it is written BEFORE any of those files is filed — a trail that will not take it files nothing.
+   * A run that never produced an ending has no such row: unreachable, stopped or unvouched-for is
+   * `computer.action_failed` against the decision, like any act that was allowed and did not happen.
+   *
+   * It carries the script's SHA-256 and length, how it ended — by itself and with what status, or
+   * stopped at which bound — how long it took, how many BYTES it printed on each stream, and the
+   * name and size of each file it handed back. NEVER the script, never a character it printed,
+   * never a byte of a file it read or made: a script is a model's text and what it prints is a
+   * person's data, and this trail records that typing happened and never what was typed. The
+   * script is the call's arguments in the conversation while the conversation exists; after that
+   * the digest names a script nobody can read (the owner's decision, 2026-10-07).
+   */
+  "computer.script_finished",
+  /**
    * The boundary stopping to ask a person, and what they said.
    *
    * Three rows rather than a flag on the action, because the three facts are separable and the gaps
@@ -558,6 +577,20 @@ export const auditFactCodes = [
    * states the sharing that `computer/assignment.ts` decided.
    */
   "laf:one_shared_computer",
+
+  /*
+   * WHY A SCRIPT THAT WAS ALLOWED TO RUN DID NOT, OR WHY A FILE IT MADE WAS NOT KEPT
+   * (`computer/gateway/script-run.ts`). Each is the `failure` of a `computer.action_failed` row,
+   * said by this server about the place a script runs — not by the Bot's computer, whose own
+   * facts are the container's list — which is why they are the trail's to name. A script that ran
+   * and ended badly is none of these: that is `computer.script_finished`, which says how.
+   */
+  "laf:workbench_unavailable",
+  "laf:workbench_busy",
+  "laf:workbench_failed",
+  "laf:script_too_large",
+  "laf:script_inputs_invalid",
+  "laf:made_full",
 ] as const;
 
 export type AuditFactCode = (typeof auditFactCodes)[number];
@@ -589,6 +622,25 @@ export const READ_FAILED: AuditFactCode = "laf:read_failed";
 export const TOOL_REPORTED_ERROR: AuditFactCode = "laf:tool_reported_error";
 /** Every Bot of this account drives the same browser. */
 export const ONE_SHARED_COMPUTER: AuditFactCode = "laf:one_shared_computer";
+/**
+ * There is nowhere to run a script: this deployment has no workbench, nothing answers where it
+ * should be, or what answers cannot prove it is the workbench — or it found itself outside its
+ * walls and ran nothing.
+ */
+export const WORKBENCH_UNAVAILABLE: AuditFactCode = "laf:workbench_unavailable";
+/** It is running something and enough is waiting behind that, or it is still clearing up. */
+export const WORKBENCH_BUSY: AuditFactCode = "laf:workbench_busy";
+/** It answered, and not with a run this server will vouch for; or it went away during one. */
+export const WORKBENCH_FAILED: AuditFactCode = "laf:workbench_failed";
+/** The script is longer than a script may be. Refused before anything is decided or read. */
+export const SCRIPT_TOO_LARGE: AuditFactCode = "laf:script_too_large";
+/**
+ * What the script was to be run with is not something a run takes: too many files, a path that
+ * cannot be one, a file named twice, files too large together, a time it may not ask for.
+ */
+export const SCRIPT_INPUTS_INVALID: AuditFactCode = "laf:script_inputs_invalid";
+/** The folder scripts' files are kept in holds all it may. Nothing is deleted to make room. */
+export const MADE_FULL: AuditFactCode = "laf:made_full";
 
 export type AuditEventInput = {
   eventType: AuditEventType;

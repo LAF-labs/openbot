@@ -6,6 +6,7 @@ import {
   decisionBaseUrlOf,
 } from "../src/computer/decision-call";
 import {
+  actionState,
   createJevAutoReviewer,
   JEV_CALIBRATION,
   jevVerdict,
@@ -317,6 +318,24 @@ describe("the Jev auto-reviewer: allow or ask, never deny", () => {
     const { call, sent } = endpoint(() => answered({}));
     expect(await createJevAutoReviewer({ call })("  ", READ_ORDERS)).toBeNull();
     expect(sent).toHaveLength(0);
+  });
+
+  test("a script's run is judged on the files it names, and on nothing a script says", () => {
+    expect(
+      actionState({
+        action: "mcp__workbench__run_script",
+        subject: {
+          kind: "file",
+          intent: "run_script",
+          files: [{ path: "uploads/sales.csv" }, { path: "uploads/costs.csv" }],
+          reason: "policy_ask",
+        },
+      }),
+    ).toEqual({
+      tool: "mcp__workbench__run_script",
+      intent: "run_script",
+      files: ["uploads/sales.csv", "uploads/costs.csv"],
+    });
   });
 
   test("the verdict is only ever allowed or not: there is no deny to return", () => {

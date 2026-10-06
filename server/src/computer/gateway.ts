@@ -61,6 +61,7 @@ import { createPageReads, createSnapshotCache } from "./gateway/snapshots";
 import { createTypedLedger, type HighRiskCheck } from "./high-risk";
 import type { ActionPolicy } from "./policy";
 import { createRepeatDetector, type RepeatDetector } from "./repeat";
+import type { Workbench } from "../workbench/client";
 import {
   createStandingApprovalStore,
   type StandingApprovalStore,
@@ -143,6 +144,18 @@ export type ComputerGatewayOptions = {
     check: HighRiskCheck;
     taskText: (threadId: string | undefined) => Promise<string>;
   };
+  /**
+   * Where a script a Bot wrote is run (`workbench/client.ts`): another container, with no network
+   * and nothing of the Bot's folder in it but the bytes a run is handed.
+   *
+   * ABSENT EVERYWHERE TODAY. Nothing reads a socket or a key for it from the environment, and
+   * `main.ts` hands none in: the act it serves (`gateway/acts.ts`, `runScript`) is offered to no
+   * Bot yet, and with none here that act refuses at once, before it reads a file. A test hands in
+   * a stand-in; the rehearsal hands in the real client beside the real service.
+   */
+  workbench?: Workbench;
+  /** The clock a script run's folder is dated by. Absent, the wall clock. */
+  now?: () => Date;
 };
 
 export function createComputerGateway(options: ComputerGatewayOptions) {
@@ -191,7 +204,13 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
     requestSecret: secrets.requestSecret,
     supplySecret: secrets.supplySecret,
     ...createNavigation({ as, govern, siteSeen: options.siteSeen }),
-    ...createActs({ as, govern }),
+    ...createActs({
+      as,
+      govern,
+      auditStore,
+      ...(options.workbench ? { workbench: options.workbench } : {}),
+      ...(options.now ? { now: options.now } : {}),
+    }),
   };
 }
 

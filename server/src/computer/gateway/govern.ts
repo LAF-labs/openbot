@@ -48,7 +48,12 @@ import {
 } from "./caller";
 import { askSubjectOf, intentOf, isTextKey } from "./intent";
 import type { SnapshotCache } from "./snapshots";
-import { write, writeApprovalEvent, writeRepeat } from "./trail";
+import {
+  type ScriptOnTrail,
+  write,
+  writeApprovalEvent,
+  writeRepeat,
+} from "./trail";
 
 /** A control as the policy judged it: its role and accessible name from this server's snapshot. */
 export type JudgedElement = { role: string; name: string };
@@ -107,8 +112,19 @@ export function createGovern(options: {
     subject: {
       ref?: string;
       filePath?: string;
-      /** Which part of `filePath` a read asked for; counted apart, like a page's query. */
+      /**
+       * Which part of `filePath` a read asked for; counted apart, like a page's query. For a file
+       * read on a script's behalf it is that script's digest: two scripts over one file are not
+       * the same read twice (`acts.ts`, `runScript`).
+       */
       part?: string;
+      /**
+       * What a run of a script SAYS, for the one act identified by that and by nothing it touches
+       * — no ref, no key, no path, no address: the script's SHA-256, its length, and the files it
+       * names. Never the script; this function is not handed one. Set by `runScript` and by
+       * nothing else.
+       */
+      script?: ScriptOnTrail;
       targetUrl?: string;
       key?: string;
       /** Whether this call ends by pressing Enter. Only the type tool can, and it says so. */
@@ -175,12 +191,37 @@ export function createGovern(options: {
       subject.filePath !== undefined && hasNoOneReading(subject.filePath);
     const element = resolve(computerId, ref);
     const cached = snapshots.get(computerId);
+    const intent = intentOf(toolName, subject.key);
+    /*
+     * A RUN HAS NO PAGE, WHATEVER THE BROWSER IS SHOWING.
+     *
+     * A script runs where there is no network and no browser, over files it was handed; the page
+     * this computer happens to be parked on is nothing to do with it. Given that page — which is
+     * what the line below gives every other act — three things go wrong at once: a rule about a
+     * host fires on a run because of where the browser is (and `page.host` is what the money
+     * rules are written against), the row files a run under a site, and "always" on its card is
+     * an allowance for THAT SITE, since a scope is the file, else the host, else the tool
+     * (`standing-approvals.ts`, `allowanceFor`) — a person agreeing to scripts has agreed to
+     * everything on a bank's pages. Blank, the scope is the tool, which is what the button says.
+     *
+     * Blank here is "there is none", the structural kind — not "the server could not see it",
+     * which is decided below and refuses. A run is not refused for want of a look at a screen it
+     * never uses, for the reason the workspace is not.
+     */
+    const offThePage = intent === "run_script";
     // For a navigation the relevant page is the one being opened, not the one already loaded. Using
     // the cached URL would mean `page.host == "..."` could never match the destination, which is the
     // only thing a rule about navigation would ever want to say.
-    const pageUrl = subject.targetUrl ?? cached?.url ?? "";
-
-    const intent = intentOf(toolName, subject.key);
+    const pageUrl = offThePage ? "" : (subject.targetUrl ?? cached?.url ?? "");
+    /*
+     * WHAT A RUN IS, FOR EVERYTHING THAT HAS TO TELL ONE RUN FROM ANOTHER: its script's digest and
+     * the files it names, in one order whatever order the caller wrote them in. A browser act is
+     * identified by what it touches; a run by what it says — the reasoning a call's arguments are
+     * in an approval's fingerprint for (`approvals.ts`). Both readers below take it from here: the
+     * count of "the same call again", and what a person's answer is bound to.
+     */
+    const { script } = subject;
+    const namedFiles = script ? [...script.files].sort() : [];
 
     /*
      * Counted before the policy is asked, so that a rule written against the count decides the very
@@ -197,7 +238,10 @@ export function createGovern(options: {
       key: subject.key,
       filePath,
       targetUrl: subject.targetUrl,
-      part: subject.part,
+      // Five runs of five scripts are five different calls; five of one script over the same
+      // files are the same call five times, and over other files they are not.
+      part: script ? namedFiles.join("\u0000") : subject.part,
+      ...(script ? { script: script.sha256 } : {}),
     });
 
     /*
@@ -300,7 +344,9 @@ export function createGovern(options: {
     const aboutThePage =
       intent !== "read_file" &&
       intent !== "write_file" &&
-      intent !== "list_files";
+      intent !== "list_files" &&
+      // AND SO DOES A RUN, for the workspace's reason: see `offThePage` above.
+      !offThePage;
     const blind =
       (!cached || cached.stale) &&
       subject.targetUrl === undefined &&
@@ -379,6 +425,15 @@ export function createGovern(options: {
       submit: subject.submit,
       filePath,
       pageUrl,
+      /*
+       * THE SCRIPT IS PART OF WHAT AN ANSWER IS FOR. A yes to one script is not a yes to another,
+       * nor to the same script handed other files: without this every run of a Bot has one
+       * fingerprint — its name — and one person's "this once" can be spent on whatever the
+       * model writes next.
+       */
+      ...(script
+        ? { arguments: { script: script.sha256, files: namedFiles } }
+        : {}),
       element: element ? { role: element.role, name: element.name } : undefined,
     });
     /*
@@ -443,6 +498,7 @@ export function createGovern(options: {
           element,
           matched: decision.matched,
           repeatCount: repetition.count,
+          ...(script ? { files: script.files } : {}),
         }),
         action: toolName,
         fingerprint,
@@ -483,6 +539,7 @@ export function createGovern(options: {
         toolName,
         pageUrl,
         filePath,
+        script,
         ...(settled.autoReview ? { autoReview: settled.autoReview } : {}),
         ...(settled.highRisk ? { highRisk: settled.highRisk } : {}),
       });
@@ -513,6 +570,7 @@ export function createGovern(options: {
         ref,
         ...(subject.key ? { key: subject.key } : {}),
         filePath,
+        script,
         pageUrl,
         decision: refusal,
       });
@@ -545,6 +603,7 @@ export function createGovern(options: {
       ref,
       ...(subject.key ? { key: subject.key } : {}),
       filePath,
+      script,
       pageUrl,
       decision: carried,
       ...(approvedBy ? { approvedBy } : {}),
@@ -594,6 +653,7 @@ export function createGovern(options: {
         element,
         ref,
         filePath,
+        script,
         pageUrl,
         decision: carried,
         ...(approvedBy ? { approvedBy } : {}),
