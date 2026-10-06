@@ -108,6 +108,8 @@ type CalendarEvent = {
   summary?: string;
   location?: string;
   htmlLink?: string;
+  /** `default`, `workingLocation`, `outOfOffice`, `focusTime`, `birthday`, `fromGmail`. */
+  eventType?: string;
   start?: { dateTime?: string; date?: string };
   end?: { dateTime?: string; date?: string };
 };
@@ -118,10 +120,16 @@ const whenOf = (edge: CalendarEvent["start"]): string =>
 
 const two = (n: number) => String(n).padStart(2, "0");
 
+/** The day an instant falls on by the person's own clock: `2026-10-05`. */
+function localDate(at: Date, timeZone: string): string {
+  const clock = wallClockAt(at, timeZone);
+  return `${clock.year}-${two(clock.month)}-${two(clock.day)}`;
+}
+
 /** An instant as the person's own clock reads it: `2026-10-05 21:00`. */
 function localStamp(at: Date, timeZone: string): string {
   const clock = wallClockAt(at, timeZone);
-  return `${clock.year}-${two(clock.month)}-${two(clock.day)} ${two(clock.hour)}:${two(clock.minute)}`;
+  return `${localDate(at, timeZone)} ${two(clock.hour)}:${two(clock.minute)}`;
 }
 
 /**
@@ -176,14 +184,22 @@ function startOf(event: CalendarEvent, allDayZone: string): Date | null {
     const at = new Date(edge.dateTime);
     return Number.isNaN(at.getTime()) ? null : at;
   }
-  const date = /^(\d{4})-(\d{2})-(\d{2})$/.exec(edge?.date ?? "");
-  if (!date) return null;
-  return instantOf(
-    { year: Number(date[1]), month: Number(date[2]), day: Number(date[3]) },
-    0,
-    0,
-    allDayZone,
-  );
+  const date = datePartsOf(edge?.date);
+  return date ? instantOf(date, 0, 0, allDayZone) : null;
+}
+
+/** `2026-10-06` as a year, a month and a day — or null where it is not a date written that way. */
+function datePartsOf(
+  date: string | undefined,
+): { year: number; month: number; day: number } | null {
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date ?? "");
+  return parts
+    ? {
+        year: Number(parts[1]),
+        month: Number(parts[2]),
+        day: Number(parts[3]),
+      }
+    : null;
 }
 
 /**
@@ -330,13 +346,16 @@ export async function callTool(
      * back into it. So Google is asked once, for the stretch and `AHEAD_DAYS` after it, with the
      * same `maxResults` and the same order — the stretch's own events come first in that order, so
      * a stretch with a full page of them reads exactly as it did — and what came back is split
-     * here by where each event starts.
+     * here by where each event starts. (The call itself has the thirty seconds every request to
+     * a vendor has, `TIMEOUT_MS.rest`. What the wider stretch costs Google in time was not
+     * measured: no account was at hand.)
      *
      * NOT UNDER A SEARCH. "No event matches 치과 this week" is a different statement from "the
      * week is empty", and an event that merely comes next answers neither: with `query` the
      * request and the answer are what they were.
      */
     const looksAhead = query === null;
+    const maxResults = countArg(args, "max", DEFAULT_EVENTS, MAX_EVENTS);
     const lookedUntil = looksAhead
       ? daysOn(until, AHEAD_DAYS, timeZone)
       : until;
@@ -346,7 +365,7 @@ export async function callTool(
       query: {
         timeMin: from.toISOString(),
         timeMax: lookedUntil.toISOString(),
-        maxResults: String(countArg(args, "max", DEFAULT_EVENTS, MAX_EVENTS)),
+        maxResults: String(maxResults),
         // Both are needed together: without `singleEvents` a repeating meeting comes back as one
         // rule rather than as the occurrences a person means, and Calendar refuses to order by
         // start time unless it is expanding them.
@@ -372,12 +391,13 @@ export async function callTool(
      * LISTING: it cannot be shown to come after, and until this change everything Google answered
      * with was listed. Shown with a `?` for its time, never dropped.
      */
+    const page = body.items ?? [];
     const items: CalendarEvent[] = [];
-    const after: CalendarEvent[] = [];
-    for (const event of body.items ?? []) {
+    const after: { event: CalendarEvent; startsAt: Date }[] = [];
+    for (const event of page) {
       const startsAt = looksAhead ? startOf(event, allDayZone) : null;
       if (startsAt !== null && startsAt.getTime() >= until.getTime()) {
-        after.push(event);
+        after.push({ event, startsAt });
       } else {
         items.push(event);
       }
@@ -403,29 +423,88 @@ export async function callTool(
     const nothing = `${covered}\n이 기간에 캘린더에 잡힌 일정이 없습니다.`;
     if (!looksAhead) return asResult(nothing);
 
-    // The first of them in the order Google answered in, which is by start — the order the
-    // listing itself is printed in.
-    const [next] = after;
-    if (next) {
+    /*
+     * WHAT COMES NEXT IS A DAY, TOLD WHOLE — NOT ONE EVENT OF IT. The first version told the one
+     * nearest event under "가장 가까운 일정 1건 — 그날의 전체 일정은 아님". Of the sixteen answers
+     * that told it, eight said "내일 … 하나 있어요": the count was said back, the caveat was not,
+     * and had that day held three the person would have been told something false (the second
+     * read of that change, 2026-10-07). So the model is not handed a fragment of a day: it is
+     * handed the nearest day that has anything on it, with everything this answer holds for it
+     * and how many that is. "내일은 2건 있어요" is then true, and a move that was wrong — this
+     * result under "내일 일정 뭐 있어?" — can be answered from it when that day is tomorrow.
+     *
+     * WHERE SOMEBODY WORKS IS NOT SOMETHING THEY HAVE ON. Google answers with every type of event
+     * unless asked for some ("If unset, returns all event types"), and a working-location marker
+     * — 집, 사무실 — is one a day; counted here, the nearest day with anything on it would
+     * always be tomorrow. It is left out of what comes next. INSIDE the stretch that was asked
+     * for it is listed as it always was: what a day's own listing holds is another change.
+     *
+     * A DAY IS THE PERSON'S: the date their clock reads when an event with hours starts, and for
+     * an all-day event the date it names — which is what its line says, wherever the calendar is
+     * kept. The nearest day is the earliest of those.
+     */
+    const coming = after
+      .filter(({ event }) => event.eventType !== "workingLocation")
+      .map(({ event, startsAt }) => ({
+        event,
+        day: event.start?.dateTime
+          ? localDate(startsAt, timeZone)
+          : (event.start?.date ?? ""),
+      }));
+    const nearest = coming.reduce<string | null>(
+      (earliest, { day }) =>
+        earliest === null || day < earliest ? day : earliest,
+      null,
+    );
+    if (nearest === null) {
       /*
-       * ONE EVENT, AND SAID TO BE ONE. Under "내일 일정 뭐 있어?" — a move that was wrong — this
-       * line is all of tomorrow the model holds, and tomorrow may hold more. So the line says it
-       * is not that day's list, and the model is left to ask the calendar for the day.
+       * "NOTHING IN THE DAYS AFTER" ONLY OF AN ANSWER THAT WAS WHOLE. Google may send a page
+       * with no event on it and a token for the next one ("or none at all, even if there are
+       * more events matching the query" — `maxResults`, in its reference for `events.list`). The
+       * days after were not seen then, and the sentence about them is left out rather than
+       * guessed.
        */
       return asResult(
-        `${nothing}\n[그 뒤 ${AHEAD_DAYS}일 안의 가장 가까운 일정 1건 — 그날의 전체 일정은 아님]\n${eventLine(next, timeZone)}`,
+        body.nextPageToken
+          ? nothing
+          : `${nothing}\n그 뒤 ${AHEAD_DAYS}일 안에도 잡힌 일정이 없습니다.`,
       );
     }
+    const thatDay = coming.filter(({ day }) => day === nearest);
     /*
-     * "NOTHING IN THE DAYS AFTER" ONLY OF AN ANSWER THAT WAS WHOLE. Google may send a page with
-     * no event on it and a token for the next one ("or none at all, even if there are more events
-     * matching the query" — `maxResults`, in its reference for `events.list`). The days after
-     * were not seen then, and the sentence about them is left out rather than guessed.
+     * WHOLE ONLY WHERE IT IS KNOWN TO BE. Not from a page Google cut — a token for the next one,
+     * or as many events as were asked for, when another of that day may be the one left off. And
+     * not for a day the request stopped partway through: "from this minute on" ends at this
+     * minute seven days after the stretch does, so the last day looked at is seen until then and
+     * no later — and where the calendar is kept a day's width west of the person (Kiritimati and
+     * Pago Pago are twenty-five hours apart), that day's own date begins there after the request
+     * has ended, with any all-day event of it. Then it is one event, with no count to say back
+     * and the words that the day may hold more.
      */
+    const date = datePartsOf(nearest);
+    const whole =
+      date !== null &&
+      !body.nextPageToken &&
+      page.length < maxResults &&
+      instantOf(
+        dayAfter(instantOf(date, 12, 0, timeZone), 1, timeZone),
+        0,
+        0,
+        timeZone,
+      ).getTime() <= lookedUntil.getTime() &&
+      instantOf(date, 0, 0, allDayZone).getTime() < lookedUntil.getTime();
+    const [first] = thatDay;
+    if (!whole && first) {
+      return asResult(
+        `${nothing}\n[그 뒤 ${AHEAD_DAYS}일 안의 가장 가까운 일정 — 그날 일정이 더 있을 수 있음]\n${eventLine(first.event, timeZone)}`,
+      );
+    }
     return asResult(
-      body.nextPageToken
-        ? nothing
-        : `${nothing}\n그 뒤 ${AHEAD_DAYS}일 안에도 잡힌 일정이 없습니다.`,
+      [
+        nothing,
+        `[그 뒤 ${AHEAD_DAYS}일 안에서 일정이 있는 가장 가까운 날: ${nearest} · 일정 ${thatDay.length}건]`,
+        ...thatDay.map(({ event }) => eventLine(event, timeZone)),
+      ].join("\n"),
     );
   }
 

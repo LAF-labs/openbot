@@ -2575,14 +2575,16 @@ function firstMovesBehindTheBridge(): Scenario[] {
     `- ${day} ${from} ~ ${day} ${to} · ${title}`;
   /**
    * A listing as `google-calendar-rest.ts` writes it: the stretch it covers, then the events. An
-   * empty stretch says what comes next — `next`, the nearest event of the seven days after it, or
-   * that those have nothing either. A search's empty answer says neither, and none is made here.
+   * empty stretch says what comes next, one of three ways: the nearest day that has anything on
+   * it, whole (`day` and its `events`); one event of a day whose list is not known to be whole
+   * (`oneOf`); or that the seven days after have nothing either. A search's empty answer says
+   * none of them, and none is made here.
    */
   const listing = (
     from: string,
     until: string,
     events: readonly string[],
-    next?: string,
+    next?: { day: string; events: readonly string[] } | { oneOf: string },
   ) =>
     [
       `[본 기간: ${from} 00:00 ~ ${until} 00:00 Asia/Seoul(KST) · 일정 ${events.length}건]`,
@@ -2590,12 +2592,17 @@ function firstMovesBehindTheBridge(): Scenario[] {
         ? events
         : [
             "이 기간에 캘린더에 잡힌 일정이 없습니다.",
-            ...(next
-              ? [
-                  "[그 뒤 7일 안의 가장 가까운 일정 1건 — 그날의 전체 일정은 아님]",
-                  next,
-                ]
-              : ["그 뒤 7일 안에도 잡힌 일정이 없습니다."]),
+            ...(next === undefined
+              ? ["그 뒤 7일 안에도 잡힌 일정이 없습니다."]
+              : "oneOf" in next
+                ? [
+                    "[그 뒤 7일 안의 가장 가까운 일정 — 그날 일정이 더 있을 수 있음]",
+                    next.oneOf,
+                  ]
+                : [
+                    `[그 뒤 7일 안에서 일정이 있는 가장 가까운 날: ${next.day} · 일정 ${next.events.length}건]`,
+                    ...next.events,
+                  ]),
           ]),
     ].join("\n");
   const dayAfterTomorrow = dayAfter(today, 2);
@@ -2618,7 +2625,10 @@ function firstMovesBehindTheBridge(): Scenario[] {
    * carries no search.
    */
   const [THE_NEXT_EVENT = ""] = TOMORROWS_EVENTS;
-  const NOTHING_TODAY = listing(today, tomorrow, [], THE_NEXT_EVENT);
+  const NOTHING_TODAY = listing(today, tomorrow, [], {
+    day: tomorrow,
+    events: TOMORROWS_EVENTS,
+  });
   const NOTHING_ALL_WEEK = listing(today, tomorrow, []);
   /*
    * A tomorrow with a second event on it, after the one an empty today points at: an answer made
