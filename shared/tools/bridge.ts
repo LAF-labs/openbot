@@ -224,13 +224,24 @@ export const FAMILY_LABELS_KO: Readonly<Record<string, string>> = Object.freeze(
   },
 );
 
+/**
+ * 키의 한국어 이름 — 위 표에 적힌 것만.
+ *
+ * 표를 `FAMILY_LABELS_KO[key]`로 바로 읽지 않는다. 관리자가 주소로 더한 서버의 키는 그 사람이 정한
+ * 낱말이고, `constructor`도 키의 모양이다: 모든 객체가 그 이름에 함수로 답하므로, 그렇게 읽으면
+ * "이름이 있다"가 되고 그 함수의 글 — `function Object() { [native code] }` — 이 봇이 읽는 문단에
+ * 섰다(#119의 두 번째 리뷰; 주입은 아니다. 그 사람 자신의 낱말과 정해진 글뿐이다).
+ */
+const labelOf = (key: string): string | undefined =>
+  Object.hasOwn(FAMILY_LABELS_KO, key) ? FAMILY_LABELS_KO[key] : undefined;
+
 /** 연결된 서비스가 아닌 것(화면 카드, 배포가 만든 컴포넌트)을 한데 부르는 이름. */
 export const SCREEN_FAMILY_KO = "화면에 띄우는 카드";
 
 /** 미뤄진 툴 하나가 속한 무리의 한국어 이름. */
 function familyOf(name: string): string {
   const key = serverKeyOf(name);
-  return key ? (FAMILY_LABELS_KO[key] ?? key) : SCREEN_FAMILY_KO;
+  return key ? (labelOf(key) ?? key) : SCREEN_FAMILY_KO;
 }
 
 /** 미뤄진 툴 이름들이 속한 서비스들, 처음 나온 순서로, 한국어로. 화면 카드는 세지 않는다. */
@@ -241,7 +252,7 @@ export function familiesOf(names: readonly string[]): string[] {
     const key = serverKeyOf(name);
     if (!key || seen.has(key)) continue;
     seen.add(key);
-    labels.push(FAMILY_LABELS_KO[key] ?? key);
+    labels.push(labelOf(key) ?? key);
   }
   return labels;
 }
@@ -846,9 +857,10 @@ function offeredLines(listed: readonly WireTool[]): string[] {
 function namedByKey(keys: readonly string[]): string {
   return [...keys]
     .sort()
-    .map((key) =>
-      FAMILY_LABELS_KO[key] ? `${FAMILY_LABELS_KO[key]}(${key})` : key,
-    )
+    .map((key) => {
+      const label = labelOf(key);
+      return label ? `${label}(${key})` : key;
+    })
     .join(", ");
 }
 

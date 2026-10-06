@@ -1497,6 +1497,12 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * the service itself, the forwarded count keeps a lookup from saying an account whose tools wait
  * "brought none", with the provider sent the same tools either way).
  *
+ * AND ONCE MORE THE SAME DAY, `root` from 728 to 729, from the second read: one in
+ * `tool-bridge.test.ts` — a service an administrator named `constructor` is called that in the
+ * line and in the two other places a key becomes a name. The table of names was read as
+ * `TABLE[key]`, which every object answers for that one key with a function, and the function's
+ * text stood in the paragraph a Bot reads.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -1505,7 +1511,7 @@ const GROUPS = [
   { name: "server", floor: 3575, roots: ["server"] },
   { name: "app", floor: 2146, roots: ["app"] },
   { name: "agent-computer", floor: 495, roots: ["agent-computer"] },
-  { name: "root", floor: 728, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 729, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
