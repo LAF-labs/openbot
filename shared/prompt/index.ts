@@ -40,6 +40,7 @@ import { notepadText, type RoutineNote } from "./notepad.ko";
 import { type PromptPerson, placeText } from "./person.ko";
 import { aboutText } from "./shop.ko";
 import { deferredToolsText, WEATHER_TOOL_NAME } from "../tools/bridge";
+import type { WithheldTools } from "../tools/paused";
 import { type PromptSkill, skillIndexText } from "./skill-index";
 
 export { BASE_KO, SEVERAL_STEPS_KO } from "./base.ko";
@@ -135,6 +136,12 @@ export type ComposePromptInput = {
    * 읽은 것(`shared/tools/bridge.ts`, `openAccountsIn`). 없으면 연결 이야기는 그려지지 않는다.
    */
   openAccounts?: readonly string[];
+  /**
+   * 봇이 쥐고 있지만 검토를 기다리느라 어느 목록에도 없는 도구, 서버마다 몇 개인지 — 실행에 실려 온
+   * 것을 닫힌 모양으로 읽은 것(`shared/tools/paused.ts`, `withheldToolsIn`). 있으면 다리 뒤의 이름
+   * 문단에 한 줄이 선다: 봇이 아무것도 찾지 않고도 읽는 자리다. 없으면 아무것도 그려지지 않는다.
+   */
+  withheld?: WithheldTools;
 };
 
 /** 이번 실행의 자리에만 해당하는 부분. */
@@ -222,7 +229,11 @@ export function contextFactsFor(input: ComposePromptInput): ContextFacts {
       : {}),
     ...(input.guidance ? { guidance: input.guidance } : {}),
     skills: skillIndexText(input.skills ?? []),
-    tools: deferredToolsText(input.toolNames ?? [], input.openAccounts),
+    tools: deferredToolsText(
+      input.toolNames ?? [],
+      input.openAccounts,
+      input.withheld,
+    ),
     ...(input.person ? { person: input.person } : {}),
   });
 }

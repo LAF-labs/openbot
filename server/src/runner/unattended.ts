@@ -75,8 +75,8 @@ export type UnattendedToolkit = {
   /**
    * What this Bot holds and the list above cannot show: tools waiting for review that are offered
    * under no name, counted per server (`OfferedPlugins.withheld`). {@link runUnattended} forwards it
-   * beside the list and a lookup says it — in a run nobody watches, the Bot's own report is where
-   * "two tools are waiting for you" gets written down at all.
+   * beside the list and the context layer says it (`copilot.ts`) — in a run nobody watches, the
+   * Bot's own report is where "two tools are waiting for you" gets written down at all.
    *
    * WHOEVER WRAPS A TOOLKIT KEEPS IT: `withNotepad`, `withFeed` and `withGoal` add a tool and spread
    * the rest, because a wrapper that rebuilt `{ tools, execute }` would drop this without a sound.
@@ -169,7 +169,7 @@ export async function runUnattended(
     timeoutMs: options.timeoutMs,
     maxSteps: options.maxSteps ?? DEFAULT_MAX_STEPS,
     // The mode travels as a forwarded prop, which is where the prompt middleware reads it. What
-    // the listing counted and could not list rides beside it, for the lookup (`withheld`, above).
+    // the listing counted and could not list rides beside it, and is read there too (`withheld`).
     forwardedProps: {
       mode: options.mode,
       ...withheldToolsForwarded(options.toolkit.withheld),

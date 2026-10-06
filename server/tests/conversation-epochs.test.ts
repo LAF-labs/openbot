@@ -8,6 +8,7 @@ import {
 } from "bun:test";
 import type { AuditEventInput, AuditStore } from "../src/audit";
 import { withAccountStates } from "../../shared/tools/gallery";
+import { withheldToolsText } from "../../shared/tools/paused";
 import type { AgentStandingProfile } from "../src/copilot";
 import { buildAgents } from "../src/copilot";
 import {
@@ -443,6 +444,114 @@ describe("a new epoch, when the head of the prompt breaks anyway", () => {
     expect(system(settled.request)).toContain(
       "- 화면에 띄우는 카드: showConnection",
     );
+  });
+
+  /*
+   * HOW MANY TOOLS WAIT FOR REVIEW UNDER NO NAME IS IN THAT PARAGRAPH TOO (2026-10-06), and moves
+   * the way everything in it moves. A tool that appeared after registration is offered under no
+   * name, so it is in no tool list; the turn counts what it could not list and forwards the count
+   * beside the tools (`shared/tools/paused.ts`), and this seam draws one line of it. The line is
+   * there because that paragraph tells a Bot the names it lists are everything — pressed on the
+   * real stack, a Bot asked for a tool in a toolbox whose tools all waited made no lookup and said
+   * only that the tool was not in its list. Not a tool and not in the static layer: the head stays
+   * the same bytes, a count that appears or changes is a reminder on the person's next message,
+   * and no epoch opens for it — the epoch's key counts core tools, and this is none.
+   */
+  test("how many tools wait for review rides in the context layer: a reminder when the count appears or changes, the frozen layer at a conversation's start, a routine's too — and never an epoch, never a different head", async () => {
+    const line = (count: number) =>
+      withheldToolsText(`카카오(kakao-playmcp) ${count}개`);
+    const waiting = (count: number) => ({
+      toolsWithheld: [{ server: "kakao-playmcp", count }],
+    });
+    const said = [
+      "안녕",
+      "카카오에 담은 길찾기 써 줘",
+      "그래",
+      "하나 검토했어",
+    ];
+    const store = createConversationStore();
+    const first = await run(store, conversation(...said.slice(0, 1)));
+    expect(system(first.request)).not.toContain("검토를 기다리고");
+
+    // The person fills 카카오's toolbox and connects again: two tools wait, under no name.
+    const two = await run(store, conversation(...said.slice(0, 2)), {
+      forwardedProps: waiting(2),
+    });
+    expect(JSON.stringify(two.request.tools)).toBe(
+      JSON.stringify(first.request.tools),
+    );
+    expect(system(two.request)).toBe(system(first.request));
+    expect(two.forwarded.epoch).toEqual(first.forwarded.epoch);
+    expect(two.forwarded.epoch).toMatchObject({ reason: "conversation_start" });
+    expect(lastUser(two.request)).toContain(
+      `쓸 수 있는 도구가 바뀌었다. ${line(2)}`,
+    );
+
+    // Said once: with the same two still waiting, the next message carries nothing — and the
+    // message that carried the reminder still does, where it landed.
+    const still = await run(store, conversation(...said.slice(0, 3)), {
+      forwardedProps: waiting(2),
+    });
+    expect(lastUser(still.request)).toBe("그래");
+    expect(
+      still.request.messages.slice(0, two.request.messages.length),
+    ).toEqual(two.request.messages);
+    expect(still.forwarded.epoch).toEqual(first.forwarded.epoch);
+
+    // One is reviewed: the count changed, so the paragraph did, and that is a reminder again.
+    const one = await run(store, conversation(...said), {
+      forwardedProps: waiting(1),
+    });
+    expect(lastUser(one.request)).toContain(line(1));
+    expect(lastUser(one.request)).not.toContain(line(2));
+    expect(system(one.request)).toBe(system(first.request));
+    expect(JSON.stringify(one.request.tools)).toBe(
+      JSON.stringify(first.request.tools),
+    );
+    expect(one.forwarded.epoch).toEqual(first.forwarded.epoch);
+
+    // The other too: nothing waits, and with nothing behind the bridge either the paragraph is gone.
+    const none = await run(store, conversation(...said, "나머지도 검토했어"));
+    expect(lastUser(none.request)).toContain("목록 밖의 도구는 이제 없다");
+    expect(lastUser(none.request)).not.toContain("검토를 기다리고");
+    expect(none.forwarded.epoch).toEqual(first.forwarded.epoch);
+    // The count itself is no provider's to read: only the sentence drawn from it.
+    expect(JSON.stringify([two.request, one.request])).not.toContain(
+      "toolsWithheld",
+    );
+
+    /*
+     * A CONVERSATION THAT BEGINS WHILE THEY WAIT reads the line in its frozen layer, and its first
+     * message carries no reminder. This run has nothing behind the bridge at all — every tool of
+     * the one connected service waits — so the line is that whole paragraph: the system message
+     * is the one a conversation with nothing waiting gets, and this after it.
+     */
+    const begun = await run(createConversationStore(), conversation("안녕"), {
+      forwardedProps: waiting(2),
+    });
+    expect(system(begun.request)).toBe(
+      `${system(first.request)}\n\n${line(2)}`,
+    );
+    expect(JSON.stringify(begun.request.tools)).toBe(
+      JSON.stringify(first.request.tools),
+    );
+    expect(lastUser(begun.request)).toBe("안녕");
+
+    // And a routine's run, which nobody watches and which has no card to be told through.
+    const routine = await run(
+      createConversationStore(),
+      [{ id: "instruction", role: "user", content: "카카오로 길 찾아 줘" }],
+      {
+        threadId: "routine_run_waiting",
+        forwardedProps: {
+          mode: "routine",
+          routine: { scheduledFor: null },
+          ...waiting(2),
+        },
+      },
+    );
+    expect(system(routine.request).endsWith(`\n\n${line(2)}`)).toBe(true);
+    expect(system(routine.request)).toContain("화면 앞에는 아무도 없다");
   });
 
   test("the compaction hook starts one on the next run", async () => {

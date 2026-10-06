@@ -282,9 +282,10 @@ async function runRounds(context: RunContext): Promise<void> {
   const known = knownToolNames(input.tools, exposed);
   /*
    * What the server counted and could not list: tools this Bot holds that wait for review and are
-   * offered under no name. Read once, in the closed shape, and handed to nothing but a lookup's
-   * answer — never to the schema or the prompt, so the head of the request is the same bytes
-   * whether anything waits or not.
+   * offered under no name. The server has already said it in the prompt's context layer; here it
+   * is read once, in the closed shape, and handed to nothing but a lookup's answer, which uses it
+   * to say nothing false of that account. Never to the schema: the head of the request is the
+   * same bytes whether anything waits or not.
    */
   const withheld = withheldToolsIn(input.forwardedProps);
   /**

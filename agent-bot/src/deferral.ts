@@ -222,9 +222,10 @@ export function answerBridgeCall(
   /**
    * How many tools this Bot holds that wait for review and are in NO list, per server, as the
    * server counted them (`withheldToolsIn`, `shared/tools/paused.ts`). A lookup is answered from the
-   * list this run was handed, and a tool nobody may be shown yet is by definition not on it — so
-   * the one thing a lookup can say about such a tool arrives beside the list, and is said at the
-   * end of every lookup's answer.
+   * list this run was handed, and a tool nobody may be shown yet is by definition not on it. The
+   * lookup does not SAY the count — the context layer does, where a Bot reads it without looking
+   * anything up — it only uses it not to call an account whose tools wait one that "brought no
+   * tools" (`connectingLines`).
    */
   withheld: WithheldTools = [],
 ): BridgeAnswer {
