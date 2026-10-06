@@ -271,6 +271,68 @@ test("a script starts with nothing of the daemon's environment, in a home of its
   }
 });
 
+/*
+ * WHAT A DAEMON WAS STARTED WITH, the key in it (the third read, LOW 2). The service's entry takes
+ * the key out of `process.env` once it has read it — and that keeps it from nothing a child is
+ * handed: this runtime gives a child that is given no environment the one its parent was STARTED
+ * with, whatever was deleted since. What keeps the key from a script is that a script is never
+ * started that way: its environment is the five names the runner makes. So this starts a process
+ * as compose starts the service — the key in its environment — has it do what the entry does, and
+ * reads both: what its script was handed, and what a child given nothing of its own would have been.
+ */
+test("a script is handed nothing of what its daemon was started with, the key least of all", () => {
+  const root = mkdtempSync(join(tmpdir(), "wb-"));
+  started.push({ daemon: { stop: async () => {} }, root });
+  const from = (file: string) =>
+    JSON.stringify(join(repository, "shared/workbench", file));
+  const program = `
+    import { KEY_VARIABLE, WORKBENCH_LIMITS } from ${from("protocol.ts")};
+    import { runScript } from ${from("run.ts")};
+    import { bunTypeScript } from ${from("runner.ts")};
+    const key = process.env[KEY_VARIABLE];
+    delete process.env[KEY_VARIABLE];
+    const outcome = await runScript(
+      { script: "console.log(JSON.stringify(process.env))", files: [], timeoutMs: 20_000 },
+      {
+        workRoot: ${JSON.stringify(root)},
+        runner: bunTypeScript({ bun: process.execPath, libraries: {} }),
+        limits: WORKBENCH_LIMITS,
+        sweep: async () => {},
+      },
+    );
+    const bare = Bun.spawnSync([process.execPath, "-e", "console.log(process.env[" + JSON.stringify(KEY_VARIABLE) + "] ?? '')"]);
+    console.log(JSON.stringify({
+      read: key,
+      afterwards: process.env[KEY_VARIABLE] ?? null,
+      script: outcome.report.stdout,
+      bare: bare.stdout.toString().trim(),
+    }));
+  `;
+  const daemonLike = Bun.spawnSync([process.execPath, "-e", program], {
+    env: { ...process.env, WORKBENCH_KEY: KEY },
+  });
+  const said = JSON.parse(daemonLike.stdout.toString()) as {
+    read: string;
+    afterwards: string | null;
+    script: string;
+    bare: string;
+  };
+  // It was started with the key, read it, and took it out of what it reads its environment by.
+  expect(said.read).toBe(KEY);
+  expect(said.afterwards).toBeNull();
+  // The script: the runner's five names, and the key nowhere in any of them.
+  expect(Object.keys(JSON.parse(said.script) as object).sort()).toEqual([
+    "BUN_RUNTIME_TRANSPILER_CACHE_PATH",
+    "DO_NOT_TRACK",
+    "HOME",
+    "NO_COLOR",
+    "TMPDIR",
+  ]);
+  expect(said.script).not.toContain(KEY);
+  // And why the deleting is not what does it: a child given no environment still had the key.
+  expect(said.bare).toBe(KEY);
+});
+
 test("a script that fails hands nothing back, and what it said is kept", async () => {
   const { workbench } = bench();
   const answer = ran(

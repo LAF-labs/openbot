@@ -73,9 +73,17 @@ async function main(): Promise<void> {
   /*
    * The key every answer is proven under (`./protocol.ts`), from the environment and nowhere else:
    * a command line is world-readable under `/proc`, and a file this user can read is a file a
-   * script can read. Taken out of `process.env` at once, so nothing started from here can be
-   * handed it by an oversight; what the kernel keeps of the environment this process was started
-   * with is closed two lines down, or the daemon does not start.
+   * script can read. Held to a length and to nothing else (`isKey`): what it is made of is the
+   * deployment's.
+   *
+   * It is taken out of `process.env`, and THAT IS NOT WHAT KEEPS IT FROM A SCRIPT. This runtime
+   * hands a child that is given no environment the one this process was STARTED with, whatever
+   * has been deleted since (measured, Bun 1.3.11: the third read's probe, and a test). What keeps
+   * it from a script is that a script is never started that way — its environment is the runner's
+   * own five names (`./runner.ts`, passed in `./run.ts`'s one spawn), held by
+   * `tests/workbench-daemon.test.ts` and read back from a script by the rehearsal. And what the
+   * kernel keeps of the environment this process was started with (`/proc/1/environ`) is closed
+   * two lines down, or the daemon does not start.
    */
   const key = process.env[KEY_VARIABLE];
   delete process.env[KEY_VARIABLE];
