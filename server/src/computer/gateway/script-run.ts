@@ -15,6 +15,7 @@ import {
   isProductName,
   isRunPath,
   type ProductsRefusal,
+  RUN_PATH_CHARS,
   type RunEnding,
   WORKBENCH_LIMITS,
 } from "../../../../shared/workbench/protocol";
@@ -35,6 +36,7 @@ import {
   factOfError,
   STOPPED,
 } from "../client";
+import { hasNoOneReading } from "./addresses";
 
 /** What a caller asks a run with. */
 export type ScriptRunInput = {
@@ -112,11 +114,20 @@ export class ScriptNotRunError extends Error {
  * (`workbench/client.ts`, `wrongPartOf`); what only it can see — the files' sizes together, once
  * they have been read — comes back from it as `invalid`, inside the governed run.
  *
- * A PATH THAT IS NOT WRITTEN THE ONE WAY EVERY READER READS IT IS REFUSED HERE TOO (`isRunPath`):
- * one with a space or a line's end at either end, which the policy would judge as written and the
- * Bot's computer would trim. Refused and not tidied — the script opens its file by the path it
- * was asked with — and, like the rest of what is refused here, with no row: nothing was read and
- * nothing decided, so there is nothing for the trail to say happened.
+ * A PATH THAT IS NOT ITS OWN SPELLING IS REFUSED HERE TOO (`isRunPath`): one with white space at
+ * either end, an empty or a `.` segment, `..` — what `govern`'s one reading of a path would
+ * change (`addresses.ts`, `workspacePathOf`), or what the computer refuses as a path. The sandbox
+ * places a file at its path as written and the script opens it by the name its call gave, so a
+ * run takes a path under no spelling but its own; and, like the rest of what is refused here,
+ * with no row: nothing was read and nothing decided, so there is nothing for the trail to say
+ * happened. What passes is read by `govern` and is unchanged by that reading — which a test
+ * holds, since nothing in this file is a reading of its own.
+ *
+ * BUT NOT A PATH WITH NO ONE READING (`hasNoOneReading`: a backslash, or white space at the edge
+ * of a first or last name behind a mark). No rule can be asked about one, which makes it the
+ * gateway's own to refuse: `govern` does, when the file is read, with a row that carries the
+ * path as it was written — the attempt is on the trail. Until this was rebased onto that floor
+ * such a path was refused here in silence, as `..` is. It is bounded first, since a row holds it.
  *
  * `unknown` where a type says `string`: what arrives here will be a model's arguments.
  */
@@ -151,7 +162,11 @@ export function requestProblem(
   }
   const named = new Set<string>();
   for (const path of files) {
-    if (!isRunPath(path) || named.has(path)) return invalid("files");
+    if (typeof path !== "string" || path.length > RUN_PATH_CHARS) {
+      return invalid("files");
+    }
+    if (!isRunPath(path) && !hasNoOneReading(path)) return invalid("files");
+    if (named.has(path)) return invalid("files");
     named.add(path);
   }
   return null;
