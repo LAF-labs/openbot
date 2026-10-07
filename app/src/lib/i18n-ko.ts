@@ -2226,8 +2226,8 @@ export const ko: Record<string, string> = {
     "규칙을 저장하지 못해 적용하지 않았어요. 이전 경계가 그대로 적용되고 있어요.",
   "The boundary could not be read. Nothing was changed.":
     "경계 설정을 읽지 못해 아무것도 바뀌지 않았어요.",
-  "Not in force: the rule this was given under is no longer in the boundary, so it answers for nothing. It can be taken back.":
-    "적용되지 않음: 이 허용이 주어졌던 규칙이 이제 경계에 없어서, 아무 질문에도 대신 답하지 않아요. 거둬도 돼요.",
+  "Not in force: the rule this was given under no longer asks, so it answers for nothing. It can be taken back.":
+    "적용되지 않음: 이 허용이 주어졌던 규칙이 이제는 묻지 않아서, 아무 질문에도 대신 답하지 않아요. 거둬도 돼요.",
   "The boundary was changed somewhere else after this page read it, so nothing was saved. What is shown now is the current boundary — make the change again if it is still wanted.":
     "이 화면이 읽은 뒤에 다른 곳에서 경계가 바뀌어서, 저장하지 않았어요. 지금 보이는 것이 현재 경계예요. 여전히 필요하면 다시 바꿔 주세요.",
   'That rule is not taken any more: it ignores letter case, so a write to Notes/ was never asked about. Write this one in its place: intent == "write_file" && file.folder != "notes"':
