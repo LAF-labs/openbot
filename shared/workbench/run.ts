@@ -545,13 +545,23 @@ export async function runScript(
 
     const signalled = child.signalCode ?? null;
     const exitCode = signalled === null ? status : null;
+    /*
+     * A BOUND ENDED IT ONLY WHERE THE KILL DID. `end` notes which bound was met and sends
+     * SIGKILL; a script that had already left by itself in that same instant was not ended by
+     * it — it has a status of its own and no signal — and saying "stopped at its time" of it
+     * would be a report that contradicts itself: a run killed at a bound, with exit 0. The
+     * server's client passes no such answer on (`server/src/workbench/client.ts`, `runFrom`),
+     * so an honest run would have been lost to a race. What ended it is what the child says.
+     */
+    const endedBy: RunEnding =
+      ending !== "exited" && signalled === "SIGKILL" ? ending : "exited";
     const collected: Collected =
-      ending === "exited" && exitCode === 0
+      endedBy === "exited" && exitCode === 0
         ? await collect(out, limits)
         : { products: [], skipped: 0 };
     return {
       report: {
-        ending,
+        ending: endedBy,
         exitCode,
         signal: signalled,
         ms,
