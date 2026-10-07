@@ -6,6 +6,11 @@
  * order spread across modules is an order nobody can see. What it reads (the snapshot cache), what
  * it writes (the trail's rows) and how a call is described (its intent and subject) live beside it,
  * so that this file is the sequence and nothing else.
+ *
+ * WHOLE, AND IN THREE STEPS THAT ARE NAMED: `decide`, `settle`, `carry` — the function cut at the
+ * two places it already paused, in this file and in that order, with `govern` running them one
+ * after another for every act there was before a run of a script. Named because a run is several
+ * decisions and ONE question: its parts are each decided before any is settled.
  */
 import { ACTION_FAILED, type AuditStore } from "../../audit";
 import { describeFailure } from "../../failure-text";
@@ -29,7 +34,7 @@ import {
   policyDecidesOnSnapshot,
 } from "../policy";
 import type { RepeatDetector, RepeatObservation } from "../repeat";
-import { settle } from "../settle";
+import { type SettleResult, settle } from "../settle";
 import {
   allowanceFor,
   type StandingApprovalStore,
@@ -98,93 +103,95 @@ export function createGovern(options: {
   const { pageMoved, resolve } = snapshots;
 
   /**
-   * Decide, record, then act.
-   *
-   * The audit row is written before the action runs, not after it succeeds. An allowed action that
-   * later fails is still part of the audit sequence, and a trail that only contains successes cannot
-   * show that sequence.
+   * What a call says of itself, for `govern` to decide: named here, once, because the same call
+   * is described to each of the three steps below.
    */
-  async function govern<T>(
+  type Subject = {
+    ref?: string;
+    filePath?: string;
+    /** Which part of `filePath` a read asked for; counted apart, like a page's query. */
+    part?: string;
+    /**
+     * Set on a file read or filed FOR A RUN OF A SCRIPT, to that script's digest (`acts.ts`,
+     * `runScript`), and on nothing else. It does two things, and decides nothing:
+     *
+     *  - THE ACT IS NOT COUNTED AS A CALL OF ITS OWN. What comes round again when a Bot runs
+     *    one script five times is the run, and the run is what is counted (`script`, below). A
+     *    read counted beside it made the fifth identical run two questions in one call — and a
+     *    call carries one answer, so under the shipped `repeat.count >= 5` no number of "yes,
+     *    this once" ever ran it again (measured 2026-10-07: read/5, run/5, read/7, run/6 …).
+     *    Every rule about the path still decides it: this is the count, not the decision.
+     *  - THE ROW SAYS WHICH RUN IT WAS FOR. Without it nothing tied a run's reads and files to
+     *    its own rows but the order they were written in.
+     */
+    forScript?: string;
+    /**
+     * What a run of a script SAYS, for the one act identified by that and by nothing it touches
+     * — no ref, no key, no path, no address: the script's SHA-256, its length, and the files it
+     * names. Never the script; this function is not handed one. Set by `runScript` and by
+     * nothing else.
+     */
+    script?: ScriptOnTrail;
+    /**
+     * How long a run asked for, in milliseconds, the default filled in by its caller: part of
+     * what an answer about the run is bound to, and of nothing else — not a row, not the count.
+     */
+    timeoutMs?: number;
+    targetUrl?: string;
+    key?: string;
+    /** Whether this call ends by pressing Enter. Only the type tool can, and it says so. */
+    submit?: boolean;
+    /**
+     * What a type call is about to put in the field — read here for its SHAPE only (a card number,
+     * a phone number), by the high-risk check, and never stored, logged, hashed or passed on.
+     */
+    typed?: string;
+    /** The person's Stop, on its way to the browser. See the acting methods in `acts.ts`. */
+    signal?: AbortSignal;
+    /**
+     * An answer a person already gave, being presented for the action it was given for.
+     *
+     * Carried on the request rather than held against the conversation, because the thing being
+     * checked is not "has somebody approved something recently" but "was this exact action the one
+     * they were shown". The id alone proves nothing; it is the id plus the fingerprint of the call
+     * being made that means anything.
+     */
+    approvalId?: string;
+  };
+
+  /**
+   * The action itself, handed the role and name the policy judged the ref as — from this server's
+   * snapshot, never from the request — so the computer can refuse if the control is called
+   * something else by the time it acts. Undefined where no ref resolved.
+   *
+   * AND THE FILE'S PATH AS IT WAS JUDGED, for an act that names a file: the string every decision
+   * and the row below were about, for the act to SEND. One reading, made here; an act that sent
+   * its own `input.path` instead would be a second reader of the same string, which is the fault
+   * this parameter exists to end (`addresses.ts`, `workspacePathOf`).
+   */
+  type Act<T> = (
+    judged: JudgedElement | undefined,
+    judgedPath: string | undefined,
+  ) => Promise<T>;
+
+  /**
+   * 1. DECIDE: read what the call is about, count it, and ask the policy — everything that is
+   * known of one act before a person, an allowance or an instruction is consulted. It records
+   * nothing but the count's own row, asks nobody and acts on nothing.
+   *
+   * ITS OWN STEP since a run of a script became one question (2026-10-07): a run is several of
+   * these — each file it names, and the run — decided before any of them is settled or carried
+   * out (`acts.ts`, `runScript`). For every other act the three steps run one after another, in
+   * `govern` below, in the order they always did: this was one function, cut at the two places
+   * it already paused.
+   */
+  async function decide(
     computerId: string,
     toolName: string,
     botId: string,
     actor: ActionActor,
-    subject: {
-      ref?: string;
-      filePath?: string;
-      /** Which part of `filePath` a read asked for; counted apart, like a page's query. */
-      part?: string;
-      /**
-       * Set on a file read or filed FOR A RUN OF A SCRIPT, to that script's digest (`acts.ts`,
-       * `runScript`), and on nothing else. It does two things, and decides nothing:
-       *
-       *  - THE ACT IS NOT COUNTED AS A CALL OF ITS OWN. What comes round again when a Bot runs
-       *    one script five times is the run, and the run is what is counted (`script`, below). A
-       *    read counted beside it made the fifth identical run two questions in one call — and a
-       *    call carries one answer, so under the shipped `repeat.count >= 5` no number of "yes,
-       *    this once" ever ran it again (measured 2026-10-07: read/5, run/5, read/7, run/6 …).
-       *    Every rule about the path still decides it: this is the count, not the decision.
-       *  - THE ROW SAYS WHICH RUN IT WAS FOR. Without it nothing tied a run's reads and files to
-       *    its own rows but the order they were written in.
-       */
-      forScript?: string;
-      /**
-       * What a run of a script SAYS, for the one act identified by that and by nothing it touches
-       * — no ref, no key, no path, no address: the script's SHA-256, its length, and the files it
-       * names. Never the script; this function is not handed one. Set by `runScript` and by
-       * nothing else.
-       */
-      script?: ScriptOnTrail;
-      /**
-       * How long a run asked for, in milliseconds, the default filled in by its caller: part of
-       * what an answer about the run is bound to, and of nothing else — not a row, not the count.
-       */
-      timeoutMs?: number;
-      targetUrl?: string;
-      key?: string;
-      /** Whether this call ends by pressing Enter. Only the type tool can, and it says so. */
-      submit?: boolean;
-      /**
-       * What a type call is about to put in the field — read here for its SHAPE only (a card number,
-       * a phone number), by the high-risk check, and never stored, logged, hashed or passed on.
-       */
-      typed?: string;
-      /** The person's Stop, on its way to the browser. See the acting methods in `acts.ts`. */
-      signal?: AbortSignal;
-      /**
-       * An answer a person already gave, being presented for the action it was given for.
-       *
-       * Carried on the request rather than held against the conversation, because the thing being
-       * checked is not "has somebody approved something recently" but "was this exact action the one
-       * they were shown". The id alone proves nothing; it is the id plus the fingerprint of the call
-       * being made that means anything.
-       */
-      approvalId?: string;
-    },
-    /**
-     * The action itself, handed the role and name the policy judged the ref as — from this server's
-     * snapshot, never from the request — so the computer can refuse if the control is called
-     * something else by the time it acts. Undefined where no ref resolved.
-     *
-     * AND THE FILE'S PATH AS IT WAS JUDGED, for an act that names a file: the string every decision
-     * and the row below were about, for the act to SEND. One reading, made here; an act that sent
-     * its own `input.path` instead would be a second reader of the same string, which is the fault
-     * this parameter exists to end (`addresses.ts`, `workspacePathOf`).
-     */
-    run: (
-      judged: JudgedElement | undefined,
-      judgedPath: string | undefined,
-    ) => Promise<T>,
-  ): Promise<T> {
-    /*
-     * A CALLER THAT HAS ALREADY STOPPED IS NOT GOVERNED AT ALL.
-     *
-     * A routine whose deadline passed, or a person who pressed Stop, has nobody left to act for:
-     * counting the attempt would feed the repeat rule a call that never happened, and opening a
-     * question would ask a person about an action for a run that is already over and reported.
-     */
-    if (subject.signal?.aborted) throw stopped();
-
+    subject: Subject,
+  ) {
     const { ref } = subject;
     /*
      * THE FILE, AS THE COMPUTER WILL READ ITS PATH — not as it was written. Read here, once, for
@@ -549,7 +556,54 @@ export function createGovern(options: {
             secretHere: gate.secretHere(computerId, pageUrl),
           }
         : undefined;
-    const settled = await settle(
+    return {
+      computerId,
+      toolName,
+      botId,
+      actor,
+      subject,
+      ref,
+      filePath,
+      element,
+      intent,
+      pageUrl,
+      script,
+      repetition,
+      decision,
+      fingerprint,
+      allowance,
+      gate,
+      host,
+      typedNow,
+      riskFacts,
+    };
+  }
+  type Decided = Awaited<ReturnType<typeof decide>>;
+
+  /**
+   * 2. SETTLE: what becomes of that decision once a person, an allowance and an instruction are
+   * folded in. All of it is in `settle.ts`; this hands it one act.
+   */
+  function settleOne(decided: Decided) {
+    const {
+      computerId,
+      toolName,
+      botId,
+      actor,
+      subject,
+      filePath,
+      element,
+      intent,
+      pageUrl,
+      script,
+      repetition,
+      decision,
+      fingerprint,
+      allowance,
+      gate,
+      riskFacts,
+    } = decided;
+    return settle(
       {
         botId,
         actorId: actor.id,
@@ -589,7 +643,34 @@ export function createGovern(options: {
         ...(options.autoReview ? { autoReview: options.autoReview } : {}),
       },
     );
+  }
 
+  /**
+   * 3. CARRY: record what was settled, then act — and record again if the act did not happen.
+   */
+  async function carry<T>(
+    decided: Decided,
+    settled: SettleResult,
+    run: Act<T>,
+  ): Promise<T> {
+    const {
+      computerId,
+      toolName,
+      botId,
+      actor,
+      subject,
+      ref,
+      filePath,
+      element,
+      intent,
+      pageUrl,
+      script,
+      decision,
+      gate,
+      host,
+      typedNow,
+      riskFacts,
+    } = decided;
     if (settled.outcome === "asked") {
       // Nothing is written as allowed or refused, because neither happened: `approval.requested` is
       // the record of where the turn actually got to.
@@ -777,6 +858,33 @@ export function createGovern(options: {
     return element && result && typeof result === "object"
       ? { ...result, element: { role: element.role, name: element.name } }
       : result;
+  }
+
+  /**
+   * Decide, record, then act.
+   *
+   * The audit row is written before the action runs, not after it succeeds. An allowed action that
+   * later fails is still part of the audit sequence, and a trail that only contains successes cannot
+   * show that sequence.
+   */
+  async function govern<T>(
+    computerId: string,
+    toolName: string,
+    botId: string,
+    actor: ActionActor,
+    subject: Subject,
+    run: Act<T>,
+  ): Promise<T> {
+    /*
+     * A CALLER THAT HAS ALREADY STOPPED IS NOT GOVERNED AT ALL.
+     *
+     * A routine whose deadline passed, or a person who pressed Stop, has nobody left to act for:
+     * counting the attempt would feed the repeat rule a call that never happened, and opening a
+     * question would ask a person about an action for a run that is already over and reported.
+     */
+    if (subject.signal?.aborted) throw stopped();
+    const decided = await decide(computerId, toolName, botId, actor, subject);
+    return carry(decided, await settleOne(decided), run);
   }
 
   return govern;
