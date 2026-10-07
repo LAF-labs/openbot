@@ -463,10 +463,10 @@ function Row({
          * how long it took and how much it printed, as a count; and the files it handed back, by
          * name. What became of each file is on the rows ABOVE this one — the page is newest
          * first, and a file is filed after its run has ended: a row of its own for each file
-         * that was tried, where it was filed or was not; one row naming any the filing never
-         * got to (`computer.script_files_left`); or, where none could be filed at all, a line
-         * here that says why (`unfiled`). This comment said "each … has a row of its own below
-         * this one", which was wrong about the direction and about "each" (the second read).
+         * that was tried, where it was filed or was not; and one row naming any that were not
+         * tried, and why (`computer.script_files_left`) — the filing never got to them, or none
+         * could be filed at all. This comment said "each … has a row of its own below this
+         * one", which was wrong about the direction and about "each" (the second read).
          */}
         {ended ? (
           <div className="mt-0.5 text-xs text-muted-foreground">
@@ -478,7 +478,6 @@ function Row({
               })}
             </div>
             {ended.withheld ? <div>{t(ended.withheld)}</div> : null}
-            {ended.unfiled ? <div>{fact(ended.unfiled)}</div> : null}
             {ended.products.length > 0 ? (
               <div className="mt-0.5 flex flex-wrap items-center gap-1">
                 <span>
@@ -494,8 +493,9 @@ function Row({
           </div>
         ) : null}
         {/*
-         * The files of a run that nobody got to, and why: the filing was stopped, or is waiting
-         * on a question about a file before them. Names, as the ending's row has them.
+         * The files of a run that nobody tried, and why: the filing was stopped, or is waiting
+         * on a question about a file before them, or could not begin — where the folder they
+         * are kept in belongs there is something else. Names, as the ending's row has them.
          */}
         {left ? (
           <div className="mt-0.5 text-xs text-muted-foreground">
@@ -651,8 +651,6 @@ function endingOf(payload: Record<string, unknown>): {
   ms: number;
   printed: number;
   withheld: string | undefined;
-  /** Why none of the files was tried, where one thing settled all of them: a fact's code. */
-  unfiled: string | undefined;
   products: string[];
   badly: boolean;
 } | null {
@@ -672,7 +670,6 @@ function endingOf(payload: Record<string, unknown>): {
       typeof payload.productsRefused === "string"
         ? own(SCRIPT_FILES_WITHHELD, payload.productsRefused)
         : undefined,
-    unfiled: typeof payload.unfiled === "string" ? payload.unfiled : undefined,
     products: Array.isArray(payload.products)
       ? payload.products
           .map((product: unknown) =>
@@ -687,15 +684,19 @@ function endingOf(payload: Record<string, unknown>): {
 }
 
 /**
- * WHY THE FILES OF A RUN WERE NEVER TRIED, keyed by the fact its filing ended with
- * (`server/src/computer/gateway/trail.ts`, `writeScriptFilesLeft`): the caller's Stop, or a
- * question about a file before them. Read through a variable, so `audit-labels.test.ts` walks
- * it; a reason this build does not know draws the names and no sentence, rather than a wrong one.
+ * WHY THE FILES OF A RUN WERE NEVER TRIED, keyed by the fact the row carries
+ * (`server/src/computer/gateway/trail.ts`, `writeScriptFilesLeft`): what its filing ended with
+ * — the caller's Stop, or a question about a file before them — or what kept it from beginning,
+ * a file where the folder belongs. Read through a variable, so `audit-labels.test.ts` walks it;
+ * a reason this build does not know draws the names and no sentence, rather than a wrong one.
  */
 export const SCRIPT_FILES_LEFT: Record<string, string> = {
   "laf:stopped": "The run was stopped before these files were tried",
   "laf:awaiting_approval":
     "A person was asked about a file before these, and they wait on that answer",
+  // The sentence `FACTS` has for the same code: one thing, said one way wherever it is drawn.
+  "laf:made_not_a_folder":
+    "Where programs' files are kept there is something else called made, so none of these was kept",
 };
 
 /** A `computer.script_files_left` row as this page draws it, or null when it names no file. */
@@ -1076,8 +1077,9 @@ export const FACTS: Record<string, string> = {
   // there, and a folder can meet it at a few kilobytes (`server/src/audit.ts`, `MADE_FULL`).
   "laf:made_full":
     "The folder for files that programs make holds all it may, so the file was not kept",
-  // Said once, on the run's ending, for every file of it. "Something else": it may be a file a
-  // Bot wrote there by mistake, and a reader of this column can look for it by that name.
+  // Said once for every file of a run, on the row that names them (`SCRIPT_FILES_LEFT`, which
+  // has this sentence too). "Something else": it may be a file a Bot wrote there by mistake,
+  // and a reader of this column can look for it by that name.
   "laf:made_not_a_folder":
     "Where programs' files are kept there is something else called made, so none of these was kept",
 };

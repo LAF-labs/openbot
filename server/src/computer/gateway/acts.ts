@@ -12,7 +12,6 @@
  */
 import { WORKBENCH_LIMITS } from "../../../../shared/workbench/protocol";
 import {
-  type AuditFactCode,
   type AuditStore,
   MADE_NOT_A_FOLDER,
   SCRIPT_INPUTS_INVALID,
@@ -571,34 +570,36 @@ export function createActs(deps: {
        * 3. HOW IT ENDED, WRITTEN BEFORE ANY FILE IT MADE IS FILED. A trail that will not take
        * this row throws here, and then nothing below runs: no file enters the folder with nothing
        * saying where it came from — the rule a download keeps on the way out (`person-files.ts`).
+       *
+       * AND BEFORE THE CALL WAITS ON ANYTHING — its turn among the calls filing, or a word from
+       * the computer. For one afternoon (2026-10-07) this row was written after the look at
+       * `made/` below, so that it could say itself that nothing would be filed; a server that
+       * stopped while that request waited, for as long as the computer's whole timeout, left a
+       * run that had happened with a row saying it was allowed and none saying how it ended
+       * (Codex, on that pull request). How a run ended is known here, and is written here.
        */
-      const writeEnding = (unfiled?: AuditFactCode) =>
-        writeScriptFinished(auditStore, {
-          toolName: RUN_SCRIPT_TOOL,
-          botId,
-          actor,
-          computerId,
-          script,
-          ending: run.ending,
-          exitCode: run.exitCode,
-          signal: run.signal,
-          ms: run.ms,
-          stdoutBytes: run.stdoutBytes,
-          stderrBytes: run.stderrBytes,
-          products: answer.products.map((product) => ({
-            name: product.name,
-            bytes: product.bytes.byteLength,
-          })),
-          productsRefused: run.productsRefused,
-          skipped: run.skipped,
-          unfiled,
-        });
+      await writeScriptFinished(auditStore, {
+        toolName: RUN_SCRIPT_TOOL,
+        botId,
+        actor,
+        computerId,
+        script,
+        ending: run.ending,
+        exitCode: run.exitCode,
+        signal: run.signal,
+        ms: run.ms,
+        stdoutBytes: run.stdoutBytes,
+        stderrBytes: run.stderrBytes,
+        products: answer.products.map((product) => ({
+          name: product.name,
+          bytes: product.bytes.byteLength,
+        })),
+        productsRefused: run.productsRefused,
+        skipped: run.skipped,
+      });
       const products: ScriptProduct[] = [];
-      if (answer.products.length === 0) {
-        // A run that made nothing has nothing to wait its turn for.
-        await writeEnding();
-        return ended(products);
-      }
+      // A run that made nothing has nothing to wait its turn for.
+      if (answer.products.length === 0) return ended(products);
 
       /*
        * 4. EACH FILE IT MADE, FILED AS THE BOT'S OWN WRITE IS DECIDED: a deployment's rules about
@@ -618,8 +619,8 @@ export function createActs(deps: {
        * a rule about its name still refuses it — and its act fails at once with what the
        * computer said, undialled. Where the filing ends before a file is reached, by a Stop or
        * at a question, the files after that are named on one row (`writeScriptFilesLeft`). And
-       * where no file can be filed at all because `made` is not a folder, the ending says so
-       * itself.
+       * where no file can be filed at all because `made` is not a folder, that row names every
+       * one of them and says so.
        */
       const directory = madeDirectoryFor(now(), {
         botId,
@@ -628,7 +629,10 @@ export function createActs(deps: {
         sha256: script.sha256,
         files: script.files,
       });
-      /** The files nobody got to, on one row. An observation: it never replaces what ended the call. */
+      /**
+       * The files nobody tried, on one row. An observation: a trail that will not take it is
+       * logged, and never replaces what ended the call — or, where nothing did, what it returns.
+       */
       const leave = async (
         left: readonly { name: string; bytes: Uint8Array }[],
         because: string,
@@ -662,35 +666,33 @@ export function createActs(deps: {
         /** The computer stopped answering: what is left is not tried against it one by one. */
         let unreachable: string | undefined;
         /*
-         * WHAT `made/` IS, ASKED BEFORE THE ENDING IS WRITTEN — for the one answer that settles
+         * WHAT `made/` IS, ASKED BEFORE ANY FILE IS TRIED — for the one answer that settles
          * every file of this run and is about none of them: where the folder belongs there is a
          * FILE. Until 2026-10-07 that was found once for each file, each with a decision and a
          * failed row (`laf:file_wrong_kind`), for every run, for good, since nothing here removes
-         * a file. The ending says it once instead, and nothing is tried.
+         * a file. One row says it of all of them instead, and nothing is tried.
          */
-        let unfiled: AuditFactCode | undefined;
         // Not for a caller that has stopped: nothing will be filed, and nothing is dialled.
         if (!signal?.aborted) {
           try {
             held = await madeHeldBy(as(botId));
           } catch (error) {
-            if (isNotAFolder(error)) unfiled = MADE_NOT_A_FOLDER;
-            else if (error instanceof ComputerUnavailableError) {
+            if (isNotAFolder(error)) {
+              await leave(answer.products, MADE_NOT_A_FOLDER);
+              for (const product of answer.products) {
+                products.push({
+                  name: product.name,
+                  bytes: product.bytes.byteLength,
+                  unfiled: MADE_NOT_A_FOLDER,
+                });
+              }
+              return;
+            }
+            if (error instanceof ComputerUnavailableError) {
               unreachable = factOfError(error);
             }
             // Anything else is asked again by the first file's own act, and said of that file.
           }
-        }
-        await writeEnding(unfiled);
-        if (unfiled) {
-          for (const product of answer.products) {
-            products.push({
-              name: product.name,
-              bytes: product.bytes.byteLength,
-              unfiled,
-            });
-          }
-          return;
         }
         for (const [index, product] of answer.products.entries()) {
           const size = product.bytes.byteLength;

@@ -363,7 +363,7 @@ export async function madeHeldBy(computer: ComputerClient): Promise<number> {
  * there is a FILE (the computer's `laf:file_wrong_kind`, of a listing). Then no file of any run
  * can be filed, and nothing here removes a file — it is so until somebody with the machine moves
  * what is there. Told apart from the computer not answering because it is not about this moment:
- * the run's ending says it, once (`MADE_NOT_A_FOLDER`), instead of a failed row for every file.
+ * one row says it of every file of the run (`MADE_NOT_A_FOLDER`), instead of a failed row each.
  */
 export function isNotAFolder(error: unknown): boolean {
   return factOfError(error) === "laf:file_wrong_kind";

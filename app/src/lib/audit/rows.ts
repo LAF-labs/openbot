@@ -120,9 +120,8 @@ export function signatureOf(event: AuditEvent): string {
     typeof payload.stderrBytes === "number" ? payload.stderrBytes : "",
     text(payload.productsRefused),
     Array.isArray(payload.products) ? JSON.stringify(payload.products) : "",
-    // Why none of a run's files was tried; and, on the row that names files nobody got to,
-    // which files and why. Two runs are not one row where any of these differs.
-    text(payload.unfiled),
+    // On the row that names the files of a run nobody tried: which files, and why. Two runs
+    // are not one row where either differs.
     text(payload.because),
     Array.isArray(payload.left) ? JSON.stringify(payload.left) : "",
     // A file read or filed for a run says which run: one file read for two scripts is two rows.
