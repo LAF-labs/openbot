@@ -101,6 +101,18 @@ export function fakeComputer(
       if (!found) throw new WorkspaceRequestError("laf:file_not_found");
       return found;
     },
+    /** The Bot's own read of a file, as text: for a test that sets one beside a run's. */
+    async readFile(input: { path: string }) {
+      asked.push(`readFile ${input.path}`);
+      const found = files.get(input.path);
+      if (!found) throw new WorkspaceRequestError("laf:file_not_found");
+      return {
+        path: input.path,
+        text: new TextDecoder().decode(found),
+        bytes: found.byteLength,
+        truncated: false,
+      };
+    },
     async putFile(path: string, body: Uint8Array) {
       asked.push(`putFile ${path}`);
       const refused = options.refusePut?.(path);
