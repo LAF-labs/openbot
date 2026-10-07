@@ -17,10 +17,10 @@ import {
 import { createBotLane } from "../src/runner/bot-lane";
 import { createWorkInFlight } from "../src/runner/in-flight";
 import { createRunLedger } from "../src/runner/run-ledger";
-import { messagesFor } from "../src/runner/thread-store";
+import { appendMessages, messagesFor } from "../src/runner/thread-store";
 import type { LoopAgent } from "../src/runner/turn-loop";
 import type { ChatToolkit, ChatTurnContext } from "../src/turns/chat-tools";
-import { createTurnEngine } from "../src/turns/engine";
+import { createTurnEngine, repairUnanswered } from "../src/turns/engine";
 import type { FirstMove, FirstMoveFor } from "../src/turns/first-move";
 import { historyPage } from "../src/turns/history";
 import {
@@ -1132,6 +1132,183 @@ describe("how a turn ends", () => {
     // Written its end before `stopFor` came back: nothing of it runs after the deletion starts.
     expect(await statusOf(sent.turnId)).toBe("stopped");
     expect(engine.busy(threadId)).toBe(false);
+  });
+});
+
+/**
+ * What a provider refuses (OpenAI's chat completions, and every endpoint that keeps its rule): a
+ * call answered anywhere but in the run of results right after the message that made it, and a
+ * result that is not in that run. Each breach, said by the call's id, so a failure says which.
+ */
+function unpaired(messages: readonly Message[]): string[] {
+  const breaches: string[] = [];
+  messages.forEach((message, index) => {
+    if (message.role === "assistant") {
+      const answered = new Set<string>();
+      for (let at = index + 1; messages[at]?.role === "tool"; at += 1) {
+        answered.add((messages[at] as { toolCallId: string }).toolCallId);
+      }
+      for (const call of message.toolCalls ?? []) {
+        if (!answered.has(call.id)) breaches.push(`call ${call.id}`);
+      }
+    }
+    if (message.role === "tool") {
+      const id = (message as { toolCallId: string }).toolCallId;
+      let at = index - 1;
+      while (messages[at]?.role === "tool") at -= 1;
+      const maker = messages[at];
+      if (
+        maker?.role !== "assistant" ||
+        !(maker.toolCalls ?? []).some((call) => call.id === id)
+      ) {
+        breaches.push(`result ${id}`);
+      }
+    }
+  });
+  return breaches;
+}
+
+describe("a call a turn left without an answer", () => {
+  test("is answered where it was made, on the turn after it and on every turn after that", async () => {
+    /*
+     * WHAT AN UPGRADE LEAVES. The server is stopped mid-step: `flush` writes the step's call, and no
+     * answer is ever written for it. The next turn — 이어서 하기 — answers it, and that turn was
+     * always handed the conversation in order. The answer was FILED after the person's new
+     * message, though, so every turn after it read the call, then the person, then the answer: a
+     * conversation the provider refuses with a 400 on every request — "봇이 모델에 닿지 못했어요",
+     * and 다시 시도 the same again (measured here before the fix: the third turn handed
+     * `call call-gone`, `result call-gone`).
+     */
+    const { threadId, channelId } = await aConversation();
+    const calling = {
+      id: `a-${randomUUID()}`,
+      role: "assistant",
+      content: "",
+      toolCalls: [
+        {
+          id: "call-gone",
+          type: "function",
+          function: { name: "computer_click", arguments: '{"ref":"e12"}' },
+        },
+      ],
+    } as Message;
+    await appendMessages(database, threadId, [asked("엔비디아 봐봐"), calling]);
+    const bot = scriptedBot();
+    const { engine } = engineWith(bot, async () => ({ ok: true }));
+    const say = async (text: string) => {
+      const sent = await engine.send({
+        threadId,
+        channelId,
+        owner: { id: OWNER, role: "user" },
+        botId: BOT,
+        messages: [asked(text)],
+        tools: null,
+      });
+      if (!sent.ok) throw new Error("not sent");
+      await until(async () => (await statusOf(sent.turnId)) === "done");
+    };
+
+    await say("하던 일 이어서 해 주세요.");
+    await say("고마워요");
+
+    // Two runs for the turn that carried on, and one for the turn after it.
+    expect(bot.inputs).toHaveLength(3);
+    for (const handed of bot.inputs) expect(unpaired(handed)).toEqual([]);
+  });
+
+  test("a thread already in order is handed back as the very messages it was", () => {
+    const thread = [
+      { id: "q", role: "user", content: "날씨 봐줘" },
+      {
+        id: "a",
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: "c1",
+            type: "function",
+            function: { name: "now", arguments: "{}" },
+          },
+          {
+            id: "c2",
+            type: "function",
+            function: { name: "computer_read", arguments: "{}" },
+          },
+        ],
+      },
+      // Filed in the order they came back, which a provider has cached: not call order.
+      { id: "r2", role: "tool", toolCallId: "c2", content: "page" },
+      { id: "r1", role: "tool", toolCallId: "c1", content: "9:00" },
+      { id: "b", role: "assistant", content: "맑아요." },
+      { id: "q2", role: "user", content: "지금 몇 시야?" },
+      // An endpoint that numbers its calls gives the next turn's call the same id: it is that
+      // turn's own, and its answer stays with it.
+      {
+        id: "a2",
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: "c1",
+            type: "function",
+            function: { name: "now", arguments: "{}" },
+          },
+        ],
+      },
+      { id: "r1-again", role: "tool", toolCallId: "c1", content: "9:05" },
+      { id: "b2", role: "assistant", content: "9시 5분이에요." },
+    ] as Message[];
+    const repaired = repairUnanswered(thread);
+    expect(repaired).toHaveLength(thread.length);
+    for (const [index, message] of thread.entries()) {
+      expect(repaired[index]).toBe(message);
+    }
+  });
+
+  test("a result filed after the person spoke again goes back behind its call, after the results already there", () => {
+    const thread = [
+      { id: "q", role: "user", content: "엔비디아 봐봐" },
+      {
+        id: "a",
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: "c1",
+            type: "function",
+            function: { name: "computer_read", arguments: "{}" },
+          },
+          {
+            id: "c2",
+            type: "function",
+            function: { name: "computer_click", arguments: '{"ref":"e3"}' },
+          },
+          {
+            id: "c3",
+            type: "function",
+            function: { name: "computer_click", arguments: '{"ref":"e4"}' },
+          },
+        ],
+      },
+      { id: "r1", role: "tool", toolCallId: "c1", content: "page" },
+      { id: "u", role: "user", content: "하던 일 이어서 해 주세요." },
+      { id: "r2", role: "tool", toolCallId: "c2", content: "unanswered" },
+      { id: "b", role: "assistant", content: "이어서 볼게요." },
+    ] as Message[];
+    const repaired = repairUnanswered(thread);
+    expect(unpaired(repaired)).toEqual([]);
+    expect(repaired.map((message) => message.id).slice(0, 5)).toEqual([
+      "q",
+      "a",
+      "r1",
+      "r2",
+      // c3 never got an answer anywhere: one is made for it, last in the run.
+      repaired[4]?.id,
+    ]);
+    expect(repaired[4]).toMatchObject({ role: "tool", toolCallId: "c3" });
+    expect(repaired.slice(5).map((message) => message.id)).toEqual(["u", "b"]);
+    // Moved, not copied: the answer is in the conversation once.
+    expect(repaired.filter((message) => message.id === "r2")).toHaveLength(1);
   });
 });
 
