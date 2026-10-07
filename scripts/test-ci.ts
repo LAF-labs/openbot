@@ -1780,12 +1780,21 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * raised `server` to 3708 — so 3708, the sixteen of the first three raisings here and these
  * eight make 3732. `root`'s 910 is this change's alone.
  *
+ * RAISED 2026-10-07 again, by exactly what was added: `server` by three, three in
+ * `turn-engine.integration.test.ts`. A call a turn left without an answer — an upgrade's stop
+ * mid-step — is answered where it was made on the turn after it AND on every turn after that (the
+ * third turn was handed the call, the person, then the answer, which a provider refuses); an answer
+ * filed after the person spoke again goes back behind its call. Both failed before the fix. The
+ * third passed before and is there for what the fix must not do: a thread already in order comes
+ * back as the very messages it was, its answers in the order they were filed, not call order.
+ * Rebased onto the calendar change above, so 3732 and these three make 3735.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3732, roots: ["server"] },
+  { name: "server", floor: 3735, roots: ["server"] },
   { name: "app", floor: 2159, roots: ["app"] },
   { name: "agent-computer", floor: 530, roots: ["agent-computer"] },
   { name: "root", floor: 910, roots: ["tests", "agent-bot"] },

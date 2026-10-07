@@ -186,18 +186,73 @@ function forTheBot(message: Message): Message {
  * rejects a conversation holding one, and an old call must never be carried out now. The repair the
  * window made before every run it drove, until that path was removed (2026-10-05); this is the only
  * one there is.
+ *
+ * AND EVERY ANSWER FILED SOMEWHERE ELSE IS HANDED BACK WHERE ITS CALL WAS MADE. The thread is
+ * append-only, so the answer this function makes is filed after the person's new message — the one
+ * that started the turn — and not beside its call. That turn was handed the conversation in order;
+ * every turn after it read the call, then the person, then the answer, and a provider refuses that
+ * with a 400 on every request (measured in `turn-engine.integration.test.ts`): "봇이 모델에 닿지
+ * 못했어요" under 이어서 하기's next answer, and 다시 시도 the same again, for good. So an answer that
+ * is not in the run of results right after its call is moved there, behind the ones that are; a
+ * thread already in order comes back as the very messages it was, because a provider has cached
+ * those bytes.
+ *
+ * AN ANSWER BELONGS TO THE NEAREST CALL BEFORE IT BY THAT ID, not to the first: an endpoint that
+ * numbers its calls (`call_0`) uses the same id in every turn, and the first call by that name would
+ * take every later turn's answer away from its own call. An answer with no call before it is left
+ * where it stands, as it always was.
  */
 export function repairUnanswered(messages: readonly Message[]): Message[] {
-  const answered = new Set<string>();
-  for (const message of messages) {
-    if (message.role === "tool") {
-      answered.add((message as { toolCallId: string }).toolCallId);
+  const callOf = (message: Message) =>
+    (message as { toolCallId: string }).toolCallId;
+  /** Each answer's call: the place of the nearest message before it that makes it. */
+  const home = new Map<number, number>();
+  /** Which call message's run of results each answer stands in, if any. */
+  const runOf = new Map<number, number>();
+  const latest = new Map<string, number>();
+  let run: number | null = null;
+  messages.forEach((message, index) => {
+    if (message.role === "assistant") {
+      for (const call of message.toolCalls ?? []) latest.set(call.id, index);
+      run = index;
+      return;
     }
-  }
+    if (message.role !== "tool") {
+      run = null;
+      return;
+    }
+    if (run !== null) runOf.set(index, run);
+    const maker = latest.get(callOf(message));
+    if (maker !== undefined) home.set(index, maker);
+  });
+  /** Answers away from their call — filed after somebody spoke again — by the call's place. */
+  const elsewhere = new Map<number, Message[]>();
+  const isMoved = (index: number) =>
+    home.has(index) && home.get(index) !== runOf.get(index);
+  messages.forEach((message, index) => {
+    if (!isMoved(index)) return;
+    const maker = home.get(index) as number;
+    elsewhere.set(maker, [...(elsewhere.get(maker) ?? []), message]);
+  });
+
   const repaired: Message[] = [];
-  for (const message of messages) {
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index] as Message;
+    if (isMoved(index)) continue;
     repaired.push(message);
     if (message.role !== "assistant") continue;
+    const answered = new Set<string>();
+    let at = index + 1;
+    for (; messages[at]?.role === "tool"; at += 1) {
+      if (isMoved(at)) continue;
+      const result = messages[at] as Message;
+      repaired.push(result);
+      if (home.get(at) === index) answered.add(callOf(result));
+    }
+    for (const result of elsewhere.get(index) ?? []) {
+      repaired.push(result);
+      answered.add(callOf(result));
+    }
     for (const call of message.toolCalls ?? []) {
       if (answered.has(call.id)) continue;
       repaired.push({
@@ -211,6 +266,7 @@ export function repairUnanswered(messages: readonly Message[]): Message[] {
       } as Message);
       answered.add(call.id);
     }
+    index = at - 1;
   }
   return repaired;
 }
