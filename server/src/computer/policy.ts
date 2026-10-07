@@ -173,11 +173,13 @@ export type PolicyContext = {
    * `type`, text going into a field, including any other keypress.
    * `navigate`, opening a page.
    * `read`, looking at the page or listing what is on it.
-   * `write_file` / `read_file` / `list_files`, the workspace.
+   * `write_file` / `read_file` / `list_files`, the workspace. NONE HAS A PAGE: `page.url` and
+   * `page.host` are blank for them whatever the browser is showing, so a rule about a site that
+   * says nothing of `intent` never fires on one (`gateway/govern.ts`, `offThePage`). An `upload`
+   * does — it hands the file to the page.
    * `run_script`, a script the Bot wrote, run where nothing but the files it names exists. It has
-   * no page: `page.url` and `page.host` are blank for it whatever the browser is showing, so a rule
-   * about a site never fires on one. What it reads and what it makes are each judged as the file
-   * acts they are, before and after it (`gateway/acts.ts`, `runScript`).
+   * no page either, for the same reason. What it reads and what it makes are each judged as the
+   * file acts they are, before and after it (`gateway/acts.ts`, `runScript`).
    *
    * It still cannot see whether a keypress will submit a form. A browser submits
    * from Enter in any field of it, and the element a keypress names is the field, not the form. The
