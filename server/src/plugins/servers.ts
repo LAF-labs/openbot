@@ -1189,10 +1189,6 @@ export function createServers(
     },
 
     /**
-     * A person looked at the changed definition and consented to it as it now
-     * is. The current hash becomes the consented one; nothing else moves.
-     */
-    /**
      * The servers ALREADY added by address under a name this deployment now keeps for itself
      * ({@link RESERVED_SERVER_IDS}): added before the name was kept, when nothing refused it.
      *
@@ -1221,6 +1217,10 @@ export function createServers(
       return rows.map((row) => row.id).sort();
     },
 
+    /**
+     * A person looked at the changed definition and consented to it as it now
+     * is. The current hash becomes the consented one; nothing else moves.
+     */
     async approveToolDefinition(
       serverId: string,
       toolName: string,

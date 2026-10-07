@@ -125,13 +125,13 @@ const folderOf = (call: {
 }) =>
   `made/2026-10-07-${createHash("sha256")
     .update(
-      [
+      JSON.stringify([
         BOT,
         call.threadId ?? "",
         call.toolCallId,
         sha256(call.script ?? SCRIPT),
-        ...[...(call.files ?? [])].sort(),
-      ].join("\u0000"),
+        [...(call.files ?? [])].sort(),
+      ]),
     )
     .digest("hex")
     .slice(0, 8)}`;
@@ -972,6 +972,48 @@ describe("a script's run and the policy", () => {
     expect(question.scope).toEqual({ kind: "tool", value: RUN_SCRIPT_TOOL });
     expect(question.subject.host).toBeUndefined();
     expect(JSON.stringify(asked.rows)).not.toContain("kbstar");
+  });
+
+  /*
+   * AND FOR THE TIME IT ASKED FOR (the second read: an answer was bound to the script and its
+   * files and to nothing else a call says). The time is the one thing a call can change about a
+   * run without changing a byte of its script, and every argument of a call to another server
+   * is part of what its answer is for; so is this one. Not asking for a time is asking for the
+   * time a run gets, and is the same call as saying so.
+   */
+  test("a yes to a script for the time it asked is not a yes to the same script for longer", async () => {
+    const { gateway, approvals, sent } = stack({
+      policy: asking('intent == "run_script"'),
+    });
+    const input = { script: SCRIPT, files: [] };
+    const asked = (await failure(
+      gateway.runScript(COMPUTER, BOT, ACTOR, input),
+    )) as ActionNeedsApprovalError;
+    await approvals.answer(asked.approvalId, BOT, MANAGER.id, true);
+
+    // For a minute instead: another call, and another question.
+    const longer = await failure(
+      gateway.runScript(
+        COMPUTER,
+        BOT,
+        ACTOR,
+        { ...input, timeoutMs: 60_000 },
+        undefined,
+        asked.approvalId,
+      ),
+    );
+    expect(longer).toBeInstanceOf(ActionNeedsApprovalError);
+    expect(sent).toEqual([]);
+    // Saying the time a run gets anyway is the call that was asked about, and it runs.
+    await gateway.runScript(
+      COMPUTER,
+      BOT,
+      ACTOR,
+      { ...input, timeoutMs: WORKBENCH_LIMITS.timeoutMs },
+      undefined,
+      asked.approvalId,
+    );
+    expect(sent).toHaveLength(1);
   });
 
   test("an answer about a run is still good when the browser has moved meanwhile", async () => {
@@ -1846,6 +1888,28 @@ describe("the files a script made", () => {
     expect(await filed(reused, SCRIPT, [...pair].reverse())).toBe(
       "laf:file_exists",
     );
+  });
+
+  /*
+   * A FOLDER IS ONE CALL'S, AND A CALL IS A TUPLE (the second read). Its parts were joined with
+   * a NUL and hashed — and half of them are whatever a provider wrote, so two different calls
+   * whose parts merely run together the same way were one folder: a conversation `t` with a call
+   * `x<NUL>c`, and a conversation `t<NUL>x` with a call `c`. Written as what it is now.
+   */
+  test("two calls whose parts only run together the same way are two folders", () => {
+    const of = (threadId: string, toolCallId: string, files: string[] = []) =>
+      madeDirectoryFor(AT, {
+        botId: BOT,
+        threadId,
+        toolCallId,
+        sha256: sha256(SCRIPT),
+        files,
+      });
+    expect(of("t", "x\u0000c")).not.toBe(of("t\u0000x", "c"));
+    // And a file's name that runs into the next is not two files.
+    expect(of("t", "c", ["a\u0000b"])).not.toBe(of("t", "c", ["a", "b"]));
+    // The same call is still the same folder, whatever order its files were named in.
+    expect(of("t", "c", ["b", "a"])).toBe(of("t", "c", ["a", "b"]));
   });
 
   test("a run with no call behind it gets a folder of its own each time", async () => {
