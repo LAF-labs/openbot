@@ -122,11 +122,19 @@ function fakeDaemon(
   return { socketPath, asked: () => asked, server };
 }
 
-/** A report a real daemon could have sent, and the parts it names. */
+/**
+ * A report a real daemon could have sent, and the parts it names.
+ *
+ * What it printed is counted, as a daemon counts it, unless a test says otherwise: a report of
+ * output beside a count of none is one of the answers this side does not pass on, and two
+ * fixtures here were that — "second" and "the daemon that came back", printed in no bytes.
+ */
 function honest(
   report: Record<string, unknown> = {},
   parts: Record<string, string> = {},
 ): Response {
+  const printed = (stream: unknown) =>
+    typeof stream === "string" ? Buffer.byteLength(stream) : 0;
   const form = new FormData();
   form.set(
     REPORT_PART,
@@ -137,8 +145,8 @@ function honest(
       ms: 12,
       stdout: "",
       stderr: "",
-      stdoutBytes: 0,
-      stderrBytes: 0,
+      stdoutBytes: printed(report.stdout),
+      stderrBytes: printed(report.stderr),
       products: [],
       skipped: 0,
       ...report,
@@ -346,6 +354,44 @@ const lies: [string, () => Response][] = [
   [
     "more output than the bound keeps",
     () => honest({ stderr: "x".repeat(WORKBENCH_LIMITS.streamBytes + 1) }),
+  ],
+  /*
+   * WHAT A REPORT SAYS OF A RUN, HELD TO MORE THAN ITS TYPE (the second read). These were each
+   * passed on, and each is written on the run's ending row as the daemon said it: no output
+   * beside a thousand characters of it, a status no process leaves with, a run stopped at its
+   * time that also left with 0. A number that is a number is not yet a number a run can have.
+   */
+  [
+    "said to have printed less than it handed back",
+    () => honest({ stdout: "x".repeat(1000), stdoutBytes: 0 }),
+  ],
+  [
+    "said to have printed less to stderr than it handed back",
+    () => honest({ stderr: "warning\n", stderrBytes: 7 }),
+  ],
+  ["an exit status no process leaves with", () => honest({ exitCode: 1e21 })],
+  ["an exit status past the last there is", () => honest({ exitCode: 256 })],
+  ["an exit status below nought", () => honest({ exitCode: -1 })],
+  [
+    "a run longer than the time it was given and the wait after it",
+    () => honest({ ms: Number.MAX_SAFE_INTEGER }),
+  ],
+  [
+    "stopped at its time, and yet left with a status",
+    () => honest({ ending: "timed_out", exitCode: 0, signal: null }),
+  ],
+  [
+    "stopped at its memory by a signal the service does not send",
+    () =>
+      honest({ ending: "out_of_memory", exitCode: null, signal: "SIGTERM" }),
+  ],
+  [
+    "both a status and a signal",
+    () => honest({ exitCode: 0, signal: "SIGKILL" }),
+  ],
+  [
+    "neither a status nor a signal",
+    () => honest({ exitCode: null, signal: null }),
   ],
   ["products that are not a list", () => honest({ products: "none" })],
   ["a refusal nobody defined", () => honest({ productsRefused: "too_ugly" })],
@@ -590,6 +636,41 @@ for (const [name, lie] of lies) {
     ).toEqual({ ok: false, failure: "malformed" });
   });
 }
+
+/*
+ * AND WHAT A REAL DAEMON SAYS IS STILL PASSED ON: each way a run really ends (`shared/workbench/
+ * run.ts` — a status or a signal, never both; the daemon's own kill at a bound is SIGKILL), output
+ * cut at the bound with its true total beside it, and text whose characters are more than a byte.
+ */
+test("what a real daemon says of each way a run ends is passed on as it was said", async () => {
+  const kept = "가".repeat(100);
+  const said: Record<string, unknown>[] = [
+    { ending: "exited", exitCode: 0, signal: null },
+    { ending: "exited", exitCode: 255, signal: null },
+    // Ended by a signal of its own making.
+    { ending: "exited", exitCode: null, signal: "SIGSEGV" },
+    { ending: "timed_out", exitCode: null, signal: "SIGKILL" },
+    { ending: "out_of_memory", exitCode: null, signal: "SIGKILL" },
+    // As long as it was given and the wait after it, to the millisecond.
+    { ms: WORKBENCH_LIMITS.timeoutMs + 10_000 },
+    // A hundred characters of three bytes each, and far more printed than was kept.
+    { stdout: kept, stdoutBytes: 300, stderr: "x", stderrBytes: 9_000_000 },
+    // Exactly as many bytes as characters: plain text, all of it kept.
+    { stdout: "abc", stdoutBytes: 3 },
+    { skipped: 4_000 },
+  ];
+  for (const report of said) {
+    const { socketPath } = fakeDaemon(() => honest(report));
+    const answer = await createWorkbench({
+      key: KEY,
+      socketPath,
+      log: quiet,
+    }).run({ script, files: [] });
+    expect({ report, ok: answer.ok }).toEqual({ report, ok: true });
+    if (!answer.ok) continue;
+    expect(answer.run).toMatchObject(report);
+  }
+});
 
 test("files that fit one by one and not together are not passed on either", async () => {
   // A daemon for each client: a path has one client, with the bounds it was first made with.
@@ -968,7 +1049,7 @@ test("a redirect is not followed: the socket's answer cannot send this server an
 test("the signal a run ended by is a signal's name or the answer is not passed on", async () => {
   for (const signal of ["SIGKILL", "SIGTERM", "SIGSEGV", "SIGUSR1"]) {
     const { socketPath } = fakeDaemon(() =>
-      honest({ ending: "timed_out", exitCode: null, signal }),
+      honest({ ending: "exited", exitCode: null, signal }),
     );
     const answer = await createWorkbench({
       key: KEY,
@@ -990,7 +1071,7 @@ test("the signal a run ended by is a signal's name or the answer is not passed o
     "",
   ]) {
     const { socketPath } = fakeDaemon(() =>
-      honest({ ending: "timed_out", exitCode: null, signal }),
+      honest({ ending: "exited", exitCode: null, signal }),
     );
     expect(
       await createWorkbench({ key: KEY, socketPath, log: quiet }).run({

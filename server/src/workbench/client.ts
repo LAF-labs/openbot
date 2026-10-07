@@ -72,6 +72,32 @@
  * ONE RUN AT A TIME, FROM THIS SIDE TOO. The daemon refuses a second run while one is in progress;
  * this queues a few behind the one in flight so that two callers in one process do not meet that
  * refusal.
+ *
+ * WHAT A PROVEN ANSWER IS STILL HELD TO BEFORE IT IS PASSED ON (`runFrom`). A proof says the
+ * daemon sent these bytes; it does not make what they say a run. And what they say is written
+ * down: the gateway puts how a run ended on the trail as this side hands it over
+ * (`computer/gateway/trail.ts`, `writeScriptFinished`). Until 2026-10-07 the numbers were held
+ * for their TYPE only, and a report of no output beside a thousand characters of it, of a status
+ * of 1e21, of a run stopped at its time that also left with 0, was passed on and recorded (the
+ * second read of the script act). Each of these, or the answer is `malformed`, whole:
+ *
+ *  - HOW IT ENDED AGREES WITH ITSELF. A status or a signal, never both and never neither; a
+ *    status is 0–255; and a run the daemon ended at a bound was ended by its SIGKILL — the
+ *    daemon says a bound ended a run only where its own kill did (`shared/workbench/run.ts`).
+ *  - HOW LONG IT TOOK is no longer than the time it was given and the wait this side allows
+ *    after it — past which this side has stopped listening anyway.
+ *  - WHAT IT PRINTED IN ALL is not less than what was kept of it: no character is less than a
+ *    byte. (Characters, not bytes re-counted: text cut inside a character, or output that was
+ *    never text, is kept as the mark for "not text", which is three bytes for one.) And what
+ *    was kept is no more than is kept.
+ *  - THE FILES are as many as a run hands back and no more, each a name that is one, of the
+ *    size its part really is, within one file's bound and all of them within theirs, no part
+ *    unnamed and none named twice — and only from a run that ended by itself with 0.
+ *
+ * HELD TO NOTHING BUT BEING A COUNT: how many things a run left that were not files to hand
+ * back (`skipped`), and how much it printed past what was kept. Neither has a bound this side
+ * can know — the first is the size of a volume compose sets, the second whatever a script can
+ * print in its time — so each is recorded as the daemon's figure and nothing rests on it.
  */
 import { realpathSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
@@ -406,6 +432,8 @@ function wrongPartOf(
 async function runFrom(
   answer: FormData,
   limits: Limits,
+  /** The longest this run can have taken: the time it was given, and the wait after it. */
+  mostMs: number,
 ): Promise<Extract<WorkbenchAnswer, { ok: true }> | null> {
   const raw = answer.get(REPORT_PART);
   if (typeof raw !== "string") return null;
@@ -418,26 +446,42 @@ async function runFrom(
   if (!isRecord(report)) return null;
   const { ending, exitCode, signal, stdout, stderr, productsRefused } = report;
   if (!ENDINGS.has(ending)) return null;
-  if (exitCode !== null && !Number.isInteger(exitCode)) return null;
+  // A status is what a process leaves with: 0 to 255, or none where a signal ended it.
+  if (exitCode !== null && !(isCount(exitCode) && exitCode <= 255)) {
+    return null;
+  }
   if (
     signal !== null &&
     !(typeof signal === "string" && SIGNAL_NAME.test(signal))
   ) {
     return null;
   }
+  // One of the two, never both and never neither.
+  if ((exitCode === null) === (signal === null)) return null;
+  // The daemon ends a run one way, at either bound, and says a bound ended it only where that did.
+  if (ending !== "exited" && signal !== "SIGKILL") return null;
+  if (!isCount(report.ms) || report.ms > mostMs) return null;
   if (
-    !isCount(report.ms) ||
     !isCount(report.stdoutBytes) ||
     !isCount(report.stderrBytes) ||
     !isCount(report.skipped)
   ) {
     return null;
   }
-  // Kept text is at most `streamBytes` bytes, and no character is less than a byte.
-  if (typeof stdout !== "string" || stdout.length > limits.streamBytes) {
+  // Kept text is at most `streamBytes` bytes, and no character is less than a byte — so what
+  // was printed in all is not less than the characters that were kept of it.
+  if (
+    typeof stdout !== "string" ||
+    stdout.length > limits.streamBytes ||
+    report.stdoutBytes < stdout.length
+  ) {
     return null;
   }
-  if (typeof stderr !== "string" || stderr.length > limits.streamBytes) {
+  if (
+    typeof stderr !== "string" ||
+    stderr.length > limits.streamBytes ||
+    report.stderrBytes < stderr.length
+  ) {
     return null;
   }
   if (productsRefused !== undefined && !PRODUCT_REFUSALS.has(productsRefused)) {
@@ -821,9 +865,9 @@ function clientFor(socketPath: string, made: Made): Workbench {
       // A copy on a plain ArrayBuffer: the part's type wants one.
       form.set(filePart(index), new Blob([new Uint8Array(file.bytes)]));
     });
-    const bound = AbortSignal.timeout(
-      (request.timeoutMs ?? limits.timeoutMs) + marginMs,
-    );
+    /** The time the run was given and the wait after it: this side's bound, and the report's. */
+    const mostMs = (request.timeoutMs ?? limits.timeoutMs) + marginMs;
+    const bound = AbortSignal.timeout(mostMs);
     // This side's own way of ending the request, for an answer that runs past its bound.
     const own = new AbortController();
     const hangUp = () => own.abort();
@@ -915,7 +959,7 @@ function clientFor(socketPath: string, made: Made): Workbench {
       .formData()
       .catch(() => null);
     if (!answer) return malformed("form");
-    return (await runFrom(answer, limits)) ?? malformed("report");
+    return (await runFrom(answer, limits, mostMs)) ?? malformed("report");
   };
 
   return {
