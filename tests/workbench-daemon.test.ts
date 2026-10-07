@@ -615,9 +615,9 @@ test("the daemon holds a request to every bound itself, whatever sent it", async
       await refusedFor(rawRun(socketPath, one(path), { file0: "x" })),
     ).toEqual(invalid("files"));
   }
-  // And a path a trim would change: the server's policy judged it as written and the Bot's
-  // computer read it trimmed, so it is not one path to both (the read of 2026-10-07). Held here
-  // too, whatever sent it.
+  // And a path a trim would change: the gateway reads a path trimmed, for a rule and for the
+  // Bot's computer, and this places it as written, so it is not one path to both (the read of
+  // 2026-10-07, when it was a rule that read it as written). Held here too, whatever sent it.
   for (const path of ["a ", " a", "a\n", "a\t", "d/a\u00a0", "\u3000a", " "]) {
     expect(
       await refusedFor(rawRun(socketPath, one(path), { file0: "x" })),
