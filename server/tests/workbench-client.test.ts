@@ -444,6 +444,38 @@ const lies: [string, () => Response][] = [
       ),
   ],
   /*
+   * AND THE REST OF THAT CLASS, held by what Unicode says a character is (the second read): a
+   * soft hyphen draws as nothing, a Hangul filler is a letter that draws as nothing, and half a
+   * character is not text — the computer's client throws on it when it writes the path, after
+   * the script has run.
+   */
+  [
+    "a file whose name has a soft hyphen in it",
+    () =>
+      honest(
+        {
+          products: [{ name: "to\u00adtals.csv", bytes: 1, part: "product0" }],
+        },
+        { product0: "x" },
+      ),
+  ],
+  [
+    "a file whose name ends in a Hangul filler",
+    () =>
+      honest(
+        { products: [{ name: "tool.exe\u3164", bytes: 1, part: "product0" }] },
+        { product0: "x" },
+      ),
+  ],
+  [
+    "a file whose name holds half a character",
+    () =>
+      honest(
+        { products: [{ name: "b\ud800.txt", bytes: 1, part: "product0" }] },
+        { product0: "x" },
+      ),
+  ],
+  /*
    * AND A NAME WITH A BACKSLASH IN IT, which the daemon leaves where the script put it and
    * counts (`tests/workbench-daemon.test.ts`): the Bot's computer wrote one as a letter and read
    * it as a separator. An answer that names one is not that daemon's, and none of it is passed
