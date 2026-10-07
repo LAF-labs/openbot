@@ -217,7 +217,7 @@ test("the act's probe is driven once, after the walls, and one that stopped earl
   expect(outer).toContain("(act?.length ?? 0) === ACT_CHECKS");
   // Its floor is the number of things it reports on the way to its end, counted off its source.
   expect(inner.match(/^ {2}check\($/gm)).toHaveLength(ACT_CHECKS);
-  expect(ACT_CHECKS).toBe(9);
+  expect(ACT_CHECKS).toBe(10);
   // Its first run is by the client alone, to learn where it is; it stops there if not the sandbox.
   expect(inner).toContain("if (!inSandbox) return;");
   expect(inner.indexOf("if (!inSandbox) return;")).toBeLessThan(

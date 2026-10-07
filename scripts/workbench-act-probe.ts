@@ -305,6 +305,55 @@ async function probe(socketPath: string, checks: ProbeCheck[]): Promise<void> {
     `sentinels found in ${written.length} characters of rows: ${leaked.length === 0 ? "none" : leaked.join(", ")}; each was in the script, in what it printed (${whole.run?.stdoutBytes} bytes, handed to the caller only), in the file it read and in the file it made`,
   );
 
+  /*
+   * 1b. A FILE NAMED THE WAY A MODEL WRITES ONE, FOR A SCRIPT THAT OPENS IT THE SAME WAY. The
+   * call says `./data.csv` and so does the script. The gateway judges and reads `data.csv` — the
+   * folder here holds it under that name and no other, so a read of the string as written would
+   * find nothing — and stages it for the script as `data.csv`. Whether the script's own
+   * `./data.csv` then opens it is the sandbox's operating system's to say, and this is where
+   * it says it.
+   */
+  const spelled = await drive({
+    workbench,
+    files: { "data.csv": sales },
+    attempt: (gateway) =>
+      gateway.runScript(
+        COMPUTER,
+        BOT,
+        { id: "act-probe", toolCallId: "act-probe-call-2" },
+        { script: ACT_SCRIPTS.spelled, files: ["./data.csv"] },
+      ),
+  });
+  printed(
+    "a file named ./data.csv, for a script that opens ./data.csv",
+    spelled.run
+      ? `returned in ${spelled.ms} ms: ending=${spelled.run.ending} exit=${spelled.run.exitCode} files=${JSON.stringify(spelled.run.files)} said=${JSON.stringify(spelled.run.stdout.trim())}`
+      : `threw ${spelled.threw?.name}: ${spelled.threw?.message}`,
+    spelled.rows,
+  );
+  check(
+    "a file a call names as ./data.csv is judged, read and staged as data.csv, and a script that opens ./data.csv finds it",
+    spelled.run?.ending === "exited" &&
+      spelled.run.exitCode === 0 &&
+      // The same arithmetic over the same bytes: 40 + 2 + 0.
+      spelled.run.stdout.trim() === "spelled total 42" &&
+      JSON.stringify(spelled.run.files) === JSON.stringify(["data.csv"]) &&
+      JSON.stringify(spelled.computer.asked) ===
+        JSON.stringify(["fileBytes data.csv"]) &&
+      JSON.stringify(kinds(spelled.rows)) ===
+        JSON.stringify([
+          "computer.action_allowed computer_read_file",
+          `computer.action_allowed ${RUN_SCRIPT_TOOL}`,
+          `computer.script_finished ${RUN_SCRIPT_TOOL}`,
+        ]) &&
+      spelled.rows[0]?.payload.file === "data.csv" &&
+      JSON.stringify(spelled.rows[1]?.payload.files) ===
+        JSON.stringify(["data.csv"]),
+    spelled.run
+      ? `exit ${spelled.run.exitCode}, said ${JSON.stringify(spelled.run.stdout.trim())}; the computer was asked ${JSON.stringify(spelled.computer.asked)}; the read's row names ${JSON.stringify(spelled.rows[0]?.payload.file)}, the run's ${JSON.stringify(spelled.rows[1]?.payload.files)}; the caller is told ${JSON.stringify(spelled.run.files)}`
+      : `threw ${spelled.threw?.name}: ${spelled.threw?.message}; the computer was asked ${JSON.stringify(spelled.computer.asked)}; rows ${JSON.stringify(kinds(spelled.rows))}`,
+  );
+
   // 2. A RUN WHOSE INPUT READ IS REFUSED.
   const refused = await drive({
     workbench,
