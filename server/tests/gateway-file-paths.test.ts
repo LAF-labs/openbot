@@ -35,6 +35,17 @@ import type { ActionPolicy } from "../src/computer/policy";
 import type { SnapshotResult } from "../src/computer/schema";
 import { createStandingApprovalStore } from "../src/computer/standing-approvals";
 import { createUnattendedTools } from "../src/runner/unattended";
+import {
+  A_SPACED_NAME,
+  EVERY_SPELLING,
+  FILES,
+  NOT_A_PATH,
+  NOTE,
+  PAYROLL,
+  RULES,
+  SECRET,
+  spellingsOf,
+} from "./support/path-spellings";
 
 /**
  * WHAT A RULE JUDGES IS WHAT THE COMPUTER ACTS ON (`gateway/addresses.ts`, `workspacePathOf`).
@@ -65,22 +76,6 @@ const ACTOR = { id: "dev-local-user" };
 const OWNER = "owner-user";
 /** The control an upload names: the snapshot's button, at the snapshot the server holds. */
 const TARGET = { ref: "e9", snapshotId: SNAPSHOT.snapshotId };
-
-/** What each file in the folder holds, so that what was read says WHICH file was read. */
-const PAYROLL = "[the payroll]";
-const IN_A_SPACED_FOLDER =
-  "[pay.csv, in a folder whose name begins with a space]";
-const A_SPACED_NAME = "[a file whose name ends with a space, in private/]";
-const SECRET = "[the secret]";
-const NOTE = "[a note]";
-/** Every file the folder starts with, by where it is. */
-const FILES = [
-  [join("private", "pay.csv"), PAYROLL],
-  [join(" private", "pay.csv"), IN_A_SPACED_FOLDER],
-  [join("private", "pay.csv "), A_SPACED_NAME],
-  [".env", SECRET],
-  [join("notes", "a.md"), NOTE],
-] as const;
 
 let root = "";
 let workspace: Workspace;
@@ -211,69 +206,6 @@ async function cameOf(work: () => Promise<unknown>): Promise<string> {
     return error instanceof Error ? error.message : String(error);
   }
 }
-
-/** Every way a model, a slip or a page that wants a rule walked past might write one path. */
-function spellingsOf(core: string): string[] {
-  const before = [
-    "",
-    " ",
-    "\t",
-    "\n",
-    "\u00a0",
-    "./",
-    "./ ",
-    "./\n",
-    "./\u3000",
-    " ./",
-    ".//",
-    "./ ./ ",
-    "\\",
-    ".\\",
-  ];
-  const after = [
-    "",
-    " ",
-    "\n",
-    "\u3000",
-    "/",
-    "/.",
-    "/./",
-    " /",
-    " /.",
-    "\n/.",
-    "/ ",
-    "/. ",
-    "\\",
-    "\\.",
-  ];
-  return before.flatMap((head) => after.map((tail) => `${head}${core}${tail}`));
-}
-
-const CORES = [
-  "private/pay.csv",
-  "private//pay.csv",
-  "private/./pay.csv",
-  "private\\pay.csv",
-  "private\\.\\pay.csv",
-  " private/pay.csv",
-  "private/pay.csv ",
-  "private / pay.csv",
-  ".env",
-  "notes/a.md",
-  "private",
-  " private",
-  ".",
-] as const;
-const EVERY_SPELLING = CORES.flatMap(spellingsOf);
-
-/** None of these is a path in the folder: each is something the computer refuses as one. */
-const NOT_A_PATH = [
-  "/etc/passwd",
-  "..",
-  "a/../b",
-  "private/../../etc/passwd",
-  "a\0b",
-] as const;
 
 describe("a path in the Bot's folder has one spelling", () => {
   test("the ends are trimmed, and `.`, empty segments and a trailing slash are gone", () => {
@@ -407,14 +339,6 @@ describe("a path in the Bot's folder has one spelling", () => {
     }
   });
 });
-
-/** The four ways a rule about the payroll gets written. */
-const RULES = [
-  'matches(file.path, "^private/")',
-  'file.path == "private/pay.csv"',
-  'file.name == "pay.csv"',
-  'file.extension == "csv"',
-] as const;
 
 describe("a rule about a file holds however the path is written", () => {
   test("no spelling reads a file a rule denies, or hands it to a site", async () => {
