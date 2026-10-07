@@ -71,3 +71,30 @@ export const NOTES_PRESET = "Ask before writing a file outside notes/";
  */
 export const RETIRED_NOTES_RULE =
   'intent == "write_file" && !matches(file.path, "^notes/")';
+
+/**
+ * Migration 0062's one statement, as its file has it — the comment lines gone, and the semicolon.
+ *
+ * Read out of the file for the same reason the preset is read off the screen: the statement that
+ * is held to its text, and the one that is run over rows, is the one a deployment runs.
+ */
+export function notesPresetMigration(): string {
+  const statement = readFileSync(
+    join(import.meta.dir, "../../drizzle/0062_notes_preset_to_the_letter.sql"),
+    "utf8",
+  )
+    .split("\n")
+    .filter((line) => !line.startsWith("--"))
+    .join("\n")
+    .trim()
+    .replace(/;$/, "");
+  // A file that grew a second statement, or lost its only one, is not what a test here is about.
+  if (
+    !statement.startsWith('UPDATE "action_policy"') ||
+    statement.includes(";") ||
+    statement.includes("statement-breakpoint")
+  ) {
+    throw new Error("Migration 0062 is no longer one UPDATE of action_policy.");
+  }
+  return statement;
+}
