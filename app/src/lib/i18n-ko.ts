@@ -2178,7 +2178,7 @@ export const ko: Record<string, string> = {
     "규칙을 저장하지 못해 적용하지 않았어요. 이전 경계가 그대로 적용되고 있어요.",
   "The boundary could not be read. Nothing was changed.":
     "경계 설정을 읽지 못해 아무것도 바뀌지 않았어요.",
-  "That path is outside the workspace": "봇 폴더 밖의 경로",
+  "That path cannot be used in the workspace": "봇 폴더에서 쓸 수 없는 경로",
   "The Bot's request was incomplete": "봇의 요청에 빠진 값이 있음",
   "It did not work on the Bot's computer": "봇의 컴퓨터에서 실패함",
   "The Bot's computer did not answer in time":
@@ -3182,7 +3182,8 @@ export const ko: Record<string, string> = {
   "This file is no longer in the Bot's folder.":
     "이 파일은 이제 봇 폴더에 없어요.",
   "This is a folder, not a file.": "파일이 아니라 폴더예요.",
-  "This path is outside the Bot's folder.": "봇 폴더 밖의 경로예요.",
+  "This path cannot be used in the Bot's folder.":
+    "봇 폴더에서 쓸 수 없는 경로예요.",
   "This file is too large to download from here.":
     "파일이 너무 커서 여기서는 내려받을 수 없어요.",
   "The file could not be checked just now.": "지금은 파일을 확인하지 못했어요.",

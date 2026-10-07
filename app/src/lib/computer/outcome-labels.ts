@@ -82,7 +82,9 @@ export const OUTCOME_LABELS: Record<string, string> = {
   "laf:element_not_actionable": "That element could not be used",
   "laf:tab_missing": "There is no such tab",
   // The workspace.
-  "laf:file_path_refused": "That path is outside the workspace",
+  // Not "outside the workspace": a path with a backslash in it, or with white space at the edge
+  // of a name, gets this answer too and points nowhere outside (`gateway/addresses.ts`).
+  "laf:file_path_refused": "That path cannot be used in the workspace",
   "laf:file_not_found": "Nothing is at that path",
   "laf:file_wrong_kind":
     "A folder where a file was meant, or the other way round",
