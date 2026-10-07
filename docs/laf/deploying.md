@@ -833,9 +833,10 @@ outside. What it holds the upgrade to:
   sweep's call answers "nobody was there" as an error, which no test on a
   laptop could have. Then a third container drives the gateway's own act for a
   script's run against the same service (`scripts/workbench-act-probe.ts`) —
-  a run that reads one file and makes one, a run whose file is refused, a run
-  stopped mid-way and the run after it, a deployment with no service — and
-  prints the rows each left on the trail, whole. The Bot's computer is a folder
+  a run that reads one file and makes one, a file named `./data.csv` for a
+  script that opens `./data.csv`, a run whose file is refused, a run stopped
+  mid-way and the run after it, a deployment with no service — and prints the
+  rows each left on the trail, whole. The Bot's computer is a folder
   in memory there and the trail a list; the gateway, the client, the daemon and
   the scripts are the real ones.
 

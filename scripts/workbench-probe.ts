@@ -205,6 +205,15 @@ const total = rows.reduce((sum, row) => sum + Number(row.split(",")[1]), 0);
 await Bun.write("out/totals.csv", "total\n" + total + "\n" + ["PRODUCT", "SENTINEL"].join("-") + "\n");
 console.log(["STDOUT", "SENTINEL"].join("-") + " total " + total);
 `,
+  /**
+   * Sum the same column of a file it opens as `./data.csv` — the way a model writes a file's
+   * name — for a call that names it that way too. The file is staged as `data.csv`; whether
+   * this finds it is the operating system's answer, which is why it is asked on the real one.
+   */
+  spelled: String.raw`
+const rows = (await Bun.file("./data.csv").text()).trim().split("\n").slice(1);
+console.log("spelled total " + rows.reduce((sum, row) => sum + Number(row.split(",")[1]), 0));
+`,
   /** Longer than anybody waits: ended only by its caller's Stop. */
   long: `
 await Bun.sleep(30_000);
@@ -1350,7 +1359,7 @@ export function megabytesHeld(usage: string): number | null {
 export const PROBE_CHECKS = 32;
 
 /** The same floor for the act's probe: how many things it reports when it runs to its end. */
-export const ACT_CHECKS = 9;
+export const ACT_CHECKS = 10;
 
 /** Every script the probe sends, by name — so that a test can at least parse them before a run does. */
 export const PROBE_SCRIPTS: Readonly<Record<string, string>> = {
