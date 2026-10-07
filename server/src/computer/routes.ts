@@ -767,7 +767,8 @@ export function createComputerRoutes(
      * person would be sent to edit a list they should not be saving from at all; told the copy is
      * old, they are sent to the boundary there is now, where the rule is not. (This server's own
      * page reads it again by itself. A page loaded before the upgrade knows neither answer and
-     * says only that nothing was saved — true both ways, and reloading it is the way out.)
+     * says its one sentence for any refusal — "The boundary could not be saved." — which is true
+     * both ways, and reloading it is the way out.)
      * Somebody who types the old rule into a page that IS current is told about the rule.
      */
     if (!parsed.ok) return context.json(policyRefused(parsed), 400);
