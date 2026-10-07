@@ -312,16 +312,23 @@ export function madeDirectoryFor(
   },
 ): string {
   const day = at.toISOString().slice(0, 10);
+  /*
+   * AS THE TUPLE IT IS, NOT AS ITS PARTS RUN TOGETHER. These were joined with a NUL, and two of
+   * them are whatever a provider wrote: a conversation `t` with a call `x<NUL>c` and a
+   * conversation `t<NUL>x` with a call `c` were one string, so one folder, and the second run's
+   * file was refused as already there (the second read of this act). JSON says where each part
+   * ends; nothing was offered a run yet, so no folder made the old way is anybody's.
+   */
   const whose =
     call.toolCallId === undefined
       ? randomUUID()
-      : [
+      : JSON.stringify([
           call.botId,
           call.threadId ?? "",
           call.toolCallId,
           call.sha256,
-          ...[...call.files].sort(),
-        ].join("\u0000");
+          [...call.files].sort(),
+        ]);
   const id8 = createHash("sha256").update(whose).digest("hex").slice(0, 8);
   return `${MADE_DIRECTORY}/${day}-${id8}`;
 }

@@ -135,6 +135,11 @@ export function createGovern(options: {
        * nothing else.
        */
       script?: ScriptOnTrail;
+      /**
+       * How long a run asked for, in milliseconds, the default filled in by its caller: part of
+       * what an answer about the run is bound to, and of nothing else — not a row, not the count.
+       */
+      timeoutMs?: number;
       targetUrl?: string;
       key?: string;
       /** Whether this call ends by pressing Enter. Only the type tool can, and it says so. */
@@ -450,8 +455,24 @@ export function createGovern(options: {
        * fingerprint — its name — and one person's "this once" can be spent on whatever the
        * model writes next.
        */
+      /*
+       * AND SO IS THE TIME IT ASKED FOR — the one thing a call can change about a run without
+       * changing a byte of the script. A yes to twenty seconds of a script is not a yes to a
+       * minute of it, as every argument of a call to another server is part of what its answer
+       * is for (`plugins/call.ts`). What that costs: the card does not say the time, so a call
+       * made again for longer is a second question that reads like the first. NOT in the count
+       * above, on purpose: a script sent round again with more time is still going round.
+       */
       ...(script
-        ? { arguments: { script: script.sha256, files: namedFiles } }
+        ? {
+            arguments: {
+              script: script.sha256,
+              files: namedFiles,
+              ...(subject.timeoutMs === undefined
+                ? {}
+                : { timeoutMs: subject.timeoutMs }),
+            },
+          }
         : {}),
       element: element ? { role: element.role, name: element.name } : undefined,
     });

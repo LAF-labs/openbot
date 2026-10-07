@@ -517,7 +517,12 @@ export function createActs(deps: {
         RUN_SCRIPT_TOOL,
         botId,
         actor,
-        { script, ...carried },
+        {
+          script,
+          // Not saying a time is asking for the time a run gets: one call, said either way.
+          timeoutMs: input.timeoutMs ?? WORKBENCH_LIMITS.timeoutMs,
+          ...carried,
+        },
         async () => {
           const answered = await workbench.run(
             {
