@@ -414,11 +414,18 @@ function BoundariesPage() {
    * none. Read from the component before a migration made it happen to a preset (2026-10-07), and
    * true of every rule a person has ever edited. A floor's question is filed under no written rule
    * (`""`, or `laf:` and the floor's name), so there is nothing of it to go missing.
+   *
+   * A RULE THAT REFUSES NOW DOES NOT ASK EITHER. Written into the list of what the Bot may never
+   * do, the same expression refuses what it used to ask about; a refusal is never answered for,
+   * so the allowance is as spent as one whose rule is gone — on a row that would otherwise read
+   * as though its file were let through. A rule in `allow` does count: the question an allowance
+   * was given for there is the high-risk check's, raised over the rule that allowed.
    */
   const stillAnswers = (allowance: StandingAllowance) =>
     allowance.rule === "" ||
     allowance.rule.startsWith("laf:") ||
-    [...policy.deny, ...policy.ask, ...policy.allow].includes(allowance.rule);
+    (!policy.deny.includes(allowance.rule) &&
+      [...policy.ask, ...policy.allow].includes(allowance.rule));
 
   const addRule = async (rule: string) => {
     const trimmed = rule.trim();
@@ -827,7 +834,7 @@ function BoundariesPage() {
                   {stillAnswers(allowance) ? null : (
                     <span className="text-destructive text-xs">
                       {t(
-                        "Not in force: the rule this was given under is no longer in the boundary, so it answers for nothing. It can be taken back.",
+                        "Not in force: the rule this was given under no longer asks, so it answers for nothing. It can be taken back.",
                       )}
                     </span>
                   )}

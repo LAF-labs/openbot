@@ -287,14 +287,18 @@ describe("the Boundaries page, saving", () => {
 });
 
 describe("the Boundaries page, what it no longer asks about", () => {
-  test("an allowance whose rule is no longer in the boundary is said not to be in force; one whose rule is there, and a floor's, are not", async () => {
+  test("an allowance whose rule no longer asks — gone, or refusing now — is said not to be in force; one whose rule still asks, and a floor's, are not", async () => {
     /*
      * An allowance is kept under the rule that asked and looked for under the rule that asks now.
      * When somebody edits that rule the allowance is still listed here, under a heading that says
-     * "it no longer asks about", and answers for nothing.
+     * "it no longer asks about", and answers for nothing. The same when the expression was moved
+     * into what the Bot may never do: it refuses now, and a refusal is never answered for.
      */
     const NOT_IN_FORCE =
-      "Not in force: the rule this was given under is no longer in the boundary, so it answers for nothing. It can be taken back.";
+      "Not in force: the rule this was given under no longer asks, so it answers for nothing. It can be taken back.";
+    const REFUSES_NOW = 'intent == "write_file" && file.extension == "exe"';
+    // In both lists: the refusal is reached first, so the question under it is never asked.
+    const REFUSES_FIRST = 'intent == "write_file" && file.folder == "private"';
     const allowance = (id: string, rule: string, path: string) => ({
       id,
       botId: "agent_2f1c9a3e-7d24-4a6b-9b1e-0c8f5d2a7b41",
@@ -305,7 +309,11 @@ describe("the Boundaries page, what it no longer asks about", () => {
       tier: "always",
     });
     const server = policyServer(
-      { deny: [], ask: ['intent == "upload"'], allow: ["true"] },
+      {
+        deny: [REFUSES_NOW, REFUSES_FIRST],
+        ask: ['intent == "upload"', REFUSES_FIRST],
+        allow: ["true"],
+      },
       {
         standing: [
           allowance("a-standing", 'intent == "upload"', "reports/standing.csv"),
@@ -314,6 +322,8 @@ describe("the Boundaries page, what it no longer asks about", () => {
             'intent == "write_file"',
             "reports/left.csv",
           ),
+          allowance("a-refused", REFUSES_NOW, "reports/refused.csv"),
+          allowance("a-refused-first", REFUSES_FIRST, "reports/first.csv"),
           // A floor's question is filed under no written rule: there is none of it to go missing.
           allowance("a-floor", "", "reports/floor.csv"),
           allowance("a-guard", "laf:money", "reports/guard.csv"),
@@ -343,6 +353,8 @@ describe("the Boundaries page, what it no longer asks about", () => {
     ).toEqual([
       ["reports/standing.csv", false],
       ["reports/left.csv", true],
+      ["reports/refused.csv", true],
+      ["reports/first.csv", true],
       ["reports/floor.csv", false],
       ["reports/guard.csv", false],
       ["reports/allowed.csv", false],
