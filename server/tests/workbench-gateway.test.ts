@@ -41,6 +41,7 @@ import {
   filesNamedBy,
   MADE_MAX_BYTES,
   madeDirectoryFor,
+  madeFull,
   requestProblem,
   ScriptNotRunError,
 } from "../src/computer/gateway/script-run";
@@ -1087,7 +1088,7 @@ describe("a script's run and the policy", () => {
   });
 
   test("a question about one file ends the call before any code runs", async () => {
-    const { gateway, sent, computer } = stack({
+    const { gateway, sent, computer, rows } = stack({
       policy: asking('intent == "read_file" && file.extension == "xlsx"'),
       folder: { "uploads/book.xlsx": bytes("1") },
     });
@@ -1109,6 +1110,14 @@ describe("a script's run and the policy", () => {
     });
     expect(sent).toEqual([]);
     expect(computer.asked).toEqual([]);
+    // And the row that says a person was asked says which run the read was for: without it a
+    // question about a file read for a script is, on the trail, a question about the Bot's own.
+    expect(rows.map((row) => row.eventType)).toEqual(["approval.requested"]);
+    expect(rows[0]?.payload).toMatchObject({
+      action: "computer_read_file",
+      file: "uploads/book.xlsx",
+      forScript: sha256(SCRIPT),
+    });
   });
 
   test("an answer given for the run is not spent on a file's read, and stays good for the run", async () => {
@@ -1462,6 +1471,28 @@ describe("a script's run that produced no ending", () => {
       expect(rows[1]?.payload.failure).toBe(fact);
       expect(computer.asked).toEqual([]);
     }
+  });
+
+  test("the row of a run that was allowed and did not happen says which script it was, and over which files", async () => {
+    const { gateway, rows } = stack({
+      folder: { "uploads/a.csv": bytes("1") },
+      answer: () => ({ ok: false, failure: "unavailable" }),
+    });
+    await failure(
+      gateway.runScript(COMPUTER, BOT, ACTOR, {
+        script: SCRIPT,
+        files: ["uploads/a.csv"],
+      }),
+    );
+    const failed = rows.at(-1);
+    expect(failed?.eventType).toBe("computer.action_failed");
+    // The same two things its decision's row carries: nothing else ties the two together.
+    expect(failed?.payload).toMatchObject({
+      action: RUN_SCRIPT_TOOL,
+      script: { sha256: sha256(SCRIPT), bytes: Buffer.byteLength(SCRIPT) },
+      files: ["uploads/a.csv"],
+      failure: "laf:workbench_unavailable",
+    });
   });
 
   test("an answer whose file has a name that is not one is not a run to vouch for", async () => {
@@ -1987,6 +2018,20 @@ describe("the files a script made", () => {
  * the comment beside the bound did not say, each measured here rather than argued.
  */
 describe("what made/ may hold", () => {
+  test("a file refused because made/ is full says what was held, what it weighs and the bound — and no figure where the folder could not be counted", () => {
+    expect(madeFull(190, 20, 200).facts).toEqual({
+      held: 190,
+      bytes: 20,
+      limit: 200,
+    });
+    // A folder too long to be described whole has no total anybody can state.
+    expect(madeFull(Number.POSITIVE_INFINITY, 20, 200).facts).toEqual({
+      bytes: 20,
+      limit: 200,
+    });
+    expect(madeFull(190, 20, 200).code).toBe("laf:made_full");
+  });
+
   const roots: string[] = [];
   afterEach(() => {
     for (const root of roots.splice(0)) {
@@ -2127,6 +2172,64 @@ describe("a script's run, again and again", () => {
       count: 3,
       page: "",
     });
+  });
+
+  test("the order a call names its files in does not make it another run: the fifth is asked about whichever way round they were", async () => {
+    const built = circling();
+    const ways = [
+      ["uploads/a.csv", "uploads/b.csv"],
+      ["uploads/b.csv", "uploads/a.csv"],
+    ];
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
+      await built.gateway.runScript(COMPUTER, BOT, ACTOR, {
+        script: SCRIPT,
+        files: ways[attempt % 2] as string[],
+      });
+    }
+    const fifth = (await run(
+      built,
+      SCRIPT,
+      ways[1],
+    )) as ActionNeedsApprovalError;
+    expect(fifth).toBeInstanceOf(ActionNeedsApprovalError);
+    expect(fifth.subject).toMatchObject({
+      intent: "run_script",
+      reason: "repeat",
+      repeatCount: 5,
+    });
+    expect(built.sent).toHaveLength(4);
+  });
+
+  /*
+   * WHAT A RULE ABOUT THE COUNT SEES OF A RUN'S FILE ACT, held as what it is: ONE. A read or a
+   * write made for a run is decided by every rule about its path and is not counted, so a rule
+   * that decides BY the count on a file's intent sees a first attempt every time — twelve
+   * scripts over one file are not "the same read twelve times" to it. That is the cost written
+   * in `govern.ts`, and the hole the second read and Codex both named; it stays until a run is
+   * one question (the change after this one). Held so that it cannot become TWO by accident.
+   */
+  test("a rule that decides by the count on a file's intent sees a run's read as a first attempt, every time", async () => {
+    const { gateway, sent, rows } = stack({
+      policy: denying('intent == "read_file" && repeat.count >= 2'),
+      folder: { "uploads/a.csv": bytes("1") },
+    });
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      await gateway.runScript(COMPUTER, BOT, ACTOR, {
+        script: `console.log(${attempt});`,
+        files: ["uploads/a.csv"],
+      });
+    }
+    expect(sent).toHaveLength(3);
+    expect(
+      rows.filter((row) => row.eventType === "computer.action_refused"),
+    ).toEqual([]);
+    // The Bot's own read of that file IS counted, and the same rule refuses its second.
+    await gateway.readFile(COMPUTER, BOT, ACTOR, { path: "uploads/a.csv" });
+    expect(
+      await failure(
+        gateway.readFile(COMPUTER, BOT, ACTOR, { path: "uploads/a.csv" }),
+      ),
+    ).toBeInstanceOf(ActionRefusedError);
   });
 
   test("five different scripts are five different calls", async () => {

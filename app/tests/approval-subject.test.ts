@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   type AskSubject,
+  actionNounPhrase,
   describeSubject,
   subjectPhrases,
   timeLeftToAnswer,
@@ -251,10 +252,47 @@ describe("saying what a Bot is about to do", () => {
     ]) {
       expect(actionOf(files).action).toEqual({ key: none, params: {} });
     }
+    // A path that says nothing is not a file to name: it is left out, and the rest are counted
+    // without it — a blank was printed in a file's place, as the first of "2 files".
+    expect(
+      actionOf([{ path: "" }, { path: "uploads/매출.xlsx" }]).action,
+    ).toEqual({
+      key: "It wants to run a small program it wrote, on the file {path}.",
+      params: { path: "uploads/매출.xlsx" },
+    });
+    expect(actionOf([{ path: "" }]).action).toEqual({ key: none, params: {} });
     // The fifth identical run says so, like any repeated call.
     expect(
       actionOf([], { repeatCount: 5, reason: "repeat" }).reason?.params,
     ).toEqual({ count: 5 });
+
+    // And the line a card is left with once somebody has answered says the same things, as a
+    // noun: no file, the one file, and HOW MANY with the first of them — all of them, counted.
+    const nounOf = (files: unknown) =>
+      actionNounPhrase({
+        kind: "file",
+        intent: "run_script",
+        files,
+        reason: "policy_ask",
+      } as unknown as AskSubject);
+    expect(nounOf([])).toEqual({
+      key: "running a small program it wrote",
+      params: {},
+    });
+    expect(nounOf([{ path: "uploads/매출.xlsx" }])).toEqual({
+      key: "running a small program on the file {path}",
+      params: { path: "uploads/매출.xlsx" },
+    });
+    expect(
+      nounOf([
+        { path: "uploads/매출.xlsx" },
+        { path: "uploads/비용.csv" },
+        { path: "uploads/재고.csv" },
+      ]),
+    ).toEqual({
+      key: "running a small program on {count} files including {path}",
+      params: { path: "uploads/매출.xlsx", count: 3 },
+    });
 
     // And the Korean a person reads: who wrote the program, which file, how many.
     expect(ko[none]).toBe("직접 짠 작은 프로그램을 돌리려 해요.");
