@@ -43,7 +43,11 @@ import {
   TOOL_CALL_HEADER,
 } from "./gateway";
 import type { HandedFile } from "./gateway/person-files";
-import { type PolicyStore, parseActionPolicy } from "./policy-store";
+import {
+  type PolicyStore,
+  type PolicyWrite,
+  parseActionPolicy,
+} from "./policy-store";
 import type { ScreenViewAudit } from "./screen-view";
 import { snapshotForModel } from "./snapshot-lines";
 import type { WriteUp } from "./write-up";
@@ -718,9 +722,18 @@ export function createComputerRoutes(
    * Here rather than in the admin routes file, because this directory owns the computer and `app.ts`
    * takes one appended line per mount. The storage underneath is durable, so administrator rules
    * remain active after a restart.
+   *
+   * A READ HANDS OUT THE BOUNDARY'S MARK, AND A WRITE HAS TO HAND IT BACK (`policy-store.ts`,
+   * `revisionOf`). The screen that edits this reads the whole policy and sends the whole of it back
+   * with one thing changed, so a window that read it earlier would write its older copy over
+   * whatever was decided since — a rule gone, `settleWithoutAsking` switched back — with nobody
+   * having decided that.
    */
   routes.get("/policy", requireUser, requireAdminRoute, (context) =>
-    context.json({ policy: policyStore.get() }),
+    context.json({
+      policy: policyStore.get(),
+      revision: policyStore.revision(),
+    }),
   );
 
   routes.put("/policy", requireUser, requireAdminRoute, async (context) => {
@@ -728,17 +741,36 @@ export function createComputerRoutes(
       string,
       unknown
     > | null;
+    // What cannot be a policy at all is that before it is anything else: a body of the wrong
+    // shape was never anybody's copy of the boundary, old or new.
     const parsed = parseActionPolicy(body);
-    if (!parsed.ok) {
-      return context.json(
-        {
-          error: parsed.code,
-          code: parsed.code,
-          ...(parsed.list ? { list: parsed.list } : {}),
-        },
-        400,
-      );
+    if (!parsed.ok && parsed.code !== "laf:policy_rule_retired") {
+      return context.json(policyRefused(parsed), 400);
     }
+    /*
+     * THEN: WHICH BOUNDARY WAS THIS SAVE MADE AGAINST? A save from a window that read an older one
+     * would write that window's copy over whatever was decided since, so it stores nothing and is
+     * told its copy is out of date. A save that names no boundary has read none this server handed
+     * out — a window from before marks existed, which is a window from before an upgrade.
+     *
+     * Asked here and asked again by the store under its one lock (`policy-store.ts`): this answer
+     * is for a save that could never be taken, and the store's is the one nothing gets between.
+     */
+    const revision = typeof body?.revision === "string" ? body.revision : null;
+    if (revision === null || revision !== policyStore.revision()) {
+      return context.json({ error: POLICY_CHANGED, code: POLICY_CHANGED }, 409);
+    }
+    /*
+     * AND ONLY THEN THE RULE THAT IS NOT TAKEN. A copy that is out of date may hold it for no other
+     * reason than being out of date — that is the window this was measured on, holding the policy
+     * as it stood before a migration rewrote that very rule. Told about a rule nobody typed, its
+     * person would be sent to edit a list they should not be saving from at all; told the copy is
+     * old, they are sent to the boundary there is now, where the rule is not. (This server's own
+     * page reads it again by itself. A page loaded before the upgrade knows neither answer and
+     * says only that nothing was saved — true both ways, and reloading it is the way out.)
+     * Somebody who types the old rule into a page that IS current is told about the rule.
+     */
+    if (!parsed.ok) return context.json(policyRefused(parsed), 400);
     /*
      * WHY, WHERE THE CHANGE IS ONE THAT STANDS THE BOUNDARY DOWN.
      *
@@ -752,8 +784,12 @@ export function createComputerRoutes(
     const before = policyStore.get();
     const reason =
       typeof body?.reason === "string" ? body.reason.trim().slice(0, 500) : "";
+    let written: PolicyWrite;
     try {
-      await policyStore.set(parsed.policy, context.var.actor.email);
+      written = await policyStore.set(parsed.policy, {
+        revision,
+        by: context.var.actor.email,
+      });
     } catch {
       /*
        * Saved, or said so. A boundary that is enforced now and gone after the next restart is worse
@@ -764,6 +800,10 @@ export function createComputerRoutes(
         { error: POLICY_NOT_SAVED, code: POLICY_NOT_SAVED },
         503,
       );
+    }
+    // Another save got in between the look above and the write: it stands, and this one does not.
+    if (!written.stored) {
+      return context.json({ error: POLICY_CHANGED, code: POLICY_CHANGED }, 409);
     }
     /*
      * Written after the save, so the trail records boundaries that are actually in force. Its
@@ -796,8 +836,11 @@ export function createComputerRoutes(
       });
     }
     // Echoed back so a caller can see exactly what is now in force rather than assuming its request
-    // was stored verbatim.
-    return context.json({ policy: policyStore.get() });
+    // was stored verbatim — with its mark, which the next save from the same window has to present.
+    return context.json({
+      policy: policyStore.get(),
+      revision: policyStore.revision(),
+    });
   });
 
   return routes;
@@ -829,6 +872,30 @@ const ARGUMENTS_INVALID_BODY: BadRequest = {
  * reading "could not be saved" alone would not know whether anything had been loosened.
  */
 const POLICY_NOT_SAVED = "laf:policy_not_saved";
+
+/**
+ * A policy that was not taken, as the answer that says so: the fact, the list it is about where it
+ * is about one, and for a retired rule which rule and what to write in its place. Facts for the
+ * screen to phrase — it was an English sentence once, printed as the reason a rule was not saved.
+ */
+function policyRefused(
+  refused: Extract<ReturnType<typeof parseActionPolicy>, { ok: false }>,
+) {
+  return {
+    error: refused.code,
+    code: refused.code,
+    ...(refused.list ? { list: refused.list } : {}),
+    ...(refused.rule ? { rule: refused.rule } : {}),
+    ...(refused.replacement ? { replacement: refused.replacement } : {}),
+  };
+}
+
+/**
+ * The boundary in force is not the one this save was made against, so nothing was stored. A 409:
+ * nothing is wrong with the request but when it was made, and the next move is the caller's — read
+ * the boundary again and decide again, which is not something to do on its behalf.
+ */
+const POLICY_CHANGED = "laf:policy_changed";
 
 /**
  * Shared plumbing for acting routes that use this helper: resolve who is asking, run, and map

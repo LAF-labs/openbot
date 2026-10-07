@@ -23,15 +23,25 @@
 -- never pressed the button. `updated_by` and `updated_at` stay: they say who last changed the
 -- boundary, and no person did.
 --
--- WHAT THIS DOES NOT REACH. A policy set in `AGENT_COMPUTER_POLICY` is configuration, not a row.
--- And a standing allowance granted under the old text is kept under that text
--- (`computer_standing_approvals.rule`) and answers for nothing now — the rule is part of an
--- allowance's key so that rewriting a boundary asks again, and this rule's meaning did change. It
--- is still listed, and can still be withdrawn.
+-- AN ALLOWANCE THAT STILL STANDS GOES WITH ITS RULE. An allowance is kept under the rule that asked
+-- (`computer_standing_approvals.rule`: "the rule is part of the key, so rewriting the boundary asks
+-- again"), and that is right when a PERSON rewrites a rule. Here the server did, and left alone the
+-- allowance would be listed under "it no longer asks about" while its file was asked about again.
+-- Moving it widens nothing: an allowance for a write is for one exact file, and every file the old
+-- rule asked about the new one asks about too — a file under `Notes/` has no allowance, because it
+-- was never asked about. A withdrawn one is a record of what was given and taken back, under the
+-- rule it was given under, and stays as it is. Where the same Bot already holds a standing
+-- allowance for the same file under the new rule, the old one is left: two rows cannot stand for
+-- one answer (`computer_standing_approvals_live_idx`), and a migration that failed on that would
+-- be a deployment that did not start.
 --
--- AND IT RUNS ONCE. A window that read the policy before the upgrade writes it back whole on its
--- next save, the old text with it, and nothing where a policy is saved refuses or rewrites that
--- (measured before this shipped: one such save and `Notes/x.md` is written unasked again).
+-- WHAT THIS DOES NOT REACH, AND WHAT DOES. A policy set in `AGENT_COMPUTER_POLICY` is
+-- configuration, not a row; and a migration runs once, while a window that read the policy before
+-- the upgrade would write it back whole on its next save, the old text with it (measured before
+-- this shipped: one such save, and `Notes/x.md` was written unasked again). Both are met where a
+-- policy comes IN: the server refuses this one expression in `ask` or `deny`
+-- (`server/src/computer/policy-store.ts`, `parseActionPolicy`), and stores no save made against a
+-- boundary that is no longer the one in force (`revisionOf`).
 --
 -- Hand-written, in the empty file `drizzle-kit generate --custom` makes: there is no schema change
 -- for `generate` to see, and the snapshot beside it is 0061's with a new id.
@@ -50,3 +60,19 @@ SET
   )
 WHERE 'intent == "write_file" && !matches(file.path, "^notes/")' = ANY ("ask")
    OR 'intent == "write_file" && !matches(file.path, "^notes/")' = ANY ("deny");
+--> statement-breakpoint
+UPDATE "computer_standing_approvals" AS "given"
+SET "rule" = 'intent == "write_file" && file.folder != "notes"'
+WHERE "given"."rule" = 'intent == "write_file" && !matches(file.path, "^notes/")'
+  AND "given"."revoked_at" IS NULL
+  AND NOT EXISTS (
+    SELECT 1
+    FROM "computer_standing_approvals" AS "standing"
+    WHERE "standing"."rule" = 'intent == "write_file" && file.folder != "notes"'
+      AND "standing"."revoked_at" IS NULL
+      AND "standing"."bot_id" = "given"."bot_id"
+      AND "standing"."scope" = "given"."scope"
+      AND "standing"."tier" = "given"."tier"
+      AND coalesce("standing"."thread_id", '') = coalesce("given"."thread_id", '')
+      AND coalesce("standing"."task_id", '') = coalesce("given"."task_id", '')
+  );

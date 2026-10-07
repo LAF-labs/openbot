@@ -2,7 +2,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { inArray, sql, TransactionRollbackError } from "drizzle-orm";
 import { createDatabase } from "../src/db/client";
-import { actionPolicy } from "../src/db/schema";
+import { actionPolicy, agents } from "../src/db/schema";
+import { computerStandingApprovals } from "../src/db/schema/computer";
 import {
   NOTES_PRESET,
   notesPresetMigration,
@@ -13,7 +14,8 @@ import { TEST_POOL } from "./support/database";
 
 /**
  * Migration 0062, run over rows: a stored copy of the boundaries screen's notes preset is rewritten
- * to the rule that preset writes now, and nothing else is.
+ * to the rule that preset writes now, an allowance that still stands under the old rule goes with
+ * it, and nothing else is touched.
  *
  * The statement is run out of the migration file itself (`support/boundary-presets.ts`), over rows
  * of this file's own, and ALL OF IT INSIDE ONE TRANSACTION THAT IS ROLLED BACK — the rows too. The
@@ -206,9 +208,9 @@ describe("migration 0062, over rows", () => {
           })),
         );
         before = await read();
-        await transaction.execute(sql.raw(notesPresetMigration()));
+        await transaction.execute(sql.raw(notesPresetMigration().policy));
         after = await read();
-        await transaction.execute(sql.raw(notesPresetMigration()));
+        await transaction.execute(sql.raw(notesPresetMigration().policy));
         again = await read();
         // The rows go, and anything else the statement wrote goes back the way it was.
         transaction.rollback();
@@ -257,6 +259,176 @@ describe("migration 0062, over rows", () => {
     }
 
     // The second run finds nothing: every row, the rewritten ones too, is the version it was.
+    expect(again).toEqual(after);
+  });
+
+  test("moves an allowance that still stands under the old expression, leaves a withdrawn one and a look-alike, never fails on one that already stands under the new, and a second run moves none", async () => {
+    const named = process.env.DATABASE_URL;
+    if (!named) {
+      throw new Error(
+        "DATABASE_URL names no database, and this test does not assume one.",
+      );
+    }
+    const opened = database ?? createDatabase(named, TEST_POOL);
+    database = opened;
+
+    const BOT = `agent_m62_${run}`;
+    const OTHER_BOT = `agent_m62_other_${run}`;
+    const file = (path: string) => ({
+      scope: `file:${path}`,
+      scopeKind: "file",
+      scopeValue: path,
+      subject: {
+        kind: "file" as const,
+        intent: "write_file" as const,
+        file: { path },
+        reason: "policy_ask" as const,
+      },
+    });
+    /** [what it is, the row, the rule it should hold afterwards] */
+    const GIVEN = [
+      ["for good", { botId: BOT, rule: WAS, ...file("private/report.md") }, IS],
+      [
+        "for one conversation",
+        {
+          botId: BOT,
+          rule: WAS,
+          ...file("private/today.md"),
+          tier: "thread",
+          threadId: `thread-${run}`,
+          expiresAt: new Date("2026-12-31T00:00:00.000Z"),
+        },
+        IS,
+      ],
+      // The same file under the new rule, but another Bot's: no reason to leave this one.
+      ["beside another Bot's", { botId: BOT, rule: WAS, ...file("x.md") }, IS],
+      [
+        "another Bot's, under the new rule",
+        { botId: OTHER_BOT, rule: IS, ...file("x.md") },
+        IS,
+      ],
+      // Withdrawn: a record of what was given and taken back, under the rule it was given under.
+      [
+        "withdrawn",
+        {
+          botId: BOT,
+          rule: WAS,
+          ...file("private/old.md"),
+          revokedAt: WHEN,
+          revokedBy: "owner@m62.test",
+        },
+        WAS,
+      ],
+      // The new rule already has its own standing answer for this file: the old one is left, and
+      // the statement does not fail on the pair (one allowance stands per Bot, rule, scope, width).
+      [
+        "where one already stands",
+        { botId: BOT, rule: WAS, ...file("both.md") },
+        WAS,
+      ],
+      [
+        "the one that already stands",
+        { botId: BOT, rule: IS, ...file("both.md") },
+        IS,
+      ],
+      // Somebody's own rule, a floor's question, and a rule that has nothing to do with it.
+      [
+        "under a look-alike",
+        { botId: BOT, rule: `${WAS} `, ...file("a.md") },
+        `${WAS} `,
+      ],
+      ["under a floor", { botId: BOT, rule: "", ...file("b.md") }, ""],
+      [
+        "under another rule",
+        { botId: BOT, rule: SUBMIT, ...file("c.md") },
+        SUBMIT,
+      ],
+    ] as const;
+    const seeds = GIVEN.map(([what, row]) => ({
+      id: `m62-${what.replaceAll(/[^a-z]+/gi, "-")}-${run}`,
+      grantedBy: "owner@m62.test",
+      grantedAt: WHEN,
+      ...row,
+    }));
+    const ids = seeds.map((seed) => seed.id);
+    const moved = GIVEN.map(([, row, rule]) => rule !== row.rule);
+    // What the seeds are worth: some move, some do not, and the pair that would collide is there.
+    expect(moved.filter(Boolean).length).toBe(3);
+    expect(moved.filter((one) => !one).length).toBe(7);
+
+    const allowance = {
+      id: computerStandingApprovals.id,
+      botId: computerStandingApprovals.botId,
+      rule: computerStandingApprovals.rule,
+      scope: computerStandingApprovals.scope,
+      scopeKind: computerStandingApprovals.scopeKind,
+      scopeValue: computerStandingApprovals.scopeValue,
+      subject: computerStandingApprovals.subject,
+      tier: computerStandingApprovals.tier,
+      threadId: computerStandingApprovals.threadId,
+      taskId: computerStandingApprovals.taskId,
+      expiresAt: computerStandingApprovals.expiresAt,
+      grantedBy: computerStandingApprovals.grantedBy,
+      grantedAt: computerStandingApprovals.grantedAt,
+      revokedAt: computerStandingApprovals.revokedAt,
+      revokedBy: computerStandingApprovals.revokedBy,
+      version: sql<string>`"computer_standing_approvals".ctid::text`,
+    };
+    type Held = Record<string, { rule: string; version: string }>;
+    let before: Held = {};
+    let after: Held = {};
+    let again: Held = {};
+    await opened
+      .transaction(async (transaction) => {
+        const read = async (): Promise<Held> =>
+          Object.fromEntries(
+            (
+              await transaction
+                .select(allowance)
+                .from(computerStandingApprovals)
+                .where(inArray(computerStandingApprovals.id, ids))
+            ).map((row) => [row.id, row]),
+          );
+        await transaction.insert(agents).values(
+          [BOT, OTHER_BOT].map((bot) => ({
+            id: bot,
+            name: bot,
+            type: "remote_ag_ui" as const,
+            configuration: {},
+          })),
+        );
+        await transaction.insert(computerStandingApprovals).values(seeds);
+        before = await read();
+        await transaction.execute(sql.raw(notesPresetMigration().allowances));
+        after = await read();
+        await transaction.execute(sql.raw(notesPresetMigration().allowances));
+        again = await read();
+        // The Bots and their allowances go, and anything else the statement wrote goes back.
+        transaction.rollback();
+      })
+      .catch((error: unknown) => {
+        if (!(error instanceof TransactionRollbackError)) throw error;
+      });
+
+    expect(Object.keys(before).sort()).toEqual([...ids].sort());
+    for (const [at, [what, row, rule]] of GIVEN.entries()) {
+      const id = ids[at] ?? "";
+      const was = before[id];
+      const is = after[id];
+      expect(`${what} · ${was?.rule}`).toBe(`${what} · ${row.rule}`);
+      expect(`${what} · ${is?.rule}`).toBe(`${what} · ${rule}`);
+      // Nothing else about the allowance: whose, for what, how wide, until when, who gave it.
+      expect({ ...is, rule: "", version: "" }).toEqual({
+        ...was,
+        rule: "",
+        version: "",
+      });
+      // Written where its rule moved, and not written at all where it did not.
+      expect(`${what} · ${is?.version !== was?.version}`).toBe(
+        `${what} · ${moved[at]}`,
+      );
+    }
+    // The second run finds nothing to move: every row is the version it was.
     expect(again).toEqual(after);
   });
 });

@@ -8,7 +8,12 @@ import { createApprovalRegistry } from "../src/computer/approvals";
 import { createDemonstrationRecorder } from "../src/computer/demonstration";
 import { createComputerGateway } from "../src/computer/gateway";
 import type { ActionPolicy } from "../src/computer/policy";
-import { createPolicyStore } from "../src/computer/policy-store";
+import {
+  createPolicyStore,
+  NOTES_RULE,
+  RETIRED_NOTES_RULE,
+  revisionOf,
+} from "../src/computer/policy-store";
 import { createComputerRoutes } from "../src/computer/routes";
 import type {
   HumanInput,
@@ -583,7 +588,7 @@ describe("changing the boundary", () => {
      * and never "what was the argument for loosening them" — so the reason goes in the trail, where
      * the next save cannot overwrite it.
      */
-    const { app, rows } = surface(ADMIN);
+    const { app, rows, policyStore } = surface(ADMIN);
 
     const response = await app.request("/policy", {
       method: "PUT",
@@ -591,6 +596,7 @@ describe("changing the boundary", () => {
       body: JSON.stringify({
         ...POLICY,
         reason: "정산 기간이라 사람이 직접 본다",
+        revision: policyStore.revision(),
       }),
     });
 
@@ -608,15 +614,23 @@ describe("changing the boundary", () => {
   test("does not claim the switch moved when only a rule changed", async () => {
     // A row for every rule edit saying the switch is on would bury the few rows where somebody
     // actually moved it, which are the ones an investigator is looking for.
-    const { app, rows } = surface(ADMIN);
+    const { app, rows, policyStore } = surface(ADMIN);
 
     await app.request("/policy", {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ deny: ["submit"], ask: [], allow: ["true"] }),
+      body: JSON.stringify({
+        deny: ["submit"],
+        ask: [],
+        allow: ["true"],
+        revision: policyStore.revision(),
+      }),
     });
 
     const row = rows.find((one) => one.eventType === "computer.policy_changed");
+    // There is a row to say it of: the save was stored.
+    expect(policyStore.get().deny).toEqual(["submit"]);
+    expect(row).toBeDefined();
     expect(row?.payload).not.toHaveProperty("settleWithoutAskingWas");
   });
 
@@ -628,11 +642,283 @@ describe("changing the boundary", () => {
     await app.request("/policy", {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ...POLICY, reason: "왜냐하면" }),
+      body: JSON.stringify({
+        ...POLICY,
+        reason: "왜냐하면",
+        revision: policyStore.revision(),
+      }),
     });
 
     expect(policyStore.get()).not.toHaveProperty("reason");
+    // Nor the mark it was saved against: that is a fact about the save, like the reason.
+    expect(policyStore.get()).not.toHaveProperty("revision");
     expect(policyStore.get().settleWithoutAsking).toBe("off");
+  });
+});
+
+/**
+ * A SAVE IS MADE AGAINST THE BOUNDARY ITS WINDOW READ, AND STORES NOTHING IF THAT IS NOT THE ONE
+ * IN FORCE (`policy-store.ts`, `revisionOf`).
+ *
+ * The boundaries screen reads the whole policy once and sends the whole of it back with one thing
+ * changed. Measured 2026-10-07: a window that was on that screen across an upgrade saved the rule
+ * a migration had just rewritten straight back, and a write to `Notes/x.md` went unasked again.
+ * That is one case of a general one — any window holding an older copy undoes whatever was decided
+ * since, the switch that decides whether anybody is asked at all included — so it is closed for
+ * every save, and the rule that started it is refused by name besides.
+ */
+describe("a save and the boundary it was made against", () => {
+  type Held = { policy: ActionPolicy; revision: string };
+  const PERMISSIVE_AS_READ = { deny: [], ask: [], allow: ["true"] };
+  const changed = (rows: AuditEventInput[]) =>
+    rows.filter((row) => row.eventType === "computer.policy_changed");
+
+  /** A window: what it read, and a save of that with one thing changed — the way the screen saves. */
+  function windowOn(app: ReturnType<typeof surface>["app"]) {
+    let held: Held | undefined;
+    const read = async () => {
+      held = (await (await app.request("/policy")).json()) as Held;
+      return held;
+    };
+    const save = async (change: Partial<ActionPolicy>, revision?: string) => {
+      const response = await app.request("/policy", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ...held?.policy,
+          ...change,
+          ...(revision === undefined
+            ? held
+              ? { revision: held.revision }
+              : {}
+            : { revision }),
+        }),
+      });
+      // Whatever came back, as it came: a refusal's facts are asserted whole, key for key.
+      const body = (await response.json()) as Record<string, unknown>;
+      // As the screen does: a save that was stored is the boundary this window holds now.
+      if (response.ok) held = body as Held;
+      return { status: response.status, code: body.code, body };
+    };
+    return { read, save };
+  }
+
+  test("a read hands out the boundary's mark, and a save made against it is stored and hands out the next", async () => {
+    const { app, policyStore, rows } = surface(ADMIN);
+    const window = windowOn(app);
+
+    const first = await window.read();
+    expect(first.policy).toEqual(PERMISSIVE_AS_READ);
+    expect(first.revision).toBe(policyStore.revision());
+    expect(first.revision.length).toBeGreaterThan(15);
+
+    const saved = await window.save({ ask: ['intent == "activate"'] });
+    expect(saved.status).toBe(200);
+    expect(policyStore.get().ask).toEqual(['intent == "activate"']);
+    // The mark moved with the boundary, the answer carries the new one, and a read agrees.
+    expect(saved.body.revision).not.toBe(first.revision);
+    expect(saved.body.revision).toBe(policyStore.revision());
+    expect((await window.read()).revision).toBe(policyStore.revision());
+    // And the same window's next save, made against what it was handed, is stored too.
+    expect((await window.save({ deny: ["second"] })).status).toBe(200);
+    expect(policyStore.get().deny).toEqual(["second"]);
+    expect(changed(rows)).toHaveLength(2);
+  });
+
+  test("a save that names no boundary stores nothing: a window from before marks existed", async () => {
+    const { app, policyStore, rows } = surface(ADMIN);
+    const before = policyStore.get();
+
+    for (const body of [
+      { deny: [], ask: ["anything"], allow: ["true"] },
+      { deny: [], ask: ["anything"], allow: ["true"], revision: "" },
+      { deny: [], ask: ["anything"], allow: ["true"], revision: 7 },
+      { deny: [], ask: ["anything"], allow: ["true"], revision: null },
+    ]) {
+      const response = await app.request("/policy", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      expect([response.status, await response.json()]).toEqual([
+        409,
+        { error: "laf:policy_changed", code: "laf:policy_changed" },
+      ]);
+    }
+    expect(policyStore.get()).toEqual(before);
+    expect(changed(rows)).toEqual([]);
+  });
+
+  test("a save made against an older boundary stores nothing — not its rules, and not the switch it would have moved back", async () => {
+    const { app, policyStore, rows } = surface(ADMIN);
+    const one = windowOn(app);
+    const two = windowOn(app);
+    await one.read();
+    await two.read();
+
+    // The first window stands the boundary up: a rule, and every question in front of a person.
+    expect(
+      (
+        await one.save({
+          ask: ['intent == "activate"'],
+          settleWithoutAsking: "off",
+        })
+      ).status,
+    ).toBe(200);
+    const stood = policyStore.get();
+
+    // The second still holds the boundary as it was — no rule, the switch on — and adds a rule of
+    // its own to THAT. Stored, it would take the first one's rule away and switch the questions
+    // back to being settled without anybody seeing them.
+    const stale = await two.save({ deny: ["something else"] });
+    expect([stale.status, stale.code]).toEqual([409, "laf:policy_changed"]);
+    expect(stale.body).toEqual({
+      error: "laf:policy_changed",
+      code: "laf:policy_changed",
+    });
+    expect(policyStore.get()).toEqual(stood);
+    expect(policyStore.get().settleWithoutAsking).toBe("off");
+    expect(policyStore.get().ask).toEqual(['intent == "activate"']);
+    expect(policyStore.get().deny).toEqual([]);
+    // One change was made, and the trail has one.
+    expect(changed(rows)).toHaveLength(1);
+  });
+
+  test("two windows in turn: the one that was refused reads again, and its save is taken on top of the other's", async () => {
+    const { app, policyStore, rows } = surface(ADMIN);
+    const one = windowOn(app);
+    const two = windowOn(app);
+    await one.read();
+    await two.read();
+
+    expect((await one.save({ ask: ["first"] })).status).toBe(200);
+    expect((await two.save({ deny: ["second"] })).status).toBe(409);
+    // Reading again is what makes it this window's decision about the boundary there is now.
+    await two.read();
+    expect((await two.save({ deny: ["second"] })).status).toBe(200);
+    expect(policyStore.get()).toEqual({
+      deny: ["second"],
+      ask: ["first"],
+      allow: ["true"],
+    });
+    // And now the first is the one whose copy is old.
+    expect((await one.save({ ask: [] })).status).toBe(409);
+    expect(policyStore.get().ask).toEqual(["first"]);
+    expect(changed(rows)).toHaveLength(2);
+  });
+
+  test("two saves that arrive together were made against one boundary, and one of them is stored", async () => {
+    const { app, policyStore, rows } = surface(ADMIN);
+    const one = windowOn(app);
+    const two = windowOn(app);
+    await one.read();
+    await two.read();
+
+    const [first, second] = await Promise.all([
+      one.save({ ask: ["first"] }),
+      two.save({ deny: ["second"] }),
+    ]);
+    expect([first.status, second.status].sort()).toEqual([200, 409]);
+    // Whichever it was, the boundary is that one's whole and nothing of the other's.
+    expect(policyStore.get()).toEqual(
+      first.status === 200
+        ? { deny: [], ask: ["first"], allow: ["true"] }
+        : { deny: ["second"], ask: [], allow: ["true"] },
+    );
+    expect(changed(rows)).toHaveLength(1);
+  });
+
+  test("a save that changes nothing leaves the mark as it was, so it turns nobody else's window away", async () => {
+    // The mark is the boundary's own digest, not a count of saves: only a boundary that differs
+    // is a different one.
+    const { app, policyStore } = surface(ADMIN);
+    const one = windowOn(app);
+    const two = windowOn(app);
+    const read = await one.read();
+    await two.read();
+
+    expect((await one.save({})).status).toBe(200);
+    expect(policyStore.revision()).toBe(read.revision);
+    expect((await two.save({ ask: ["mine"] })).status).toBe(200);
+    expect(policyStore.get().ask).toEqual(["mine"]);
+  });
+
+  test("the rule this server no longer takes is refused by name, with what to write instead — and nothing is stored", async () => {
+    const { app, policyStore, rows } = surface(ADMIN);
+    const window = windowOn(app);
+    await window.read();
+    const before = policyStore.get();
+
+    for (const list of ["ask", "deny"] as const) {
+      const refused = await window.save({
+        [list]: ["repeat.count >= 5", RETIRED_NOTES_RULE],
+      });
+      expect([list, refused.status, refused.body]).toEqual([
+        list,
+        400,
+        {
+          error: "laf:policy_rule_retired",
+          code: "laf:policy_rule_retired",
+          list,
+          rule: RETIRED_NOTES_RULE,
+          replacement: NOTES_RULE,
+        },
+      ]);
+    }
+    expect(policyStore.get()).toEqual(before);
+    expect(changed(rows)).toEqual([]);
+
+    // The rule that replaced it is taken, in the same window — its copy was never the trouble.
+    expect((await window.save({ ask: [NOTES_RULE] })).status).toBe(200);
+    expect(policyStore.get().ask).toEqual([NOTES_RULE]);
+  });
+
+  test("a window from before the upgrade, saving the old rule back, is told its copy is old — not about a rule nobody typed", async () => {
+    /*
+     * The case that was measured: the copy a window read before a migration rewrote that rule,
+     * sent back whole. It holds the retired rule only because it is out of date, so that is what
+     * it is told — a page that knows the answer then reads the boundary again, where the rule is
+     * not. Told the rule was not taken, its person would be editing a list they should not be
+     * saving from at all.
+     */
+    const { app, policyStore, rows } = surface(ADMIN);
+    const before = policyStore.get();
+    const send = async (body: unknown) => {
+      const response = await app.request("/policy", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      return [
+        response.status,
+        ((await response.json()) as { code: string }).code,
+      ];
+    };
+    const stale = { deny: [], ask: [RETIRED_NOTES_RULE], allow: ["true"] };
+
+    // With no mark at all (a page from before marks existed), and with the mark of a boundary
+    // that is not the one in force (a page from after).
+    expect(await send(stale)).toEqual([409, "laf:policy_changed"]);
+    expect(await send({ ...stale, revision: revisionOf(stale) })).toEqual([
+      409,
+      "laf:policy_changed",
+    ]);
+    // Made against the boundary in force, the same body is somebody typing the old rule in.
+    expect(await send({ ...stale, revision: policyStore.revision() })).toEqual([
+      400,
+      "laf:policy_rule_retired",
+    ]);
+    // And what is no policy at all is said to be that, whatever mark it does or does not carry:
+    // it was never anybody's copy of a boundary, old or new.
+    expect(await send({ deny: "everything" })).toEqual([
+      400,
+      "laf:policy_list_invalid",
+    ]);
+    expect(
+      await send({ deny: "everything", revision: policyStore.revision() }),
+    ).toEqual([400, "laf:policy_list_invalid"]);
+    expect(policyStore.get()).toEqual(before);
+    expect(changed(rows)).toEqual([]);
   });
 });
 
@@ -886,7 +1172,18 @@ describe("the whole surface", () => {
     ["GET", "/bot-1/files/info?path=notes.md"],
     ["GET", "/bot-1/files/download?path=notes.md"],
     ["GET", "/policy"],
-    ["PUT", "/policy", { deny: [], ask: [], allow: ["true"] }],
+    [
+      "PUT",
+      "/policy",
+      // As the screen sends it: with the mark of the boundary it read, which is the one a fresh
+      // surface holds. Without it this is a save against no boundary, and a 409 for everybody.
+      {
+        deny: [],
+        ask: [],
+        allow: ["true"],
+        revision: revisionOf({ deny: [], ask: [], allow: ["true"] }),
+      },
+    ],
   ];
 
   /**

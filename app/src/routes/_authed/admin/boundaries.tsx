@@ -51,17 +51,29 @@ type PolicyChange = ActionPolicy & { reason?: string };
  * `finally` in its save, until that went and these four were next in line. None of them throws.
  */
 
-/** The policy, read: the rules, or the sentence for why they could not be. */
+/**
+ * The policy, read: the rules and the mark of the boundary they are, or the sentence for why they
+ * could not be.
+ *
+ * THE MARK IS WHAT A SAVE HAS TO HAND BACK (`server/src/computer/policy-store.ts`, `revisionOf`).
+ * This page reads the whole policy and sends the whole of it back with one thing changed, so a
+ * window that read it a while ago would write its older copy over whatever was decided since — a
+ * rule somebody added gone, the switch below moved back. The server stores nothing from a window
+ * whose mark is not the boundary in force.
+ */
 async function readPolicy(): Promise<
-  { policy: ActionPolicy } | { problem: string }
+  { policy: ActionPolicy; revision: string } | { problem: string }
 > {
   try {
     const response = await fetch("/api/computers/policy", {
       credentials: "include",
     });
     if (!response.ok) return { problem: t("The boundary could not be read.") };
-    const body = (await response.json()) as { policy: ActionPolicy };
-    return { policy: body.policy };
+    const body = (await response.json()) as {
+      policy: ActionPolicy;
+      revision?: string;
+    };
+    return { policy: body.policy, revision: body.revision ?? "" };
   } catch {
     return { problem: t("The boundary could not be reached.") };
   }
@@ -105,22 +117,36 @@ async function withdrawStanding(id: string): Promise<boolean> {
   }
 }
 
-/** One save of the policy: what the server holds now, or the sentence for why it does not. */
+/** What the server answers a save made against a boundary that is no longer the one in force. */
+const POLICY_CHANGED = "laf:policy_changed";
+
+/**
+ * One save of the policy, made against the boundary this page read: what the server holds now and
+ * its mark, the sentence for why it holds nothing new, or `outOfDate` — the boundary was changed
+ * since this page read it, and nothing was stored.
+ */
 async function putPolicy(
   next: PolicyChange,
-): Promise<{ held: ActionPolicy | null } | { problem: string }> {
+  revision: string,
+): Promise<
+  | { held: ActionPolicy | null; revision: string }
+  | { problem: string }
+  | { outOfDate: true }
+> {
   try {
     const response = await fetch("/api/computers/policy", {
       method: "PUT",
       credentials: "include",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(next),
+      body: JSON.stringify({ ...next, revision }),
     });
     const body = (await response.json().catch(() => null)) as {
       policy?: ActionPolicy;
+      revision?: string;
       code?: string;
     } | null;
     if (!response.ok) {
+      if (body?.code === POLICY_CHANGED) return { outOfDate: true };
       return {
         problem: refusalText(
           BOUNDARY_REFUSALS,
@@ -129,7 +155,7 @@ async function putPolicy(
         ),
       };
     }
-    return { held: body?.policy ?? null };
+    return { held: body?.policy ?? null, revision: body?.revision ?? revision };
   } catch {
     return { problem: t("The boundary could not be reached.") };
   }
@@ -226,9 +252,16 @@ const ASK_PRESETS: Preset[] = [
      * lettering of the name: a write to `Notes/x.md` was not asked about and made a second folder
      * beside the one this label names (pressed on the real computer, on what v0.5.17 ships).
      * `app/tests/boundary-presets.test.ts` keeps that shape out of both tables and both boxes.
+     *
+     * AND THE COST SAYS WHAT THE LABEL DOES NOT COVER. "Writing a file" is the Bot's own file tool
+     * — and a small program's results, which are filed through the same decision. A page's
+     * download (`downloads/`), a file a person attaches (`uploads/`) and a long result set aside
+     * (`.results/`) are put in the folder by the computer or the server, with no question of this
+     * kind in front of them; a label that let somebody believe otherwise would be the boundary
+     * saying more than it does.
      */
     rule: 'intent == "write_file" && file.folder != "notes"',
-    cost: "The folder's name is matched to the letter, capitals included: Notes/ is another folder, and a write there is asked about. Judged on the path as the Bot's computer reads it, so a folder it has not used before is a question rather than a refusal.",
+    cost: "The folder's name is matched to the letter, capitals included: Notes/ is another folder, and a write there is asked about. Judged on the path as the Bot's computer reads it, so a folder it has not used before is a question rather than a refusal. Only a file the Bot writes itself is asked about: a download, a file somebody attaches and a long result set aside go to their own folders without this question.",
   },
 ];
 
@@ -238,6 +271,8 @@ export const Route = createFileRoute("/_authed/admin/boundaries")({
 
 function BoundariesPage() {
   const [policy, setPolicy] = useState<ActionPolicy | null>(null);
+  /** The mark of the boundary `policy` is, as the server gave it: what the next save presents. */
+  const [revision, setRevision] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -270,6 +305,7 @@ function BoundariesPage() {
       return;
     }
     setPolicy(answer.policy);
+    setRevision(answer.revision);
     setProblem(null);
   }, []);
 
@@ -300,27 +336,56 @@ function BoundariesPage() {
    * further down the page, well below the fold — so the rule was gone, and the explanation was
    * somewhere they were not looking.
    */
-  const save = useCallback(async (next: PolicyChange): Promise<boolean> => {
-    setSaving(true);
-    setSaved(false);
-    // `try`…`catch`…`finally`: the `try`…`catch` in `putPolicy`, which never throws, and the
-    // `finally` through `ensure` — the React Compiler cannot compile the statement in a component.
-    return ensure(
-      async () => {
-        const answer = await putPolicy(next);
-        if ("problem" in answer) {
-          setProblem(answer.problem);
-          return false;
-        }
-        // Display the persisted policy in case the server normalized it.
-        if (answer.held) setPolicy(answer.held);
-        setProblem(null);
-        setSaved(true);
-        return true;
-      },
-      () => setSaving(false),
-    );
-  }, []);
+  const save = useCallback(
+    async (next: PolicyChange): Promise<boolean> => {
+      setSaving(true);
+      setSaved(false);
+      // `try`…`catch`…`finally`: the `try`…`catch` in `putPolicy`, which never throws, and the
+      // `finally` through `ensure` — the React Compiler cannot compile the statement in a component.
+      return ensure(
+        async () => {
+          const answer = await putPolicy(next, revision);
+          if ("outOfDate" in answer) {
+            /*
+             * THE BOUNDARY IS NOT THE ONE THIS PAGE WAS SHOWING, so nothing was stored — and the
+             * save is NOT made again on what was just read. What this page was about to send was
+             * its older copy with one thing changed; made again unseen, it would be a decision
+             * about a boundary nobody here has looked at. So the current one is read and shown,
+             * the page says that is what happened, and the person decides again. What they typed
+             * is still in its box: the callers clear it only on a save that was stored.
+             */
+            const current = await readPolicy();
+            if ("problem" in current) {
+              setProblem(current.problem);
+              return false;
+            }
+            setPolicy(current.policy);
+            setRevision(current.revision);
+            setProblem(
+              refusalText(
+                BOUNDARY_REFUSALS,
+                POLICY_CHANGED,
+                t("The boundary could not be saved."),
+              ),
+            );
+            return false;
+          }
+          if ("problem" in answer) {
+            setProblem(answer.problem);
+            return false;
+          }
+          // Display the persisted policy in case the server normalized it.
+          if (answer.held) setPolicy(answer.held);
+          setRevision(answer.revision);
+          setProblem(null);
+          setSaved(true);
+          return true;
+        },
+        () => setSaving(false),
+      );
+    },
+    [revision],
+  );
 
   if (problem && !policy) {
     return (
@@ -338,6 +403,22 @@ function BoundariesPage() {
       </PageShell>
     );
   }
+
+  /**
+   * Whether an allowance still has a question to answer.
+   *
+   * An allowance is kept under the rule that asked (`server/src/computer/standing-approvals.ts`),
+   * and it is looked for under the rule that asks NOW. So when somebody edits or removes that rule,
+   * the allowance is still listed below — under a heading that says "it no longer asks about" —
+   * and answers for nothing: what it covered is asked about again by whichever rule asks, or by
+   * none. Read from the component before a migration made it happen to a preset (2026-10-07), and
+   * true of every rule a person has ever edited. A floor's question is filed under no written rule
+   * (`""`, or `laf:` and the floor's name), so there is nothing of it to go missing.
+   */
+  const stillAnswers = (allowance: StandingAllowance) =>
+    allowance.rule === "" ||
+    allowance.rule.startsWith("laf:") ||
+    [...policy.deny, ...policy.ask, ...policy.allow].includes(allowance.rule);
 
   const addRule = async (rule: string) => {
     const trimmed = rule.trim();
@@ -743,6 +824,13 @@ function BoundariesPage() {
                       )}
                     </span>
                   ) : null}
+                  {stillAnswers(allowance) ? null : (
+                    <span className="text-destructive text-xs">
+                      {t(
+                        "Not in force: the rule this was given under is no longer in the boundary, so it answers for nothing. It can be taken back.",
+                      )}
+                    </span>
+                  )}
                   {allowance.rule ? (
                     <code className="break-all rounded bg-muted px-1.5 py-0.5 font-mono text-muted-foreground text-xs">
                       {allowance.rule}
@@ -903,13 +991,13 @@ const RemoveRule = ({
  * above" glued onto the expression and never passed through `t()`.
  *
  * A RULE A PRESET USED TO WRITE GETS NO WORDS. The notes preset's first expression (a negated
- * `matches`, see `ASK_PRESETS`) is rewritten where it was stored (migration 0062), and it can
- * still come back: a window that was on this screen across the upgrade holds the policy as it
- * read it, and its next save writes that back whole — the old rule over the new one (measured:
- * one such save, and `Notes/x.md` is written unasked again). `AGENT_COMPUTER_POLICY` may hold it
- * too. NOTHING AT THE DOOR OF A SAVE STOPS THAT YET. What this function does about it is not
- * dress it: under the label it had it would say "outside notes/" over a rule that does not ask
- * about `Notes/`, and bare it at least reads as a rule this screen does not offer.
+ * `matches`, see `ASK_PRESETS`) is rewritten where it was stored (migration 0062) and refused
+ * where a policy comes in — a save from this page, or configuration (`policy-store.ts`). It was
+ * measured coming back before that door existed: a window that was on this screen across the
+ * upgrade wrote the policy it had read back whole, and `Notes/x.md` was written unasked again.
+ * Should one be in a list all the same, it is not dressed: under the label it had it would say
+ * "outside notes/" over a rule that does not ask about `Notes/`, and bare it reads as what it
+ * is — a rule this screen does not offer.
  */
 function glossOf(rule: string): string | undefined {
   if (rule === "true") return "Anything not refused above";
