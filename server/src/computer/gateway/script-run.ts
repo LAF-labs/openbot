@@ -351,6 +351,17 @@ export async function madeHeldBy(computer: ComputerClient): Promise<number> {
   );
 }
 
+/**
+ * Whether what stopped `made/` being read is that it is not a folder: where the folder belongs
+ * there is a FILE (the computer's `laf:file_wrong_kind`, of a listing). Then no file of any run
+ * can be filed, and nothing here removes a file — it is so until somebody with the machine moves
+ * what is there. Told apart from the computer not answering because it is not about this moment:
+ * the run's ending says it, once (`MADE_NOT_A_FOLDER`), instead of a failed row for every file.
+ */
+export function isNotAFolder(error: unknown): boolean {
+  return factOfError(error) === "laf:file_wrong_kind";
+}
+
 /** A file that was not filed because `made/` holds all it may, with what it would have come to. */
 export function madeFull(
   held: number,

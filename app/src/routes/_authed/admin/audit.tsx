@@ -281,6 +281,8 @@ function Row({
   const script = scriptOf(payload);
   const ended =
     event.eventType === "computer.script_finished" ? endingOf(payload) : null;
+  const left =
+    event.eventType === "computer.script_files_left" ? leftOf(payload) : null;
   // Killed at a bound, or left with a failing status: the colour a reader skims for.
   const endedBadly = ended?.badly === true;
 
@@ -459,8 +461,12 @@ function Row({
         {/*
          * How a script's run ended: by itself and with what status, or stopped at which bound;
          * how long it took and how much it printed, as a count; and the files it handed back, by
-         * name. Each of those files has a row of its own below this one, where it was filed or
-         * was not.
+         * name. What became of each file is on the rows ABOVE this one — the page is newest
+         * first, and a file is filed after its run has ended: a row of its own for each file
+         * that was tried, where it was filed or was not; one row naming any the filing never
+         * got to (`computer.script_files_left`); or, where none could be filed at all, a line
+         * here that says why (`unfiled`). This comment said "each … has a row of its own below
+         * this one", which was wrong about the direction and about "each" (the second read).
          */}
         {ended ? (
           <div className="mt-0.5 text-xs text-muted-foreground">
@@ -472,6 +478,7 @@ function Row({
               })}
             </div>
             {ended.withheld ? <div>{t(ended.withheld)}</div> : null}
+            {ended.unfiled ? <div>{fact(ended.unfiled)}</div> : null}
             {ended.products.length > 0 ? (
               <div className="mt-0.5 flex flex-wrap items-center gap-1">
                 <span>
@@ -484,6 +491,23 @@ function Row({
                 ))}
               </div>
             ) : null}
+          </div>
+        ) : null}
+        {/*
+         * The files of a run that nobody got to, and why: the filing was stopped, or is waiting
+         * on a question about a file before them. Names, as the ending's row has them.
+         */}
+        {left ? (
+          <div className="mt-0.5 text-xs text-muted-foreground">
+            <div>{t(left.words)}</div>
+            <div className="mt-0.5 flex flex-wrap items-center gap-1">
+              <span>
+                {t("Not tried: {count} files", { count: left.names.length })}
+              </span>
+              {left.names.map((name) => (
+                <Id key={name}>{name}</Id>
+              ))}
+            </div>
           </div>
         ) : null}
         {/*
@@ -627,6 +651,8 @@ function endingOf(payload: Record<string, unknown>): {
   ms: number;
   printed: number;
   withheld: string | undefined;
+  /** Why none of the files was tried, where one thing settled all of them: a fact's code. */
+  unfiled: string | undefined;
   products: string[];
   badly: boolean;
 } | null {
@@ -646,6 +672,7 @@ function endingOf(payload: Record<string, unknown>): {
       typeof payload.productsRefused === "string"
         ? own(SCRIPT_FILES_WITHHELD, payload.productsRefused)
         : undefined,
+    unfiled: typeof payload.unfiled === "string" ? payload.unfiled : undefined,
     products: Array.isArray(payload.products)
       ? payload.products
           .map((product: unknown) =>
@@ -657,6 +684,39 @@ function endingOf(payload: Record<string, unknown>): {
       : [],
     badly: payload.ending !== "exited" || payload.exit !== 0,
   };
+}
+
+/**
+ * WHY THE FILES OF A RUN WERE NEVER TRIED, keyed by the fact its filing ended with
+ * (`server/src/computer/gateway/trail.ts`, `writeScriptFilesLeft`): the caller's Stop, or a
+ * question about a file before them. Read through a variable, so `audit-labels.test.ts` walks
+ * it; a reason this build does not know draws the names and no sentence, rather than a wrong one.
+ */
+export const SCRIPT_FILES_LEFT: Record<string, string> = {
+  "laf:stopped": "The run was stopped before these files were tried",
+  "laf:awaiting_approval":
+    "A person was asked about a file before these, and they wait on that answer",
+};
+
+/** A `computer.script_files_left` row as this page draws it, or null when it names no file. */
+function leftOf(
+  payload: Record<string, unknown>,
+): { words: string; names: string[] } | null {
+  const names = Array.isArray(payload.left)
+    ? payload.left
+        .map((file: unknown) =>
+          file && typeof file === "object"
+            ? (file as { name?: unknown }).name
+            : undefined,
+        )
+        .filter((name): name is string => typeof name === "string")
+    : [];
+  if (names.length === 0) return null;
+  const words =
+    typeof payload.because === "string"
+      ? own(SCRIPT_FILES_LEFT, payload.because)
+      : undefined;
+  return { words: words ?? "These files were not tried", names };
 }
 
 /**
@@ -741,6 +801,8 @@ export const DECISIONS: Record<string, string> = {
   // Not a permission and not a refusal: the permission has its own row, written before the program
   // was sent anywhere. This one says a run ended; the lines beneath say how, and what it made.
   "computer.script_finished": "The program's run ended",
+  // Nothing was decided of these files: the filing ended before it got to them.
+  "computer.script_files_left": "Files it made were left untried",
   "computer.reset": "The computer was reset",
   // A deleted Bot let go of the shared computer: its tabs closed, the account's logins stayed.
   "computer.released": "A deleted Bot let go of the computer",
@@ -1014,6 +1076,10 @@ export const FACTS: Record<string, string> = {
   // there, and a folder can meet it at a few kilobytes (`server/src/audit.ts`, `MADE_FULL`).
   "laf:made_full":
     "The folder for files that programs make holds all it may, so the file was not kept",
+  // Said once, on the run's ending, for every file of it. "Something else": it may be a file a
+  // Bot wrote there by mistake, and a reader of this column can look for it by that name.
+  "laf:made_not_a_folder":
+    "Where programs' files are kept there is something else called made, so none of these was kept",
 };
 
 /**
@@ -1153,6 +1219,7 @@ export const EVENTS: Record<string, string> = {
   "computer.file_downloaded": "A file from the Bot's folder",
   // Drawn only where a row has no tool's name on it; this one does, and takes the table above.
   "computer.script_finished": "A small program's run",
+  "computer.script_files_left": "A small program's files",
   "approval.requested": "A question",
   "approval.granted": "A question",
   "approval.denied": "A question",

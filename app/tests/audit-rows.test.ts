@@ -201,6 +201,10 @@ describe("what counts as the same row", () => {
       { ...ran, products: [{ name: "other.csv", bytes: 9 }] },
       { ...ran, products: [{ name: "out.csv", bytes: 10 }] },
       { ...ran, products: [], productsRefused: "too_many" },
+      // Withheld for another reason: two endings that differ only in WHY nothing came back.
+      { ...ran, products: [], productsRefused: "too_large" },
+      // None of its files tried, for one reason that settles all of them.
+      { ...ran, unfiled: "laf:made_not_a_folder" },
     ];
     const signature = (payload: Record<string, unknown>) =>
       signatureOf(
@@ -240,6 +244,27 @@ describe("what counts as the same row", () => {
       new Set([read(), read("a".repeat(64)), read("b".repeat(64))]).size,
     ).toBe(3);
     expect(read("a".repeat(64))).toBe(read("a".repeat(64)));
+
+    // And the row that names the files nobody got to: which files, and why, are what it is.
+    const left = (because: string, names: string[]) =>
+      signatureOf(
+        event(noonOn("2026-10-07"), "computer.script_files_left", {
+          action: "mcp__workbench__run_script",
+          bot: "bot-1",
+          script: ran.script,
+          because,
+          left: names.map((name) => ({ name, bytes: 1 })),
+        }),
+      );
+    expect(
+      new Set([
+        left("laf:stopped", ["a.csv"]),
+        left("laf:awaiting_approval", ["a.csv"]),
+        left("laf:stopped", ["b.csv"]),
+        left("laf:stopped", ["a.csv", "b.csv"]),
+      ]).size,
+    ).toBe(4);
+    expect(left("laf:stopped", ["a.csv"])).toBe(left("laf:stopped", ["a.csv"]));
   });
 
   test("the same row at a different time is the same row", () => {

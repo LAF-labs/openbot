@@ -11,6 +11,7 @@ import type {
   RunEnding,
 } from "../../../../shared/workbench/protocol";
 import {
+  type AuditFactCode,
   type AuditStore,
   ELEMENT_NOT_IN_SNAPSHOT,
   recordAuditEvent,
@@ -408,6 +409,12 @@ export async function writeScriptFinished(
     productsRefused?: ProductsRefusal | undefined;
     /** How many things it left that were not files to hand back. */
     skipped: number;
+    /**
+     * Present when NONE of the files it handed back will be tried, for one reason that is not
+     * about any one of them: where they are filed there is a file (`laf:made_not_a_folder`).
+     * Said here, once, in place of a failed row for each.
+     */
+    unfiled?: AuditFactCode | undefined;
   },
 ) {
   await recordAuditEvent(auditStore, {
@@ -434,6 +441,44 @@ export async function writeScriptFinished(
         ? { productsRefused: entry.productsRefused }
         : {}),
       skipped: entry.skipped,
+      ...(entry.unfiled ? { unfiled: entry.unfiled } : {}),
+    },
+  });
+}
+
+/**
+ * One row for the files of a run that were never tried, and why.
+ *
+ * Its own writer for the reason the ending has one: nothing is decided here. A file that is
+ * tried has a decision and a row; these have neither, because the filing ended before them — by
+ * the caller's Stop (`laf:stopped`), or at a question about a file before them
+ * (`laf:awaiting_approval`). Field by field, as the ending's row is: a name and a size.
+ */
+export async function writeScriptFilesLeft(
+  auditStore: AuditStore,
+  entry: {
+    toolName: string;
+    botId: string;
+    actor: ActionActor;
+    computerId: string;
+    script: { sha256: string; bytes: number };
+    /** What ended the filing: the fact the call itself ends with. */
+    because: string;
+    left: readonly { name: string; bytes: number }[];
+  },
+) {
+  await recordAuditEvent(auditStore, {
+    eventType: "computer.script_files_left",
+    targetType: "computer",
+    targetId: entry.computerId,
+    ...(entry.actor.userId ? { actorUserId: entry.actor.userId } : {}),
+    payload: {
+      action: entry.toolName,
+      bot: entry.botId,
+      actor: entry.actor.id,
+      script: { sha256: entry.script.sha256, bytes: entry.script.bytes },
+      because: entry.because,
+      left: entry.left.map((file) => ({ name: file.name, bytes: file.bytes })),
     },
   });
 }

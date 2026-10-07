@@ -650,9 +650,11 @@ describe("a script's run and the trail it goes through", () => {
       gateway.runScript(COMPUTER, BOT, ACTOR, { script: SCRIPT, files: [] }),
     ).rejects.toThrow("the trail is not taking rows");
 
-    // It ran — and what it made is dropped, because nothing would say where it came from.
+    // It ran — and what it made is dropped, because nothing would say where it came from. The
+    // folder was looked at first, for what the ending itself may have to say of it; no file
+    // was put.
     expect(sent).toHaveLength(1);
-    expect(computer.asked).toEqual([]);
+    expect(computer.asked).toEqual(["listFiles made"]);
     expect([...computer.files.keys()]).toEqual([]);
   });
 
@@ -1367,11 +1369,22 @@ describe("a script's run that produced no ending", () => {
     );
 
     expect((error as Error).message).toBe("laf:stopped");
-    // It ran and ended, and the row says so; no file followed it.
+    // It ran and ended, and the row says so; no file followed it — and the file the ending
+    // names, which nobody got to and nothing was decided of, is said to have been left.
     expect(said(rows)).toEqual([
       `computer.action_allowed ${RUN_SCRIPT_TOOL}`,
       `computer.script_finished ${RUN_SCRIPT_TOOL}`,
+      `computer.script_files_left ${RUN_SCRIPT_TOOL}`,
     ]);
+    expect(rows[2]?.payload).toEqual({
+      action: RUN_SCRIPT_TOOL,
+      bot: BOT,
+      actor: ACTOR.id,
+      script: { sha256: sha256(SCRIPT), bytes: Buffer.byteLength(SCRIPT) },
+      because: "laf:stopped",
+      left: [{ name: "out.csv", bytes: 1 }],
+    });
+    // A caller that has stopped dials nothing: not the folder's listing either.
     expect(computer.asked).toEqual([]);
   });
 
@@ -1527,8 +1540,10 @@ describe("the files a script made", () => {
     expect(rows[3]?.payload.failure).toBe("laf:file_exists");
   });
 
-  test("a computer that stops answering is not tried once for every file", async () => {
+  test("a computer that stops answering is not tried once for every file — and each file left still has its decision and a row that says it did not happen", async () => {
     const { gateway, rows, computer } = stack({
+      // A rule about a name still decides a file nobody will dial for.
+      policy: denying('intent == "write_file" && file.extension == "exe"'),
       answer: three,
       computer: {
         refusePut: () =>
@@ -1543,16 +1558,148 @@ describe("the files a script made", () => {
 
     expect(run.products.map((product) => product.unfiled)).toEqual([
       "laf:computer_unreachable",
-      "laf:computer_unreachable",
+      "laf:policy_denied",
       "laf:computer_unreachable",
     ]);
     expect(
       computer.asked.filter((call) => call.startsWith("putFile")),
     ).toHaveLength(1);
+    // Every file the ending names has something said of it. Until 2026-10-07 only the first
+    // did: the two after it were on the ending's row and nowhere else.
+    expect(
+      rows
+        .slice(2)
+        .map((row) => [
+          row.eventType,
+          String(row.payload.file).slice(folder.length + 1),
+          row.payload.failure ?? null,
+        ]),
+    ).toEqual([
+      ["computer.action_allowed", "report.xlsx", null],
+      ["computer.action_failed", "report.xlsx", "laf:computer_unreachable"],
+      ["computer.action_refused", "tool.exe", null],
+      ["computer.action_allowed", "notes.txt", null],
+      ["computer.action_failed", "notes.txt", "laf:computer_unreachable"],
+    ]);
+  });
+
+  /*
+   * A FAILURE NOBODY NAMED, WHILE ONE FILE IS PUT, IS THAT FILE'S (the second read). The first
+   * was a name that was half a character: the computer's client throws on it as it writes the
+   * path. It left the loop as itself — the call died after the script had run, the failed row
+   * held an exception's words, the files after it were never tried and the caller was told
+   * nothing. A name like that is no name now (`isProductName`); this is what any other throw
+   * that is not a fact comes to.
+   */
+  test("a throw that is no fact while one file is put is that file's alone: a fact on its row, the next file tried, and the caller has its list", async () => {
+    const { gateway, rows, computer } = stack({
+      answer: three,
+      computer: {
+        refusePut: (path) =>
+          path.endsWith("report.xlsx")
+            ? new URIError("String contained an illegal UTF-16 sequence.")
+            : undefined,
+      },
+    });
+
+    const run = await gateway.runScript(COMPUTER, BOT, actor, {
+      script: SCRIPT,
+      files: [],
+    });
+
+    expect(run.exitCode).toBe(0);
+    expect(run.products).toEqual([
+      { name: "report.xlsx", bytes: 1, unfiled: "laf:computer_failed" },
+      { name: "tool.exe", bytes: 1, path: `${folder}/tool.exe` },
+      { name: "notes.txt", bytes: 1, path: `${folder}/notes.txt` },
+    ]);
     expect(said(rows).slice(2)).toEqual([
       "computer.action_allowed computer_write_file",
       "computer.action_failed computer_write_file",
+      "computer.action_allowed computer_write_file",
+      "computer.action_allowed computer_write_file",
     ]);
+    // A fact, and never what an exception said.
+    expect(rows[3]?.payload.failure).toBe("laf:computer_failed");
+    expect(JSON.stringify(rows)).not.toContain("UTF-16");
+    expect(
+      computer.asked.filter((call) => call.startsWith("putFile")),
+    ).toHaveLength(3);
+  });
+
+  /*
+   * THE FILES NOBODY GOT TO ARE NAMED (the second read). Two things end the filing with files
+   * untried and nothing to decide them by. The ending's row lists every file, so without this
+   * the trail said a file was handed back and never what became of it.
+   */
+  test("a Stop while the second file is put: that file has its rows, and the one after it is named as left", async () => {
+    const stop = new AbortController();
+    const { gateway, rows, computer } = stack({
+      answer: three,
+      computer: {
+        refusePut: (path) => {
+          if (!path.endsWith("tool.exe")) return undefined;
+          stop.abort();
+          return new ComputerUnavailableError("laf:stopped");
+        },
+      },
+    });
+
+    const error = await failure(
+      gateway.runScript(
+        COMPUTER,
+        BOT,
+        actor,
+        { script: SCRIPT, files: [] },
+        stop.signal,
+      ),
+    );
+
+    expect((error as Error).message).toBe("laf:stopped");
+    expect(said(rows).slice(2)).toEqual([
+      "computer.action_allowed computer_write_file",
+      "computer.action_allowed computer_write_file",
+      "computer.action_failed computer_write_file",
+      `computer.script_files_left ${RUN_SCRIPT_TOOL}`,
+    ]);
+    expect(rows.at(-1)?.payload).toMatchObject({
+      because: "laf:stopped",
+      left: [{ name: "notes.txt", bytes: 1 }],
+    });
+    expect([...computer.files.keys()]).toEqual([`${folder}/report.xlsx`]);
+  });
+
+  test("a question about the second file: the one after it is named as left, waiting on that answer", async () => {
+    const { gateway, rows } = stack({
+      policy: asking('intent == "write_file" && file.extension == "exe"'),
+      answer: three,
+    });
+
+    const asked = await failure(
+      gateway.runScript(COMPUTER, BOT, actor, { script: SCRIPT, files: [] }),
+    );
+
+    expect(asked).toBeInstanceOf(ActionNeedsApprovalError);
+    expect(rows.at(-1)?.eventType).toBe("computer.script_files_left");
+    expect(rows.at(-1)?.payload).toMatchObject({
+      script: { sha256: sha256(SCRIPT), bytes: Buffer.byteLength(SCRIPT) },
+      because: "laf:awaiting_approval",
+      left: [{ name: "notes.txt", bytes: 1 }],
+    });
+    // And none is written where the question was about the last file: nothing was left.
+    const last = stack({
+      policy: asking('intent == "write_file" && file.extension == "txt"'),
+      answer: three,
+    });
+    await failure(
+      last.gateway.runScript(COMPUTER, BOT, actor, {
+        script: SCRIPT,
+        files: [],
+      }),
+    );
+    expect(
+      last.rows.filter((row) => row.eventType === "computer.script_files_left"),
+    ).toEqual([]);
   });
 
   test("a question about a file pauses the call, and the same call again with the answer files it where it was asked about", async () => {
@@ -2546,6 +2693,46 @@ describe("a path a rule read one way and the computer would read another", () =>
       expect(existsSync(join(root, "made"))).toBe(false);
       expect(rows.at(-1)?.payload.failure).toBe("laf:workbench_failed");
     }
+  });
+
+  /*
+   * A FILE CALLED `made` (the second read). Where the folder for what programs make belongs,
+   * something had put a file — a Bot's own write will do it. Every file of every run after that
+   * was decided, dialled for and failed (`laf:file_wrong_kind`), a failed row apiece, for good:
+   * nothing here removes a file. The ending says it now, once, and nothing is tried.
+   */
+  test("a file where made/ belongs: the ending says so with a fact of its own, no file is tried, and what is there is left as it was", async () => {
+    const { gateway, root, rows, computer } = overTheDisk(PERMISSIVE, () =>
+      made(["report.csv", "r"], ["notes.txt", "n"]),
+    );
+    writeFileSync(join(root, "made"), "a file, where the folder belongs");
+
+    const run = await gateway.runScript(COMPUTER, BOT, ACTOR, {
+      script: SCRIPT,
+      files: [],
+    });
+
+    expect(run.exitCode).toBe(0);
+    expect(run.products).toEqual([
+      { name: "report.csv", bytes: 1, unfiled: "laf:made_not_a_folder" },
+      { name: "notes.txt", bytes: 1, unfiled: "laf:made_not_a_folder" },
+    ]);
+    // Two rows: the run, and its ending — which names both files and says why neither is kept.
+    expect(rows.map((row) => row.eventType)).toEqual([
+      "computer.action_allowed",
+      "computer.script_finished",
+    ]);
+    expect(rows[1]?.payload).toMatchObject({
+      products: [
+        { name: "report.csv", bytes: 1 },
+        { name: "notes.txt", bytes: 1 },
+      ],
+      unfiled: "laf:made_not_a_folder",
+    });
+    expect(computer.asked).toEqual(["listFiles made"]);
+    expect(readFileSync(join(root, "made"), "utf8")).toBe(
+      "a file, where the folder belongs",
+    );
   });
 
   test("a file a script calls by three spaces does not become a FILE where the run's folder belongs", async () => {

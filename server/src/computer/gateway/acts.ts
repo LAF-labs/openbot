@@ -12,17 +12,23 @@
  */
 import { WORKBENCH_LIMITS } from "../../../../shared/workbench/protocol";
 import {
+  type AuditFactCode,
   type AuditStore,
+  MADE_NOT_A_FOLDER,
   SCRIPT_INPUTS_INVALID,
   WORKBENCH_FAILED,
   WORKBENCH_UNAVAILABLE,
 } from "../../audit";
+import { log } from "../../log";
 import type { Workbench, WorkbenchFile } from "../../workbench/client";
 import { BotIdRefusedError, isBotId } from "../bot-id";
 import {
+  COMPUTER_FAILED,
   type ComputerClient,
   ComputerUnavailableError,
   factOfError,
+  STOPPED,
+  WorkspaceRequestError,
 } from "../client";
 import type {
   ClickInput,
@@ -45,6 +51,7 @@ import { RUN_SCRIPT_TOOL } from "./intent";
 import {
   areProductNames,
   filesNamedBy,
+  isNotAFolder,
   MADE_MAX_BYTES,
   madeDirectoryFor,
   madeFull,
@@ -57,7 +64,7 @@ import {
   type ScriptRunInput,
   scriptDigestOf,
 } from "./script-run";
-import { writeScriptFinished } from "./trail";
+import { writeScriptFilesLeft, writeScriptFinished } from "./trail";
 
 /**
  * An acting input as the computer must receive it: holding the action to the control THIS server
@@ -560,25 +567,33 @@ export function createActs(deps: {
        * this row throws here, and then nothing below runs: no file enters the folder with nothing
        * saying where it came from — the rule a download keeps on the way out (`person-files.ts`).
        */
-      await writeScriptFinished(auditStore, {
-        toolName: RUN_SCRIPT_TOOL,
-        botId,
-        actor,
-        computerId,
-        script,
-        ending: run.ending,
-        exitCode: run.exitCode,
-        signal: run.signal,
-        ms: run.ms,
-        stdoutBytes: run.stdoutBytes,
-        stderrBytes: run.stderrBytes,
-        products: answer.products.map((product) => ({
-          name: product.name,
-          bytes: product.bytes.byteLength,
-        })),
-        productsRefused: run.productsRefused,
-        skipped: run.skipped,
-      });
+      const writeEnding = (unfiled?: AuditFactCode) =>
+        writeScriptFinished(auditStore, {
+          toolName: RUN_SCRIPT_TOOL,
+          botId,
+          actor,
+          computerId,
+          script,
+          ending: run.ending,
+          exitCode: run.exitCode,
+          signal: run.signal,
+          ms: run.ms,
+          stdoutBytes: run.stdoutBytes,
+          stderrBytes: run.stderrBytes,
+          products: answer.products.map((product) => ({
+            name: product.name,
+            bytes: product.bytes.byteLength,
+          })),
+          productsRefused: run.productsRefused,
+          skipped: run.skipped,
+          unfiled,
+        });
+      const products: ScriptProduct[] = [];
+      if (answer.products.length === 0) {
+        // A run that made nothing has nothing to wait its turn for.
+        await writeEnding();
+        return ended(products);
+      }
 
       /*
        * 4. EACH FILE IT MADE, FILED AS THE BOT'S OWN WRITE IS DECIDED: a deployment's rules about
@@ -591,6 +606,15 @@ export function createActs(deps: {
        * refuses one name, a folder that is full, a computer that will not take a file: each is
        * said of that file, with its own row, and the next is tried. Two things do end the call —
        * a question, which is a pause the same call comes back from, and the caller's Stop.
+       *
+       * AND EVERY FILE THE ENDING NAMES IS SAID SOMETHING OF, SOMEWHERE (the second read of this
+       * act, which found three ways one was not). A file that is tried has its decision and what
+       * came of it. After the computer has stopped answering, each file left is still decided —
+       * a rule about its name still refuses it — and its act fails at once with what the
+       * computer said, undialled. Where the filing ends before a file is reached, by a Stop or
+       * at a question, the files after that are named on one row (`writeScriptFilesLeft`). And
+       * where no file can be filed at all because `made` is not a folder, the ending says so
+       * itself.
        */
       const directory = madeDirectoryFor(now(), {
         botId,
@@ -599,24 +623,72 @@ export function createActs(deps: {
         sha256: script.sha256,
         files: script.files,
       });
-      const products: ScriptProduct[] = [];
-      // A run that made nothing has nothing to wait its turn for.
-      if (answer.products.length === 0) return ended(products);
+      /** The files nobody got to, on one row. An observation: it never replaces what ended the call. */
+      const leave = async (
+        left: readonly { name: string; bytes: Uint8Array }[],
+        because: string,
+      ) => {
+        if (left.length === 0) return;
+        try {
+          await writeScriptFilesLeft(auditStore, {
+            toolName: RUN_SCRIPT_TOOL,
+            botId,
+            actor,
+            computerId,
+            script,
+            because,
+            left: left.map((product) => ({
+              name: product.name,
+              bytes: product.bytes.byteLength,
+            })),
+          });
+        } catch (error) {
+          log.error("script_files_left_row_lost", {
+            bot: botId,
+            files: left.length,
+            because,
+            reason: error,
+          });
+        }
+      };
       await oneAtATime(async () => {
         /** What `made/` holds, asked once and only when there is something to file. */
         let held: number | undefined;
         /** The computer stopped answering: what is left is not tried against it one by one. */
         let unreachable: string | undefined;
-        for (const product of answer.products) {
-          const size = product.bytes.byteLength;
-          if (unreachable) {
+        /*
+         * WHAT `made/` IS, ASKED BEFORE THE ENDING IS WRITTEN — for the one answer that settles
+         * every file of this run and is about none of them: where the folder belongs there is a
+         * FILE. Until 2026-10-07 that was found once for each file, each with a decision and a
+         * failed row (`laf:file_wrong_kind`), for every run, for good, since nothing here removes
+         * a file. The ending says it once instead, and nothing is tried.
+         */
+        let unfiled: AuditFactCode | undefined;
+        // Not for a caller that has stopped: nothing will be filed, and nothing is dialled.
+        if (!signal?.aborted) {
+          try {
+            held = await madeHeldBy(as(botId));
+          } catch (error) {
+            if (isNotAFolder(error)) unfiled = MADE_NOT_A_FOLDER;
+            else if (error instanceof ComputerUnavailableError) {
+              unreachable = factOfError(error);
+            }
+            // Anything else is asked again by the first file's own act, and said of that file.
+          }
+        }
+        await writeEnding(unfiled);
+        if (unfiled) {
+          for (const product of answer.products) {
             products.push({
               name: product.name,
-              bytes: size,
-              unfiled: unreachable,
+              bytes: product.bytes.byteLength,
+              unfiled,
             });
-            continue;
           }
+          return;
+        }
+        for (const [index, product] of answer.products.entries()) {
+          const size = product.bytes.byteLength;
           /*
            * COMPOSED HERE, AND READ ONCE LIKE ANY PATH: `govern` is handed the folder and the
            * name, and the computer is sent the path it hands back — which is also where the
@@ -625,6 +697,8 @@ export function createActs(deps: {
            * it, and a path that had no one reading would be refused there, of this file alone.
            */
           const composed = `${directory}/${product.name}`;
+          /** Whether `govern` reached this file's act: its decision is on the trail by then. */
+          let decided = false;
           try {
             let path = composed;
             await govern(
@@ -634,36 +708,77 @@ export function createActs(deps: {
               actor,
               { filePath: composed, forScript: script.sha256, ...carried },
               async (_judged, judgedPath) => {
+                decided = true;
                 path = judgedPath ?? composed;
-                held ??= await madeHeldBy(as(botId));
-                if (held + size > madeMaxBytes) {
-                  throw madeFull(held, size, madeMaxBytes);
+                // Decided, with its row — and not dialled again where a file before it found
+                // the computer gone: the same fact, at once.
+                if (unreachable)
+                  throw new ComputerUnavailableError(unreachable);
+                try {
+                  held ??= await madeHeldBy(as(botId));
+                  if (held + size > madeMaxBytes) {
+                    throw madeFull(held, size, madeMaxBytes);
+                  }
+                  const filed = await as(botId).putFile(path, product.bytes);
+                  held += filed.bytes;
+                  return filed;
+                } catch (error) {
+                  /*
+                   * A FAILURE NOBODY NAMED IS STILL THIS FILE'S, AND IS SAID AS A FACT. A bug
+                   * in putting one file — the first was a name that was half a character, at
+                   * which the computer's client throws — used to leave this loop as itself: the
+                   * failed row held an exception's words, the files after it were never tried
+                   * and the caller was told nothing of a script that had run. It is that file
+                   * not being kept, for a reason nobody named.
+                   */
+                  if (
+                    error instanceof Error &&
+                    error.message.startsWith("laf:")
+                  ) {
+                    throw error;
+                  }
+                  log.error("script_file_not_put", {
+                    bot: botId,
+                    reason: error,
+                  });
+                  throw new WorkspaceRequestError(COMPUTER_FAILED);
                 }
-                const filed = await as(botId).putFile(path, product.bytes);
-                held += filed.bytes;
-                return filed;
               },
             );
             products.push({ name: product.name, bytes: size, path });
           } catch (error) {
-            if (error instanceof ActionNeedsApprovalError) throw error;
-            if (signal?.aborted) throw error;
+            const asked = error instanceof ActionNeedsApprovalError;
+            if (asked || signal?.aborted) {
+              /*
+               * THE CALL ENDS HERE, AND THE FILES IT DID NOT GET TO ARE NAMED. This one has its
+               * own rows where anything was decided of it — the question, a refusal, an act
+               * that was stopped — and is among those left where nothing was: a caller that
+               * has stopped is not governed at all (`govern`).
+               */
+              const said =
+                decided || asked || error instanceof ActionRefusedError;
+              await leave(
+                answer.products.slice(said ? index + 1 : index),
+                asked ? error.code : STOPPED,
+              );
+              throw error;
+            }
             /*
              * A fact about THIS file — the rule that refused its name, the folder being full, what
              * the computer said of it — is said of it, and the next is tried. Anything that is not
-             * a fact is a failure nobody named: a trail that would not take the decision's row, a
-             * bug. That ends the call, rather than being reported as a file the computer declined.
+             * a fact came from `govern` itself, not from the act: a trail that would not take the
+             * decision's row. That ends the call, rather than being reported as a file the
+             * computer declined — nothing below it could be recorded either.
              */
             if (!(error instanceof Error && error.message.startsWith("laf:"))) {
               throw error;
             }
-            const unfiled =
+            const fact =
               error instanceof ActionRefusedError
                 ? error.code
                 : factOfError(error);
-            if (error instanceof ComputerUnavailableError)
-              unreachable = unfiled;
-            products.push({ name: product.name, bytes: size, unfiled });
+            if (error instanceof ComputerUnavailableError) unreachable = fact;
+            products.push({ name: product.name, bytes: size, unfiled: fact });
           }
         }
       });
