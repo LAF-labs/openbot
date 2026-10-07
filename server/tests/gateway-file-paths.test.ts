@@ -511,6 +511,47 @@ describe("a rule about a file holds however the path is written", () => {
     }
   });
 
+  test("a folder's two names are two chances for a rule, in the policy's own order — an allow among them", async () => {
+    const listing = async (policy: ActionPolicy, path: string) => {
+      const { gateway } = await gatewayUnder(policy);
+      return cameOf(() =>
+        gateway.listFiles("default", "bot-1", ACTOR, { path }),
+      );
+    };
+    const THE_FOLDER = 'file.path == "notes"';
+    const WHAT_IS_UNDER_IT = 'matches(file.path, "^notes/")';
+    /*
+     * A policy that allows nothing but the notes folder, named either way. "No rule allows it"
+     * under one name is the absence of a rule; it was weighed like a deny for two commits, and
+     * the folder somebody had allowed was refused under every spelling of it.
+     */
+    for (const allow of [THE_FOLDER, WHAT_IS_UNDER_IT]) {
+      const only: ActionPolicy = { deny: [], ask: [], allow: [allow] };
+      for (const path of ["notes", "notes/", " ./notes/. "]) {
+        expect(
+          `${allow} · ${JSON.stringify(path)} · ${await listing(only, path)}`,
+        ).toBe(`${allow} · ${JSON.stringify(path)} · listed: notes/a.md`);
+      }
+      // And the folder beside it is still one no rule allows.
+      expect(await listing(only, "private")).toBe("laf:no_rule_allows");
+    }
+    // A question under one name comes before an allow under the other, and a deny before both.
+    for (const [first, second] of [
+      [THE_FOLDER, WHAT_IS_UNDER_IT],
+      [WHAT_IS_UNDER_IT, THE_FOLDER],
+    ] as const) {
+      expect(
+        await listing({ deny: [], ask: [first], allow: [second] }, "notes"),
+      ).toBe("asked");
+      expect(
+        await listing(
+          { deny: [first], ask: [second], allow: ["true"] },
+          "notes",
+        ),
+      ).toBe("laf:policy_denied");
+    }
+  });
+
   test("the whole folder, denied, is not listed by a path that is blank or only looks like nothing", async () => {
     const { gateway, rows } = await gatewayUnder(
       allowingAllBut('file.path == "."'),
