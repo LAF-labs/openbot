@@ -209,9 +209,11 @@ export type PolicyContext = {
   /**
    * The file a `computer_read_file` or `computer_write_file` call is aimed at.
    *
-   * The path is as the Bot asked for it, relative to its workspace. Containment is not policy: a path
-   * that tries to escape is refused by the computer itself and is not negotiable. A rule here is about
-   * which files inside the workspace a given Bot may touch.
+   * The path is as the Bot's computer reads it, relative to its workspace: its one spelling, not
+   * the string a model wrote, which is what a rule was asked about until `govern` read every path
+   * once (`gateway/addresses.ts`, `workspacePathOf`). Containment is not policy: a path that tries
+   * to escape is refused by the computer itself and is not negotiable. A rule here is about which
+   * files inside the workspace a given Bot may touch.
    *
    * `name` and `extension` are split out because the rules people actually want are "nothing called
    * *.env" and "nothing under credentials/", and making them write string surgery in CEL to express
@@ -222,6 +224,24 @@ export type PolicyContext = {
     name: string;
     /** Without the dot, and lower-case. Empty for a file with no extension. */
     extension: string;
+    /**
+     * The path's top-level folder, TO THE LETTER: `notes` for `notes/2026/a.md`, empty for a file at
+     * the top. For a listing the path is itself a folder, so it is that path's first name — `notes`
+     * for a listing of `notes` — and empty for the whole folder. Empty, too, for a string the
+     * computer refuses as a path (`notes/../x`): that is in no folder, whatever its first name.
+     *
+     * HERE BECAUSE THE OTHER WAY TO NAME A FOLDER IGNORES LETTER CASE. `matches` and `contains`
+     * (below) do, on purpose: "never click submit" has to catch SUBMIT. That is right for
+     * forbidding and wrong for EXEMPTING. The boundaries screen offered "ask before writing a file
+     * outside notes/" as `!matches(file.path, "^notes/")`, a deployment's disk tells `Notes` from
+     * `notes`, and so a write to `Notes/x.md` was not asked about and made a second folder beside
+     * the one the label names (pressed on the real computer, 2026-10-07, on what v0.5.17 ships).
+     * A rule that exempts a folder compares this with `==` or `!=`, which are exact.
+     *
+     * Always present, like the three above, and empty where there is no file: an absent field
+     * throws inside CEL, and a rule that throws refuses or asks (`gateway/govern.ts`).
+     */
+    folder: string;
   };
   /**
    * The MCP server and tool a call is aimed at.

@@ -219,8 +219,16 @@ const ASK_PRESETS: Preset[] = [
   },
   {
     label: "Ask before writing a file outside notes/",
-    rule: 'intent == "write_file" && !matches(file.path, "^notes/")',
-    cost: "Matches on the file's path as the Bot's computer reads it, so a folder it has not used before is a question rather than a refusal.",
+    /*
+     * `file.folder`, COMPARED EXACTLY — not a negated `matches` on the path, which this was until
+     * 2026-10-07. `matches` and `contains` ignore letter case on purpose (the rule above has to
+     * catch SUBMIT), a deployment's disk does not, and a rule that EXEMPTS by one exempts every
+     * lettering of the name: a write to `Notes/x.md` was not asked about and made a second folder
+     * beside the one this label names (pressed on the real computer, on what v0.5.17 ships).
+     * `app/tests/boundary-presets.test.ts` keeps that shape out of both tables and both boxes.
+     */
+    rule: 'intent == "write_file" && file.folder != "notes"',
+    cost: "The folder's name is matched to the letter, capitals included: Notes/ is another folder, and a write there is asked about. Judged on the path as the Bot's computer reads it, so a folder it has not used before is a question rather than a refusal.",
   },
 ];
 
@@ -515,7 +523,7 @@ function BoundariesPage() {
               if (isImeKey(event)) return;
               if (event.key === "Enter") void addAskRule(askDraft);
             }}
-            placeholder='intent == "write_file" && !matches(file.path, "^notes/")'
+            placeholder='intent == "write_file" && file.folder != "notes"'
             value={askDraft}
           />
           <Button
@@ -893,6 +901,15 @@ const RemoveRule = ({
  * Both preset tables plus the one rule the server ships that no preset wrote — `true`, the default
  * allow, which the list used to gloss with the English half-sentence "true, anything not refused
  * above" glued onto the expression and never passed through `t()`.
+ *
+ * A RULE A PRESET USED TO WRITE GETS NO WORDS. The notes preset's first expression (a negated
+ * `matches`, see `ASK_PRESETS`) is rewritten where it was stored (migration 0062), and it can
+ * still come back: a window that was on this screen across the upgrade holds the policy as it
+ * read it, and its next save writes that back whole — the old rule over the new one (measured:
+ * one such save, and `Notes/x.md` is written unasked again). `AGENT_COMPUTER_POLICY` may hold it
+ * too. NOTHING AT THE DOOR OF A SAVE STOPS THAT YET. What this function does about it is not
+ * dress it: under the label it had it would say "outside notes/" over a rule that does not ask
+ * about `Notes/`, and bare it at least reads as a rule this screen does not offer.
  */
 function glossOf(rule: string): string | undefined {
   if (rule === "true") return "Anything not refused above";

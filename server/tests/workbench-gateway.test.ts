@@ -1677,6 +1677,63 @@ describe("the files a script made", () => {
     expect(run.stdout).toBe("the total is 42\n");
   });
 
+  test("the folder a rule compares to the letter is said of a run's files too: what it makes is in `made`, and what it reads is where it is", async () => {
+    /*
+     * `file.folder` is made in one place — `govern` — and a run's reads and its filings go through
+     * it like the Bot's own. So a rule that exempts or forbids a folder by its name, to the letter
+     * (`gateway/addresses.ts`, `describeFile`), means for a run what it means for a write.
+     */
+    const making = stack({
+      policy: denying('intent == "write_file" && file.folder == "made"'),
+      answer: three,
+    });
+    const run = await making.gateway.runScript(COMPUTER, BOT, actor, {
+      script: SCRIPT,
+      files: [],
+    });
+    expect(run.products.map((product) => product.unfiled)).toEqual([
+      "laf:policy_denied",
+      "laf:policy_denied",
+      "laf:policy_denied",
+    ]);
+    expect([...making.computer.files.keys()]).toEqual([]);
+
+    // Another lettering of the name is another folder: that rule is about nothing a run makes.
+    const lettered = stack({
+      policy: denying('intent == "write_file" && file.folder == "Made"'),
+      answer: three,
+    });
+    const filed = await lettered.gateway.runScript(COMPUTER, BOT, actor, {
+      script: SCRIPT,
+      files: [],
+    });
+    expect(filed.products.map((product) => product.path)).toEqual([
+      `${folder}/report.xlsx`,
+      `${folder}/tool.exe`,
+      `${folder}/notes.txt`,
+    ]);
+
+    // And a file a run names is in the folder its path begins with: the one in `uploads` ends the
+    // call before any code runs, after the one in `notes` was read.
+    const reading = stack({
+      policy: denying('intent == "read_file" && file.folder == "uploads"'),
+      folder: {
+        "notes/sales.csv": bytes("1"),
+        "uploads/sales.csv": bytes("2"),
+      },
+    });
+    const refused = (await failure(
+      reading.gateway.runScript(COMPUTER, BOT, actor, {
+        script: SCRIPT,
+        files: ["notes/sales.csv", "uploads/sales.csv"],
+      }),
+    )) as ActionRefusedError;
+    expect(refused).toBeInstanceOf(ActionRefusedError);
+    expect(refused.code).toBe("laf:policy_denied");
+    expect(reading.sent).toEqual([]);
+    expect(reading.computer.asked).toEqual(["fileBytes notes/sales.csv"]);
+  });
+
   test("a put never replaces: a name already there is said of that file, and the next is tried", async () => {
     const { gateway, rows, computer } = stack({
       folder: { [`${folder}/report.xlsx`]: bytes("the one from before") },

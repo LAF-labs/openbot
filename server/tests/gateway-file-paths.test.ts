@@ -5,6 +5,7 @@ import {
   readdir,
   readFile as readDisk,
   rm,
+  stat,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -28,6 +29,7 @@ import {
   createComputerGateway,
 } from "../src/computer/gateway";
 import {
+  describeFile,
   hasNoOneReading,
   workspacePathOf,
 } from "../src/computer/gateway/addresses";
@@ -35,6 +37,11 @@ import type { ActionPolicy } from "../src/computer/policy";
 import type { SnapshotResult } from "../src/computer/schema";
 import { createStandingApprovalStore } from "../src/computer/standing-approvals";
 import { createUnattendedTools } from "../src/runner/unattended";
+import {
+  NOTES_PRESET,
+  presetOnTheScreen,
+  RETIRED_NOTES_RULE,
+} from "./support/boundary-presets";
 import {
   A_SPACED_NAME,
   EVERY_SPELLING,
@@ -625,22 +632,24 @@ describe("a rule about a file holds however the path is written", () => {
     ).toEqual([".", ".", ".", "."]);
   });
 
-  // By a SPELLING. By letter case it is walked past — `matches` ignores case and a VM's disk does
-  // not, so `Notes/x.md` lands unasked. That is the rule's own fault and the pull request after
-  // this one; nothing here tries it.
-  test("the preset that asks about a write outside notes/ is not walked past by a spelling: nothing lands outside it unasked", async () => {
+  // By a spelling, and by a letter's case. Until 2026-10-07 the preset was a negated `matches`,
+  // which ignores case, and this test said so and tried no other lettering ("a folder a rule
+  // exempts is named to the letter", below, is what came of trying).
+  test("the preset that asks about a write outside notes/ is not walked past by a spelling or a letter's case: nothing lands outside it unasked", async () => {
     const policy: ActionPolicy = {
       deny: [],
-      // As the boundaries screen offers it (`app/src/routes/_authed/admin/boundaries.tsx`).
-      ask: ['intent == "write_file" && !matches(file.path, "^notes/")'],
+      // As the boundaries screen offers it, read off the screen (`support/boundary-presets.ts`).
+      ask: [presetOnTheScreen(NOTES_PRESET)],
       allow: ["true"],
     };
-    const { gateway } = await gatewayUnder(policy);
+    const { gateway, sent } = await gatewayUnder(policy);
     const before = new Set(await everything());
     let unasked = 0;
     for (const path of [
       ...spellingsOf("notes/b.md"),
       ...spellingsOf(" notes/b.md"),
+      ...spellingsOf("Notes/b.md"),
+      ...spellingsOf("NOTES/b.md"),
       ...spellingsOf("private/report.md"),
       ...spellingsOf("report.md"),
     ]) {
@@ -655,13 +664,16 @@ describe("a rule about a file holds however the path is written", () => {
     expect(landed.filter((file) => !file.startsWith("notes/"))).toEqual([]);
     expect(landed).toContain("notes/b.md");
     expect(unasked).toBeGreaterThan(10);
+    // And by what the computer was HANDED, which says the same on every disk: a laptop's takes
+    // `Notes/b.md` for `notes/b.md`, so there the lines above cannot see another lettering land.
+    expect(sent.filter((path) => !path.startsWith("notes/"))).toEqual([]);
   });
 
   test("an allowance for one file is not spent on a write that lands beside it", async () => {
     // The second read's case: the preset, an allowance somebody gave for `private/report.md`, and
     // a path that is a folder called " private" to the computer. An allowance's scope trims its
     // path once more (`standing-approvals.ts`, `allowanceFor`).
-    const rule = 'intent == "write_file" && !matches(file.path, "^notes/")';
+    const rule = presetOnTheScreen(NOTES_PRESET);
     const standing = createStandingApprovalStore();
     await standing.grant({
       botId: "bot-1",
@@ -707,6 +719,630 @@ describe("a rule about a file holds however the path is written", () => {
       expect(`${JSON.stringify(beside)} · ${came}`).not.toContain("done");
     }
     expect(await everything()).toEqual(before);
+  });
+});
+
+/**
+ * A FOLDER A RULE EXEMPTS IS NAMED TO THE LETTER (`file.folder`; `addresses.ts`, `describeFile`).
+ *
+ * `matches` and `contains` ignore letter case, on purpose, and a deployment's disk does not. The
+ * boundaries screen's "ask before writing a file outside notes/" was a negated `matches`: pressed
+ * on the real computer with it in force (2026-10-07, on what v0.5.17 ships), `Notes/press-case.md`
+ * and `NOTES/press-case.md` were written without a question into two new folders beside `notes/`.
+ * A match that ignores case is safe as a prohibition and unsafe as an exemption.
+ *
+ * A LAPTOP'S DISK DOES NOT TELL LETTER CASE APART AND CI'S DOES. So what is asserted here is what
+ * means the same on both — whether a person was asked, what the question and its row say, what
+ * the computer was handed — and what landed is said for the disk it landed on.
+ */
+describe("a folder a rule exempts is named to the letter", () => {
+  type Gateway = Awaited<ReturnType<typeof gatewayUnder>>["gateway"];
+  type Act = (gateway: Gateway) => Promise<unknown>;
+  const write =
+    (path: string): Act =>
+    (gateway) =>
+      gateway.writeFile("default", "bot-1", ACTOR, { path, contents: "x" });
+  const read =
+    (path: string): Act =>
+    (gateway) =>
+      gateway.readFile("default", "bot-1", ACTOR, { path });
+  const list =
+    (path?: string): Act =>
+    (gateway) =>
+      gateway.listFiles(
+        "default",
+        "bot-1",
+        ACTOR,
+        path === undefined ? {} : { path },
+      );
+  const upload =
+    (path: string): Act =>
+    (gateway) =>
+      gateway.uploadFile("default", "bot-1", ACTOR, { ...TARGET, path });
+
+  /** The policy with one rule that asks, and everything else allowed. */
+  const asking = (...ask: string[]): ActionPolicy => ({
+    deny: [],
+    ask,
+    allow: ["true"],
+  });
+  const requested = (row: AuditEventInput) =>
+    row.eventType === "approval.requested";
+
+  /**
+   * Names made to be taken for `notes` by anything that tidies a name before it compares it. Each
+   * is another folder on a deployment's disk, and a path under it is its own one spelling.
+   *
+   * Written as escapes wherever a letter cannot be seen, or is drawn like another one.
+   */
+  const LOOKS_LIKE_NOTES = [
+    "Notes",
+    "NOTES",
+    "nOtes",
+    "notes2",
+    "notes ",
+    "notes.",
+    "notes..",
+    ".notes",
+    "notes.d",
+    "_notes",
+    // A Cyrillic letter for the fourth, and the whole name in full-width letters.
+    "not\u0435s",
+    "\uff4e\uff4f\uff54\uff45\uff53",
+    // Letters that take no room: a zero-width non-joiner, space and joiner, a byte-order mark and
+    // a soft hyphen. None is white space to a trim, but for a mark at the very edge of a path.
+    "no\u200ctes",
+    "notes\u200b",
+    "\u200dnotes",
+    "no\ufefftes",
+    "no\u00adtes",
+    // Control characters, and an accent that is a letter of its own.
+    "\u0012notes",
+    "notes\u0001",
+    "note\u0301s",
+  ] as const;
+
+  /**
+   * The folders these tests expect, each as a rule that asks.
+   *
+   * A rule cannot say what it was handed, only whether it matched. So every candidate is in force
+   * at once, and the one a question names is the folder the rule was handed — to the letter, since
+   * `==` is exact.
+   */
+  const CANDIDATES = [
+    "",
+    "notes",
+    "Notes",
+    "NOTES",
+    "private",
+    "Private",
+  ] as const;
+  const folderIs = (folder: string) =>
+    `file.folder == ${JSON.stringify(folder)}`;
+  async function folderHanded(act: Act, rule = folderIs): Promise<string> {
+    const { gateway } = await gatewayUnder(asking(...CANDIDATES.map(rule)));
+    const asked = await act(gateway).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    if (!(asked instanceof ActionNeedsApprovalError)) return "(no candidate)";
+    const folder = CANDIDATES.find(
+      (candidate) => rule(candidate) === asked.rule,
+    );
+    return folder === undefined ? "(another rule)" : JSON.stringify(folder);
+  }
+
+  test("`file.folder` is the first name of a file's path when it has more than one, and of a folder's path whatever it has", () => {
+    // [a path in its one spelling, its folder as a file, its folder as a folder]
+    const TABLE = [
+      ["notes/a.md", "notes", "notes"],
+      ["notes/2026/10/a.md", "notes", "notes"],
+      // At the top: a file is in no folder, and a folder is in itself.
+      ["a.md", "", "a.md"],
+      ["notes", "", "notes"],
+      [".env", "", ".env"],
+      // The whole folder is in none, whatever it is taken for.
+      [".", "", ""],
+      // TO THE LETTER. No case folded, nothing trimmed off a name, no look-alike made the same —
+      // each of these is another folder on a deployment's disk.
+      ["Notes/a.md", "Notes", "Notes"],
+      ["NOTES/a.md", "NOTES", "NOTES"],
+      ["nOtes/a.md", "nOtes", "nOtes"],
+      ["notes2/a.md", "notes2", "notes2"],
+      ["notes /a.md", "notes ", "notes "],
+      ["notes.d/a.md", "notes.d", "notes.d"],
+      // The fourth letter is Cyrillic.
+      ["not\u0435s/a.md", "not\u0435s", "not\u0435s"],
+      ["가게/매출 정리.csv", "가게", "가게"],
+      ["a/ b /c", "a", "a"],
+    ] as const;
+    for (const [path, asFile, asFolder] of TABLE) {
+      // The table is of spellings: what `govern` hands over.
+      expect(workspacePathOf(path)).toBe(path);
+      expect(`${path} · ${describeFile(path, "file").folder}`).toBe(
+        `${path} · ${asFile}`,
+      );
+      expect(`${path} · ${describeFile(path, "folder").folder}`).toBe(
+        `${path} · ${asFolder}`,
+      );
+    }
+    // One name in Hangul, composed and decomposed, is two folders to a deployment's disk and two
+    // here: nothing is normalised on the way to a rule.
+    const composed = "메모";
+    const decomposed = composed.normalize("NFD");
+    expect(decomposed).not.toBe(composed);
+    expect(describeFile(`${decomposed}/a.md`, "file").folder).toBe(decomposed);
+    // ONLY A SPELLING IS IN A FOLDER. A string the computer refuses as a path is nowhere, and
+    // one that is merely not spelled yet is told no folder rather than the wrong one.
+    for (const nowhere of [
+      "notes/../x.md",
+      "notes/../../etc/passwd",
+      "/notes/x.md",
+      "notes/a\0b",
+      "..",
+      " notes/x.md",
+      "./notes/x.md",
+      "notes//x.md",
+      "notes/x.md/",
+      "notes\\x.md",
+    ]) {
+      expect(workspacePathOf(nowhere)).not.toBe(nowhere);
+      for (const names of ["file", "folder"] as const) {
+        expect(
+          `${JSON.stringify(nowhere)} · ${describeFile(nowhere, names).folder}`,
+        ).toBe(`${JSON.stringify(nowhere)} · `);
+      }
+    }
+    // And what the path names changes nothing else about the description.
+    for (const [path] of TABLE) {
+      const { folder: _file, ...asFile } = describeFile(path, "file");
+      const { folder: _folder, ...asFolder } = describeFile(path, "folder");
+      expect(asFolder).toEqual(asFile);
+    }
+    // What the path names has NO DEFAULT, which is all that keeps a caller from leaving a listing
+    // judged as a file. `bun run typecheck` reads this file: give `describeFile` a default and the
+    // directive below is the error.
+    // @ts-expect-error — the second argument is required.
+    describeFile("notes/a.md");
+  });
+
+  test("to the letter is an identity, not a list: a path's folder is its first name, code unit for code unit", () => {
+    /*
+     * An independent read of this change dropped zero-width characters from the folder, then
+     * trailing dots, then control characters, then folded full-width letters: four edits, each of
+     * which let a write land beside `notes/` unasked, and each of which passed every test — the
+     * table above holds the letterings somebody thought of. So: whatever a path's first name is,
+     * that is its folder, whole, over names made to be taken for `notes` and over every spelling
+     * this file has.
+     */
+    for (const name of LOOKS_LIKE_NOTES) {
+      for (const [path, names] of [
+        [`${name}/x.md`, "file"],
+        [`${name}/2026`, "folder"],
+      ] as const) {
+        expect(workspacePathOf(path)).toBe(path);
+        const { folder } = describeFile(path, names);
+        expect(`${JSON.stringify(path)} · ${JSON.stringify(folder)}`).toBe(
+          `${JSON.stringify(path)} · ${JSON.stringify(name)}`,
+        );
+        expect(folder).not.toBe("notes");
+      }
+    }
+    let spelled = 0;
+    for (const written of EVERY_SPELLING) {
+      const path = workspacePathOf(written);
+      if (path === null || !path.includes("/")) continue;
+      const first = path.slice(0, path.indexOf("/"));
+      expect(describeFile(path, "file").folder).toBe(first);
+      expect(describeFile(path, "folder").folder).toBe(first);
+      spelled++;
+    }
+    expect(spelled).toBeGreaterThan(300);
+  });
+
+  test("what a rule is handed as `file.folder` is of the path's one spelling, and of what the path names", async () => {
+    const HANDED: [string, Act, string][] = [
+      // A file under a folder: that folder, however deep the file and however the path was written.
+      ["a write to notes/2026/a.md", write("notes/2026/a.md"), "notes"],
+      ["a write to ' ./notes//a.md '", write(" ./notes//a.md "), "notes"],
+      ["a write to './Notes//x.md '", write("./Notes//x.md "), "Notes"],
+      ["a write to NOTES/x.md", write("NOTES/x.md"), "NOTES"],
+      ["a read of 'private/pay.csv '", read("private/pay.csv "), "private"],
+      ["an upload of ./notes/a.md", upload("./notes/a.md"), "notes"],
+      ["an upload of .env", upload(".env"), ""],
+      // A file at the top is in no folder — one CALLED notes too.
+      ["a write to x.md", write("x.md"), ""],
+      ["a write to a file called notes", write("notes"), ""],
+      ["a read of .env/", read(".env/"), ""],
+      // A listing's path IS a folder: its first name, whatever else it has.
+      ["a listing of notes", list("notes"), "notes"],
+      ["a listing of notes/", list("notes/"), "notes"],
+      ["a listing of ' ./notes/. '", list(" ./notes/. "), "notes"],
+      ["a listing of notes/2026", list("notes/2026"), "notes"],
+      ["a listing of Private", list("Private"), "Private"],
+      // The whole folder is in none, by every way of asking for it.
+      ["a listing of .", list("."), ""],
+      ["a listing of a blank", list(" "), ""],
+      ["a listing of nothing", list(), ""],
+    ];
+    for (const [what, act, folder] of HANDED) {
+      expect(`${what} · ${await folderHanded(act)}`).toBe(
+        `${what} · ${JSON.stringify(folder)}`,
+      );
+    }
+  });
+
+  test("a listing's folder is one fact under both of the folder's names", async () => {
+    // Only a name that ends in a slash can match these, and only a listing is asked about under one
+    // (`govern.ts`, `folderToo`).
+    const underTheSlashName = (folder: string) =>
+      `matches(file.path, "/$") && ${folderIs(folder)}`;
+    for (const [path, folder] of [
+      ["notes", "notes"],
+      ["notes/", "notes"],
+      ["notes/2026", "notes"],
+      [" ./Private/. ", "Private"],
+    ] as const) {
+      expect(
+        `${path} · ${await folderHanded(list(path), underTheSlashName)}`,
+      ).toBe(`${path} · ${JSON.stringify(folder)}`);
+    }
+    // The whole folder has one name and so has a file: neither is asked about under a second.
+    expect(await folderHanded(list("."), underTheSlashName)).toBe(
+      "(no candidate)",
+    );
+    expect(await folderHanded(write("notes/x.md"), underTheSlashName)).toBe(
+      "(no candidate)",
+    );
+  });
+
+  test("under the preset a write is asked about unless its folder is `notes` to the letter", async () => {
+    const preset = presetOnTheScreen(NOTES_PRESET);
+    const { gateway, sent, rows } = await gatewayUnder(asking(preset));
+    const before = await everything();
+    // [the path as it was written, the path the question is about]
+    const ASKED: [string, string][] = [
+      // Every name that only looks like the folder's: another lettering, a letter more or less,
+      // a letter nobody can see.
+      ...LOOKS_LIKE_NOTES.map((name): [string, string] => [
+        `${name}/x.md`,
+        `${name}/x.md`,
+      ]),
+      ["x.md", "x.md"],
+      ["./Notes//x.md ", "Notes/x.md"],
+      // A FILE called notes at the top is not in the folder, and nor is a folder of that name
+      // inside another.
+      ["notes", "notes"],
+      ["notes.md", "notes.md"],
+      ["private/notes/x.md", "private/notes/x.md"],
+    ];
+    for (const [written, spelling] of ASKED) {
+      const came = await write(written)(gateway).then(
+        () => "written, and nobody was asked",
+        (error: unknown) => error,
+      );
+      expect(
+        `${JSON.stringify(written)} · ${came instanceof ActionNeedsApprovalError ? "asked" : String(came)}`,
+      ).toBe(`${JSON.stringify(written)} · asked`);
+      const question = came as ActionNeedsApprovalError;
+      expect(question.rule).toBe(preset);
+      expect(question.subject).toMatchObject({
+        kind: "file",
+        intent: "write_file",
+        file: { path: spelling },
+      });
+    }
+    // Nothing was handed to the computer, nothing is on the disk, and each attempt has the row
+    // that says a person was asked — about the path in its one spelling.
+    expect(sent).toEqual([]);
+    expect(await everything()).toEqual(before);
+    expect(rows.map((row) => [row.eventType, row.payload.file])).toEqual(
+      ASKED.map(([, spelling]) => ["approval.requested", spelling]),
+    );
+
+    // Inside `notes/`, however it is written and however deep: written, and nobody is asked.
+    for (const written of ["notes/x.md", " ./notes//x.md ", "notes/sub/x.md"]) {
+      expect(
+        `${JSON.stringify(written)} · ${await cameOf(() => write(written)(gateway))}`,
+      ).toBe(`${JSON.stringify(written)} · done`);
+    }
+    expect(sent).toEqual(["notes/x.md", "notes/x.md", "notes/sub/x.md"]);
+    expect(rows.filter(requested).length).toBe(ASKED.length);
+    expect(
+      (await everything()).filter((file) => !before.includes(file)).sort(),
+    ).toEqual(["notes/sub/x.md", "notes/x.md"]);
+  });
+
+  test("the preset asks about a write and about nothing else: no read, listing or upload is asked about, in notes/ or out of it", async () => {
+    const { gateway, rows } = await gatewayUnder(
+      asking(presetOnTheScreen(NOTES_PRESET)),
+    );
+    const came: string[] = [];
+    for (const act of [
+      read("notes/a.md"),
+      read("Notes/a.md"),
+      read("private/pay.csv"),
+      read(".env"),
+      read("x.md"),
+      list("notes"),
+      list("Notes"),
+      list("private"),
+      list("."),
+      list(),
+      upload("notes/a.md"),
+      upload("private/pay.csv"),
+    ]) {
+      came.push(await cameOf(() => act(gateway)));
+    }
+    // What a read under another lettering comes to is the disk's to say — a laptop's reads
+    // `Notes/a.md` as the note and a deployment's has no such file — so it is the question that
+    // is asserted, and not what was read.
+    expect(came.filter((one) => one === "asked")).toEqual([]);
+    expect(rows.filter(requested)).toEqual([]);
+    // And these were acts, not refusals of another kind: the payroll was read, and handed over.
+    expect(came).toContain(`read: ${PAYROLL}`);
+    expect(came).toContain(`handed: ${PAYROLL}`);
+  });
+
+  test("the reason this exists: the rule the preset wrote until 2026-10-07 does not ask about Notes/x.md, and it lands beside notes/", async () => {
+    // Asked of the disk before anything is written to it: a deployment's tells `NOTES` from
+    // `notes`, and a laptop's may not.
+    const tellsCaseApart = await stat(join(root, "NOTES")).then(
+      () => false,
+      () => true,
+    );
+    const { gateway, sent, rows } = await gatewayUnder(
+      asking(RETIRED_NOTES_RULE),
+    );
+    for (const path of ["Notes/x.md", "NOTES/x.md", "./nOtes//x.md "]) {
+      expect(
+        `${JSON.stringify(path)} · ${await cameOf(() => write(path)(gateway))}`,
+      ).toBe(`${JSON.stringify(path)} · done`);
+    }
+    // Nobody was asked, and the computer was handed three folders none of which is `notes`.
+    expect(rows.filter(requested)).toEqual([]);
+    expect(sent).toEqual(["Notes/x.md", "NOTES/x.md", "nOtes/x.md"]);
+    // Where the disk tells them apart each is a NEW folder beside `notes/`, which is what the
+    // label says is asked about first. (A laptop's disk takes all three for `notes/` itself.)
+    expect(
+      (await everything()).filter((file) => file.endsWith("/x.md")).sort(),
+    ).toEqual(
+      tellsCaseApart
+        ? ["NOTES/x.md", "Notes/x.md", "nOtes/x.md"]
+        : ["notes/x.md"],
+    );
+    // The rule did what it says for a folder with another NAME, which is why this went unseen.
+    expect(await cameOf(() => write("private/x.md")(gateway))).toBe("asked");
+  });
+
+  test("a rule exempts a folder's own listing by `file.folder`, under every spelling — which a negated match of its path cannot", async () => {
+    // The third read of the change before this one, its F1, said of `file.folder` instead.
+    const { gateway } = await gatewayUnder(
+      allowingAllBut('intent == "list_files" && file.folder != "notes"'),
+    );
+    const listing = (path?: string, of = gateway) =>
+      cameOf(() => list(path)(of));
+    let listed = 0;
+    for (const path of spellingsOf("notes")) {
+      const came = await listing(path);
+      if (hasNoOneReading(path)) {
+        expect(`${JSON.stringify(path)} · ${came}`).toBe(
+          `${JSON.stringify(path)} · laf:file_path_refused`,
+        );
+        continue;
+      }
+      expect(workspacePathOf(path)).toBe("notes");
+      expect(`${JSON.stringify(path)} · ${came}`).toBe(
+        `${JSON.stringify(path)} · listed: notes/a.md`,
+      );
+      listed++;
+    }
+    expect(listed).toBeGreaterThan(50);
+    // Another folder, another lettering of this one and the whole folder are refused, by the rule.
+    for (const path of [
+      "private",
+      "private/",
+      " ./private/. ",
+      "Notes",
+      "NOTES/",
+      "notes2",
+      ".",
+      "./",
+      " ",
+      "",
+    ]) {
+      expect(`${JSON.stringify(path)} · ${await listing(path)}`).toBe(
+        `${JSON.stringify(path)} · laf:policy_denied`,
+      );
+    }
+    expect(await listing()).toBe("laf:policy_denied");
+    // What is in the folder is in the folder, and the rule is about listings alone.
+    expect(await cameOf(() => write("notes/2026/b.md")(gateway))).toBe("done");
+    expect(await listing("notes/2026/")).toBe("listed: notes/2026/b.md");
+    expect(await cameOf(() => read("private/pay.csv")(gateway))).toBe(
+      `read: ${PAYROLL}`,
+    );
+
+    /*
+     * WHAT IT IS INSTEAD OF. The same sentence as a negated match refuses the listing of `notes`
+     * ITSELF: a listing is asked about under both of its folder's names, the bare name `notes` is
+     * not under `notes/`, and of two answers the refusal is the one the lists' order reaches
+     * first. Held as what happens, so that whoever changes it reads this.
+     */
+    const negated = await gatewayUnder(
+      allowingAllBut(
+        'intent == "list_files" && !matches(file.path, "^notes/")',
+      ),
+    );
+    for (const path of ["notes", "notes/", " ./notes/. "]) {
+      expect(
+        `${JSON.stringify(path)} · ${await listing(path, negated.gateway)}`,
+      ).toBe(`${JSON.stringify(path)} · laf:policy_denied`);
+    }
+  });
+
+  test("a string the computer refuses as a path is in no folder: under the preset it is a question, and a yes to it lands nowhere", async () => {
+    /*
+     * `notes/../report.md` has no spelling, so it reaches a rule as it was written — and its first
+     * name is `notes`. Read as its folder, that would let it past "ask unless the folder is notes"
+     * for being somewhere it is not. Nothing would land, since the computer refuses the string
+     * whatever a rule says; but the rule's answer would be resting on that refusal, which is what
+     * the first version of `file.folder` did. Such a string is in no folder.
+     */
+    const { gateway, approvals, sent, rows } = await gatewayUnder(
+      asking(presetOnTheScreen(NOTES_PRESET)),
+    );
+    const before = await everything();
+    const NO_PATH = [
+      "notes/../report.md",
+      "notes/../private/pay.csv",
+      "notes/../../etc/passwd",
+      "/notes/x.md",
+      "notes/a\0b",
+    ];
+    const questions: ActionNeedsApprovalError[] = [];
+    for (const path of NO_PATH) {
+      expect(workspacePathOf(path)).toBeNull();
+      expect(hasNoOneReading(path)).toBe(false);
+      const came = await write(path)(gateway).then(
+        () => "written, and nobody was asked",
+        (error: unknown) => error,
+      );
+      expect(
+        `${JSON.stringify(path)} · ${came instanceof ActionNeedsApprovalError ? "asked" : String(came)}`,
+      ).toBe(`${JSON.stringify(path)} · asked`);
+      const question = came as ActionNeedsApprovalError;
+      // About a FILE, under the string as it was written — there is no other to say it under. An
+      // independent read made such a string no file at all to `govern`, and nothing noticed: the
+      // question was about a page, and its row named nothing.
+      expect(question.subject).toMatchObject({
+        kind: "file",
+        intent: "write_file",
+        file: { path },
+      });
+      questions.push(question);
+    }
+    expect(sent).toEqual([]);
+    expect(rows.filter(requested).map((row) => row.payload.file)).toEqual(
+      NO_PATH,
+    );
+
+    // A yes to one is a yes to a write the computer then refuses: sent as written, as such a
+    // string always was, and nothing lands.
+    for (const [at, path] of NO_PATH.entries()) {
+      const approvalId = questions[at]?.approvalId ?? "";
+      await approvals.answer(approvalId, "bot-1", OWNER, true);
+      expect(
+        `${JSON.stringify(path)} · ${await cameOf(() =>
+          gateway.writeFile(
+            "default",
+            "bot-1",
+            ACTOR,
+            { path, contents: "x" },
+            approvalId,
+          ),
+        )}`,
+      ).toBe(`${JSON.stringify(path)} · laf:file_path_refused`);
+    }
+    expect(sent).toEqual(NO_PATH);
+    expect(await everything()).toEqual(before);
+    expect(await readDisk(join(root, "private", "pay.csv"), "utf8")).toBe(
+      PAYROLL,
+    );
+  });
+
+  test("the preset asks about everything the rule it replaced asked about, however a path is written", async () => {
+    /*
+     * The change goes one way. Over every spelling in this file — of paths in `notes/`, out of it
+     * and under another lettering of it, and of strings that are no path at all — wherever the
+     * old rule put a question, the new one does. It is quieter about nothing.
+     */
+    const was = await gatewayUnder(asking(RETIRED_NOTES_RULE));
+    const is = await gatewayUnder(asking(presetOnTheScreen(NOTES_PRESET)));
+    const asks = async (of: Gateway, path: string) =>
+      (await cameOf(() => write(path)(of))) === "asked";
+    const corpus = [
+      ...EVERY_SPELLING,
+      ...["Notes/b.md", "NOTES/b.md", "notes/../b.md", "notes"].flatMap(
+        spellingsOf,
+      ),
+      ...NOT_A_PATH,
+      "/notes/x.md",
+      "//notes/x.md",
+      "./notes/../x.md",
+      "notes/./../x.md",
+      "notes/a\0b",
+    ];
+    const quieter: string[] = [];
+    let both = 0;
+    let onlyNow = 0;
+    let neither = 0;
+    for (const path of corpus) {
+      const before = await asks(was.gateway, path);
+      const now = await asks(is.gateway, path);
+      if (before && !now) quieter.push(JSON.stringify(path));
+      else if (before) both++;
+      else if (now) onlyNow++;
+      else neither++;
+    }
+    expect(quieter).toEqual([]);
+    // Each kind is in the corpus, or the line above says less than it seems to: asked about by
+    // both, by neither (`notes/` itself, and what the gateway refuses unread), and only now —
+    // another lettering, and a string that only begins like the folder.
+    expect(both).toBeGreaterThan(500);
+    expect(neither).toBeGreaterThan(100);
+    expect(onlyNow).toBeGreaterThan(100);
+  });
+
+  test("a cost, kept on purpose: an allowance given under the rule the preset used to write does not answer for the one it writes now", async () => {
+    /*
+     * An allowance is kept under the rule that asked (`standing-approvals.ts`: "the rule is part
+     * of the key, so rewriting the boundary asks again"), and this rule's meaning did change. So
+     * somebody who answered "always" for a file under the old one is asked about it once more.
+     */
+    const standing = createStandingApprovalStore();
+    const given = await standing.grant({
+      botId: "bot-1",
+      rule: RETIRED_NOTES_RULE,
+      scope: { kind: "file", value: "private/report.md" },
+      subject: {
+        kind: "file",
+        intent: "write_file",
+        file: { path: "private/report.md" },
+        reason: "policy_ask",
+      },
+      grantedBy: OWNER,
+    });
+    const preset = presetOnTheScreen(NOTES_PRESET);
+    const { gateway, approvals } = await gatewayUnder(asking(preset), standing);
+    const asked = (await write("private/report.md")(gateway).catch(
+      (caught: unknown) => caught,
+    )) as ActionNeedsApprovalError;
+    expect(asked).toBeInstanceOf(ActionNeedsApprovalError);
+    expect(asked.rule).toBe(preset);
+    // The old one is still there to be read and taken back — all a screen can do with it — and
+    // it answers for nothing: with it standing, the same write is still a question.
+    expect(
+      (await standing.list("bot-1")).map((row) => [row.id, row.rule]),
+    ).toEqual([[given.id, RETIRED_NOTES_RULE]]);
+    expect(await cameOf(() => write("private/report.md")(gateway))).toBe(
+      "asked",
+    );
+    expect(await standing.revoke(given.id, OWNER)).not.toBeNull();
+    expect(await standing.list("bot-1")).toEqual([]);
+    // A yes to the new question carries the write out, as a yes always did.
+    await approvals.answer(asked.approvalId, "bot-1", OWNER, true);
+    expect(
+      await cameOf(() =>
+        gateway.writeFile(
+          "default",
+          "bot-1",
+          ACTOR,
+          { path: "private/report.md", contents: "x" },
+          asked.approvalId,
+        ),
+      ),
+    ).toBe("done");
   });
 });
 

@@ -733,7 +733,7 @@ export function createCallPath(
         element: { ref: "", role: "", name: "", type: "" },
         key: "",
         submit: false,
-        file: { path: "", name: "", extension: "" },
+        file: { path: "", name: "", extension: "", folder: "" },
         intent: effect === "write" ? "write_tool" : "read_tool",
         mcp: { server: serverId, tool: toolName, effect },
       };

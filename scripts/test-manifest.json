@@ -79,6 +79,7 @@
   "app/tests/bot-day.test.tsx",
   "app/tests/bot-notifications.test.ts",
   "app/tests/bot-profile.test.ts",
+  "app/tests/boundary-presets.test.ts",
   "app/tests/browsing-card-decisions.test.tsx",
   "app/tests/browsing-card-frame.test.tsx",
   "app/tests/browsing-card-layout.test.tsx",

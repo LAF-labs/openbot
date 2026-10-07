@@ -51,7 +51,7 @@ describe("a boundary set while running", () => {
     // The list that stops and asks has to be as durable as the one that refuses. A boundary that
     // silently stopped asking after a deployment came back up would be indistinguishable, from the
     // trail, from one whose questions were all answered yes.
-    const asking = 'intent == "write_file" && !matches(file.path, "^notes/")';
+    const asking = 'intent == "write_file" && file.folder != "notes"';
     const before = createPolicyStore(configured, database);
     await before.set({
       deny: [],
