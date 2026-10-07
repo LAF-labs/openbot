@@ -261,6 +261,9 @@ export const productPart = (index: number) => `product${index}`;
  */
 export const RUN_PATH_SEGMENTS = 16;
 
+/** How long a file's path may be, in characters. */
+export const RUN_PATH_CHARS = 1024;
+
 /**
  * Whether a path may name a file inside a run's directory: relative, made of real segments, and
  * going nowhere but down.
@@ -270,26 +273,39 @@ export const RUN_PATH_SEGMENTS = 16;
  * computer that read them; this is the daemon not taking that on trust, and the client not sending
  * what the daemon would refuse.
  *
- * AND WRITTEN THE ONE WAY EVERY READER OF IT READS IT. A path has three readers here and they must
- * be handed one string that means one file to all of them: the policy, which judges it as written
- * (`file.path`, `file.name`, `file.extension`); the Bot's computer, which TRIMS what it is handed
- * before it looks (`agent-computer/src/workspace.ts`, `resolvePath`); and the daemon, which places
- * the bytes at it as written. Until 2026-10-07 a path ending in a space was a path: a rule about
- * `private/payroll.csv`, about its name or about its extension did not match `"private/payroll.csv "`,
- * the computer read the file the rule was written to keep, and its bytes went to a script —
- * measured over the computer's real workspace, 22 of 32 pairs of a rule and such a spelling. So
- * anything a trim would change is not a path. REFUSED, NOT TIDIED: tidied, the policy and the
- * computer would agree and the script would be handed its file under a name it did not ask for.
+ * AND WRITTEN THE ONE WAY EVERY READER OF IT READS IT. A path named for a run has three readers.
+ * Two of them are handed ONE reading of it, by the gateway, since 2026-10-07: a rule, and the
+ * Bot's computer (`server/src/computer/gateway/addresses.ts`, `workspacePathOf` — the ends
+ * trimmed, `.` and empty segments gone, the same string judged and sent). The third is the
+ * daemon, which places the bytes at the path AS WRITTEN, for a script that opens its file by the
+ * name its call gave. So a path a run takes is one that reading leaves exactly as it is, and
+ * everything refused here is something it would change (white space at either end, an empty or
+ * a `.` segment), refuse (a backslash), or send on to a computer that refuses it (`..`, an
+ * absolute path, a NUL). `server/tests/workbench-gateway.test.ts` holds that over a few thousand
+ * spellings: what passes this is its own spelling. REFUSED, NOT SPELLED: spelled, a rule and the
+ * computer would agree and the script would be handed its file under a name its call did not
+ * give.
+ *
+ * WHAT THIS WAS FOUND BY. Before that date a rule judged a path as it was written and the
+ * computer trimmed it, and a path ending in a space was a path here: a rule about
+ * `private/payroll.csv`, about its name or about its extension did not match
+ * `"private/payroll.csv "`, the computer read the file the rule was written to keep, and its
+ * bytes went to a script — measured over the computer's real workspace, 22 of 32 pairs of a rule
+ * and such a spelling (the independent read of the script act).
  */
 export function isRunPath(path: unknown): path is string {
-  if (typeof path !== "string" || path.length === 0 || path.length > 1024) {
+  if (
+    typeof path !== "string" ||
+    path.length === 0 ||
+    path.length > RUN_PATH_CHARS
+  ) {
     return false;
   }
   // A NUL ends a path in a C library; a backslash is a separator to some reader, somewhere.
   if (path.includes("\0") || path.includes("\\")) return false;
   if (path.startsWith("/")) return false;
   // Whitespace at either end, of every kind a trim removes: a space, a tab, a line's end, a
-  // no-break or an ideographic space. See above for who trims.
+  // no-break or an ideographic space. The gateway's reading trims; the daemon's does not.
   if (path !== path.trim()) return false;
   const segments = path.split("/");
   return (
@@ -324,11 +340,21 @@ const UNNAMEABLE =
  * nothing in it that means something to a path or a terminal, or that draws as another name.
  *
  * AND NOTHING A TRIM WOULD CHANGE, for the reason a path has none (`isRunPath`): the name becomes
- * the end of a path the policy judges as written and the computer trims. `"tool2.exe "` was not
- * an `exe` to a rule and was `tool2.exe` on the disk; a name of three spaces trimmed to nothing,
- * and was written as a FILE at the path of the folder its run's files go in. Refused here, a file
- * of such a name is not handed back: the daemon counts it among what it skipped, and an answer
- * that names one is not one the client or the gateway passes on.
+ * the end of a path the server composes (`made/<day>-<id8>/<name>`) and the gateway reads once
+ * (`workspacePathOf`). That reading does not REFUSE a name ending in a space — the space is the
+ * end of the whole path, and it is trimmed: `"tool2.exe "` is filed as `tool2.exe`, a name the
+ * script did not give and may have given to another file; and a name of three spaces is read as
+ * the path of the folder its run's files go in, and written there as a FILE (which it was, until
+ * 2026-10-07 — when a rule also judged the name as written, and `"tool2.exe "` was no `exe` to
+ * it). So this stands in front of the composition, and what passes it composes to a path that
+ * is its own spelling (held by a test, over the names here). Refused here, a file of such a name
+ * is not handed back: the daemon counts it among what it skipped, and an answer that names one
+ * is not one the client or the gateway passes on.
+ *
+ * A BACKSLASH IS THE ONE THING HERE THE GATEWAY'S OWN FLOOR REFUSES TOO: a path with one in it
+ * has no one reading (`hasNoOneReading`), since the computer wrote it as a letter and read it as
+ * a separator. Refused here first, at the source, so a file so named is never read out of the
+ * sandbox at all.
  */
 export function isProductName(name: unknown): name is string {
   if (typeof name !== "string" || name.length === 0) return false;

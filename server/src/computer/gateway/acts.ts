@@ -423,11 +423,8 @@ export function createActs(deps: {
       const problem = requestProblem(input);
       if (problem) throw problem;
 
-      const script = {
-        sha256: scriptDigestOf(input.script),
-        bytes: Buffer.byteLength(input.script),
-        files: input.files,
-      };
+      /** The script's SHA-256: what every row of this run says instead of the script. */
+      const sha256 = scriptDigestOf(input.script);
       /** The caller's Stop and the one answer it may be carrying, for every decision below. */
       const carried = {
         ...(signal ? { signal } : {}),
@@ -441,17 +438,28 @@ export function createActs(deps: {
        * one of them ends the call here, before any code runs. `forScript` says whose read it is:
        * the row carries the digest, and the read is not counted as a call of its own — the run
        * is what comes round again, and the run is what is counted (`govern.ts`).
+       *
+       * ONE READING OF EACH PATH, AND IT IS `govern`'S. The path a rule was asked about is the
+       * one handed back to the act, and that string — not the one the call wrote — is what the
+       * computer is sent, what the script's file is placed under, and what the run is then
+       * identified by (`script.files` below). The two are the same string for every path that
+       * gets this far (`requestProblem`); nothing here rests on that. A path with no one reading
+       * does not get this far: `govern` refuses it, with its row, and that ends the call.
        */
       const files: WorkbenchFile[] = [];
       let together = 0;
-      for (const path of input.files) {
+      for (const named of input.files) {
+        let path = named;
         const bytes = await govern(
           computerId,
           "computer_read_file",
           botId,
           actor,
-          { filePath: path, forScript: script.sha256, ...carried },
-          () => as(botId).fileBytes(path),
+          { filePath: named, forScript: sha256, ...carried },
+          (_judged, judgedPath) => {
+            path = judgedPath ?? named;
+            return as(botId).fileBytes(path);
+          },
         );
         /*
          * The one bound that cannot be seen before a file is read: what they come to together.
@@ -468,6 +476,12 @@ export function createActs(deps: {
         }
         files.push({ path, bytes });
       }
+      /** What a run is, to every reader that tells one from another: by the files AS READ. */
+      const script = {
+        sha256,
+        bytes: Buffer.byteLength(input.script),
+        files: files.map((file) => file.path),
+      };
 
       /*
        * 2. THE RUN, and its act is the sandbox call and nothing else. The decision's row is
@@ -586,15 +600,24 @@ export function createActs(deps: {
             });
             continue;
           }
-          const path = `${directory}/${product.name}`;
+          /*
+           * COMPOSED HERE, AND READ ONCE LIKE ANY PATH: `govern` is handed the folder and the
+           * name, and the computer is sent the path it hands back — which is also where the
+           * caller is told the file is. A name the daemon hands back composes to a path that is
+           * its own spelling (`isProductName`, and a test over the names); this does not rest on
+           * it, and a path that had no one reading would be refused there, of this file alone.
+           */
+          const composed = `${directory}/${product.name}`;
           try {
+            let path = composed;
             await govern(
               computerId,
               "computer_write_file",
               botId,
               actor,
-              { filePath: path, forScript: script.sha256, ...carried },
-              async () => {
+              { filePath: composed, forScript: script.sha256, ...carried },
+              async (_judged, judgedPath) => {
+                path = judgedPath ?? composed;
                 held ??= await madeHeldBy(as(botId));
                 if (held + size > madeMaxBytes) {
                   throw madeFull(held, size, madeMaxBytes);
