@@ -677,7 +677,15 @@ export function createActs(deps: {
           try {
             held = await madeHeldBy(as(botId));
           } catch (error) {
-            if (isNotAFolder(error)) {
+            /*
+             * AND NOT WHERE THE CALLER STOPPED WHILE THE FOLDER WAS BEING DESCRIBED. That
+             * request cannot be handed the Stop — the computer's listing takes none — so one
+             * that arrived during it is seen only now. A call somebody stopped does not go on
+             * to return as one that completed (Codex, on the pull request that added this): it
+             * falls to the first file below, where `govern` ends it as every stopped call is
+             * ended, and the files are named as left by the Stop.
+             */
+            if (isNotAFolder(error) && !signal?.aborted) {
               await leave(answer.products, MADE_NOT_A_FOLDER);
               for (const product of answer.products) {
                 products.push({
