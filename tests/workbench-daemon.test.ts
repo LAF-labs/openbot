@@ -426,11 +426,13 @@ test("only plain, visible files directly in out/ go back, and never through a li
 });
 
 /*
- * A NAME THE SERVER'S POLICY AND THE BOT'S COMPUTER WOULD READ DIFFERENTLY IS NOT HANDED BACK (the
- * independent read of 2026-10-07). A file's name becomes the end of a path a rule judges as
- * written and the computer trims: `"tool2.exe "` was not an exe to a rule and was `tool2.exe` on
- * the disk, and a name of spaces was written as a file where its run's folder belongs. Nor a name
- * that draws as another. Each is left where the script put it and counted, like a hidden one.
+ * A NAME THAT WOULD NOT BE FILED UNDER ITSELF IS NOT HANDED BACK (the independent read of
+ * 2026-10-07). A file's name becomes the end of a path the server composes, and a path is read
+ * once before a rule is asked about it or the Bot's computer is sent it — trimmed. So
+ * `"tool2.exe "` would be filed as `tool2.exe`, a name the script did not give; and a name of
+ * spaces as the path of the folder its run's files go in (it was written there as a FILE, when a
+ * rule still judged the name as written and `"tool2.exe "` was no exe to it). Nor a name that
+ * draws as another. Each is left where the script put it and counted, like a hidden one.
  */
 test("a file named with a space at its end, with nothing but spaces, or to draw as another name is skipped, not handed back", async () => {
   const { workbench } = bench();
@@ -456,6 +458,55 @@ test("a file named with a space at its end, with nothing but spaces, or to draw 
     ]),
   ).toEqual([["kept v1.2.csv", "kept"]]);
   expect(answer.run.skipped).toBe(6);
+  expect(answer.run.exitCode).toBe(0);
+});
+
+/*
+ * A FILE A SCRIPT NAMES WITH A BACKSLASH IS REFUSED ALONE, AND HERE (decided at the rebase onto
+ * the path a rule judges, #125). The Bot's computer wrote a backslash as a letter of a name and
+ * read it as a separator, so a path with one has no one reading: no rule can be asked about it,
+ * and the gateway's own floor refuses it. A file so named does not get that far. It is left
+ * where the script put it and counted, and the files beside it are handed back — one name is no
+ * reason to lose what else a run made, and a name with two readings is not the daemon's to read
+ * out under either. `견적_\10000.txt` is a name a person can mean (the ₩ key types that
+ * character): the count on the run's ending is what says a file was left.
+ *
+ * And the file the OTHER reading of `a\b.txt` names — `b.txt` in a folder `a` — is not handed
+ * back in its place: nothing under a folder is.
+ */
+test("a file a script names with a backslash is skipped alone and counted, and the files beside it are handed back", async () => {
+  const { workbench } = bench();
+  const answer = ran(
+    await workbench.run({
+      // `String.raw`: the script's own text says `\\`, which is one backslash in a name.
+      script: String.raw`
+        import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
+        writeFileSync("out/report.csv", "kept");
+        writeFileSync("out/a\\b.txt", "one name, with a backslash in it");
+        writeFileSync("out/견적_\\10000.txt", "x");
+        mkdirSync("out/a");
+        writeFileSync("out/a/b.txt", "the other reading of that name");
+        console.log(JSON.stringify(readdirSync("out").sort()));
+      `,
+      files: [],
+    }),
+  );
+  expect(
+    answer.products.map((product) => [
+      product.name,
+      new TextDecoder().decode(product.bytes),
+    ]),
+  ).toEqual([["report.csv", "kept"]]);
+  // What the script really left, by its own listing: the two names are names with a backslash
+  // in them — not a control character or an `@`, which is what one backslash in a script is.
+  expect(JSON.parse(answer.run.stdout)).toEqual([
+    "a",
+    "a\\b.txt",
+    "report.csv",
+    "견적_\\10000.txt",
+  ]);
+  // Two names with a backslash, and a folder.
+  expect(answer.run.skipped).toBe(3);
   expect(answer.run.exitCode).toBe(0);
 });
 

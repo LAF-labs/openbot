@@ -400,10 +400,11 @@ const lies: [string, () => Response][] = [
       ),
   ],
   /*
-   * A NAME THE POLICY AND THE COMPUTER WOULD READ DIFFERENTLY (the independent read of
-   * 2026-10-07): a name becomes the end of a path a rule judges as written and the computer
-   * trims, so `"tool2.exe "` was not an exe to a rule and was `tool2.exe` on the disk, and a
-   * name of spaces was the path of its own folder. And a name that draws as another name.
+   * A NAME THAT WOULD NOT BE FILED UNDER ITSELF (the independent read of 2026-10-07): a name
+   * becomes the end of a path that is read once, trimmed, before a rule is asked about it or
+   * the computer is sent it — so `"tool2.exe "` would be filed as `tool2.exe`, and a name of
+   * spaces as the path of its own folder (where it was written as a file, when a rule still
+   * judged the name as written). And a name that draws as another name.
    */
   [
     "a file whose name ends in a space",
@@ -439,6 +440,25 @@ const lies: [string, () => Response][] = [
           ],
         },
         { product0: "x" },
+      ),
+  ],
+  /*
+   * AND A NAME WITH A BACKSLASH IN IT, which the daemon leaves where the script put it and
+   * counts (`tests/workbench-daemon.test.ts`): the Bot's computer wrote one as a letter and read
+   * it as a separator. An answer that names one is not that daemon's, and none of it is passed
+   * on — not the files beside it either, which are whatever such an answer says they are.
+   */
+  [
+    "a file whose name has a backslash in it",
+    () =>
+      honest(
+        {
+          products: [
+            { name: "report.csv", bytes: 1, part: "product0" },
+            { name: "a\\b.txt", bytes: 1, part: "product1" },
+          ],
+        },
+        { product0: "r", product1: "x" },
       ),
   ],
   [
