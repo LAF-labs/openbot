@@ -324,20 +324,38 @@ export function isRunPath(path: unknown): path is string {
  * What a file's name may not hold, beyond a separator: what would make the name mean something to
  * a path or a terminal, and what would make it DRAW as a name it is not.
  *
- * - C0 and C1 controls and DEL, and the character a name gets where its bytes were not text.
- * - Bidirectional overrides and isolates (U+202A–U+202E, U+2066–U+2069): `invoice<RLO>fdp.exe`
- *   draws as `invoiceexe.pdf`. A file a script made is shown by its name on the trail's page and
- *   on the card that hands it to a person, and the script chose that name.
- * - Zero-width characters and the byte-order mark (U+200B–U+200F, U+2060–U+2065, U+FEFF), which
- *   make two names that look the same different.
+ * BY WHAT UNICODE SAYS A CHARACTER IS, NOT BY RANGES SOMEBODY THOUGHT OF. This was five ranges —
+ * the controls, the zero-width characters, the bidi overrides and isolates, the byte-order mark —
+ * and the trick they were written against has more spellings than five: `tool.exe` followed by a
+ * soft hyphen, by a Mongolian vowel separator, by a variation selector, by a tag, by a Hangul
+ * filler (a LETTER to Unicode, which draws as nothing — and a name that is only that filler
+ * draws as no name at all) were each a name, and each draws as `tool.exe` (the second read of
+ * the script act, 2026-10-07). So the class is named by its properties:
  *
- * The classes a person's own attachment has taken out of its name
- * (`server/src/attachments/files.ts`), less the one that is about saving a file on Windows: a
- * download's name is the browser's to make safe for the disk it lands on.
+ * - controls (`Cc`), and the character a name gets where its bytes were not text (U+FFFD);
+ * - format characters (`Cf`): the zero-width ones, the bidi overrides and isolates —
+ *   `invoice<RLO>fdp.exe` draws as `invoiceexe.pdf` — the soft hyphen, the byte-order mark
+ *   wherever in a name it is, the tags;
+ * - everything Unicode says a display may leave out (`Default_Ignorable_Code_Point`): the
+ *   fillers, the variation selectors, the combining grapheme joiner;
+ * - line and paragraph separators (`Zl`, `Zp`), private-use characters (`Co`), and half of a
+ *   character (`Cs`), which is not text.
+ *
+ * WHAT THAT COSTS, AND IT IS PAID ON PURPOSE: an emoji that is more than one character — a heart
+ * with its variation selector, a family joined by zero-width joiners — is refused in a name a
+ * script made, since its joiner or selector is the very character this is about. A file so named
+ * is left where the script put it and counted, like any other name that is not one. An emoji
+ * that is one character is a name; so is Korean, written whole or as its parts; so are spaces
+ * inside a name, and punctuation.
+ *
+ * A file a script made is shown by its name on the trail's page and on the card that hands it to
+ * a person, and the script chose that name. The classes a person's own attachment has taken out
+ * of its name (`server/src/attachments/files.ts`) are ranges still, and fewer; less, here, the
+ * one that is about saving a file on Windows: a download's name is the browser's to make safe
+ * for the disk it lands on.
  */
 const UNNAMEABLE =
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: refusing them is the point
-  /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff/\\\ufffd]/;
+  /[\p{Cc}\p{Cf}\p{Co}\p{Cs}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}/\\\ufffd]/u;
 
 /**
  * Whether a name a script gave a file is one that can be handed on: a single segment, visible, with
@@ -362,6 +380,15 @@ const UNNAMEABLE =
  */
 export function isProductName(name: unknown): name is string {
   if (typeof name !== "string" || name.length === 0) return false;
+  /*
+   * TEXT, BEFORE ANYTHING ELSE IS ASKED OF IT. Half a character is no character: it has no
+   * bytes of its own (the encoder below writes the mark for "not text" in its place, so its
+   * length is of another string), and the first thing downstream that has to say it as bytes
+   * throws — the computer's client percent-encodes a path, and a run whose script had already
+   * ended died there, with the files after that one never tried and its caller told nothing.
+   * A real file's name cannot be one (a name on a disk is bytes); an ANSWER can say one.
+   */
+  if (!name.isWellFormed()) return false;
   if (new TextEncoder().encode(name).length > 255) return false;
   if (name.startsWith(".")) return false;
   if (name !== name.trim()) return false;

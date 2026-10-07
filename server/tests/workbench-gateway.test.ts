@@ -2573,6 +2573,84 @@ describe("a path a rule read one way and the computer would read another", () =>
     expect(existsSync(join(root, "made"))).toBe(false);
   });
 
+  /*
+   * THE CLASS, NOT FIVE RANGES OF IT (the second read of this change). "A name that draws as
+   * another" was held by the ranges somebody thought of — zero-width characters, the bidi
+   * overrides, the BOM — and the same trick has more spellings than that: a soft hyphen, a
+   * Hangul filler (which is a LETTER to Unicode, and draws as nothing), a variation selector, a
+   * tag, an Arabic letter mark. Each of these was a name. And so was half a character, which is
+   * not text at all: the call died of it after the script had run (`encodeURIComponent` in the
+   * computer's client), with the files after it never tried and the caller told nothing.
+   */
+  const NOT_NAMES: [string, string][] = [
+    ["a soft hyphen at its end", "tool.exe\u00ad"],
+    ["a soft hyphen inside", "tool.e\u00adxe"],
+    ["the soft-hyphen twin of a zero-width name", "to\u00adtals.csv"],
+    ["a Mongolian vowel separator", "tool.exe\u180e"],
+    ["a Hangul filler at its end", "tool.exe\u3164"],
+    ["nothing but a Hangul filler", "\u3164"],
+    ["a Hangul jamo filler", "a\u1160b.csv"],
+    ["a halfwidth Hangul filler", "a\uffa0b.csv"],
+    ["a variation selector", "tool.exe\ufe0f"],
+    ["a combining grapheme joiner", "tool.exe\u034f"],
+    ["an Arabic letter mark", "tool.exe\u061c"],
+    ["a tag character", "tool.exe\u{e0020}"],
+    ["a byte-order mark INSIDE it", "tot\ufeffals.csv"],
+    ["a line separator inside it", "a\u2028b.csv"],
+    ["a private-use character", "a\ue000b.csv"],
+    ["half a character, the first half", "b\ud800.txt"],
+    ["half a character, the second half", "\udc00a.txt"],
+    // What holding the class costs, said: these are honest names somewhere, and are refused.
+    ["an emoji with a variation selector", "\u2764\ufe0f.txt"],
+    ["an emoji joined to another", "\u{1f468}\u200d\u{1f469}.txt"],
+  ];
+  const NAMES_STILL: [string, string][] = [
+    ["Korean", "요일별 매출 v1.2.csv"],
+    ["Korean written as its parts", "\u1100\u1161\u1102\u1161.txt"],
+    ["Korean letters on their own", "ㄱㄴㄷ.txt"],
+    ["spaces inside", "a b  c.txt"],
+    ["ordinary punctuation", "a-b_c (1), [x] & y's #2 +=~!@$%^{}.csv"],
+    ["what only Windows refuses", 'a:b?c*d<e>f|g".txt'],
+    ["an emoji that is one character", "\u{1f4ca} report.csv"],
+    ["an ideographic space inside", "a\u3000b.txt"],
+    ["Japanese", "売上レポート.xlsx"],
+    ["accents and a dash", "résumé – final.docx"],
+  ];
+
+  test("a name is held to the class of what draws as another — or is not text — by what Unicode says each character is", () => {
+    expect(
+      NOT_NAMES.filter(([, name]) => isProductName(name)).map(([what]) => what),
+    ).toEqual([]);
+    expect(
+      NAMES_STILL.filter(([, name]) => !isProductName(name)).map(
+        ([what]) => what,
+      ),
+    ).toEqual([]);
+  });
+
+  test("an answer that names a file by half a character, or by a name with a soft hyphen in it, is not a run to vouch for — and nothing is filed", async () => {
+    for (const name of ["b\ud800.txt", "to\u00adtals.csv", "tool.exe\u3164"]) {
+      const { gateway, root, rows, computer } = overTheDisk(PERMISSIVE, () =>
+        made(["report.csv", "r"], [name, "x"]),
+      );
+      const error = (await failure(
+        gateway.runScript(COMPUTER, BOT, ACTOR, { script: SCRIPT, files: [] }),
+      )) as ScriptNotRunError;
+      expect({
+        name,
+        error: error.constructor.name,
+        code: error.code,
+      }).toEqual({
+        name,
+        error: "ScriptNotRunError",
+        code: "laf:workbench_failed",
+      });
+      expect(rows.at(-1)?.payload.failure).toBe("laf:workbench_failed");
+      expect(computer.asked).toEqual([]);
+      expect(existsSync(join(root, "made"))).toBe(false);
+    }
+  });
+
   test("a name that would draw as another name is not a name a file is handed back under", async () => {
     // A right-to-left override (`invoice<RLO>fdp.exe` draws as `invoiceexe.pdf`), an isolate, a
     // zero-width space, the byte-order mark, and a C1 control.
@@ -2876,8 +2954,11 @@ describe("every path a run sends has one reading, and is its own spelling", () =
       }
     }
     expect(wrong).toEqual([]);
-    expect(NAMES.length).toBeGreaterThan(700);
-    expect(names).toBeGreaterThan(5);
+    // Exactly: ten names, each dressed eight ways at one end and nine at the other — and of
+    // those seven hundred and twenty, the twelve that are still a name afterwards. A floor of
+    // "more than five" stood here, under a comment that said seven hundred and twenty.
+    expect(NAMES.length).toBe(720);
+    expect(names).toBe(12);
   });
 
   /*

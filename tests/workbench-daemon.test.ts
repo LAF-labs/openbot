@@ -462,6 +462,48 @@ test("a file named with a space at its end, with nothing but spaces, or to draw 
 });
 
 /*
+ * THE CLASS OF NAMES THAT DRAW AS ANOTHER, HELD BY WHAT A CHARACTER IS (the second read of the
+ * script act). Five ranges stood for it, and `tool.exe` followed by a soft hyphen, by a Hangul
+ * filler, by a variation selector or by a combining grapheme joiner was a name that draws as
+ * `tool.exe`. Each is left where the script put it and counted. What that costs is here too: a
+ * heart with its variation selector is one of them. Korean and an emoji that is one character
+ * are names.
+ */
+test("a file whose name holds what a display leaves out — a soft hyphen, a filler, a variation selector — is skipped, and Korean and a plain emoji are names", async () => {
+  const { workbench } = bench();
+  const answer = ran(
+    await workbench.run({
+      // `String.raw`: each escape below is the script's own, read by the runtime that runs it.
+      script: String.raw`
+        import { writeFileSync } from "node:fs";
+        writeFileSync("out/요일별 매출.csv", "kept");
+        writeFileSync("out/\u{1f4ca} 표.csv", "kept too");
+        writeFileSync("out/tool.exe\u00ad", "MZ");
+        writeFileSync("out/tool.e\u00adxe", "MZ");
+        writeFileSync("out/tool.exe\u3164", "MZ");
+        writeFileSync("out/tool.exe\ufe0f", "MZ");
+        writeFileSync("out/tool.exe\u034f", "MZ");
+        writeFileSync("out/tot\ufeffals.csv", "x");
+        writeFileSync("out/\u2764\ufe0f.txt", "x");
+      `,
+      files: [],
+    }),
+  );
+  expect(
+    answer.products
+      .map((product) => [product.name, new TextDecoder().decode(product.bytes)])
+      .sort(),
+  ).toEqual(
+    [
+      ["요일별 매출.csv", "kept"],
+      ["\u{1f4ca} 표.csv", "kept too"],
+    ].sort(),
+  );
+  expect(answer.run.skipped).toBe(7);
+  expect(answer.run.exitCode).toBe(0);
+});
+
+/*
  * A FILE A SCRIPT NAMES WITH A BACKSLASH IS REFUSED ALONE, AND HERE (decided at the rebase onto
  * the path a rule judges, #125). The Bot's computer wrote a backslash as a letter of a name and
  * read it as a separator, so a path with one has no one reading: no rule can be asked about it,
