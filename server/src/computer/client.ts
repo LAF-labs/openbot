@@ -226,7 +226,8 @@ export class NavigationRefusedError extends Error {
 }
 
 /**
- * The file request itself was refused by the computer: a path outside the workspace.
+ * The file request itself was refused by the computer: a path outside the workspace, or one it
+ * does not read one way (a backslash — `agent-computer/src/workspace.ts`).
  *
  * Distinct from a policy refusal, which happens in the gateway before the request is ever made. Both
  * reach the browser as a 403 but they mean different things: this one says the path is not a thing a

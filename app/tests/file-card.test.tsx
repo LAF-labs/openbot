@@ -240,7 +240,7 @@ describe("a file that is not there", () => {
 
     const second = await card({ path: "../.env" });
     expect(second.host.textContent).toContain(
-      "This path is outside the Bot's folder.",
+      "This path cannot be used in the Bot's folder.",
     );
     expect(linkOf(second.host)).toBeNull();
   });

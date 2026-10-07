@@ -67,6 +67,23 @@ describe("what a tool result says to each of its readers", () => {
     expect(missing).toEqual([]);
   });
 
+  /*
+   * ONE FACT, EVERY PATH IT IS SAID ABOUT. `laf:file_path_refused` was the computer's alone — a
+   * path outside the folder — and its words said so. Since 2026-10-07 the gateway answers it too,
+   * for a path with a backslash in it or white space at the edge of a name, and so does the
+   * computer for a backslash. A model told "that points outside your workspace" about
+   * `notes\메모.md` is told the wrong thing to change; a person reading the trail is told the
+   * Bot reached for something outside its folder when it did not.
+   */
+  test("a refused path's words are true of every path that is refused", () => {
+    const toModel = TOOL_RESULT_KO["laf:file_path_refused"];
+    for (const named of ["/로 시작", "'..'", "역슬래시", "빈칸"]) {
+      expect(toModel).toContain(named);
+    }
+    expect(toModel).not.toContain("작업 공간 밖");
+    expect(OUTCOME_LABELS["laf:file_path_refused"]).not.toMatch(/outside/i);
+  });
+
   test("no code reaches either reader as the code itself", () => {
     for (const [code, label] of Object.entries(OUTCOME_LABELS)) {
       expect(label).not.toContain("laf:");

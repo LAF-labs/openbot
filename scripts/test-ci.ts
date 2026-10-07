@@ -1702,7 +1702,9 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * a person's download, of a file a Bot cannot name too; and a routine's own door. Fifteen
  * mutations of the change each fail at least one. One in `agent-computer`'s `workspace.test.ts`:
  * a backslash refused for a read, a listing and a write, where a read had taken it for a
- * separator and a write for a letter.
+ * separator and a write for a letter. And `app` from 2158 to 2159: the words that fact is said
+ * in, to the model and on the trail, being true of a backslash too — they said "outside the
+ * workspace", which a path like `notes\메모.md` is not.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -1710,7 +1712,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  */
 const GROUPS = [
   { name: "server", floor: 3700, roots: ["server"] },
-  { name: "app", floor: 2158, roots: ["app"] },
+  { name: "app", floor: 2159, roots: ["app"] },
   { name: "agent-computer", floor: 530, roots: ["agent-computer"] },
   { name: "root", floor: 807, roots: ["tests", "agent-bot"] },
 ] as const;

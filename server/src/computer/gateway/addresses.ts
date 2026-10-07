@@ -131,16 +131,21 @@ function partsOf(trimmed: string): string[] {
  * either way (the third independent read). There is no reading of such a string that is the
  * computer's, because the computer has two. No name anybody means has one: an attachment's and a
  * download's are stripped of them (`safeAttachmentName`, `safeDownloadName`), and the computer
- * refuses one itself from the release this shipped in.
+ * refuses one itself from the release this shipped in. Nothing readable is lost by that: a file
+ * written as `a\b.txt` was never read back under that name (measured the same day: file not
+ * found for a read and for a person's download — and once `a/b.txt` existed, the same string
+ * read THAT file).
  *
  * WHITE SPACE AT THE EDGE OF A PATH'S FIRST OR LAST NAME. `"./ private/pay.csv"` is, to the
  * computer, a file in a folder called `" private"`; with the `./` gone it is a string the
- * computer trims into the payroll's own path. The first version of this change spelled it that
- * way and read the guarded file; the second left it as written and was walked past by
- * `" private/pay.csv /"`; the third kept a `./` or a `/.` as a mark and then had to trim names
- * for a rule, which stopped a rule about a name with a space in it from matching. A name like
- * that can only be written to the computer behind a mark, so a Bot does not name it at all. A
- * person's own door still reaches it (`person-files.ts`).
+ * computer trims into the payroll's own path. The first pushed version of this change spelled
+ * it that way and read the guarded file; one that never left the laptop left it as written and
+ * was walked past by `" private/pay.csv /"`; the second pushed version kept a `./` or a `/.` as
+ * a mark and then had to trim names for a rule, which stopped a rule about a name with a space
+ * in it from matching. A name like that can only be written to the computer behind a mark, so a
+ * Bot does not name it at all. A person's own door hands such a string on as it was written,
+ * as it always did (`person-files.ts`) — which reaches such a file only behind a mark, and no
+ * screen writes one: true before this change too.
  */
 export function hasNoOneReading(requested: string): boolean {
   if (requested.includes("\\")) return true;

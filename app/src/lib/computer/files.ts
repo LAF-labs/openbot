@@ -48,7 +48,7 @@ export type FileOnHand =
 export const FILE_CARD_SAID: Readonly<Record<string, string>> = {
   "laf:file_not_found": "This file is no longer in the Bot's folder.",
   "laf:file_wrong_kind": "This is a folder, not a file.",
-  "laf:file_path_refused": "This path is outside the Bot's folder.",
+  "laf:file_path_refused": "This path cannot be used in the Bot's folder.",
   "laf:file_too_large": "This file is too large to download from here.",
 };
 
