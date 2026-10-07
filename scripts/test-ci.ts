@@ -1898,15 +1898,39 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * and `root`'s four make 914, as they were. The sums were redone by hand — a floor line can merge
  * without a conflict to a wrong number, and nothing here fails on a floor that is too low.
  *
+ * RAISED 2026-10-07 with what the SECOND independent read of the script act found — by exactly
+ * the reproductions: `server` from 3833 to 3859, `app` from 2172 to 2174, `root` from 914 to
+ * 915. Twenty-six to `server`. Twelve in `workbench-gateway.test.ts`: a name held to the class
+ * of what draws as another by what Unicode says a character is, and an answer naming a file by
+ * half a character not vouched for (two); a put that throws what is no fact being that file's
+ * alone, a Stop and a question mid-filing each leaving the files nobody got to named on one
+ * row, and a FILE where `made/` belongs said once on the ending, over the real workspace
+ * (four — and the test of a computer that stops answering rewritten in place, each file left
+ * now decided and given its row); two calls whose parts only run together the same way being
+ * two folders, and a yes to a script for the time it asked not being a yes to longer (two);
+ * and four for mutations the reader found nothing to catch — what a count rule sees of a run's
+ * read, the order of a run's files, the failed run's row, a full folder's figures. Fourteen in
+ * `workbench-client.test.ts`: three more rows in its table of answers not to be believed for
+ * names (a soft hyphen, a Hangul filler, half a character), ten for a report held only by its
+ * type — no output beside a thousand characters of it, a status of 1e21, a run stopped at its
+ * time that left with 0 — and one that what a real daemon says of each way a run ends is still
+ * passed on. Two to `app`: each reason a filing ends with files untried held to the server's
+ * own two words (`audit-labels.test.ts`), and the page mounted drawing why files were
+ * withheld, why none was tried and which nobody got to (`audit-script-rows.test.tsx`). One to
+ * `root` in `workbench-daemon.test.ts`, WRITTEN WITHOUT BEING RUN — nothing that starts the
+ * daemon ran on the machine it was written on, so the gate was its first run: a file whose
+ * name holds what a display leaves out is skipped, and Korean and a plain emoji are names.
+ * By hand: 3833 and 26 are 3859; 2172 and 2 are 2174; 914 and 1 are 915.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3833, roots: ["server"] },
-  { name: "app", floor: 2172, roots: ["app"] },
+  { name: "server", floor: 3859, roots: ["server"] },
+  { name: "app", floor: 2174, roots: ["app"] },
   { name: "agent-computer", floor: 530, roots: ["agent-computer"] },
-  { name: "root", floor: 914, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 915, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
