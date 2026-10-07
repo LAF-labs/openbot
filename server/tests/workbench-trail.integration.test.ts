@@ -218,4 +218,59 @@ describe("the rows a script's run leaves in the table", () => {
       },
     });
   });
+
+  /*
+   * A PATH THAT HOLDS WHAT `jsonb` REFUSES IS STILL AN ATTEMPT ON THE TRAIL. Postgres will not
+   * put a NUL or half of a character in a `jsonb` value, and a row's `file` is whatever string a
+   * call named — so it was read (not run) of the path a rule judges that such a path makes the
+   * row's insert throw, and the attempt leave nothing. It does not, and this is where that is
+   * held against the table itself: `audit_events.payload` is the `jsonb` of
+   * `db/schema/json.ts`, whose `toDriver` passes every value through `storable`
+   * (`shared/sound-text.ts`, `soundText`: each NUL and each half-character becomes U+FFFD) on
+   * its way to the driver. `jsonb-storable.integration.test.ts` holds that door for any row;
+   * this holds it for the two rows a path like that can leave here.
+   */
+  test("keep the attempt when the path a call names holds what jsonb refuses — a NUL, half a character — with the mark where each was", async () => {
+    const half = "😀".charAt(0);
+
+    // With a backslash beside them: no one reading, so the gateway's floor refuses it — on a
+    // row that carries the path as it was written, there being no other way to write it.
+    const floor = stack();
+    await expect(
+      floor.gateway.runScript(floor.computerId, BOT, ACTOR, {
+        script: "console.log(1)",
+        files: [`a\\b\u0000${half}.csv`],
+      }),
+    ).rejects.toThrow(ActionRefusedError);
+    const refused = await floor.trail();
+    expect(refused.map((row) => row.eventType)).toEqual([
+      "computer.action_refused",
+    ]);
+    expect(refused[0]?.payload).toMatchObject({
+      action: "computer_read_file",
+      file: "a\\b��.csv",
+      decision: { allowed: false, code: "laf:file_path_refused" },
+    });
+    expect(floor.sent).toEqual([]);
+
+    // Without one: no path at all, so it is judged as written and sent on — two rows, the
+    // decision and what came of it, each under the same mended string.
+    const none = stack();
+    await expect(
+      none.gateway.runScript(none.computerId, BOT, ACTOR, {
+        script: "console.log(1)",
+        files: [`uploads/a\u0000${half}.csv`],
+      }),
+    ).rejects.toThrow();
+    const failed = await none.trail();
+    expect(failed.map((row) => row.eventType)).toEqual([
+      "computer.action_allowed",
+      "computer.action_failed",
+    ]);
+    expect(failed.map((row) => row.payload.file)).toEqual([
+      "uploads/a��.csv",
+      "uploads/a��.csv",
+    ]);
+    expect(none.sent).toEqual([]);
+  });
 });
