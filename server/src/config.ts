@@ -1102,6 +1102,16 @@ function actionPolicy(environment: Environment): ActionPolicy | undefined {
 
   const result = parseActionPolicy(parsed);
   if (!result.ok) {
+    /*
+     * The one refusal that is a rule this server used to offer, said in full. An operator who
+     * copied it from an older `.env.example` did nothing wrong, and "invalid" would send them
+     * looking for a typing mistake: so the rule, why it is not taken, and the one to write.
+     */
+    if (result.code === "laf:policy_rule_retired") {
+      throw new Error(
+        `AGENT_COMPUTER_POLICY holds a rule this server no longer takes, in "${result.list}": ${result.rule} — it ignores letter case, so a write to Notes/x.md was never asked about. Write this in its place: ${result.replacement}`,
+      );
+    }
     // The parser answers in codes now; the list it names is the part an operator edits.
     throw new Error(
       `AGENT_COMPUTER_POLICY is invalid: ${result.code}${result.list ? ` (${result.list})` : ""}`,

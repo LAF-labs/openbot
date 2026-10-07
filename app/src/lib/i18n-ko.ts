@@ -524,8 +524,8 @@ export const ko: Record<string, string> = {
   "Loading runs…": "실행 기록 불러오는 중…",
   "Logging out…": "로그아웃 중…",
   "Mark as unread": "읽지 않음으로 표시",
-  "The folder's name is matched to the letter, capitals included: Notes/ is another folder, and a write there is asked about. Judged on the path as the Bot's computer reads it, so a folder it has not used before is a question rather than a refusal.":
-    "폴더 이름은 대소문자까지 글자 그대로 비교해요. Notes/는 notes/와 다른 폴더라서, 거기에 쓰려고 하면 물어요. 봇의 컴퓨터가 읽는 파일 경로를 기준으로 판단하므로, 처음 쓰는 폴더는 거부가 아니라 질문이 돼요.",
+  "The folder's name is matched to the letter, capitals included: Notes/ is another folder, and a write there is asked about. Judged on the path as the Bot's computer reads it, so a folder it has not used before is a question rather than a refusal. Only a file the Bot writes itself is asked about: a download, a file somebody attaches and a long result set aside go to their own folders without this question.":
+    "폴더 이름은 대소문자까지 글자 그대로 비교해요. Notes/는 notes/와 다른 폴더라서, 거기에 쓰려고 하면 물어요. 봇의 컴퓨터가 읽는 파일 경로를 기준으로 판단하므로, 처음 쓰는 폴더는 거부가 아니라 질문이 돼요. 봇이 직접 쓰는 파일만 물어요. 내려받은 파일, 누군가 첨부한 파일, 따로 보관한 긴 결과는 이 질문 없이 각자의 폴더로 가요.",
   "May no longer read this": "더 이상 읽을 수 없음",
   "May read this": "읽을 수 있음",
   Messages: "메시지",
@@ -2226,6 +2226,12 @@ export const ko: Record<string, string> = {
     "규칙을 저장하지 못해 적용하지 않았어요. 이전 경계가 그대로 적용되고 있어요.",
   "The boundary could not be read. Nothing was changed.":
     "경계 설정을 읽지 못해 아무것도 바뀌지 않았어요.",
+  "Not in force: the rule this was given under is no longer in the boundary, so it answers for nothing. It can be taken back.":
+    "적용되지 않음: 이 허용이 주어졌던 규칙이 이제 경계에 없어서, 아무 질문에도 대신 답하지 않아요. 거둬도 돼요.",
+  "The boundary was changed somewhere else after this page read it, so nothing was saved. What is shown now is the current boundary — make the change again if it is still wanted.":
+    "이 화면이 읽은 뒤에 다른 곳에서 경계가 바뀌어서, 저장하지 않았어요. 지금 보이는 것이 현재 경계예요. 여전히 필요하면 다시 바꿔 주세요.",
+  'That rule is not taken any more: it ignores letter case, so a write to Notes/ was never asked about. Write this one in its place: intent == "write_file" && file.folder != "notes"':
+    '그 규칙은 이제 받지 않아요. 대소문자를 구분하지 않아서 Notes/에 쓰는 것은 묻지 않고 지나갔어요. 대신 이 규칙을 쓰세요: intent == "write_file" && file.folder != "notes"',
   "That path cannot be used in the workspace": "봇 폴더에서 쓸 수 없는 경로",
   "The Bot's request was incomplete": "봇의 요청에 빠진 값이 있음",
   "It did not work on the Bot's computer": "봇의 컴퓨터에서 실패함",

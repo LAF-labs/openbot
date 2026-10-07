@@ -66,35 +66,46 @@ export const NOTES_PRESET = "Ask before writing a file outside notes/";
  * What that preset wrote until 2026-10-07, and what v0.5.17 and everything before it ships.
  *
  * `matches` ignores letter case and a deployment's disk does not, so this does not ask about
- * `Notes/x.md`. Kept here, spelled out, for the two things that are about the old text itself: the
- * test that shows the fault, and the migration that rewrites a stored copy of it.
+ * `Notes/x.md`. ONE CONSTANT, the server's own (`policy-store.ts`): the parser that refuses the
+ * rule, the tests that show its fault and the test that holds the migration's text to it all read
+ * the same string.
  */
-export const RETIRED_NOTES_RULE =
-  'intent == "write_file" && !matches(file.path, "^notes/")';
+export { RETIRED_NOTES_RULE } from "../../src/computer/policy-store";
 
 /**
- * Migration 0062's one statement, as its file has it — the comment lines gone, and the semicolon.
+ * Migration 0062's two statements, as its file has them — the comment lines gone, split where the
+ * migrator splits, and each without its semicolon: the policy row's, then the allowances'.
  *
- * Read out of the file for the same reason the preset is read off the screen: the statement that
- * is held to its text, and the one that is run over rows, is the one a deployment runs.
+ * Read out of the file for the same reason the preset is read off the screen: the statements that
+ * are held to their text, and the ones that are run over rows, are the ones a deployment runs.
  */
-export function notesPresetMigration(): string {
-  const statement = readFileSync(
+export function notesPresetMigration(): { policy: string; allowances: string } {
+  const statements = readFileSync(
     join(import.meta.dir, "../../drizzle/0062_notes_preset_to_the_letter.sql"),
     "utf8",
   )
-    .split("\n")
-    .filter((line) => !line.startsWith("--"))
-    .join("\n")
-    .trim()
-    .replace(/;$/, "");
-  // A file that grew a second statement, or lost its only one, is not what a test here is about.
+    .split("--> statement-breakpoint")
+    .map((part) =>
+      part
+        .split("\n")
+        .filter((line) => !line.startsWith("--"))
+        .join("\n")
+        .trim()
+        .replace(/;$/, ""),
+    );
+  const [policy, allowances, ...more] = statements;
+  // A file that grew a third statement, or lost one, is not what a test here is about.
   if (
-    !statement.startsWith('UPDATE "action_policy"') ||
-    statement.includes(";") ||
-    statement.includes("statement-breakpoint")
+    policy === undefined ||
+    allowances === undefined ||
+    more.length > 0 ||
+    !policy.startsWith('UPDATE "action_policy"') ||
+    !allowances.startsWith('UPDATE "computer_standing_approvals"') ||
+    statements.some((statement) => statement.includes(";"))
   ) {
-    throw new Error("Migration 0062 is no longer one UPDATE of action_policy.");
+    throw new Error(
+      "Migration 0062 is no longer one UPDATE of action_policy and one of computer_standing_approvals.",
+    );
   }
-  return statement;
+  return { policy, allowances };
 }

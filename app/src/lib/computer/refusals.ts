@@ -40,6 +40,22 @@ export const BOUNDARY_REFUSALS: Record<string, string> = {
     "The boundary could not be read. Nothing was changed.",
   "laf:policy_settle_invalid":
     "The boundary could not be read. Nothing was changed.",
+  /*
+   * A save made against a boundary that is no longer the one in force: another window saved, or an
+   * upgrade rewrote a rule, after this page read it. Said only once the page has read the current
+   * one and is showing it (`routes/_authed/admin/boundaries.tsx`, `save`) — the second sentence is
+   * a claim about what is on the screen.
+   */
+  "laf:policy_changed":
+    "The boundary was changed somewhere else after this page read it, so nothing was saved. What is shown now is the current boundary — make the change again if it is still wanted.",
+  /*
+   * The one rule the server no longer takes (`server/src/computer/policy-store.ts`,
+   * `RETIRED_NOTES_RULE`), typed back in by hand. The rule to write in its place is the notes
+   * preset's own, said in full: somebody who types rules wants the rule.
+   * `app/tests/boundary-presets.test.ts` holds the two to the letter.
+   */
+  "laf:policy_rule_retired":
+    'That rule is not taken any more: it ignores letter case, so a write to Notes/ was never asked about. Write this one in its place: intent == "write_file" && file.folder != "notes"',
 };
 
 /**

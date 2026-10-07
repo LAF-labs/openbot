@@ -522,13 +522,24 @@ describe("a person's own doors", () => {
       await send(
         acting({ policyStore: failing }),
         "/policy",
-        PERMISSIVE,
+        // Made against the boundary in force, so that what it meets is the save itself failing.
+        { ...PERMISSIVE, revision: failing.revision() },
         "PUT",
       ),
     ).toEqual({
       status: 503,
       body: { error: "laf:policy_not_saved", code: "laf:policy_not_saved" },
     });
+
+    // And a save made against no boundary, or another one, as its own fact: nothing was stored.
+    for (const revision of [undefined, "an older one"]) {
+      expect(
+        await send(acting(), "/policy", { ...PERMISSIVE, revision }, "PUT"),
+      ).toEqual({
+        status: 409,
+        body: { error: "laf:policy_changed", code: "laf:policy_changed" },
+      });
+    }
   });
 
   test("writing a recording up says which of its four outcomes it was", async () => {
@@ -624,6 +635,8 @@ describe("what a Bot is told when its computer says no", () => {
     "laf:write_up_unreadable",
     // The Boundaries page.
     "laf:policy_not_saved",
+    "laf:policy_changed",
+    "laf:policy_rule_retired",
   ]);
 
   test("every one of them is in the model's table", () => {

@@ -39,7 +39,7 @@ describe("a boundary set while running", () => {
     await before.load();
     await before.set(
       { deny: [rule], ask: [], allow: ["true"] },
-      "admin@example.test",
+      { revision: before.revision(), by: "admin@example.test" },
     );
 
     const after = createPolicyStore(configured, database);
@@ -53,11 +53,10 @@ describe("a boundary set while running", () => {
     // trail, from one whose questions were all answered yes.
     const asking = 'intent == "write_file" && file.folder != "notes"';
     const before = createPolicyStore(configured, database);
-    await before.set({
-      deny: [],
-      ask: [asking],
-      allow: ["true"],
-    });
+    await before.set(
+      { deny: [], ask: [asking], allow: ["true"] },
+      { revision: before.revision() },
+    );
 
     const after = createPolicyStore(configured, database);
     expect(await after.load()).toBe("the database");
@@ -72,12 +71,11 @@ describe("a boundary set while running", () => {
 
   test("resetting forgets it, so a restart returns to configuration", async () => {
     const store = createPolicyStore(configured, database);
-    await store.set({
-      deny: [rule],
-      ask: [],
-      allow: ["true"],
-    });
-    await store.reset();
+    await store.set(
+      { deny: [rule], ask: [], allow: ["true"] },
+      { revision: store.revision() },
+    );
+    await store.reset({ revision: store.revision() });
 
     // The saved row is removed rather than overwritten, so changing what configuration says then
     // changes what is enforced, which is what an operator expects a reset to mean.
@@ -93,16 +91,14 @@ describe("a boundary set while running", () => {
 
   test("setting twice keeps one row and the latest rule", async () => {
     const store = createPolicyStore(configured, database);
-    await store.set({
-      deny: ["first"],
-      ask: [],
-      allow: ["true"],
-    });
-    await store.set({
-      deny: ["second"],
-      ask: [],
-      allow: ["true"],
-    });
+    await store.set(
+      { deny: ["first"], ask: [], allow: ["true"] },
+      { revision: store.revision() },
+    );
+    await store.set(
+      { deny: ["second"], ask: [], allow: ["true"] },
+      { revision: store.revision() },
+    );
 
     const rows = await database.select().from(actionPolicy);
     // One boundary per deployment, by construction. Two rows would mean something has to choose.
@@ -118,11 +114,47 @@ describe("a boundary set while running", () => {
     const store = createPolicyStore(configured, database);
     await store.set(
       { deny: [rule], ask: [], allow: ["true"] },
-      "admin@example.test",
+      { revision: store.revision(), by: "admin@example.test" },
     );
 
     const [row] = await database.select().from(actionPolicy);
     expect(row?.updatedBy).toBe("admin@example.test");
+  });
+
+  test("a save made against a boundary that is no longer in force writes nothing — to the row, or to who changed it", async () => {
+    /*
+     * The lost update, at the record: two windows read the boundary, the first saves, and the
+     * second sends its older copy back with a change of its own. Nothing of the second is in the
+     * row — not its rule, not the switch it would have moved back, not its name on the change.
+     */
+    const store = createPolicyStore(configured, database);
+    const read = store.revision();
+    expect(
+      await store.set(
+        { deny: [rule], ask: [], allow: ["true"], settleWithoutAsking: "off" },
+        { revision: read, by: "first@example.test" },
+      ),
+    ).toEqual({ stored: true });
+
+    expect(
+      await store.set(
+        { deny: [], ask: ["later"], allow: ["true"] },
+        { revision: read, by: "second@example.test" },
+      ),
+    ).toEqual({ stored: false });
+    expect(await store.reset({ revision: read })).toEqual({ stored: false });
+
+    const rows = await database.select().from(actionPolicy);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.deny).toEqual([rule]);
+    expect(rows[0]?.ask).toEqual([]);
+    expect(rows[0]?.settleWithoutAsking).toBe("off");
+    expect(rows[0]?.updatedBy).toBe("first@example.test");
+    // And a restart reads that row and hands out its mark: the first window's next save is good.
+    const after = createPolicyStore(configured, database);
+    await after.load();
+    expect(after.revision()).toBe(store.revision());
+    expect(after.revision()).not.toBe(read);
   });
 
   test("without a database it still works, in memory", async () => {
@@ -130,13 +162,12 @@ describe("a boundary set while running", () => {
     // bigger problems than an unsaved rule.
     const store = createPolicyStore(configured);
     expect(await store.load()).toBe("configuration");
-    await store.set({
-      deny: [rule],
-      ask: [],
-      allow: ["true"],
-    });
+    await store.set(
+      { deny: [rule], ask: [], allow: ["true"] },
+      { revision: store.revision() },
+    );
     expect(store.get().deny).toEqual([rule]);
-    await store.reset();
+    await store.reset({ revision: store.revision() });
     expect(store.get()).toEqual(configured);
   });
 });

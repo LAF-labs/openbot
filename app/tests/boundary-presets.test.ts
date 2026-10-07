@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
+import { BOUNDARY_REFUSALS } from "../src/lib/computer/refusals";
 import { ko } from "../src/lib/i18n-ko";
 
 /**
@@ -211,5 +212,30 @@ describe("the rules the boundaries screen hands a person", () => {
     expect(ko[cost]).toContain("Notes/");
     // And it is the example the box for a rule of one's own shows, in place of the old one.
     expect(taught).toContain(preset?.rule);
+    // The label says "writing a file", and the cost says which files that is not: the ones the
+    // computer or the server puts in the folder, with no question of this kind in front of them.
+    // (What a small program makes is not among them: it is filed through the same decision as a
+    // write, which `server/tests/workbench-gateway.test.ts` holds.)
+    expect(cost).toContain("a download");
+    expect(cost).toContain("attaches");
+    expect(cost).toContain("set aside");
+    expect(cost).not.toContain("script");
+    expect(cost).not.toContain("program");
+    expect(ko[cost]).toContain("내려받은 파일");
+    expect(ko[cost]).toContain("첨부");
+    expect(ko[cost]).toContain("따로 보관한");
+  });
+
+  test("the words for the rule the server no longer takes name the rule this preset writes, to the letter", () => {
+    // Somebody who typed the old rule in by hand is told what to type instead, and it is the rule
+    // this screen offers — a sentence that named another would send them to a third.
+    const [preset] = offered.filter((preset) => preset.label === NOTES);
+    const said = BOUNDARY_REFUSALS["laf:policy_rule_retired"] ?? "";
+    expect(preset?.rule).toBeTruthy();
+    expect(said.endsWith(`: ${preset?.rule}`)).toBe(true);
+    expect((ko[said] ?? "").endsWith(`: ${preset?.rule}`)).toBe(true);
+    // It describes the old rule and does not spell it out: this screen holds it nowhere.
+    expect(said).not.toContain("!matches");
+    expect(ko[said]).not.toContain("!matches");
   });
 });

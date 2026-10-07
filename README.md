@@ -224,7 +224,7 @@ Settings worth knowing:
 | `OPENAI_BASE_URL`                    | Answers the OpenAI-shaped calls from somewhere else: a gateway, a proxy. Moves the whole deployment. |
 | `BOT_MODEL`                          | The model, read by `agent-bot` and substituted into the tenant package. Sent verbatim.              |
 | `COMPUTER_TOKEN`                     | Secret every computer request must present. The computer refuses to start without it.               |
-| `AGENT_COMPUTER_POLICY`              | JSON action policy. Malformed JSON stops server startup.                                            |
+| `AGENT_COMPUTER_POLICY`              | JSON action policy. Malformed JSON stops server startup, and so does the one retired rule `!matches(file.path, "^notes/")` in `ask` or `deny` — the refusal names the rule to write instead. |
 | `AGENT_COMPUTER_ALLOW_PRIVATE_HOSTS` | Lets a Bot reach this machine's own services, and marks a developer's stack: only there may a Bot be pointed at your own agent. Local only: with `NODE_ENV=production` the server refuses to start with it. `.env.example` ships it off. |
 | `TENANT_PACKAGE_DIR`                 | Directory containing tenant YAML. Defaults to `../tenant/laf`.                                       |
 | `LAF_NOTIFY_WEBHOOK_URL`             | Where "a Bot is blocked on you" is delivered. Unset, it is a log line.                               |

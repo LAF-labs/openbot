@@ -131,8 +131,12 @@ because a deployment's disk tells `Notes` from `notes`. A negated `contains()` o
 lettering of it: under `ask: intent == "write_file" && !matches(file.path, "^notes/")` a write to
 `Notes/x.md` is not asked about, and lands in a second folder beside `notes/`. To exempt a
 folder, compare `file.folder`: `intent == "write_file" && file.folder != "notes"`. The boundaries
-screen offered the first form until 2026-10-07; migration 0062 rewrites a stored copy of that
-one expression, and nothing rewrites a rule somebody wrote by hand in its shape.
+screen offered the first form until 2026-10-07. That one expression — exactly it — is no longer
+a rule the server takes in `deny` or `ask`: migration 0062 rewrites a stored copy (and moves an
+allowance that still stands under it to the new rule), a save that holds it is refused
+(`400 laf:policy_rule_retired`, with the rule to write in its place), and a server whose
+`AGENT_COMPUTER_POLICY` holds it does not start. Nothing rewrites or refuses a rule somebody
+wrote by hand in its shape.
 
 The policy engine fails closed: a missing or empty policy permits nothing, a
 broken deny rule denies, a broken ask rule asks, and a broken allow rule does not
@@ -143,6 +147,18 @@ anything on a bank or payment site, uploading a file, and the fifth identical ca
 in a row; and `allow: ["true"]` permits the rest — unless `AGENT_COMPUTER_POLICY` or
 a saved administrator policy replaces it. A malformed configured policy stops server
 startup.
+
+A save is made against the boundary it read. `GET /api/computers/policy` hands out the policy
+and a `revision` — a digest of that boundary — and `PUT` has to hand the same one back: the
+screen that edits the policy sends the whole of it with one thing changed, so a window holding
+an older copy would otherwise undo whatever was decided since, the `settleWithoutAsking` switch
+included. A save with no revision, or with one that is not the boundary in force, stores nothing
+and is answered `409 laf:policy_changed`; the screen then reads the current boundary, shows it
+and says so, and does not make the save again by itself. The check and the write are one step
+inside the one server process a deployment runs. A save is asked this before it is asked about
+the retired rule above: a window whose copy is out of date may hold that rule for no other
+reason, and is told its copy is old rather than about a rule nobody typed. (A body that is no
+policy at all is told that first — it was never anybody's copy of a boundary.)
 
 An `ask` match stops the action and puts it in front of a person in the
 conversation, then carries on with the same call if they allow it. The pending

@@ -4,7 +4,14 @@ import {
   evaluateActionPolicy,
   type PolicyContext,
 } from "../src/computer/policy";
-import { parseActionPolicy } from "../src/computer/policy-store";
+import {
+  createPolicyStore,
+  NOTES_RULE,
+  parseActionPolicy,
+  RETIRED_NOTES_RULE,
+  revisionOf,
+} from "../src/computer/policy-store";
+import type { Database } from "../src/db/client";
 
 /**
  * These test the decision, not the plumbing.
@@ -735,5 +742,245 @@ describe("standing allowances in a policy", () => {
     expect(parseActionPolicy({ ...base, settleWithoutAsking: false }).ok).toBe(
       false,
     );
+  });
+});
+
+/**
+ * THE ONE RULE THIS SERVER NO LONGER TAKES (`policy-store.ts`, `RETIRED_NOTES_RULE`).
+ *
+ * The boundaries screen's notes preset wrote it; it exempts a folder by a match that ignores letter
+ * case, so `Notes/x.md` got past it. A migration rewrites a stored copy, and it still came back: in
+ * a save from a window that read the boundary before the upgrade, and from configuration. So it is
+ * refused where a policy comes in — this function, which the route and the configuration both use.
+ */
+describe("the rule that is not taken any more", () => {
+  const taking = (lists: {
+    deny?: string[];
+    ask?: string[];
+    allow?: string[];
+  }) => parseActionPolicy({ deny: [], ask: [], allow: ["true"], ...lists });
+
+  test("is refused in the two lists that hold an action back, by name and with what to write instead", () => {
+    for (const list of ["ask", "deny"] as const) {
+      for (const rules of [
+        [RETIRED_NOTES_RULE],
+        ["repeat.count >= 5", RETIRED_NOTES_RULE, 'intent == "upload"'],
+      ]) {
+        expect(taking({ [list]: rules })).toEqual({
+          ok: false,
+          code: "laf:policy_rule_retired",
+          list,
+          rule: RETIRED_NOTES_RULE,
+          replacement: NOTES_RULE,
+        });
+      }
+    }
+    // In both at once it is the list that is read first that is named, and it is still one refusal.
+    expect(
+      taking({ deny: [RETIRED_NOTES_RULE], ask: [RETIRED_NOTES_RULE] }),
+    ).toMatchObject({ ok: false, list: "deny" });
+  });
+
+  test("is taken in `allow`, where it is a narrower grant and not an exemption", () => {
+    // The migration leaves it there too. And the screen sends `allow` back as it read it, with no
+    // way to edit it: refused there, a deployment holding it could never change a rule again.
+    const parsed = taking({ allow: [RETIRED_NOTES_RULE, "true"] });
+    expect(parsed).toEqual({
+      ok: true,
+      policy: { deny: [], ask: [], allow: [RETIRED_NOTES_RULE, "true"] },
+    });
+  });
+
+  test("is exactly that one string: a rule that only looks like it is somebody's own, and the rule that replaced it is a rule", () => {
+    const theirs = [
+      `${RETIRED_NOTES_RULE} `,
+      ` ${RETIRED_NOTES_RULE}`,
+      RETIRED_NOTES_RULE.replace("^notes/", "^private/"),
+      RETIRED_NOTES_RULE.replace("^notes/", "^Notes/"),
+      RETIRED_NOTES_RULE.replace("!matches", "! matches"),
+      RETIRED_NOTES_RULE.replaceAll('"', "'"),
+      `(${RETIRED_NOTES_RULE}) || submit`,
+      `${RETIRED_NOTES_RULE} && bot.id == "bot-1"`,
+      NOTES_RULE,
+    ];
+    for (const list of ["ask", "deny"] as const) {
+      const parsed = taking({ [list]: theirs });
+      expect(parsed.ok).toBe(true);
+      if (parsed.ok) expect(parsed.policy[list]).toEqual(theirs);
+    }
+  });
+
+  test("the rule it names instead asks about everything the old one asked about, and about another lettering", () => {
+    // What "write this in its place" is worth, at the evaluator: with the file as `govern` hands
+    // it over (`gateway/addresses.ts`; in front of the real workspace in
+    // `gateway-file-paths.test.ts`).
+    const writing = (path: string, folder: string) =>
+      context({
+        tool: { name: "computer_write_file" },
+        intent: "write_file",
+        file: {
+          path,
+          name: path.split("/").pop() ?? "",
+          extension: "md",
+          folder,
+        },
+      });
+    const asks = (rule: string, about: PolicyContext) =>
+      evaluateActionPolicy({ deny: [], ask: [rule], allow: ["true"] }, about)
+        .source === "ask";
+    for (const [path, folder, before, now] of [
+      ["notes/x.md", "notes", false, false],
+      ["private/x.md", "private", true, true],
+      ["x.md", "", true, true],
+      ["Notes/x.md", "Notes", false, true],
+      ["NOTES/x.md", "NOTES", false, true],
+    ] as const) {
+      expect([path, asks(RETIRED_NOTES_RULE, writing(path, folder))]).toEqual([
+        path,
+        before,
+      ]);
+      expect([path, asks(NOTES_RULE, writing(path, folder))]).toEqual([
+        path,
+        now,
+      ]);
+    }
+  });
+});
+
+/**
+ * WHICH BOUNDARY A WRITE WAS MADE AGAINST (`policy-store.ts`, `revisionOf`).
+ *
+ * The screen that edits the policy sends the whole of it back, so a window holding an older copy
+ * would undo whatever was decided since. Every write names the boundary it read, by its mark, and
+ * one made against a boundary that is no longer in force stores nothing.
+ */
+describe("the boundary's mark, and a write made against it", () => {
+  const P: ActionPolicy = { deny: ["a"], ask: ["b"], allow: ["true"] };
+
+  test("the same boundary has the same mark, and anything a decision could turn on gives another", () => {
+    expect(revisionOf(P)).toBe(
+      revisionOf({ deny: ["a"], ask: ["b"], allow: ["true"] }),
+    );
+    // Absent means allowed, so that is one boundary said two ways.
+    expect(revisionOf({ ...P, settleWithoutAsking: "allowed" })).toBe(
+      revisionOf(P),
+    );
+    const others: ActionPolicy[] = [
+      { ...P, settleWithoutAsking: "off" },
+      { ...P, deny: [] },
+      { ...P, deny: ["a", "a2"] },
+      { ...P, ask: ["b "] },
+      { ...P, allow: [] },
+      // A rule moved from one list to another, and two rules that are one string cut elsewhere.
+      { deny: [], ask: ["a", "b"], allow: ["true"] },
+      { deny: ["a", "b"], ask: [], allow: ["true"] },
+      { deny: ["a,b"], ask: [], allow: ["true"] },
+      { deny: ['a","b'], ask: [], allow: ["true"] },
+      // The order of a list is part of it: the first rule that matches is the one on the row.
+      { deny: ["a"], ask: ["b"], allow: ["true", "x"] },
+      { deny: ["a"], ask: ["b"], allow: ["x", "true"] },
+    ];
+    const marks = others.map(revisionOf);
+    expect(new Set([revisionOf(P), ...marks]).size).toBe(others.length + 1);
+  });
+
+  test("a write made against the boundary in force is stored, and one made against any other stores nothing", async () => {
+    const store = createPolicyStore(P);
+    const read = store.revision();
+    expect(read).toBe(revisionOf(P));
+
+    expect(
+      await store.set({ ...P, ask: ["first"] }, { revision: read }),
+    ).toEqual({ stored: true });
+    expect(store.get().ask).toEqual(["first"]);
+    expect(store.revision()).not.toBe(read);
+
+    // The mark that was good a moment ago, no mark, and one that never was.
+    for (const revision of [read, "", "not a mark"]) {
+      const held = store.get();
+      expect(
+        await store.set(
+          { deny: [], ask: [], allow: ["true"], settleWithoutAsking: "off" },
+          { revision },
+        ),
+      ).toEqual({ stored: false });
+      expect(await store.reset({ revision })).toEqual({ stored: false });
+      expect(store.get()).toBe(held);
+    }
+    // Going back to configuration is a write like any other, held to the same mark.
+    expect(await store.reset({ revision: store.revision() })).toEqual({
+      stored: true,
+    });
+    expect(store.get()).toEqual(P);
+    expect(store.revision()).toBe(read);
+  });
+
+  /** A record that takes a moment to write, and says what reached it. */
+  function slowRecord(options: { refuses?: () => boolean } = {}) {
+    const written: string[][] = [];
+    const later = () => new Promise((resolve) => setTimeout(resolve, 5));
+    const database = {
+      insert: () => ({
+        values: (row: { ask: string[] }) => ({
+          onConflictDoUpdate: async () => {
+            await later();
+            if (options.refuses?.()) throw new Error("the record is gone");
+            written.push(row.ask);
+          },
+        }),
+      }),
+      delete: () => ({
+        where: async () => {
+          await later();
+          written.push(["(reset)"]);
+        },
+      }),
+    } as unknown as Database;
+    return { database, written };
+  }
+
+  test("two writes made against one boundary, the first still on its way to the record: one is stored", async () => {
+    // What the lock is for. Left to interleave, both pass the check while the first is being
+    // written, and the second is written over it — the lost update, inside one process.
+    const { database, written } = slowRecord();
+    const store = createPolicyStore(P, database);
+    const read = store.revision();
+
+    const [first, second, third] = await Promise.all([
+      store.set({ ...P, ask: ["first"] }, { revision: read }),
+      store.set({ ...P, ask: ["second"] }, { revision: read }),
+      store.reset({ revision: read }),
+    ]);
+    expect([first, second, third]).toEqual([
+      { stored: true },
+      { stored: false },
+      { stored: false },
+    ]);
+    expect(written).toEqual([["first"]]);
+    expect(store.get().ask).toEqual(["first"]);
+  });
+
+  test("a write the record refuses leaves the boundary and its mark as they were, and the next write is taken", async () => {
+    let refusing = true;
+    const { database, written } = slowRecord({ refuses: () => refusing });
+    const store = createPolicyStore(P, database);
+    const read = store.revision();
+
+    const failed = await store
+      .set({ ...P, ask: ["lost"] }, { revision: read })
+      .then(
+        () => "stored",
+        (error: unknown) => (error as Error).message,
+      );
+    expect(failed).toBe("the record is gone");
+    expect(store.get()).toEqual(P);
+    expect(store.revision()).toBe(read);
+
+    // The queue did not stop with it, and the mark the writer read is still the one in force.
+    refusing = false;
+    expect(
+      await store.set({ ...P, ask: ["kept"] }, { revision: read }),
+    ).toEqual({ stored: true });
+    expect(written).toEqual([["kept"]]);
   });
 });

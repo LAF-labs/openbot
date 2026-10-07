@@ -67,6 +67,7 @@ import {
   type Workbench,
   type WorkbenchAnswer,
 } from "../src/workbench/client";
+import { NOTES_PRESET, presetOnTheScreen } from "./support/boundary-presets";
 import {
   EVERY_SPELLING,
   FILES as FOLDER_FILES,
@@ -1732,6 +1733,28 @@ describe("the files a script made", () => {
     expect(refused.code).toBe("laf:policy_denied");
     expect(reading.sent).toEqual([]);
     expect(reading.computer.asked).toEqual(["fileBytes notes/sales.csv"]);
+
+    // So under the boundaries screen's own preset, what a run makes is a write outside `notes/`
+    // like any other: its first file is a question before it is filed. The preset's cost names
+    // what it is NOT about — a download, an attachment, a result set aside — and a small
+    // program's results are not on that list because of this.
+    const preset = stack({
+      policy: asking(presetOnTheScreen(NOTES_PRESET)),
+      answer: three,
+    });
+    const asked = (await failure(
+      preset.gateway.runScript(COMPUTER, BOT, actor, {
+        script: SCRIPT,
+        files: [],
+      }),
+    )) as ActionNeedsApprovalError;
+    expect(asked).toBeInstanceOf(ActionNeedsApprovalError);
+    expect(asked.subject).toMatchObject({
+      kind: "file",
+      intent: "write_file",
+      file: { path: `${folder}/report.xlsx` },
+    });
+    expect([...preset.computer.files.keys()]).toEqual([]);
   });
 
   test("a put never replaces: a name already there is said of that file, and the next is tried", async () => {

@@ -1,4 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   addressKeyOf,
   DEFAULT_TRUSTED_ORIGIN,
@@ -8,6 +10,7 @@ import {
   loadConfig,
   TEST_TOKEN_ENCRYPTION_KEY,
 } from "../src/config";
+import { NOTES_RULE, RETIRED_NOTES_RULE } from "../src/computer/policy-store";
 import { log } from "../src/log";
 
 /**
@@ -407,6 +410,59 @@ describe("deployment configuration", () => {
       ).toThrow("COMPUTER_REPEAT_WINDOW_MS");
     },
   );
+
+  /*
+   * THE ONE RULE THIS SERVER NO LONGER TAKES, WHERE AN OPERATOR WROTE IT. `.env.example` showed it
+   * as its example policy until 2026-10-07: it exempts a folder by a match that ignores letter
+   * case, so a write to `Notes/x.md` was never asked about. A deployment configured from that line
+   * holds it in no table a migration could rewrite — so the server does not start on it, like any
+   * policy it cannot take, and the refusal is the fix: the rule, why, and the one to write.
+   */
+  test.each(["ask", "deny"] as const)(
+    "refuses to start on a policy that holds the retired notes rule in %p, and says what to write in its place",
+    (list) => {
+      const starting = () =>
+        loadConfig({
+          ...baseEnvironment,
+          AGENT_COMPUTER_URL: "http://localhost:4100",
+          AGENT_COMPUTER_POLICY: JSON.stringify({
+            deny: [],
+            ask: [],
+            allow: ["true"],
+            [list]: ["repeat.count >= 5", RETIRED_NOTES_RULE],
+          }),
+        });
+      expect(starting).toThrow("AGENT_COMPUTER_POLICY");
+      expect(starting).toThrow(`in "${list}"`);
+      expect(starting).toThrow(RETIRED_NOTES_RULE);
+      expect(starting).toThrow(NOTES_RULE);
+      expect(starting).toThrow("ignores letter case");
+    },
+  );
+
+  test("the policy `.env.example` shows is one this server starts on, and it asks by the folder's name", () => {
+    // The line an operator uncomments. It carried the retired rule; held here to what the server
+    // takes, so the example cannot go back to teaching it — or to anything else that does not start.
+    const shown = readFileSync(
+      join(import.meta.dir, "../../.env.example"),
+      "utf8",
+    )
+      .split("\n")
+      .filter((line) => line.startsWith("# AGENT_COMPUTER_POLICY="));
+    expect(shown).toHaveLength(1);
+    const policy = loadConfig({
+      ...baseEnvironment,
+      AGENT_COMPUTER_URL: "http://localhost:4100",
+      AGENT_COMPUTER_POLICY: (shown[0] ?? "").replace(
+        "# AGENT_COMPUTER_POLICY=",
+        "",
+      ),
+    }).computer?.policy;
+    expect(policy?.ask).toEqual([NOTES_RULE]);
+    expect(policy?.allow).toEqual(["true"]);
+    expect(policy?.deny).toHaveLength(1);
+    expect(JSON.stringify(policy)).not.toContain("!matches");
+  });
 });
 
 describe("the broker provider (laf)", () => {
