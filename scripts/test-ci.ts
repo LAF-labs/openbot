@@ -1789,15 +1789,124 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * back as the very messages it was, its answers in the order they were filed, not call order.
  * Rebased onto the calendar change above, so 3732 and these three make 3735.
  *
+ * RAISED 2026-10-07 with a script's run as an act of the gateway, offered to nobody — by exactly
+ * what was added: `server` from 3732 to 3789, `app` from 2159 to 2167, `root` from 910 to 912.
+ * Fifty-seven to `server`. Forty-seven in `workbench-gateway.test.ts`, a new file, with a recording
+ * stand-in where a script runs and for the Bot's computer: the order (each file read, the run, how
+ * it ended, each file made — one decision and one row apiece); nothing read and nothing recorded
+ * where there is nowhere to run one, for an id that is not a Bot's, or for a request that could
+ * only be refused; nothing sent when the trail will not take the decision, nothing filed when it
+ * will not take the ending; a deny, an ask, and an answer that is for one script over one list of
+ * files — and what the flat order costs where a deployment asks twice of one call, held as what
+ * happens; a run with no page whatever the browser shows, decided with no look at the screen ever
+ * taken, its "always" for the tool; a rule about one file's path or one file's name holding for a
+ * script; the unattended outcomes; a stop mid-way and the run after it; every way the sandbox
+ * gives no run; `made/` full; five identical runs counted as the same call and five different
+ * ones not; and five sentinels — the script, each stream, a file read, a file made — in no row,
+ * question or allowance. Three in `workbench-trail.integration.test.ts`, a new file: the same act
+ * writing to the table itself and read back as the trail's page reads it. One in
+ * `jev-decisions.test.ts` (a run is judged on the files it names). Six in
+ * `workbench-client.test.ts`, each the reproduction of something the
+ * fourth read of the sandbox left for its first caller, five of them failing before their fix: one
+ * client for a socket through `./`, `//`, a relative path and a link to its directory; no client
+ * for a directory that cannot be resolved; a key held to what a key is; a second caller with other
+ * bounds, waits or log refused; a queue of runs answered at once where the daemon never was (it
+ * took 4.7 s for three); and the wait as before once `health()` alone has seen it. Eight to `app`:
+ * the sentence for a run in `approval-subject.test.ts`; the name a run is recorded under and the
+ * ways one ends in `audit-labels.test.ts`; two runs never folding into one row in
+ * `audit-rows.test.ts`; and four in `audit-script-rows.test.tsx`, a new file, where the trail's
+ * page is mounted and draws a run's rows — the decision, the ending, a run stopped at its time,
+ * one that never ran — since no deployment holds such a row for anybody to open the page on. Two
+ * to `root` in `workbench-probe.test.ts`: the act's probe driven once and counted, and its scripts
+ * parsing with what one prints not also a line of it.
+ *
+ * RAISED 2026-10-07 again, with what an independent read of that change found (#123) — by exactly
+ * the reproductions: `server` by twenty-four to 3813, `app` by five to 2172, `root` by one to 913.
+ * Eighteen to `server` in `workbench-gateway.test.ts`. Five for a path a rule read one way and the
+ * computer another, over the computer's REAL workspace, which trims: a file a rule denies read for
+ * a script by writing its path with a space, a tab or a line's end (22 of 32 pairs of a rule and
+ * a spelling read it), the file by its own path, a file a script calls `tool2.exe `, one it calls
+ * by three spaces — written as a FILE where its run's folder belongs — and a name that draws as
+ * another. Four for the policy every deployment starts with: the fifth identical run is ONE
+ * question and one yes lets it run, where it had asked about a file and then about the run and
+ * never got through; that question is about the run, at the run's own count; what a run files
+ * is not a second question either; and a rule about a path still holds for both (the test that
+ * had held the old count is rewritten in place and adds none). Six for a run and a tool of the
+ * same name on somebody else's server: the two are offered under one name; a yes about either is
+ * not a yes about the other, nor is "always", whatever the call is named and says; and a server
+ * added by address may not be called `workbench`. Two for what `made/` may hold: 251 one-file
+ * runs and no more at a few kilobytes, measured, and two runs ending together not both filing
+ * past the bound. One for a run's folder being the call's — the Bot, the conversation, the id,
+ * the script and its files.
+ * Then one in `boot-background.test.ts` (a deployment already holding a server by a kept name is
+ * told so, once), one in `plugin-store.integration.test.ts` (which servers those are, read from
+ * the table), and four rows in `workbench-client.test.ts`'s table of answers not to be believed:
+ * a file's name ending in a space, of nothing but spaces, ending a line, drawing as another. Five
+ * to `app`: one in `audit-script-rows.test.tsx` (another server's row under that name is not
+ * called a small program) and four in `allowance-words.test.tsx`, a new file, MOUNTING the two
+ * screens that list what somebody allowed, which no test had: a run reads there as a small
+ * program and not as `mcp__workbench__run_script`. One to `root` in `workbench-daemon.test.ts`:
+ * a file a script names by what a trim would change, or to draw as another name, is skipped and
+ * counted, not handed back.
+ *
+ * RAISED 2026-10-07 a third time, on the rebase onto the path a rule judges (#125, above) — by
+ * exactly what was added: `server` by nine to 3822 and `root` by one to 914. Eight to `server` in
+ * `workbench-gateway.test.ts`. Two for a path the computer does not read one way, named for a
+ * run: refused by `govern`'s floor with a row and never read, where a run had refused it in
+ * silence; and what that costs — a file named ahead of it has been read by then. One with a
+ * marked `govern` standing in, the only way to tell an act that sends the path it is handed
+ * back from one that sends the path it was given: the computer, the script's file, the run's
+ * own name and a file it made each take the first, and three mutations fail it. Five that
+ * assert what had been assumed, over some twenty-nine hundred spellings and seven hundred names:
+ * what a path a call names is staged under being a path the sandbox takes (rewritten in place
+ * by the raising below: it had held a spelled path to being no request at all); the folder
+ * this server names is its own spelling; so is every name
+ * that is one, under it; what the one reading would do with a name that is not one — spell it
+ * into another file's, or into the folder; and the path a name with a backslash would make
+ * having no one reading. One row in `workbench-client.test.ts`'s table: an answer naming a file
+ * with a backslash in it is not passed on. One to `root` in `workbench-daemon.test.ts`: such a
+ * file is skipped alone and counted, and the files beside it are handed back.
+ *
+ * RAISED 2026-10-07 a fourth time, `server` by exactly eight to 3830, when a decision of that
+ * rebase was reversed before the change's second read: a file a call names for a run goes
+ * through `govern` however its path is written, where a path not in its one spelling had been
+ * refused before anything, with no row. Seven in `workbench-gateway.test.ts`, six of them in
+ * front of the REAL workspace over the folder, the spellings and the rules of
+ * `gateway-file-paths.test.ts` (moved to `support/path-spellings.ts` so both are held by one
+ * list): a deny on a file holding through a run under every spelling of it — 2,548, under four
+ * rules — with the refused row naming the file and no attempt unsaid; allowed, each spelling
+ * handing the script the one file the computer reads for it, under its one spelling, with the
+ * read's row, the run's own and what the caller is told agreeing, and the count kept on the
+ * run whatever way its file was written; a file named twice being judged, read and staged
+ * once; that being one question and one yes where a rule asks; what is no path at all leaving
+ * its two rows; and a file deeper than the sandbox places, through the sandbox's real client.
+ * The seventh: a file named twice is named once before `govern`. Eight of the changed file's
+ * tests are red with the request check as it was. One in `workbench-trail.integration.test.ts`:
+ * a row for a path that `jsonb` would refuse — a NUL, half a character — is in the table, read
+ * back, with the mark where each was. `root` is as it was: the rehearsal's tenth check, a file
+ * named `./data.csv` for a script that opens `./data.csv`, is counted by a test that already
+ * counted nine.
+ *
+ * THESE NUMBERS ARE SUMS TOO: this change was rebased twice that day, onto the path a rule
+ * judges and then onto an empty day's, so each "to" in its four paragraphs is main's floor
+ * with this change's own tests on top — fifty-seven, twenty-four, nine and eight make
+ * ninety-eight for `server` over 3732; eight and five, thirteen for `app` over 2159; two, one
+ * and one, four for `root` over 910.
+ *
+ * REBASED ONCE MORE 2026-10-07, onto a call a turn left open (above), which had raised `server`
+ * to 3735: the ninety-eight this change adds to `server` make 3833; `app`'s thirteen make 2172
+ * and `root`'s four make 914, as they were. The sums were redone by hand — a floor line can merge
+ * without a conflict to a wrong number, and nothing here fails on a floor that is too low.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3735, roots: ["server"] },
-  { name: "app", floor: 2159, roots: ["app"] },
+  { name: "server", floor: 3833, roots: ["server"] },
+  { name: "app", floor: 2172, roots: ["app"] },
   { name: "agent-computer", floor: 530, roots: ["agent-computer"] },
-  { name: "root", floor: 910, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 914, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
