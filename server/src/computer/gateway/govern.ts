@@ -53,6 +53,17 @@ import { write, writeApprovalEvent, writeRepeat } from "./trail";
 /** A control as the policy judged it: its role and accessible name from this server's snapshot. */
 export type JudgedElement = { role: string; name: string };
 
+/**
+ * The order a policy's lists are read in (`evaluateActionPolicy`): the earlier one decides, and
+ * `default` is what is left when none did. Used where one thing is asked about under two names.
+ */
+const READ_IN_ORDER = {
+  deny: 0,
+  ask: 1,
+  allow: 2,
+  default: 3,
+} as const satisfies Record<PolicyDecision["source"], number>;
+
 export function createGovern(options: {
   auditStore: AuditStore;
   /** Absent denies everything. See evaluateActionPolicy. */
@@ -298,12 +309,19 @@ export function createGovern(options: {
     // character pressed as a key into something other than typing. See `isTextKey`.
     const textKey = toolName === "computer_key" && isTextKey(subject.key ?? "");
     /*
-     * A FOLDER IS NAMED BOTH WAYS, AND THE STRICTER ANSWER STANDS. A listing's path is a folder,
-     * and a rule about a folder is written either as the folder (`file.path == "private"`) or as
-     * what is under it (`matches(file.path, "^private/")`). Judged as written, `private/` met the
-     * second kind and `private` the first; with one spelling, `private`, the second kind would
-     * stop holding for a listing it refused on main. So a listing is asked about under both
-     * names, and refused or asked about if either is.
+     * A FOLDER IS NAMED BOTH WAYS, AND A RULE ABOUT EITHER NAME IS A RULE ABOUT THE FOLDER. A
+     * listing's path is a folder, and a rule about a folder is written either as the folder
+     * (`file.path == "private"`) or as what is under it (`matches(file.path, "^private/")`).
+     * Judged as written, `private/` met the second kind and `private` the first; with one
+     * spelling, `private`, the second kind would stop holding for a listing it refused on main.
+     * So a listing is asked about under both names, and of the two answers the one the policy's
+     * own order reaches first stands: a deny before a question, a question before an allow, an
+     * allow before "no rule allows this".
+     *
+     * NOT "THE STRICTER OF THE TWO", which is what this did for two commits. "No rule allows
+     * this" is as strict as a deny and is the absence of a rule, not a rule: under a policy that
+     * allows only `file.path == "notes"`, the listing of `notes` was refused because `notes/`
+     * matched nothing — the folder a person had allowed, refused under every spelling of it.
      */
     const folderToo = (asNamed: PolicyDecision): PolicyDecision => {
       if (intent !== "list_files" || !filePath || filePath === ".") {
@@ -314,9 +332,9 @@ export function createGovern(options: {
         // The folder's own name and extension; only its path is said the other way.
         file: { ...describeFile(filePath), path: `${filePath}/` },
       });
-      const weight = (one: PolicyDecision) =>
-        one.allowed ? 0 : one.source === "ask" ? 1 : 2;
-      return weight(asFolder) > weight(asNamed) ? asFolder : asNamed;
+      return READ_IN_ORDER[asFolder.source] < READ_IN_ORDER[asNamed.source]
+        ? asFolder
+        : asNamed;
     };
     const decision = textKey
       ? ({

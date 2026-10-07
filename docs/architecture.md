@@ -80,7 +80,9 @@ Policy rules can inspect:
   rule, as they are one file to the computer. A path the computer does not read one way — one with
   a backslash in it, or white space at the edge of its first or last name — is refused before any
   rule is asked (`laf:file_path_refused`). A listing's folder is asked about both as `private`
-  and as `private/`, and the stricter answer stands
+  and as `private/`, and a rule that matches either name is a rule about the folder: of the two
+  answers, the one the lists' own order reaches first stands (deny, ask, allow, and only then
+  "no rule allows this")
 - `mcp.server`, `mcp.tool`, `mcp.effect`
 - `repeat.count`
 
