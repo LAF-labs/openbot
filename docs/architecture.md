@@ -94,6 +94,11 @@ Policy rules can inspect:
   and as `private/`, and a rule that matches either name is a rule about the folder: of the two
   answers, the one the lists' own order reaches first stands (deny, ask, allow, and only then
   "no rule allows this")
+- `file.folder` — the top-level folder of that path, to the letter: `notes` for
+  `notes/2026/a.md`, and empty for a file at the top. A listing's path is itself a folder, so for
+  a listing it is the path's first name — `notes` for a listing of `notes`, the same under both
+  of the names it is asked about by — and empty for the whole folder. It is empty as well for a
+  string the computer refuses as a path (`notes/../x`, `/notes/x`), which is in no folder
 - `mcp.server`, `mcp.tool`, `mcp.effect`
 - `repeat.count`
 
@@ -118,6 +123,17 @@ its file acts are counted in the file's own history — before any tool offers a
 
 Rules use CEL expressions plus case-insensitive `contains()` and `matches()`.
 Rules are evaluated in three lists, in order: `deny`, then `ask`, then `allow`.
+
+`contains()` and `matches()` ignore letter case; `==` and `!=` do not. Ignoring it is right for a
+rule that forbids — "never click submit" has to catch SUBMIT — and wrong for one that exempts,
+because a deployment's disk tells `Notes` from `notes`. A negated `contains()` or `matches()` in
+`deny` or `ask` exempts every lettering of a name, and a plain one in `allow` permits every
+lettering of it: under `ask: intent == "write_file" && !matches(file.path, "^notes/")` a write to
+`Notes/x.md` is not asked about, and lands in a second folder beside `notes/`. To exempt a
+folder, compare `file.folder`: `intent == "write_file" && file.folder != "notes"`. The boundaries
+screen offered the first form until 2026-10-07; migration 0062 rewrites a stored copy of that
+one expression, and nothing rewrites a rule somebody wrote by hand in its shape.
+
 The policy engine fails closed: a missing or empty policy permits nothing, a
 broken deny rule denies, a broken ask rule asks, and a broken allow rule does not
 permit. LAF Agent's shipped startup default (`server/src/computer/default-policy.ts`)
