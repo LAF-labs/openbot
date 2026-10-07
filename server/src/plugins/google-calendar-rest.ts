@@ -218,6 +218,10 @@ function allDayZoneOf(answered: unknown, personZone: string): string {
     : personZone;
 }
 
+/** An instant as Google reads a bound of its filter: to the second, what is left of it dropped. */
+const wholeSecond = (at: Date): number =>
+  Math.floor(at.getTime() / 1000) * 1000;
+
 /** How far past the stretch it was asked for a listing also looks, in the person's own days. */
 const AHEAD_DAYS = 7;
 
@@ -354,7 +358,14 @@ export async function callTool(
      * week is empty", and an event that merely comes next answers neither: with `query` the
      * request and the answer are what they were.
      */
-    const looksAhead = query === null;
+    /*
+     * NOR FOR A STRETCH WITH NO WIDTH. `days` is floored (`countArg`), so `days: 0.5` is a stretch
+     * that ends where it starts: Google refuses it (`timeMin` must be smaller than `timeMax`),
+     * and did before this change. Widened, it was answered instead — "nothing in this period"
+     * about a period of no width, and then a day's count that left out what was already over
+     * (the second read of the day form, 2026-10-07). It is asked exactly as it was.
+     */
+    const looksAhead = query === null && until.getTime() > from.getTime();
     const maxResults = countArg(args, "max", DEFAULT_EVENTS, MAX_EVENTS);
     const lookedUntil = looksAhead
       ? daysOn(until, AHEAD_DAYS, timeZone)
@@ -394,9 +405,19 @@ export async function callTool(
     const page = body.items ?? [];
     const items: CalendarEvent[] = [];
     const after: { event: CalendarEvent; startsAt: Date }[] = [];
+    /*
+     * TO THE SECOND, AS GOOGLE READS ITS OWN BOUNDS: "Milliseconds may be provided but are
+     * ignored" (`timeMin` and `timeMax`, in its reference for `events.list`). "From this minute
+     * on" ends on a millisecond, and an event that starts in that same second was left out by
+     * Google's filter before the request was widened — compared here at the millisecond it
+     * came back as the stretch's own, and a stretch that had read `일정 0건` read 1 (the second
+     * read's). What is sent is not touched; only what is compared.
+     */
+    const stretchEnds = wholeSecond(until);
+    const lookingEnds = wholeSecond(lookedUntil);
     for (const event of page) {
       const startsAt = looksAhead ? startOf(event, allDayZone) : null;
-      if (startsAt !== null && startsAt.getTime() >= until.getTime()) {
+      if (startsAt !== null && startsAt.getTime() >= stretchEnds) {
         after.push({ event, startsAt });
       } else {
         items.push(event);
@@ -465,7 +486,9 @@ export async function callTool(
        * guessed.
        */
       return asResult(
-        body.nextPageToken
+        // A page as full as was asked for is a cut one too, token or no token — the same rule
+        // a day's count is held to below. (Full of what is not an event to tell: markers.)
+        body.nextPageToken || page.length >= maxResults
           ? nothing
           : `${nothing}\n그 뒤 ${AHEAD_DAYS}일 안에도 잡힌 일정이 없습니다.`,
       );
@@ -474,25 +497,37 @@ export async function callTool(
     /*
      * WHOLE ONLY WHERE IT IS KNOWN TO BE. Not from a page Google cut — a token for the next one,
      * or as many events as were asked for, when another of that day may be the one left off. And
-     * not for a day the request stopped partway through: "from this minute on" ends at this
-     * minute seven days after the stretch does, so the last day looked at is seen until then and
-     * no later — and where the calendar is kept a day's width west of the person (Kiritimati and
-     * Pago Pago are twenty-five hours apart), that day's own date begins there after the request
-     * has ended, with any all-day event of it. Then it is one event, with no count to say back
-     * and the words that the day may hold more.
+     * only for a day the request reached BOTH ends of: one that begins after the date the
+     * looking started on, and ends before the date it stopped on. "From this minute on" ends at
+     * this minute seven days after the stretch does, so the last day looked at is seen until
+     * then and no later — and where the calendar is kept a day's width west of the person
+     * (Kiritimati and Pago Pago are twenty-five hours apart), that day's own date begins there
+     * after the request has ended, with any all-day event of it. Then it is one event, with no
+     * count to say back and the words that the day may hold more.
+     *
+     * BY THE TWO DATES, NOT BY A MIDNIGHT WORKED OUT. The first form of this asked whether the
+     * day's own next midnight came before the request's end, and was wrong at both ends (the
+     * second read of the day form, 2026-10-07). The near end was not asked about at all: a
+     * stretch that ends on the date it began — "from this minute on" for a day, in the first hour
+     * of a day a clock change made twenty-five hours long — goes on with that same date, whose
+     * morning was already over and not in the answer; it was told as `일정 1건` of a day that
+     * held two. And at the far end, where a clock goes forward AT midnight (Santiago), the
+     * midnight that does not exist is read as eleven at night: the request stopped there, the
+     * day's last hour unseen, and the check compared that instant with itself.
      */
     const date = datePartsOf(nearest);
     const whole =
       date !== null &&
       !body.nextPageToken &&
       page.length < maxResults &&
-      instantOf(
-        dayAfter(instantOf(date, 12, 0, timeZone), 1, timeZone),
-        0,
-        0,
-        timeZone,
-      ).getTime() <= lookedUntil.getTime() &&
-      instantOf(date, 0, 0, allDayZone).getTime() < lookedUntil.getTime();
+      nearest > localDate(from, timeZone) &&
+      // Not a date the stretch itself reached into: where the calendar is kept a day's width
+      // west, an all-day event of such a date begins after the stretch has ended, and "the
+      // nearest day after" would name a day of the period just called empty.
+      nearest >= localDate(until, timeZone) &&
+      nearest < localDate(lookedUntil, timeZone) &&
+      // Google's upper bound leaves out what starts AT it, and reads it to the second.
+      instantOf(date, 0, 0, allDayZone).getTime() < lookingEnds;
     const [first] = thatDay;
     if (!whole && first) {
       return asResult(
