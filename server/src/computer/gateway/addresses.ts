@@ -129,9 +129,12 @@ function partsOf(trimmed: string): string[] {
  * folder, and a write to `a\b.txt` made one file called that. A deny on `^private/` was walked
  * past by the first three on main and by every version of this change that read a backslash
  * either way (the third independent read). There is no reading of such a string that is the
- * computer's, because the computer has two. No name anybody means has one: an attachment's and a
- * download's are stripped of them (`safeAttachmentName`, `safeDownloadName`), and the computer
- * refuses one itself from the release this shipped in. Nothing readable is lost by that: a file
+ * computer's, because the computer has two. No name the product makes has one: an attachment's
+ * and a download's are stripped of them (`safeAttachmentName`, `safeDownloadName`). A person can
+ * mean one — on a Korean Windows keyboard the ₩ key types this character, so `견적_\10000.txt`
+ * is a name somebody may ask for (the third independent read) — and it is refused all the same:
+ * the model is told the character, and names the file another way. The computer refuses one
+ * itself from the release this shipped in. Nothing readable is lost by that: a file
  * written as `a\b.txt` was never read back under that name (measured the same day: file not
  * found for a read and for a person's download — and once `a/b.txt` existed, the same string
  * read THAT file).

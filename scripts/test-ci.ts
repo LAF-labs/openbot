@@ -1684,7 +1684,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * already and says why: the environment a script is given, not the key's deleting.
  *
  * RAISED 2026-10-07 FOR THE PATH A RULE JUDGES, by exactly what was added: `server` from 3677 to
- * 3701 and `agent-computer` from 529 to 530. Twenty-four in the new `gateway-file-paths.test.ts`,
+ * 3708 and `agent-computer` from 529 to 530. Thirty-one in the new `gateway-file-paths.test.ts`,
  * every one in front of the REAL workspace through the computer's own route handlers, each file
  * in the folder with contents of its own so that what was read says which file was read — the
  * first twelve asserted on what a computer that echoes was sent, and a second independent read
@@ -1701,7 +1701,15 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * spellings of one file being one call five times under the shipped policy; a yes found and a
  * no standing under another spelling; a refusal's row and the row of what was sent; what is no
  * path keeping its two rows; a person's download, of a file a Bot cannot name too; and a
- * routine's own door. Nineteen mutations of the change each fail at least one. One in
+ * routine's own door. Nineteen mutations of the change each fail at least one. Seven of the
+ * thirty-one came from the third independent read, which applied twenty-five more and found
+ * eight that nothing caught — two of them opening a door again: a read or a write judged under
+ * a folder's second name, and that second name judged with no name of its own. So: the lower
+ * bound of what is refused (white space on the INNER side of a first or last name is a letter);
+ * the folder's other name keeping the folder's own; only a listing having two names; the whole
+ * folder having one, and the asked-for name's rule being the question's on a tie; the rows of a
+ * failed act and of a question; and one cost kept on purpose — a folder whose name ends in white
+ * space is not listed by its own name. One in
  * `agent-computer`'s `workspace.test.ts`:
  * a backslash refused for a read, a listing and a write, where a read had taken it for a
  * separator and a write for a letter. And `app` from 2158 to 2159: the words that fact is said
@@ -1713,7 +1721,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3701, roots: ["server"] },
+  { name: "server", floor: 3708, roots: ["server"] },
   { name: "app", floor: 2159, roots: ["app"] },
   { name: "agent-computer", floor: 530, roots: ["agent-computer"] },
   { name: "root", floor: 807, roots: ["tests", "agent-bot"] },
