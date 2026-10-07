@@ -167,21 +167,61 @@ export function hasNoOneReading(requested: string): boolean {
  *
  * Handed a path in its one spelling ({@link workspacePathOf}) by `govern`, whoever named the file.
  *
- * Lower-cased, because a rule forbidding `.env` must also catch `.ENV`; the
+ * The extension is lower-cased, because a rule forbidding `.env` must also catch `.ENV`; the
  * operator should have anticipated. Same reasoning as the case-insensitive `contains` in policy.ts.
+ *
+ * THE FOLDER IS NOT, AND THAT IS WHAT IT IS FOR. It is the path's top-level folder to the letter,
+ * for a rule that EXEMPTS a folder to compare with `==` or `!=`. Folding letter case is safe for a
+ * rule that forbids — it catches more — and unsafe for one that exempts, because it exempts more:
+ * the boundaries screen's "ask before writing a file outside notes/" was a negated `matches`, a
+ * deployment's disk tells `Notes` from `notes`, and a write to `Notes/x.md` went unasked into a new
+ * folder beside the one the label names (pressed on the real computer, 2026-10-07). Lower-casing
+ * this field would be that fault again, one layer down.
+ *
+ * WHAT THE PATH NAMES IS THE CALLER'S TO SAY, and it has to say it: there is no default. A file's
+ * folder is the first of its names only when it has more than one — `a.md` is in no folder — while
+ * a listing's path IS a folder, so `notes` is in `notes`. Only whoever knows the intent can tell
+ * those apart, and an argument left out would be a listing judged as a file: the folder a person
+ * exempted, asked about or refused under its own name (the third read of the change before this
+ * one found exactly that of a negated match — `notes` is "not under notes/").
+ *
+ * Here rather than as a function of its own beside this one, so that there is one description of
+ * a file and no way to build a rule's `file` with a folder read off some other string.
+ *
+ * ONLY A PATH IN ITS ONE SPELLING IS IN A FOLDER. A string the computer refuses as a path —
+ * `notes/../../etc/passwd`, `/notes/x` — reaches here as it was written, because `govern` has no
+ * other reading of it to hand over, and its `path`, `name` and `extension` are of that string. Its
+ * folder is not: that would be a claim about WHERE a file is, made of a string that is nowhere,
+ * to the one kind of rule that lets a thing past for being somewhere. So it is blank, and "ask
+ * unless the folder is notes" asks. (The first version of this read `notes` off both of those. It
+ * exempted nothing that lands — the computer refuses such a string whatever a rule says — but
+ * it left the rule's answer resting on that refusal, and it made the new preset quieter than the
+ * old one about `/notes/x.md`.) The same holds for any string that is not its own spelling: a
+ * caller that hands one over is told no folder rather than the wrong one.
  */
-export function describeFile(path: string): {
+export function describeFile(
+  path: string,
+  names: "file" | "folder",
+): {
   path: string;
   name: string;
   extension: string;
+  folder: string;
 } {
   const name = path.split(/[\\/]/).pop() ?? path;
   const dot = name.lastIndexOf(".");
+  // The same reading of "a name" the spelling was made with. The whole folder, `.`, has none.
+  const [first, ...under] = partsOf(path);
+  // A folder is in itself; a file is in a folder only when something comes after its first name —
+  // and neither is anywhere unless this string is the path's one spelling (see above).
+  const isInAFolder =
+    workspacePathOf(path) === path && (names === "folder" || under.length > 0);
   return {
     path,
     name,
     // A leading dot is the whole name of a dotfile, not an extension: `.env` has no extension, and the
     // rule for it is written against `name`.
     extension: dot > 0 ? name.slice(dot + 1).toLowerCase() : "",
+    folder: isInAFolder ? (first ?? "") : "",
   };
 }

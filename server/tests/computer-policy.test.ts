@@ -605,6 +605,7 @@ describe("asking a person", () => {
           path: "reports/august.csv",
           name: "august.csv",
           extension: "csv",
+          folder: "reports",
         },
       }),
     ],
@@ -619,7 +620,7 @@ describe("asking a person", () => {
         element: { ref: "", role: "", name: "", type: "" },
         key: "",
         submit: false,
-        file: { path: "", name: "", extension: "" },
+        file: { path: "", name: "", extension: "", folder: "" },
         intent: "write_tool" as const,
         mcp: {
           server: "jira",

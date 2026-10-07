@@ -319,6 +319,37 @@ describe("a boundary written about the browser does not refuse tool calls", () =
     // Not a refusal. It gets as far as the network, which is where this test stops caring.
     expect(thrown).not.toBeInstanceOf(PluginRefusedError);
   });
+
+  test("an unguarded rule about a file's folder does not refuse a tool call either", async () => {
+    await store.grant("mcp", ref, holderId, "admin@laf.local");
+    /**
+     * The same trap, for the fact added on 2026-10-07. A call to another server names no file, so
+     * its `file.folder` has to be THERE, and BLANK. Absent, a rule about a folder written with no
+     * guard on the intent is unevaluable here and refuses every tool call; anything but blank, and
+     * "nothing in any folder" is said of a call that has no file. This rule is refused by both.
+     */
+    policy = {
+      deny: ['file.folder != ""'],
+      ask: [],
+      allow: ["true"],
+    };
+
+    let thrown: unknown;
+    try {
+      await store.callTool({
+        ref,
+        args: {},
+        botId: holderId,
+        actorId: "someone@laf.local",
+      });
+    } catch (error) {
+      thrown = error;
+    } finally {
+      policy = { deny: [], ask: [], allow: ["true"] };
+    }
+
+    expect(thrown).not.toBeInstanceOf(PluginRefusedError);
+  });
 });
 
 /**

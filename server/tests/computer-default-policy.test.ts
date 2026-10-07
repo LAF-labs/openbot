@@ -279,7 +279,7 @@ describe("the shipped rules and somebody else's server", () => {
       element: { ref: "", role: "", name: "", type: "" },
       key: "",
       submit: false,
-      file: { path: "", name: "", extension: "" },
+      file: { path: "", name: "", extension: "", folder: "" },
       intent: "write_tool",
       mcp: { server: "notion", tool: "createPage", effect: "write" },
     });

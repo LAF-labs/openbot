@@ -331,6 +331,60 @@ describe("the computer gateway", () => {
     expect(calls).toEqual(["readFile"]);
   });
 
+  test("a rule about a file's folder is false for an action that names no file, not unevaluable", async () => {
+    /*
+     * An absent field throws inside CEL and a deny that throws denies (`govern.ts`, "every field,
+     * on every action"). Were `file.folder` missing where there is no file, one rule about one
+     * folder would refuse every click and every page.
+     */
+    const { gateway, calls } = await gatewayWith({
+      ...PERMISSIVE,
+      deny: ['file.folder == "private"'],
+    });
+    await gateway.click("default", "bot-1", ACTOR, {
+      ref: "e9",
+      snapshotId: 7,
+    });
+    await gateway.navigate("default", "bot-1", ACTOR, "https://example.com/");
+    expect(calls).toEqual(["click", "navigate"]);
+
+    // And where there is a file it is a rule about that file's folder — to the letter.
+    await expect(
+      gateway.readFile("default", "bot-1", ACTOR, { path: "private/pay.csv" }),
+    ).rejects.toThrow(ActionRefusedError);
+    await gateway.readFile("default", "bot-1", ACTOR, {
+      path: "Private/pay.csv",
+    });
+    await gateway.readFile("default", "bot-1", ACTOR, { path: "private" });
+    expect(calls).toEqual(["click", "navigate", "readFile", "readFile"]);
+
+    // BLANK, and not merely there: "anything in a folder" is not said of an act that names no
+    // file, nor of a file at the top. (A stand-in like "-" passed the rule above.)
+    const inAFolder = await gatewayWith({
+      ...PERMISSIVE,
+      deny: ['file.folder != ""'],
+    });
+    await inAFolder.gateway.click("default", "bot-1", ACTOR, {
+      ref: "e9",
+      snapshotId: 7,
+    });
+    await inAFolder.gateway.navigate(
+      "default",
+      "bot-1",
+      ACTOR,
+      "https://example.com/",
+    );
+    await inAFolder.gateway.readFile("default", "bot-1", ACTOR, {
+      path: "pay.csv",
+    });
+    await expect(
+      inAFolder.gateway.readFile("default", "bot-1", ACTOR, {
+        path: "private/pay.csv",
+      }),
+    ).rejects.toThrow(ActionRefusedError);
+    expect(inAFolder.calls).toEqual(["click", "navigate", "readFile"]);
+  });
+
   test("a permitted write happens and is recorded by path, never by contents", async () => {
     const { gateway, calls, rows } = await gatewayWith(PERMISSIVE);
     await gateway.writeFile("default", "bot-1", ACTOR, {
@@ -867,7 +921,7 @@ describe("the gateway when the boundary asks a person", () => {
   test("a file write can be held back the same way a click can", async () => {
     const { gateway, calls, rows } = await gatewayWith({
       deny: [],
-      ask: ['intent == "write_file" && !matches(file.path, "^notes/")'],
+      ask: ['intent == "write_file" && file.folder != "notes"'],
       allow: ["true"],
     });
 

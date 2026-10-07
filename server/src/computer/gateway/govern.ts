@@ -292,6 +292,17 @@ export function createGovern(options: {
         });
 
     /*
+     * THE FILE, DESCRIBED ONCE, from the one reading above — and told what its path names, because
+     * only this function knows: a listing's path is a folder, every other act's is a file, and
+     * `file.folder` is different for the two (`addresses.ts`, `describeFile`). Held here so that a
+     * listing's second name (`folderToo`, below) is said of this same description and cannot be
+     * given a folder of its own.
+     */
+    const file = filePath
+      ? describeFile(filePath, intent === "list_files" ? "folder" : "file")
+      : { path: "", name: "", extension: "", folder: "" };
+
+    /*
      * EVERY FIELD, ON EVERY ACTION, EMPTY WHERE THERE IS NOTHING TO SAY.
      *
      * cel-js throws on a field that is not in the context, `matches` returns a broken deny as a
@@ -327,9 +338,7 @@ export function createGovern(options: {
         name: element?.name ?? "",
         type: element?.type ?? "",
       },
-      file: filePath
-        ? describeFile(filePath)
-        : { path: "", name: "", extension: "" },
+      file,
     };
 
     if (repetition.threshold !== null && repetition.fingerprint) {
@@ -414,6 +423,12 @@ export function createGovern(options: {
      * this" is as strict as a deny and is the absence of a rule, not a rule: under a policy that
      * allows only `file.path == "notes"`, the listing of `notes` was refused because `notes/`
      * matched nothing — the folder a person had allowed, refused under every spelling of it.
+     *
+     * WHAT TWO NAMES CANNOT DO IS EXEMPT A FOLDER BY A NEGATED MATCH: under "refuse a listing that
+     * is `!matches(file.path, "^notes/")`", the bare name `notes` is not under `notes/`, the refusal
+     * is the answer the order reaches first, and `notes` itself is refused under every spelling
+     * (the third read of that change, its F1). The folder's two names are two PATHS; its
+     * `file.folder` is one fact, the same under both, and it is what such a rule compares.
      */
     const folderToo = (asNamed: PolicyDecision): PolicyDecision => {
       if (intent !== "list_files" || !filePath || filePath === ".") {
@@ -421,8 +436,8 @@ export function createGovern(options: {
       }
       const asFolder = evaluateActionPolicy(policy, {
         ...context,
-        // The folder's own name and extension; only its path is said the other way.
-        file: { ...describeFile(filePath), path: `${filePath}/` },
+        // The folder's own name, extension and folder; only its path is said the other way.
+        file: { ...file, path: `${filePath}/` },
       });
       return READ_IN_ORDER[asFolder.source] < READ_IN_ORDER[asNamed.source]
         ? asFolder
