@@ -138,6 +138,51 @@ describe("a file act is off the page", () => {
     });
   }
 
+  /*
+   * EVERY ROW A FILE ACT LEAVES. A decision that allowed it, one that refused it, a question
+   * about it, a failure after it was allowed, and the row that says it came round again: each
+   * is written from its own place in `govern`, and none names the page.
+   */
+  test("allowed, failed, refused, asked about and counted: no row a file act leaves is filed under the page the browser is on", async () => {
+    const { gateway, rows } = await parked({
+      deny: ['file.name == "payroll.csv"'],
+      ask: ['file.name == "contract.md"'],
+      allow: ["true"],
+    });
+    const read = (path: string) =>
+      outcome(gateway.readFile(COMPUTER, BOT, ACTOR, { path }));
+
+    for (let time = 1; time <= 3; time += 1) {
+      expect(await read("uploads/a.csv")).toBe("went through");
+    }
+    expect((await read("uploads/gone.csv")) as Error).toHaveProperty(
+      "message",
+      "laf:file_not_found",
+    );
+    expect(await read("private/payroll.csv")).toBeInstanceOf(
+      ActionRefusedError,
+    );
+    expect(await read("private/contract.md")).toBeInstanceOf(
+      ActionNeedsApprovalError,
+    );
+
+    expect(rows.map((row) => row.eventType)).toEqual([
+      "computer.action_allowed",
+      "computer.action_allowed",
+      "computer.action_repeated",
+      "computer.action_allowed",
+      "computer.action_allowed",
+      "computer.action_failed",
+      "computer.action_refused",
+      "approval.requested",
+    ]);
+    // Blank where a row always has the field, and absent where it has it only when there is one.
+    expect(rows.map((row) => row.payload.page ?? "")).toEqual(
+      rows.map(() => ""),
+    );
+    expect(JSON.stringify(rows)).not.toContain("kbstar");
+  });
+
   test("an upload is not one of them: it hands a file to the page, and a rule about the site still decides it", async () => {
     const { gateway, rows, computer } = await parked(ASKS_ABOUT_THE_BANK);
 
@@ -253,6 +298,30 @@ describe("a file act is off the page", () => {
       expect(JSON.stringify(rows)).not.toContain("kbstar");
     });
   }
+
+  /*
+   * THE ONE ROW OF A RUN'S THAT NOTHING HELD. The row that says a call came round again is
+   * written from its own place, and names a page for every call that names no file — which a
+   * run is. A mutation that handed it the parked page passed every test there was.
+   */
+  test("the row that says a run came round again is filed under no page, wherever the browser is parked", async () => {
+    const { gateway, rows } = await parked(PERMISSIVE);
+
+    for (let time = 1; time <= 3; time += 1) {
+      await gateway.runScript(COMPUTER, BOT, ACTOR, {
+        script: SCRIPT,
+        files: [],
+      });
+    }
+
+    const again = rows.filter(
+      (row) => row.eventType === "computer.action_repeated",
+    );
+    expect(again.map((row) => [row.payload.count, row.payload.page])).toEqual([
+      [3, ""],
+    ]);
+    expect(JSON.stringify(rows)).not.toContain("kbstar");
+  });
 
   /*
    * NO RULE A DEPLOYMENT STARTS WITH IS ABOUT A SITE ALONE. The one that reads `page.host` says
