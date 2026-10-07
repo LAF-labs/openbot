@@ -95,6 +95,16 @@ the one server process, which is the whole of it on a deployment shaped like thi
 another server's tools over MCP goes through the same counter, keyed on the tool alone — its
 arguments are not in the key — and crossing a threshold writes `mcp.call_repeated`.
 
+A run of a script the Bot wrote (`runScript`, offered to no Bot yet) is ONE call to this count:
+keyed on the script's digest and the files it names, in any order, and not on the time it asked
+for. The files it reads and the files it makes are each decided by every rule about their path —
+and are NOT counted. To a rule that decides by `repeat.count` on a file's intent a run's read is
+a first attempt every time: twelve different scripts over one file are not "the same read twelve
+times", and `deny: intent == "read_file" && repeat.count >= 3` does not see them. That is a
+known hole and not a design: it is so because a read counted beside its run made the fifth
+identical run two questions for one answer, and it stays so only until a run is one question and
+its file acts are counted in the file's own history — before any tool offers a run.
+
 Rules use CEL expressions plus case-insensitive `contains()` and `matches()`.
 Rules are evaluated in three lists, in order: `deny`, then `ask`, then `allow`.
 The policy engine fails closed: a missing or empty policy permits nothing, a
