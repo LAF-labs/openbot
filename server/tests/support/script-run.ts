@@ -113,6 +113,23 @@ export function fakeComputer(
         truncated: false,
       };
     },
+    /** The Bot's own write, as text: what is there is replaced, as the computer's write does. */
+    async writeFile(input: { path: string; contents: string }) {
+      asked.push(`writeFile ${input.path}`);
+      const written = bytes(input.contents);
+      files.set(input.path, written);
+      return { path: input.path, bytes: written.byteLength, appended: false };
+    },
+    /** A file handed to the page the browser is on. */
+    async uploadFile(input: { ref: string; path: string }) {
+      asked.push(`uploadFile ${input.path}`);
+      return {
+        action: "upload_file",
+        ref: input.ref,
+        path: input.path,
+        url: snapshot.url,
+      } as never;
+    },
     async putFile(path: string, body: Uint8Array) {
       asked.push(`putFile ${path}`);
       const refused = options.refusePut?.(path);

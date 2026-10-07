@@ -70,7 +70,18 @@ Policy rules can inspect:
 - `intent`
 - `bot.id`
 - `actor.id`
-- `page.url`, `page.host`
+- `page.url`, `page.host` — of the page an act is made ON: a press, typing, a key, a scroll, a
+  tab switch, an upload (which hands a file to the page), and for a navigation the page being
+  opened. BLANK for an act that has nothing to do with any page, whatever the browser is showing:
+  a read, a write or a listing of the Bot's own folder (`read_file`, `write_file`, `list_files`)
+  and a run of a script. So a rule about a site that says nothing of `intent` —
+  `page.host == "bank.example"` — decides what is done on that site and does NOT fire on a file
+  act made while the browser is parked there; until 2026-10-07 it did. A rule about files is
+  written about `file`. No rule a deployment starts with is affected: the one that reads
+  `page.host` says `intent == "activate"` as well (`MONEY_HOST_RULE`, `shared/policy-rules.ts`),
+  and the one preset on the boundaries screen that reads it says `intent == "navigate"`. The
+  same blank is what a yes or a No about a file is bound to and what its rows are filed under,
+  so neither changes when the browser moves
 - `element.ref`, `element.role`, `element.name`, `element.type`
 - `key`
 - `submit`, true when a type call will press Enter when it has finished

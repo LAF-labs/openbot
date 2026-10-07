@@ -212,18 +212,41 @@ export function createGovern(options: {
      *
      * A script runs where there is no network and no browser, over files it was handed; the page
      * this computer happens to be parked on is nothing to do with it. Given that page — which is
-     * what the line below gives every other act — three things go wrong at once: a rule about a
-     * host fires on a run because of where the browser is (and `page.host` is what the money
+     * what the line below gives an act on the page — three things go wrong at once: a rule about
+     * a host fires on a run because of where the browser is (and `page.host` is what the money
      * rules are written against), the row files a run under a site, and "always" on its card is
      * an allowance for THAT SITE, since a scope is the file, else the host, else the tool
      * (`standing-approvals.ts`, `allowanceFor`) — a person agreeing to scripts has agreed to
      * everything on a bank's pages. Blank, the scope is the tool, which is what the button says.
      *
+     * AND NEITHER HAS A READ, A WRITE OR A LISTING OF THE BOT'S OWN FOLDER. The run was taken
+     * off the page on 2026-10-07 and the files were not, though the blind check below had always
+     * called a file call's page "structurally empty": each was decided, bound and filed under
+     * wherever the browser sat. Measured with the browser parked on a bank and one rule about
+     * that site, with no word in it about what is done there — the Bot's own read was asked
+     * about; a run that named a file was asked about, through its read, as a question about a
+     * file filed under the bank; a run that named none went through. And the page was part of
+     * what an answer about a file is bound to (`approvals.ts`, `fingerprintOf`): a yes given
+     * after the browser had moved was "a different action", and a No was asked round by moving.
+     *
+     * WHAT THAT CHANGES FOR A RULE SOMEBODY WROTE: one about `page.host` or `page.url` that says
+     * nothing of `intent` no longer fires on a file act, wherever the browser is. No rule a
+     * deployment starts with is such a rule (`shared/policy-rules.ts`: the one that reads the
+     * host, `MONEY_HOST_RULE`, says `intent == "activate"`), and a rule about files is written
+     * about `file`.
+     *
+     * BY WHAT THE ACT DOES, NEVER BY WHETHER IT NAMES A FILE. An upload names one too, and hands
+     * it to the page: it is on the page, and a rule about the site decides it.
+     *
      * Blank here is "there is none", the structural kind — not "the server could not see it",
-     * which is decided below and refuses. A run is not refused for want of a look at a screen it
-     * never uses, for the reason the workspace is not.
+     * which is decided below and refuses. Neither a run nor a file act is refused for want of a
+     * look at a screen it never uses.
      */
-    const offThePage = intent === "run_script";
+    const offThePage =
+      intent === "run_script" ||
+      intent === "read_file" ||
+      intent === "write_file" ||
+      intent === "list_files";
     // For a navigation the relevant page is the one being opened, not the one already loaded. Using
     // the cached URL would mean `page.host == "..."` could never match the destination, which is the
     // only thing a rule about navigation would ever want to say.
@@ -363,14 +386,13 @@ export function createGovern(options: {
      * Refusing those was harmless while the shipped policy mentioned neither field — it now mentions
      * both, and without this line every deployment would refuse `computer_read_file` until somebody
      * had looked at a web page first, with a message about a screen the Bot was never using.
+     *
+     * AND SO DOES A RUN. One list says which acts those are — `offThePage`, above — and it is the
+     * list that blanks their page: this check and that blank were two lists once, which agreed
+     * about the blind check and not about the page.
      */
     const policy = options.policy();
-    const aboutThePage =
-      intent !== "read_file" &&
-      intent !== "write_file" &&
-      intent !== "list_files" &&
-      // AND SO DOES A RUN, for the workspace's reason: see `offThePage` above.
-      !offThePage;
+    const aboutThePage = !offThePage;
     const blind =
       (!cached || cached.stale) &&
       subject.targetUrl === undefined &&
