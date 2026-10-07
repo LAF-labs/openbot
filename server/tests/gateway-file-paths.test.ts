@@ -339,6 +339,22 @@ describe("a path in the Bot's folder has one spelling", () => {
     }
   });
 
+  test("white space on the inner side of a first or last name is a letter of that name", () => {
+    // The lower bound of what is refused. Only the OUTER edges are what the computer trims away
+    // once a mark is gone; `"a /b"` is a folder called `"a "`, written and read as that.
+    for (const honest of [
+      "a /b",
+      "a/ b",
+      "a /c/ b",
+      "notes /a.md",
+      "notes/ a.md",
+      "reports / 2026.md",
+    ]) {
+      expect(hasNoOneReading(honest)).toBe(false);
+      expect(workspacePathOf(honest)).toBe(honest);
+    }
+  });
+
   test("a spelling is its own spelling: reading it again changes nothing", () => {
     for (const written of EVERY_SPELLING) {
       const once = workspacePathOf(written);
@@ -552,6 +568,106 @@ describe("a rule about a file holds however the path is written", () => {
     }
   });
 
+  test("the folder's other name is the same folder: it keeps the folder's own name", async () => {
+    // On main `private/` had no name at all, so "everything not called private" matched it and
+    // the folder was listed by its slash name (the third read's mutation R13 brings that back).
+    const { gateway } = await gatewayUnder({
+      deny: [],
+      ask: [],
+      allow: ['file.name != "private"'],
+    });
+    for (const path of ["private", "private/", "./private/", "private/."]) {
+      const listed = await cameOf(() =>
+        gateway.listFiles("default", "bot-1", ACTOR, { path }),
+      );
+      expect(`${JSON.stringify(path)} · ${listed}`).toBe(
+        `${JSON.stringify(path)} · laf:no_rule_allows`,
+      );
+    }
+    expect(
+      await cameOf(() =>
+        gateway.listFiles("default", "bot-1", ACTOR, { path: "notes/" }),
+      ),
+    ).toBe("listed: notes/a.md");
+  });
+
+  test("only a listing has two names: a file called `notes` is not under notes/", async () => {
+    const { gateway } = await gatewayUnder({
+      deny: [],
+      ask: [],
+      allow: ['matches(file.path, "^notes/")'],
+    });
+    await rm(join(root, "notes"), { recursive: true, force: true });
+    const before = await everything();
+    expect(
+      await cameOf(() =>
+        gateway.writeFile("default", "bot-1", ACTOR, {
+          path: "notes",
+          contents: "a FILE called notes, at the top",
+        }),
+      ),
+    ).toBe("laf:no_rule_allows");
+    expect(
+      await cameOf(() =>
+        gateway.readFile("default", "bot-1", ACTOR, { path: ".env/" }),
+      ),
+    ).toBe("laf:no_rule_allows");
+    expect(await everything()).toEqual(before);
+  });
+
+  test("the whole folder has one name, and where both names ask, the name that was asked for is the question", async () => {
+    // `./` is nobody's name for the folder: a rule written against it does not stop its listing.
+    const whole = await gatewayUnder(allowingAllBut('file.path == "./"'));
+    expect(
+      await cameOf(() =>
+        whole.gateway.listFiles("default", "bot-1", ACTOR, { path: "." }),
+      ),
+    ).toContain("listed: ");
+    // Two rules that ask, one per name. The rule on the question is the one an allowance is
+    // granted under, so it is the one about the name the folder was asked for by.
+    const THE_FOLDER = 'file.path == "notes"';
+    const { gateway } = await gatewayUnder({
+      deny: [],
+      ask: [THE_FOLDER, 'matches(file.path, "^notes/")'],
+      allow: ["true"],
+    });
+    const asked = (await gateway
+      .listFiles("default", "bot-1", ACTOR, { path: "notes" })
+      .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
+    expect(asked).toBeInstanceOf(ActionNeedsApprovalError);
+    expect(asked.rule).toBe(THE_FOLDER);
+  });
+
+  test("a cost, kept on purpose: a folder whose name ends in white space is not listed by its own name", async () => {
+    /*
+     * `"reports / 2026.md"` has one reading and is written — into a folder called `"reports "`.
+     * That folder's own path ends in white space, which the computer reads only behind a mark
+     * (`"reports /"`), so a Bot cannot name it; main listed it by the mark. What it holds is
+     * still read by its full path, and the whole folder's listing still shows it.
+     */
+    const { gateway } = await gatewayUnder(allowingAllBut());
+    const file = "reports / 2026.md";
+    await gateway.writeFile("default", "bot-1", ACTOR, {
+      path: file,
+      contents: "[a report]",
+    });
+    expect(
+      await cameOf(() =>
+        gateway.readFile("default", "bot-1", ACTOR, { path: file }),
+      ),
+    ).toBe("read: [a report]");
+    for (const path of ["reports /", "reports /.", "./reports /"]) {
+      expect(
+        await cameOf(() =>
+          gateway.listFiles("default", "bot-1", ACTOR, { path }),
+        ),
+      ).toBe("laf:file_path_refused");
+    }
+    expect(
+      await cameOf(() => gateway.listFiles("default", "bot-1", ACTOR, {})),
+    ).toContain(file);
+  });
+
   test("the whole folder, denied, is not listed by a path that is blank or only looks like nothing", async () => {
     const { gateway, rows } = await gatewayUnder(
       allowingAllBut('file.path == "."'),
@@ -585,7 +701,10 @@ describe("a rule about a file holds however the path is written", () => {
     ).toEqual([".", ".", ".", "."]);
   });
 
-  test("the preset that asks about a write outside notes/ is never walked past: nothing lands outside it unasked", async () => {
+  // By a SPELLING. By letter case it is walked past — `matches` ignores case and a VM's disk does
+  // not, so `Notes/x.md` lands unasked. That is the rule's own fault and the pull request after
+  // this one; nothing here tries it.
+  test("the preset that asks about a write outside notes/ is not walked past by a spelling: nothing lands outside it unasked", async () => {
     const policy: ActionPolicy = {
       deny: [],
       // As the boundaries screen offers it (`app/src/routes/_authed/admin/boundaries.tsx`).
@@ -756,6 +875,39 @@ describe("everything about one file is about its one spelling", () => {
     ]);
   });
 
+  test("the rows of an act that was allowed and then failed name the one spelling too", async () => {
+    const { gateway, rows } = await gatewayUnder(allowingAllBut());
+    expect(
+      await cameOf(() =>
+        gateway.readFile("default", "bot-1", ACTOR, {
+          path: " ./nothing//here.md/ ",
+        }),
+      ),
+    ).toBe("laf:file_not_found");
+    expect(rows.map((row) => [row.eventType, row.payload.file])).toEqual([
+      ["computer.action_allowed", "nothing/here.md"],
+      ["computer.action_failed", "nothing/here.md"],
+    ]);
+  });
+
+  test("the row that says a person was asked names the one spelling", async () => {
+    const { gateway, rows } = await gatewayUnder({
+      deny: [],
+      ask: ['file.name == "a.md"'],
+      allow: ["true"],
+    });
+    expect(
+      await cameOf(() =>
+        gateway.readFile("default", "bot-1", ACTOR, { path: "./notes//a.md " }),
+      ),
+    ).toBe("asked");
+    expect(
+      rows
+        .filter((row) => row.eventType === "approval.requested")
+        .map((row) => row.payload.file),
+    ).toEqual(["notes/a.md"]);
+  });
+
   test("for every spelling that is sent, the row names the string the computer was sent", async () => {
     const { gateway, sent, rows } = await gatewayUnder(allowingAllBut());
     for (const path of EVERY_SPELLING) {
@@ -802,7 +954,10 @@ describe("everything about one file is about its one spelling", () => {
     ]);
   });
 
-  test("what the computer refuses as a path goes on as it was written, and the trail has the attempt", async () => {
+  // In front of a store that takes any string. `jsonb` itself refuses a NUL and half an emoji,
+  // so on the real trail an attempt whose path holds one throws at the insert: nothing is sent
+  // and nothing is kept. True before this change, and not put right by it.
+  test("what the computer refuses as a path goes on as it was written, and a store that takes the row has the attempt", async () => {
     for (const path of NOT_A_PATH) {
       const { gateway, sent, rows } = await gatewayUnder(allowingAllBut());
       expect(
@@ -841,15 +996,25 @@ describe("the person's own door", () => {
     ]);
   });
 
-  test("a person still reaches a file a Bot cannot name, under its own name", async () => {
-    const { gateway } = await gatewayUnder(allowingAllBut());
-    const handed = await gateway.downloadFile(
+  test("a person's door hands a path on as it was written: behind a mark it reaches a file a Bot cannot name", async () => {
+    const { gateway, rows } = await gatewayUnder(allowingAllBut());
+    const marked = await gateway.downloadFile(
       "default",
       "bot-1",
       ACTOR,
       "private/pay.csv /.",
     );
-    expect(new TextDecoder().decode(handed.bytes)).toBe(A_SPACED_NAME);
+    expect(new TextDecoder().decode(marked.bytes)).toBe(A_SPACED_NAME);
+    // And by its plain name it reaches the NEIGHBOUR, as it always did — the computer trims —
+    // with a row that names the file that was handed over, not the one that was meant.
+    const plain = await gateway.downloadFile(
+      "default",
+      "bot-1",
+      ACTOR,
+      "private/pay.csv ",
+    );
+    expect(new TextDecoder().decode(plain.bytes)).toBe(PAYROLL);
+    expect(rows.at(-1)?.payload.file).toBe("private/pay.csv");
   });
 });
 
