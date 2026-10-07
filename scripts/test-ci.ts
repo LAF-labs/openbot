@@ -1904,7 +1904,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * of what draws as another by what Unicode says a character is, and an answer naming a file by
  * half a character not vouched for (two); a put that throws what is no fact being that file's
  * alone, a Stop and a question mid-filing each leaving the files nobody got to named on one
- * row, and a FILE where `made/` belongs said once on the ending, over the real workspace
+ * row, and a FILE where `made/` belongs said once, on that row, over the real workspace
  * (four — and the test of a computer that stops answering rewritten in place, each file left
  * now decided and given its row); two calls whose parts only run together the same way being
  * two folders, and a yes to a script for the time it asked not being a yes to longer (two);
@@ -1914,20 +1914,27 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * names (a soft hyphen, a Hangul filler, half a character), ten for a report held only by its
  * type — no output beside a thousand characters of it, a status of 1e21, a run stopped at its
  * time that left with 0 — and one that what a real daemon says of each way a run ends is still
- * passed on. Two to `app`: each reason a filing ends with files untried held to the server's
- * own two words (`audit-labels.test.ts`), and the page mounted drawing why files were
+ * passed on. Two to `app`: each reason a run's files were left untried held to the server's
+ * own three words (`audit-labels.test.ts`), and the page mounted drawing why files were
  * withheld, why none was tried and which nobody got to (`audit-script-rows.test.tsx`). One to
  * `root` in `workbench-daemon.test.ts`, WRITTEN WITHOUT BEING RUN — nothing that starts the
  * daemon ran on the machine it was written on, so the gate was its first run: a file whose
  * name holds what a display leaves out is skipped, and Korean and a plain emoji are names.
  * By hand: 3833 and 26 are 3859; 2172 and 2 are 2174; 914 and 1 are 915.
  *
+ * AND `server` BY TWO MORE, to 3861, on that same pull request, for what Codex found in it: the
+ * fix for the file where `made/` belongs had moved the ending's row to after the look at that
+ * folder — behind a request to the computer and behind the call's turn among the calls filing.
+ * Both in `workbench-gateway.test.ts`: how a run ended is on the trail before the computer is
+ * asked anything about what it made, and before the call waits behind another call's files.
+ * By hand: 3859 and 2 are 3861.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3859, roots: ["server"] },
+  { name: "server", floor: 3861, roots: ["server"] },
   { name: "app", floor: 2174, roots: ["app"] },
   { name: "agent-computer", floor: 530, roots: ["agent-computer"] },
   { name: "root", floor: 915, roots: ["tests", "agent-bot"] },
