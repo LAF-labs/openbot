@@ -13,7 +13,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   isProductName,
-  isRunPath,
   type ProductsRefusal,
   RUN_PATH_CHARS,
   type RunEnding,
@@ -36,7 +35,7 @@ import {
   factOfError,
   STOPPED,
 } from "../client";
-import { hasNoOneReading } from "./addresses";
+import { workspacePathOf } from "./addresses";
 
 /** What a caller asks a run with. */
 export type ScriptRunInput = {
@@ -78,6 +77,13 @@ export type ScriptRun = {
   productsRefused?: ProductsRefusal;
   /** How many things it left that were not files to hand back: a folder, a link, a hidden name. */
   skipped: number;
+  /**
+   * The files the script was handed, each by the path it was placed under: the one spelling of
+   * the path the call named, which is the path the read's row names and the run's own row lists.
+   * A script finds its file by this name, or by any name the operating system resolves to it
+   * (`./data.csv` for `data.csv`); a caller that named `"data.csv "` is told here what it is.
+   */
+  files: string[];
   products: ScriptProduct[];
 };
 
@@ -114,20 +120,19 @@ export class ScriptNotRunError extends Error {
  * (`workbench/client.ts`, `wrongPartOf`); what only it can see — the files' sizes together, once
  * they have been read — comes back from it as `invalid`, inside the governed run.
  *
- * A PATH THAT IS NOT ITS OWN SPELLING IS REFUSED HERE TOO (`isRunPath`): one with white space at
- * either end, an empty or a `.` segment, `..` — what `govern`'s one reading of a path would
- * change (`addresses.ts`, `workspacePathOf`), or what the computer refuses as a path. The sandbox
- * places a file at its path as written and the script opens it by the name its call gave, so a
- * run takes a path under no spelling but its own; and, like the rest of what is refused here,
- * with no row: nothing was read and nothing decided, so there is nothing for the trail to say
- * happened. What passes is read by `govern` and is unchanged by that reading — which a test
- * holds, since nothing in this file is a reading of its own.
- *
- * BUT NOT A PATH WITH NO ONE READING (`hasNoOneReading`: a backslash, or white space at the edge
- * of a first or last name behind a mark). No rule can be asked about one, which makes it the
- * gateway's own to refuse: `govern` does, when the file is read, with a row that carries the
- * path as it was written — the attempt is on the trail. Until this was rebased onto that floor
- * such a path was refused here in silence, as `..` is. It is bounded first, since a row holds it.
+ * NOTHING ABOUT HOW A PATH IS WRITTEN IS JUDGED HERE. A file a call names is a string of no
+ * more than a path's length, and that is all this asks of it: every such string goes on to
+ * `govern`, which reads a path once (`addresses.ts`, `workspacePathOf`) and leaves a row for
+ * whatever comes of it. `./data.csv` and `"data.csv "` are judged, read and handed to the
+ * script as `data.csv`; a path with no one reading (a backslash) is refused by the gateway's
+ * floor; what is no path at all (`..`, an absolute path, a NUL, a blank) is judged as written
+ * and refused by the computer it is sent to — the Bot's own read, in all three. On its first
+ * rebase onto that reading this still refused the first and the last of those here, in
+ * silence; reversed the same day (2026-10-07), before the change's second read: a refusal that
+ * leaves nothing on the trail is what that reading was careful not to add — a spelling tried
+ * against a denied file was invisible through a run, and a refused row through
+ * `computer_read_file` — and `./data.csv` is how a model writes a file's name. The length is
+ * held first because a row carries the string.
  *
  * `unknown` where a type says `string`: what arrives here will be a model's arguments.
  */
@@ -160,16 +165,33 @@ export function requestProblem(
   if (!Array.isArray(files) || files.length > WORKBENCH_LIMITS.files) {
     return invalid("files");
   }
-  const named = new Set<string>();
   for (const path of files) {
     if (typeof path !== "string" || path.length > RUN_PATH_CHARS) {
       return invalid("files");
     }
-    if (!isRunPath(path) && !hasNoOneReading(path)) return invalid("files");
-    if (named.has(path)) return invalid("files");
-    named.add(path);
   }
   return null;
+}
+
+/**
+ * The files a call names, each once: a file named twice — by one string, or by two spellings of
+ * one path — is one file to read, to judge and to hand a script.
+ *
+ * WHY BEFORE `govern`, AND NOT LEFT TO IT. Each file is a decision of its own, and two decisions
+ * about one file are bound to the same answer: where a rule asks about that file, the first
+ * would spend the person's yes and the second ask again, on every attempt, and the call would
+ * never get through. So two names for one file are told apart here, by the function `govern`
+ * itself reads a path with — asked only WHETHER two strings are one file. What is judged, read
+ * and handed on is still the string `govern` hands the act (`acts.ts`, `runScript`), and a
+ * string that reading has no spelling for stands as it was written, as it does there.
+ */
+export function filesNamedBy(input: ScriptRunInput): string[] {
+  const named = new Map<string, string>();
+  for (const path of input.files) {
+    const file = workspacePathOf(path) ?? path;
+    if (!named.has(file)) named.set(file, path);
+  }
+  return [...named.values()];
 }
 
 /** A script's SHA-256, over the bytes it is sent as. What a row says instead of the script. */

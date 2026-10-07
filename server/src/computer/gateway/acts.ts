@@ -44,6 +44,7 @@ import type { Govern, JudgedElement } from "./govern";
 import { RUN_SCRIPT_TOOL } from "./intent";
 import {
   areProductNames,
+  filesNamedBy,
   MADE_MAX_BYTES,
   madeDirectoryFor,
   madeFull,
@@ -439,16 +440,19 @@ export function createActs(deps: {
        * the row carries the digest, and the read is not counted as a call of its own — the run
        * is what comes round again, and the run is what is counted (`govern.ts`).
        *
-       * ONE READING OF EACH PATH, AND IT IS `govern`'S. The path a rule was asked about is the
-       * one handed back to the act, and that string — not the one the call wrote — is what the
-       * computer is sent, what the script's file is placed under, and what the run is then
-       * identified by (`script.files` below). The two are the same string for every path that
-       * gets this far (`requestProblem`); nothing here rests on that. A path with no one reading
-       * does not get this far: `govern` refuses it, with its row, and that ends the call.
+       * ONE READING OF EACH PATH, AND IT IS `govern`'S. A call names a file however a model
+       * writes one — `./data.csv`, `data//2026.csv`, `"data.csv "` — and none of that is judged
+       * before this (`requestProblem`). The path a rule was asked about is the one handed back
+       * to the act, and that string, not the one the call wrote, is what the computer is sent,
+       * what the script's file is placed under, what the run is then identified by
+       * (`script.files` below) and what the caller is told. A path with no one reading, or one
+       * that is no path at all, ends the call here with its row: refused by `govern`'s floor,
+       * or sent as written and refused by the computer — as the Bot's own read is.
        */
       const files: WorkbenchFile[] = [];
       let together = 0;
-      for (const named of input.files) {
+      // Each file once, however often and however differently it was named (`filesNamedBy`).
+      for (const named of filesNamedBy(input)) {
         let path = named;
         const bytes = await govern(
           computerId,
@@ -474,6 +478,18 @@ export function createActs(deps: {
             limit: WORKBENCH_LIMITS.filesBytes,
           });
         }
+        /*
+         * STAGED UNDER THE PATH IT WAS JUDGED AND READ BY — AND NOTHING ELSE IS STAGED. This is
+         * the invariant the rest leans on: the sandbox holds only files that were judged, each
+         * under the one spelling a rule was asked about. So whatever string a script opens —
+         * the `./data.csv` its call gave, `data//2026.csv`, a name its call never gave at all —
+         * it cannot reach a file that was not judged, because there is no other file there. The
+         * operating system resolves the script's own `./data.csv` to the `data.csv` staged
+         * here. What it does not resolve is the little the reading took off that it would not:
+         * white space at an end of the path, a slash after a file's name. A script that opens
+         * exactly that fails on its own line, with the read already on the trail, and the
+         * caller has been told the name its file is under (`files` on what it is handed back).
+         */
         files.push({ path, bytes });
       }
       /** What a run is, to every reader that tells one from another: by the files AS READ. */
@@ -535,6 +551,7 @@ export function createActs(deps: {
           ? { productsRefused: run.productsRefused }
           : {}),
         skipped: run.skipped,
+        files: script.files,
         products,
       });
 

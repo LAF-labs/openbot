@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -38,6 +38,7 @@ import {
 } from "../src/computer/gateway/addresses";
 import { RUN_SCRIPT_TOOL } from "../src/computer/gateway/intent";
 import {
+  filesNamedBy,
   MADE_MAX_BYTES,
   madeDirectoryFor,
   requestProblem,
@@ -57,7 +58,20 @@ import {
 } from "../src/plugins/servers";
 import { toolNameFor } from "../src/plugins/store";
 import { outcomeOfError } from "../src/runner/unattended";
-import type { WorkbenchAnswer } from "../src/workbench/client";
+import {
+  createWorkbench,
+  type Workbench,
+  type WorkbenchAnswer,
+} from "../src/workbench/client";
+import {
+  EVERY_SPELLING,
+  FILES as FOLDER_FILES,
+  NOT_A_PATH,
+  NOTE,
+  PAYROLL,
+  RULES as PAYROLL_RULES,
+  SECRET,
+} from "./support/path-spellings";
 import {
   bytes,
   ENDED,
@@ -231,6 +245,8 @@ describe("a script's run, allowed", () => {
       stdoutBytes: 16,
       stderrBytes: 0,
       skipped: 0,
+      // The names the script's files are under, and where the file it made is.
+      files: ["uploads/sales.csv", "uploads/costs.csv"],
       products: [
         { name: "by-day.csv", bytes: 17, path: `${folder}/by-day.csv` },
       ],
@@ -487,24 +503,9 @@ describe("a script's run, before anything is decided", () => {
         "laf:script_inputs_invalid",
         { field: "files" },
       ],
-      [
-        "a path that leaves the folder",
-        { script: SCRIPT, files: ["uploads/../../etc/passwd"] },
-        "laf:script_inputs_invalid",
-        { field: "files" },
-      ],
-      [
-        "an absolute path",
-        { script: SCRIPT, files: ["/etc/passwd"] },
-        "laf:script_inputs_invalid",
-        { field: "files" },
-      ],
-      [
-        "one file named twice",
-        { script: SCRIPT, files: ["uploads/a.csv", "uploads/a.csv"] },
-        "laf:script_inputs_invalid",
-        { field: "files" },
-      ],
+      // Nothing about HOW a path is written is here any more: a path that leaves the folder, an
+      // absolute one, a file named twice each go on to `govern` (the describe at the foot of
+      // this file). What is left is what is not a path to put on a row at all.
       [
         "a path that is not a string",
         { script: SCRIPT, files: [7] },
@@ -512,12 +513,12 @@ describe("a script's run, before anything is decided", () => {
         { field: "files" },
       ],
       [
-        // A path with a backslash is the floor's to refuse, with a row that carries it — so it
-        // is held to a path's length first, and one over it is refused here like any other.
-        "a path too long for a row to carry, backslash or not",
+        // Every path goes on to `govern`, and its row carries it as written — so it is held to
+        // a path's length first, and one over it is refused here.
+        "a path too long for a row to carry",
         {
           script: SCRIPT,
-          files: [`${"x".repeat(WORKBENCH_PATH_CHARS)}\\`],
+          files: [`uploads/${"x".repeat(WORKBENCH_PATH_CHARS)}`],
         },
         "laf:script_inputs_invalid",
         { field: "files" },
@@ -2332,12 +2333,14 @@ describe("a run and a tool of the same name on somebody else's server", () => {
  *
  * WHO READS WHAT NOW (the rebase onto the path a rule judges, #125). A rule no longer judges a
  * path as written: `govern` reads every path once — trimmed, `.` and empty segments gone — and
- * the computer is sent that string. So the same spellings would not walk past a rule today;
- * they are still not paths a RUN takes, because the third reader is the script, which opens its
- * file by the name its call gave: refused before anything is read, with no row. A path with no
- * one reading at all — a backslash — is another thing, and the gateway's to refuse with a row.
- * In front of the real workspace still, now through the server's own client and the computer's
- * own route handlers (`support/script-run.ts`, `realComputer`).
+ * the computer is sent that string. A run's files go through that reading like the Bot's own
+ * read: the same spellings are judged as the file they name, and a rule about the file REFUSES
+ * them, with a row that names it — where the first fix of this refused them unread and unsaid,
+ * and its first rebase did still. A path with no one reading at all — a backslash — is the
+ * gateway's to refuse, with a row. In front of the real workspace still, now through the
+ * server's own client and the computer's own route handlers (`support/script-run.ts`,
+ * `realComputer`); the same held over every spelling there is a list of is the describe at the
+ * foot of this file.
  */
 describe("a path a rule read one way and the computer would read another", () => {
   const roots: string[] = [];
@@ -2387,7 +2390,7 @@ describe("a path a rule read one way and the computer would read another", () =>
     'file.extension == "csv"',
   ];
 
-  test("a file a rule denies is not read for a script by writing its path with a space, a tab or a line's end", async () => {
+  test("a file a rule denies is not read for a script by writing its path with a space, a tab or a line's end: the rule refuses it, by name", async () => {
     const leaked: string[] = [];
     for (const rule of RULES) {
       for (const path of SPELLINGS) {
@@ -2397,22 +2400,33 @@ describe("a path a rule read one way and the computer would read another", () =>
             script: SCRIPT,
             files: [path],
           }),
-        )) as ScriptNotRunError;
+        )) as ActionRefusedError;
         const held = sent.flatMap((request) =>
           request.files.map((file) => new TextDecoder().decode(file.bytes)),
         );
         if (held.length > 0) leaked.push(`${rule} / ${JSON.stringify(path)}`);
-        // Not a path a run takes: refused before anything was read, decided or recorded.
-        expect({ rule, path, code: error.code }).toEqual({
+        // Judged as the file it names, whatever was written around the name: the rule's own
+        // refusal, on a row that says which file and for which script — and nothing read.
+        expect({
           rule,
           path,
-          code: "laf:script_inputs_invalid",
+          refused: error instanceof ActionRefusedError,
+          code: error.code,
+        }).toEqual({ rule, path, refused: true, code: "laf:policy_denied" });
+        expect(rows.map((row) => row.eventType)).toEqual([
+          "computer.action_refused",
+        ]);
+        expect(rows[0]?.payload).toMatchObject({
+          action: "computer_read_file",
+          file: "private/payroll.csv",
+          forScript: sha256(SCRIPT),
+          decision: { allowed: false, rule, code: "laf:policy_denied" },
         });
         expect(computer.asked).toEqual([]);
-        expect(rows).toEqual([]);
       }
     }
-    // It was most of them: the payroll file's own bytes, in what the sandbox was sent.
+    // On the code as the first read found it, it was most of them: the payroll file's own bytes,
+    // in what the sandbox was sent.
     expect(leaked).toEqual([]);
   });
 
@@ -2602,10 +2616,12 @@ describe("a path a rule read one way and the computer would read another", () =>
  * judges, #125: `addresses.ts`, `workspacePathOf`). Since that change every file path is read
  * once, there, and the act is handed the string to send. A run meets it three ways: the files
  * its call names, the folder this server names for what it made, and the names a script gave
- * its files. For each, what a run sends has to be a string that reading leaves exactly as it is
+ * its files. For each, what a run SENDS has to be a string that reading leaves exactly as it is
  * — or the rule would be asked about one path, the script handed a file under another and the
- * caller told a third. That is so by how the strings are held and composed, and this is where it
- * is ASSERTED rather than assumed, over spellings by the thousand, as that change's own tests are.
+ * caller told a third. For a file a call names that is so because the act sends what `govern`
+ * hands back; for the folder and the names, by how they are held and composed. This is where
+ * each is ASSERTED rather than assumed, over spellings by the thousand, as that change's own
+ * tests are — and the describe after this one holds the first of them in front of the disk.
  */
 describe("every path a run sends has one reading, and is its own spelling", () => {
   /** Every way a model, a slip or a script that wants a rule walked past might write one path. */
@@ -2736,48 +2752,71 @@ describe("every path a run sends has one reading, and is its own spelling", () =
     ]);
   });
 
-  test("a path a call names is read as it was written, refused by the floor with a row, or not a request at all — and never spelled", () => {
+  /*
+   * NOTHING ABOUT HOW A PATH IS WRITTEN IS JUDGED BEFORE `govern` (reversed 2026-10-07, before
+   * this change's second read: its first rebase still refused a spelled path at the request, in
+   * silence). Every string of a path's length goes on, and what becomes of it is that reading's:
+   * one spelling, no one reading, or no path at all. What a run adds is the script — so for the
+   * first kind, the string the file is STAGED under is that one spelling, and it has to be a path
+   * the sandbox takes (`isRunPath`, which the gateway no longer asks: its client does, unsent).
+   */
+  test("no string a call names is refused before `govern` for how it is written, and what a spelled one is staged under is a path the sandbox takes", () => {
     const wrong: string[] = [];
-    let taken = 0;
+    let spelled = 0;
     let forTheFloor = 0;
-    let notARequest = 0;
-    for (const path of PATHS) {
-      const problem = requestProblem({ script: SCRIPT, files: [path] });
-      if (isRunPath(path)) {
-        // What a run takes: `govern`'s reading of it is the string itself, so the rule, the
-        // computer, the script's file and the run's own row all have one name for it.
-        taken += 1;
-        if (
-          problem !== null ||
-          hasNoOneReading(path) ||
-          workspacePathOf(path) !== path
-        ) {
-          wrong.push(
-            `taken, and not its own spelling: ${JSON.stringify(path)}`,
-          );
+    let noPath = 0;
+    for (const path of [...PATHS, ...EVERY_SPELLING, ...NOT_A_PATH, "", " "]) {
+      if (requestProblem({ script: SCRIPT, files: [path] }) !== null) {
+        wrong.push(`refused before govern: ${JSON.stringify(path)}`);
+      }
+      const staged = workspacePathOf(path);
+      if (hasNoOneReading(path)) forTheFloor += 1;
+      else if (staged === null) noPath += 1;
+      else {
+        spelled += 1;
+        // Its own spelling — read again, it is the same string — and, but for the folder
+        // itself, which is not a file and is never staged, a path the daemon places.
+        if (workspacePathOf(staged) !== staged || hasNoOneReading(staged)) {
+          wrong.push(`staged under what is not a spelling: ${staged}`);
         }
-      } else if (hasNoOneReading(path)) {
-        // Let through to `govern`, which refuses it there with a row.
-        forTheFloor += 1;
-        if (problem !== null) {
-          wrong.push(
-            `the floor's, refused without a row: ${JSON.stringify(path)}`,
-          );
-        }
-      } else {
-        // What the one reading would change, or the computer refuse: no request, and no row.
-        notARequest += 1;
-        if (problem?.code !== "laf:script_inputs_invalid") {
-          wrong.push(`not a path, and let through: ${JSON.stringify(path)}`);
+        if (!isRunPath(staged) && staged !== ".") {
+          wrong.push(`staged under what the sandbox refuses: ${staged}`);
         }
       }
     }
     expect(wrong).toEqual([]);
     // Each of the three is most of nothing unless it is some of these.
-    expect(PATHS.length).toBeGreaterThan(2500);
-    expect(taken).toBeGreaterThan(5);
+    expect(spelled).toBeGreaterThan(500);
     expect(forTheFloor).toBeGreaterThan(500);
-    expect(notARequest).toBeGreaterThan(500);
+    expect(noPath).toBeGreaterThan(300);
+  });
+
+  test("a file named twice is named once: by one string, or by any two spellings of one path", () => {
+    const once = (files: string[]) => filesNamedBy({ script: SCRIPT, files });
+    expect(once(["uploads/a.csv", "uploads/a.csv"])).toEqual(["uploads/a.csv"]);
+    // The first way it was written is the one handed to `govern`, which reads it.
+    expect(
+      once([
+        "./uploads/a.csv",
+        "uploads/a.csv",
+        " uploads//a.csv ",
+        "uploads/./a.csv/",
+        "uploads/b.csv",
+      ]),
+    ).toEqual(["./uploads/a.csv", "uploads/b.csv"]);
+    // Every spelling of the payroll that has one is the payroll, once.
+    const payroll = EVERY_SPELLING.filter(
+      (path) => workspacePathOf(path) === "private/pay.csv",
+    );
+    expect(payroll.length).toBeGreaterThan(100);
+    expect(once(payroll)).toEqual([payroll[0] as string]);
+    // What has no spelling stands as it was written, each string a thing of its own.
+    expect(once(["a\\b", "a\\b", "../x", "../x", "..", ""])).toEqual([
+      "a\\b",
+      "../x",
+      "..",
+      "",
+    ]);
   });
 
   const DIRECTORY = madeDirectoryFor(AT, {
@@ -2884,6 +2923,357 @@ describe("every path a run sends has one reading, and is its own spelling", () =
       });
       expect(hasNoOneReading(`${DIRECTORY}/${name}`)).toBe(true);
       expect(workspacePathOf(`${DIRECTORY}/${name}`)).toBeNull();
+    }
+  });
+});
+
+/*
+ * A FILE A CALL NAMES FOR A RUN IS READ AS THE BOT'S OWN READ IS — whatever way its path was
+ * written (reversed 2026-10-07, before this change's second read). A run had refused a path that
+ * was not written in its one spelling before anything, with no row: so a spelling tried against
+ * a denied file left nothing on the trail through a run, where the same string through
+ * `computer_read_file` leaves a refused row naming the file; and `./data.csv`, which is how a
+ * model writes a file's name, was a refused call. Now every string goes through `govern`: judged
+ * under its one spelling, read from the computer under it, and STAGED for the script under it.
+ *
+ * In front of the real workspace, through the server's own client and the computer's own route
+ * handlers, over the folder, the spellings and the rules `gateway-file-paths.test.ts` is held by
+ * (`support/path-spellings.ts`) — every file with contents of its own, so that what reached the
+ * script says WHICH file was read.
+ */
+describe("a file a call names for a run, however its path is written", () => {
+  let root = "";
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "wg-spell-"));
+    for (const [file, contents] of FOLDER_FILES) {
+      mkdirSync(join(root, file, ".."), { recursive: true });
+      writeFileSync(join(root, file), contents);
+    }
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  /**
+   * The gateway over that folder: the real computer, a sandbox that records, a trail that lists.
+   * `through` puts something else where the recording sandbox is.
+   */
+  function overTheFolder(policy: ActionPolicy, through?: Workbench) {
+    const computer = realComputer(root);
+    const bench = fakeWorkbench();
+    const audit = fakeAudit();
+    const gateway = createComputerGateway({
+      client: computer.client,
+      auditStore: audit.store,
+      policy: () => policy,
+      workbench: through ?? bench.workbench,
+      now: () => AT,
+    });
+    /** One run naming these files, and everything that came of THAT call. */
+    const run = async (files: string[]) => {
+      const rowsBefore = audit.rows.length;
+      const sentBefore = bench.sent.length;
+      const askedBefore = computer.asked.length;
+      let ended: Awaited<ReturnType<typeof gateway.runScript>> | undefined;
+      let threw: Error | undefined;
+      try {
+        ended = await gateway.runScript(COMPUTER, BOT, ACTOR, {
+          script: SCRIPT,
+          files,
+        });
+      } catch (error) {
+        threw = error as Error;
+      }
+      const written = audit.rows.slice(rowsBefore);
+      return {
+        ended,
+        threw,
+        // What was decided and what came of it. "The same call again" is an observation the
+        // trail keeps beside those, and is handed back apart.
+        rows: written.filter(
+          (row) => row.eventType !== "computer.action_repeated",
+        ),
+        repeated: written.filter(
+          (row) => row.eventType === "computer.action_repeated",
+        ),
+        staged: bench.sent
+          .slice(sentBefore)
+          .flatMap((request) => request.files)
+          .map((file) => ({
+            path: file.path,
+            holds: new TextDecoder().decode(file.bytes),
+          })),
+        asked: computer.asked.slice(askedBefore),
+      };
+    };
+    return { run };
+  }
+
+  test("a deny on a file holds through a run under every spelling of it, the refused row names the file, and no attempt is unsaid", async () => {
+    let namedThePayroll = 0;
+    for (const rule of PAYROLL_RULES) {
+      const { run } = overTheFolder(denying(rule));
+      for (const path of EVERY_SPELLING) {
+        const { threw, rows, staged } = await run([path]);
+        const said = `${rule} · ${JSON.stringify(path)}`;
+        // The denied file's bytes are in nothing a script was handed.
+        expect(
+          `${said} · ${staged.map((file) => file.holds).join(" | ")}`,
+        ).not.toContain(PAYROLL);
+        // And whatever came of the attempt, the trail has it.
+        expect({ said, rows: rows.length > 0 }).toEqual({ said, rows: true });
+        if (workspacePathOf(path) !== "private/pay.csv") continue;
+        namedThePayroll += 1;
+        // A spelling of the payroll's own path: the rule's refusal, on one row, by the file's
+        // one name — whatever was written around it.
+        expect({
+          said,
+          refused: threw instanceof ActionRefusedError,
+          code: (threw as ActionRefusedError | undefined)?.code,
+        }).toEqual({ said, refused: true, code: "laf:policy_denied" });
+        expect({
+          said,
+          rows: rows.map(
+            (row) => `${row.eventType} ${String(row.payload.file)}`,
+          ),
+        }).toEqual({
+          said,
+          rows: ["computer.action_refused private/pay.csv"],
+        });
+        expect(rows[0]?.payload.forScript).toBe(sha256(SCRIPT));
+      }
+    }
+    // Four rules, and well over a hundred ways of writing that one path under each.
+    expect(namedThePayroll).toBeGreaterThan(400);
+    expect(EVERY_SPELLING.length).toBeGreaterThan(2500);
+  });
+
+  test("allowed, every spelling hands the script the file the computer reads for it, under its one spelling — and the row, the run's own name and what the caller is told agree", async () => {
+    const { run } = overTheFolder(PERMISSIVE);
+    /** What each file a Bot can name holds, by its one spelling. */
+    const holds: Record<string, string> = {
+      "private/pay.csv": PAYROLL,
+      ".env": SECRET,
+      "notes/a.md": NOTE,
+    };
+    const handed: Record<string, number> = {};
+    /** How often the trail said "the same call again", and of what. */
+    const again: string[] = [];
+    for (const path of EVERY_SPELLING) {
+      const { ended, threw, rows, repeated, staged, asked } = await run([path]);
+      const said = JSON.stringify(path);
+      again.push(...repeated.map((row) => String(row.payload.action)));
+      const spelling = workspacePathOf(path);
+      if (!ended) {
+        // No run: a path with no one reading, a folder, or a file that is not there. Nothing
+        // was staged, and the trail says what became of the attempt.
+        expect({ said, staged, rows: rows.length > 0 }).toEqual({
+          said,
+          staged: [],
+          rows: true,
+        });
+        expect({
+          said,
+          named: (threw?.message ?? "").startsWith("laf:"),
+        }).toEqual({ said, named: true });
+        continue;
+      }
+      // A run: of the one file that spelling names, and of no other.
+      expect({ said, known: spelling !== null && spelling in holds }).toEqual({
+        said,
+        known: true,
+      });
+      const file = spelling as string;
+      handed[file] = (handed[file] ?? 0) + 1;
+      expect({ said, staged }).toEqual({
+        said,
+        staged: [{ path: file, holds: holds[file] as string }],
+      });
+      // One name for it everywhere: what the computer was asked for, the read's row, the run's
+      // own row, and what the caller is told its file is called.
+      expect({ said, asked }).toEqual({ said, asked: [`fileBytes ${file}`] });
+      expect({
+        said,
+        rows: rows.map((row) => [
+          row.eventType,
+          row.payload.file ?? row.payload.files ?? null,
+        ]),
+      }).toEqual({
+        said,
+        rows: [
+          ["computer.action_allowed", file],
+          ["computer.action_allowed", [file]],
+          ["computer.script_finished", null],
+        ],
+      });
+      expect({ said, told: ended.files }).toEqual({ said, told: [file] });
+    }
+    // Each of the three was reached, and by more than its own plain name.
+    expect(Object.keys(handed).sort()).toEqual(Object.keys(holds).sort());
+    for (const count of Object.values(handed)) {
+      expect(count).toBeGreaterThan(20);
+    }
+    /*
+     * AND A SPELLING DOES NOT MAKE IT ANOTHER RUN. One script over one file, named a hundred
+     * ways, is the same run a hundred times to the count — which is kept on the run, by the
+     * files as they were read — and the trail said so as it went. The reads were never counted
+     * (`forScript`): the only thing that came round again here is the run.
+     */
+    expect(again.length).toBeGreaterThan(3);
+    expect(new Set(again)).toEqual(new Set([RUN_SCRIPT_TOOL]));
+  });
+
+  test("the same file named twice — by one string or by several spellings — is judged once, read once and staged once", async () => {
+    const { run } = overTheFolder(PERMISSIVE);
+    const { ended, rows, staged, asked } = await run([
+      "./private/pay.csv",
+      "private/pay.csv",
+      " private//pay.csv ",
+      "private/./pay.csv/",
+      "notes/a.md",
+      "notes/a.md",
+    ]);
+    expect(staged).toEqual([
+      { path: "private/pay.csv", holds: PAYROLL },
+      { path: "notes/a.md", holds: NOTE },
+    ]);
+    expect(asked).toEqual([
+      "fileBytes private/pay.csv",
+      "fileBytes notes/a.md",
+    ]);
+    expect(
+      rows.map((row) => [
+        row.eventType,
+        row.payload.file ?? row.payload.files ?? null,
+      ]),
+    ).toEqual([
+      ["computer.action_allowed", "private/pay.csv"],
+      ["computer.action_allowed", "notes/a.md"],
+      ["computer.action_allowed", ["private/pay.csv", "notes/a.md"]],
+      ["computer.script_finished", null],
+    ]);
+    expect(ended?.files).toEqual(["private/pay.csv", "notes/a.md"]);
+  });
+
+  /*
+   * ONE ANSWER A CALL IS WHY A FILE IS NAMED ONCE BEFORE `govern` AND NOT AFTER. Two decisions
+   * about one file are bound to one answer: the first spends a person's yes and the second asks
+   * again, on every attempt.
+   */
+  test("where a rule asks about a file, a call that names it twice is one question, and one yes gets it through", async () => {
+    const computer = realComputer(root);
+    const bench = fakeWorkbench();
+    const approvals = createApprovalRegistry();
+    const gateway = createComputerGateway({
+      client: computer.client,
+      auditStore: fakeAudit().store,
+      policy: () => asking('file.name == "pay.csv"'),
+      approvals,
+      workbench: bench.workbench,
+      now: () => AT,
+    });
+    const input = {
+      script: SCRIPT,
+      files: ["./private/pay.csv", "private/pay.csv "],
+    };
+    const asked = (await failure(
+      gateway.runScript(COMPUTER, BOT, ACTOR, input),
+    )) as ActionNeedsApprovalError;
+    expect(asked).toBeInstanceOf(ActionNeedsApprovalError);
+    expect(asked.subject).toMatchObject({
+      intent: "read_file",
+      file: { path: "private/pay.csv" },
+    });
+    await approvals.answer(asked.approvalId, BOT, MANAGER.id, true);
+    const run = await gateway.runScript(
+      COMPUTER,
+      BOT,
+      ACTOR,
+      input,
+      undefined,
+      asked.approvalId,
+    );
+    expect(run.files).toEqual(["private/pay.csv"]);
+    expect(bench.sent).toHaveLength(1);
+  });
+
+  test("what is no path at all is judged as written and refused by the computer it is sent to: two rows, and nothing staged", async () => {
+    const { run } = overTheFolder(PERMISSIVE);
+    for (const [path, fact] of [
+      ...NOT_A_PATH.map((none) => [none, "laf:file_path_refused"] as const),
+      // Nothing named at all: the computer's own word for a request that names no file.
+      ["", "laf:request_invalid"] as const,
+      ["   ", "laf:request_invalid"] as const,
+    ]) {
+      const { ended, threw, rows, staged, asked } = await run([path]);
+      const said = JSON.stringify(path);
+      expect({ said, ran: ended !== undefined, fact: threw?.message }).toEqual({
+        said,
+        ran: false,
+        fact,
+      });
+      // Allowed, and it did not happen — which is what it always was for the Bot's own read.
+      expect({ said, rows: rows.map((row) => row.eventType) }).toEqual({
+        said,
+        rows: ["computer.action_allowed", "computer.action_failed"],
+      });
+      expect({ said, failure: rows[1]?.payload.failure }).toEqual({
+        said,
+        failure: fact,
+      });
+      expect(rows[1]?.payload.forScript).toBe(sha256(SCRIPT));
+      // Sent as it was written — there is no other way to write it — and never to a script.
+      expect({ said, asked }).toEqual({ said, asked: [`fileBytes ${path}`] });
+      expect(staged).toEqual([]);
+    }
+  });
+
+  /*
+   * WHAT IS LEFT FOR THE SANDBOX'S OWN RULE TO SAY, now that the gateway asks it nothing: how
+   * deep a path may go (`isRunPath`, `RUN_PATH_SEGMENTS`). A file that many folders down is a
+   * file — judged, read, with its row — and one the daemon will not place. That is the client's
+   * to find, unsent (`workbench/client.ts`, `wrongPartOf`), so this one test has the sandbox's
+   * REAL client where the others have a recorder: a stand-in takes whatever it is handed. No
+   * daemon is at its socket, and none is needed — the request never leaves.
+   */
+  test("a file deeper than the sandbox places is read, and then is not a run: said on the run's own row, with nothing sent", async () => {
+    const deep = `${Array.from({ length: 16 }, (_, depth) => `d${depth}`).join("/")}/deep.csv`;
+    mkdirSync(join(root, deep, ".."), { recursive: true });
+    writeFileSync(join(root, deep), "x");
+    expect(isRunPath(deep)).toBe(false);
+    expect(workspacePathOf(deep)).toBe(deep);
+    const sockets = mkdtempSync(join(tmpdir(), "wg-nobody-"));
+    try {
+      const { run } = overTheFolder(
+        PERMISSIVE,
+        createWorkbench({
+          socketPath: join(sockets, "nobody-is-here.sock"),
+          key: "a-key-for-tests-0123456789abcdef-0123456789",
+          log: { svc: "test", info() {}, warn() {}, error() {} },
+        }),
+      );
+      const began = performance.now();
+      const { threw, rows, asked } = await run([`./${deep}`]);
+      expect(threw).toBeInstanceOf(ScriptNotRunError);
+      expect((threw as ScriptNotRunError).code).toBe(
+        "laf:script_inputs_invalid",
+      );
+      expect((threw as ScriptNotRunError).facts).toEqual({ field: "files" });
+      // Refused before the socket was dialled: with nobody there, a dial would have said
+      // "unavailable", and after a wait.
+      expect(performance.now() - began).toBeLessThan(1_000);
+      expect(asked).toEqual([`fileBytes ${deep}`]);
+      expect(
+        rows.map((row) => `${row.eventType} ${String(row.payload.action)}`),
+      ).toEqual([
+        "computer.action_allowed computer_read_file",
+        `computer.action_allowed ${RUN_SCRIPT_TOOL}`,
+        `computer.action_failed ${RUN_SCRIPT_TOOL}`,
+      ]);
+      expect(rows[0]?.payload.file).toBe(deep);
+      expect(rows[2]?.payload.failure).toBe("laf:script_inputs_invalid");
+    } finally {
+      rmSync(sockets, { recursive: true, force: true });
     }
   });
 });

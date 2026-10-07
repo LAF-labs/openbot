@@ -277,21 +277,25 @@ export const RUN_PATH_CHARS = 1024;
  * Two of them are handed ONE reading of it, by the gateway, since 2026-10-07: a rule, and the
  * Bot's computer (`server/src/computer/gateway/addresses.ts`, `workspacePathOf` — the ends
  * trimmed, `.` and empty segments gone, the same string judged and sent). The third is the
- * daemon, which places the bytes at the path AS WRITTEN, for a script that opens its file by the
- * name its call gave. So a path a run takes is one that reading leaves exactly as it is, and
- * everything refused here is something it would change (white space at either end, an empty or
- * a `.` segment), refuse (a backslash), or send on to a computer that refuses it (`..`, an
- * absolute path, a NUL). `server/tests/workbench-gateway.test.ts` holds that over a few thousand
- * spellings: what passes this is its own spelling. REFUSED, NOT SPELLED: spelled, a rule and the
- * computer would agree and the script would be handed its file under a name its call did not
- * give.
+ * daemon, which places the bytes at the path it is sent, AS IT IS SENT — and what the gateway
+ * sends it is that same reading: a file is staged under the path it was judged and read by,
+ * however its call wrote it (`./data.csv` is staged as `data.csv`, which is the file a script's
+ * own `./data.csv` opens). So everything refused here is something that reading has already
+ * changed (white space at either end, an empty or a `.` segment), refused (a backslash) or
+ * seen the computer refuse (`..`, an absolute path, a NUL): no such path comes from the gateway,
+ * and this is the daemon not taking that on trust, and the client not sending what the daemon
+ * would refuse. The one thing here that reading does not make true of a path is how deep it
+ * goes (`RUN_PATH_SEGMENTS`). `server/tests/workbench-gateway.test.ts` holds both: what a
+ * spelled path is staged under passes this, over a few thousand spellings; and a file too deep
+ * is read, and then is not a run.
  *
  * WHAT THIS WAS FOUND BY. Before that date a rule judged a path as it was written and the
  * computer trimmed it, and a path ending in a space was a path here: a rule about
  * `private/payroll.csv`, about its name or about its extension did not match
  * `"private/payroll.csv "`, the computer read the file the rule was written to keep, and its
  * bytes went to a script — measured over the computer's real workspace, 22 of 32 pairs of a rule
- * and such a spelling (the independent read of the script act).
+ * and such a spelling (the independent read of the script act). What closes that now is the
+ * reading, not this function: the rule is asked about the file the spelling names, and refuses.
  */
 export function isRunPath(path: unknown): path is string {
   if (
