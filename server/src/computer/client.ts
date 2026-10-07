@@ -754,8 +754,18 @@ export function createComputerClient(options: ComputerClientOptions) {
         return (await post("/files/write", input)) as WriteFileResult;
       },
 
-      async listFiles(input: ListFilesInput): Promise<ListFilesResult> {
-        return (await post("/files/list", input)) as ListFilesResult;
+      /**
+       * The one file call that takes the caller's Stop. A Bot's own listing has none to hand it;
+       * the gateway's look at `made/`, between a script's run and the filing of what it made,
+       * does — and without it a Stop pressed during that look waited for the computer's answer,
+       * for as long as its timeout where the computer had gone (`gateway/script-run.ts`,
+       * `madeHeldBy`).
+       */
+      async listFiles(
+        input: ListFilesInput,
+        caller?: AbortSignal,
+      ): Promise<ListFilesResult> {
+        return (await post("/files/list", input, caller)) as ListFilesResult;
       },
 
       /** One file's facts: there, a file, how big. Nothing of it is read. */

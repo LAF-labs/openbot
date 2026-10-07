@@ -343,10 +343,14 @@ export function madeDirectoryFor(
  * a card is on screen (`person-files.ts`, `fileFacts`): no row, and not a Bot's listing — nothing
  * of it is handed to a Bot. A folder that is not there yet holds nothing.
  */
-export async function madeHeldBy(computer: ComputerClient): Promise<number> {
+export async function madeHeldBy(
+  computer: ComputerClient,
+  /** The caller's Stop: it ends the look, as it ends a put (`laf:stopped`). */
+  signal?: AbortSignal,
+): Promise<number> {
   let listed: Awaited<ReturnType<ComputerClient["listFiles"]>>;
   try {
-    listed = await computer.listFiles({ path: MADE_DIRECTORY });
+    listed = await computer.listFiles({ path: MADE_DIRECTORY }, signal);
   } catch (error) {
     if (factOfError(error) === FILE_NOT_FOUND) return 0;
     throw error;

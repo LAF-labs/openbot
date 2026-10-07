@@ -822,6 +822,34 @@ describe("the caller's Stop", () => {
     expect(called).toBe(false);
   });
 
+  /*
+   * AND A LISTING. The file calls take no Stop — a read or a write is the Bot's own and quick —
+   * but one listing is made for the gateway itself, between a script's run and the filing of
+   * what it made (`gateway/script-run.ts`, `madeHeldBy`), and a Stop pressed while it was out
+   * waited for the computer's answer: for its whole timeout, where the computer had gone.
+   */
+  test("reaches a listing too: one already stopped is never sent, and one stopped while it is out is told it stopped", async () => {
+    let called = 0;
+    const stop = new AbortController();
+    const client = clientWith(async (_url, init) => {
+      called += 1;
+      stop.abort();
+      // What fetch does with an aborted signal: it rejects with the abort, not with a response.
+      throw init?.signal?.reason ?? new DOMException("aborted", "AbortError");
+    });
+
+    await expect(
+      client.listFiles({ path: "made" }, stop.signal),
+    ).rejects.toThrow("laf:stopped");
+    expect(called).toBe(1);
+
+    // Stopped already: not dispatched at all.
+    await expect(
+      client.listFiles({ path: "made" }, stop.signal),
+    ).rejects.toThrow("laf:stopped");
+    expect(called).toBe(1);
+  });
+
   test("without one, the timeout still applies", async () => {
     let seen: AbortSignal | undefined;
     // Ten milliseconds, so the bound is watched rather than asserted to exist. `toBeDefined()` on
