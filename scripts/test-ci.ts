@@ -1922,19 +1922,21 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * name holds what a display leaves out is skipped, and Korean and a plain emoji are names.
  * By hand: 3833 and 26 are 3859; 2172 and 2 are 2174; 914 and 1 are 915.
  *
- * AND `server` BY TWO MORE, to 3861, on that same pull request, for what Codex found in it: the
- * fix for the file where `made/` belongs had moved the ending's row to after the look at that
- * folder — behind a request to the computer and behind the call's turn among the calls filing.
- * Both in `workbench-gateway.test.ts`: how a run ended is on the trail before the computer is
- * asked anything about what it made, and before the call waits behind another call's files.
- * By hand: 3859 and 2 are 3861.
+ * AND `server` BY THREE MORE, to 3862, on that same pull request, for what Codex found in it —
+ * all in `workbench-gateway.test.ts`. Two for its first finding: the fix for the file where
+ * `made/` belongs had moved the ending's row to after the look at that folder, behind a request
+ * to the computer and behind the call's turn among the calls filing — how a run ended is on
+ * the trail before the computer is asked anything about what it made, and before the call
+ * waits behind another call's files. One for its second: a Stop that arrives while `made/` is
+ * being looked at ends the call as stopped, whatever the computer goes on to say of the folder.
+ * By hand: 3859 and 3 are 3862.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3861, roots: ["server"] },
+  { name: "server", floor: 3862, roots: ["server"] },
   { name: "app", floor: 2174, roots: ["app"] },
   { name: "agent-computer", floor: 530, roots: ["agent-computer"] },
   { name: "root", floor: 915, roots: ["tests", "agent-bot"] },
