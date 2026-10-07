@@ -262,7 +262,7 @@ describe("migration 0062, over rows", () => {
     expect(again).toEqual(after);
   });
 
-  test("moves an allowance that still stands under the old expression, leaves a withdrawn one and a look-alike, never fails on one that already stands under the new, and a second run moves none", async () => {
+  test("moves an allowance that still stands under the old expression, leaves a withdrawn one, one whose clock has run out and a look-alike, never fails on a slot the new rule already holds, and a second run moves none", async () => {
     const named = process.env.DATABASE_URL;
     if (!named) {
       throw new Error(
@@ -274,6 +274,14 @@ describe("migration 0062, over rows", () => {
 
     const BOT = `agent_m62_${run}`;
     const OTHER_BOT = `agent_m62_other_${run}`;
+    /*
+     * Either side of the statement's `now()`, by a day. Read off this process's clock while the
+     * statement reads the database's: no two clocks a test run shares are a day apart. They were
+     * a date in the calendar once, which is a test that starts failing on that date.
+     */
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const LATER = new Date(Date.now() + DAY_MS);
+    const EARLIER = new Date(Date.now() - DAY_MS);
     const file = (path: string) => ({
       scope: `file:${path}`,
       scopeKind: "file",
@@ -296,7 +304,75 @@ describe("migration 0062, over rows", () => {
           ...file("private/today.md"),
           tier: "thread",
           threadId: `thread-${run}`,
-          expiresAt: new Date("2026-12-31T00:00:00.000Z"),
+          expiresAt: LATER,
+        },
+        IS,
+      ],
+      [
+        "for today, the day not over",
+        {
+          botId: BOT,
+          rule: WAS,
+          ...file("private/day.md"),
+          tier: "day",
+          expiresAt: LATER,
+        },
+        IS,
+      ],
+      /*
+       * Its clock run out, and never withdrawn: nothing withdraws an answer that ended, until
+       * somebody gives the same one again (`standing-approvals.ts`, `grant`). The store does not
+       * count it as standing, and it is a record of what was given under the rule it was given
+       * under — Codex's read of the pull request, which moved this row.
+       */
+      [
+        "for one conversation, its clock run out",
+        {
+          botId: BOT,
+          rule: WAS,
+          ...file("private/ended.md"),
+          tier: "thread",
+          threadId: `thread-ended-${run}`,
+          expiresAt: EARLIER,
+        },
+        WAS,
+      ],
+      [
+        "for a day that is over",
+        {
+          botId: BOT,
+          rule: WAS,
+          ...file("private/yesterday.md"),
+          tier: "day",
+          expiresAt: EARLIER,
+        },
+        WAS,
+      ],
+      /*
+       * The new rule's row here has run out AND STILL HOLDS THE SLOT — the table's unique index
+       * reads `revoked_at` and not the clock. So the old one, which does still stand, is left, and
+       * the statement does not fail on the pair: asked "is one standing there?" it would move the
+       * old row onto the slot, and a deployment's migration would stop on a unique violation.
+       */
+      [
+        "where one that has run out holds the slot",
+        {
+          botId: BOT,
+          rule: WAS,
+          ...file("slot.md"),
+          tier: "day",
+          expiresAt: LATER,
+        },
+        WAS,
+      ],
+      [
+        "the one that has run out and holds it",
+        {
+          botId: BOT,
+          rule: IS,
+          ...file("slot.md"),
+          tier: "day",
+          expiresAt: EARLIER,
         },
         IS,
       ],
@@ -352,9 +428,10 @@ describe("migration 0062, over rows", () => {
     }));
     const ids = seeds.map((seed) => seed.id);
     const moved = GIVEN.map(([, row, rule]) => rule !== row.rule);
-    // What the seeds are worth: some move, some do not, and the pair that would collide is there.
-    expect(moved.filter(Boolean).length).toBe(3);
-    expect(moved.filter((one) => !one).length).toBe(7);
+    // What the seeds are worth: some move, some do not, and both pairs that would collide are
+    // there — one whose other half stands, one whose other half has run out.
+    expect(moved.filter(Boolean).length).toBe(4);
+    expect(moved.filter((one) => !one).length).toBe(11);
 
     const allowance = {
       id: computerStandingApprovals.id,
