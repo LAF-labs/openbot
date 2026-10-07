@@ -2084,7 +2084,12 @@ describe("what made/ may hold", () => {
     // Nine bytes a run: 2,259 bytes in a folder that may hold two hundred megabytes.
     expect(held).toBe(251 * 9);
     expect(held).toBeLessThan(MADE_MAX_BYTES / 10_000);
-  });
+    /*
+     * GIVEN THE TIME IT TAKES. 253 runs over a real folder, each listing it: 2.1, 3.6, 4.0 and
+     * 2.7 seconds on four of CI's runs, and past the five a test gets by default on a laptop
+     * with other work on it (2026-10-07) — where it failed as a timeout with nothing wrong.
+     */
+  }, 30_000);
 
   /*
    * AND IT WAS READ ONCE A CALL, so two calls filing at once each saw what was there before the
