@@ -185,6 +185,19 @@ export const auditEventTypes = [
    */
   "computer.script_finished",
   /**
+   * Files a run made that were NEVER TRIED, named on one row, and why (`gateway/trail.ts`,
+   * `writeScriptFilesLeft`).
+   *
+   * The ending's row lists every file a run handed back, and each file that is tried gets a
+   * decision and a row of its own after it. Two things end the filing with files still untried
+   * and nothing to decide them by: the caller's Stop — a caller that has stopped is not governed
+   * at all — and a question about one file, which pauses the call until somebody answers. Until
+   * 2026-10-07 the files after that were on the ending's row and nowhere else, so the trail said
+   * a file was handed back and never said what became of it (the second read of the script
+   * act). Names and sizes, as on the ending's row; never a byte of a file.
+   */
+  "computer.script_files_left",
+  /**
    * The boundary stopping to ask a person, and what they said.
    *
    * Three rows rather than a flag on the action, because the three facts are separable and the gaps
@@ -580,10 +593,20 @@ export const auditFactCodes = [
 
   /*
    * WHY A SCRIPT THAT WAS ALLOWED TO RUN DID NOT, OR WHY A FILE IT MADE WAS NOT KEPT
-   * (`computer/gateway/script-run.ts`). Each is the `failure` of a `computer.action_failed` row,
-   * said by this server about the place a script runs — not by the Bot's computer, whose own
-   * facts are the container's list — which is why they are the trail's to name. A script that ran
-   * and ended badly is none of these: that is `computer.script_finished`, which says how.
+   * (`computer/gateway/script-run.ts`). Said by this server about the place a script runs — not
+   * by the Bot's computer, whose own facts are the container's list — which is why they are the
+   * trail's to name. A script that ran and ended badly is none of these: that is
+   * `computer.script_finished`, which says how.
+   *
+   * WHERE EACH IS SAID, since they are not all a row's. The three about the place a script runs
+   * are the `failure` of a `computer.action_failed` row against the run, and so is
+   * `script_inputs_invalid` where the sandbox's own client found the request unplaceable once
+   * its files were read (a file too deep). `made_full` is the `failure` of a row against one
+   * file's write. `made_not_a_folder` is on the ending's own row (`unfiled`), once, for every
+   * file of the run. And two are never on any row: `script_too_large`, and
+   * `script_inputs_invalid` for a request that could be refused before anything was read —
+   * each is what the caller is told, about a request that left nothing for the trail to say
+   * happened.
    */
   "laf:workbench_unavailable",
   "laf:workbench_busy",
@@ -591,6 +614,7 @@ export const auditFactCodes = [
   "laf:script_too_large",
   "laf:script_inputs_invalid",
   "laf:made_full",
+  "laf:made_not_a_folder",
 ] as const;
 
 export type AuditFactCode = (typeof auditFactCodes)[number];
@@ -646,6 +670,12 @@ export const SCRIPT_INPUTS_INVALID: AuditFactCode = "laf:script_inputs_invalid";
  * `MADE_MAX_BYTES`). Nothing is deleted to make room.
  */
 export const MADE_FULL: AuditFactCode = "laf:made_full";
+/**
+ * Where the folder scripts' files are kept belongs, there is a FILE: something called `made` that
+ * is not a folder. No file a run makes can be filed while it is there, and nothing here removes a
+ * file — so it is said once, on the run's ending, and not once for every file the run made.
+ */
+export const MADE_NOT_A_FOLDER: AuditFactCode = "laf:made_not_a_folder";
 
 export type AuditEventInput = {
   eventType: AuditEventType;

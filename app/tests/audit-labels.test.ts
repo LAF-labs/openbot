@@ -5,6 +5,8 @@ import type {
   RunEnding,
 } from "../../shared/workbench/protocol";
 import { auditEventTypes, auditFactCodes } from "../../server/src/audit";
+import { STOPPED } from "../../server/src/computer/client";
+import { ActionNeedsApprovalError } from "../../server/src/computer/gateway/caller";
 import { RUN_SCRIPT_TOOL } from "../../server/src/computer/gateway/intent";
 import {
   COMPUTER_FACTS,
@@ -15,6 +17,7 @@ import {
   FACTS,
   OUTCOME_EVENT_TYPES,
   SCRIPT_ENDINGS,
+  SCRIPT_FILES_LEFT,
   SCRIPT_FILES_WITHHELD,
   TOOLS,
   UNLABELLED_OUTCOMES,
@@ -45,6 +48,8 @@ describe("the audit trail's labels", () => {
       ...Object.values(COMPUTER_FACTS),
       ...Object.values(SCRIPT_ENDINGS),
       ...Object.values(SCRIPT_FILES_WITHHELD),
+      ...Object.values(SCRIPT_FILES_LEFT),
+      "These files were not tried",
       ...UNLABELLED_OUTCOMES,
     ].filter((label) => !(label in ko));
     expect(missing).toEqual([]);
@@ -166,6 +171,23 @@ describe("what the trail says happened", () => {
     for (const killed of ["timed_out", "out_of_memory"] as const) {
       expect(SCRIPT_ENDINGS[killed]).not.toContain("{code}");
     }
+  });
+
+  /*
+   * WHY A RUN'S FILES WERE NEVER TRIED is read from a row by a variable too (`payload.because`),
+   * and it is one of the two facts a call can end its filing with: the caller's Stop, as the
+   * computer's client says it, and a question, as the gateway's error for one says it. Held to
+   * the server's own words for both, so neither can be respelled on one side.
+   */
+  test("each reason a run's files were left untried has words, and they are the two the server ends a filing with", () => {
+    const asked = new ActionNeedsApprovalError({
+      id: "a",
+      subject: { kind: "file", intent: "write_file", reason: "policy_ask" },
+      rule: "true",
+    } as unknown as ConstructorParameters<typeof ActionNeedsApprovalError>[0]);
+    expect(Object.keys(SCRIPT_FILES_LEFT).sort()).toEqual(
+      [STOPPED, asked.code].sort(),
+    );
   });
 
   test("every fact code the server records has a sentence", () => {

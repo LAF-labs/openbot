@@ -146,13 +146,13 @@ const EVENTS = [
   },
 ];
 
-async function drawn() {
+async function drawn(events: unknown[] = EVENTS) {
   const view = await mountApp({
     path: "/admin/audit",
     role: "admin",
     api: (request) =>
       request.pathname === "/api/admin/audit-events"
-        ? json({ events: EVENTS })
+        ? json({ events })
         : undefined,
   });
   await view.waitFor(
@@ -293,6 +293,96 @@ describe("the trail's page and a script's run", () => {
       );
     // Theirs by the identifier it arrived under, as any vendor's tool is; ours in words.
     expect(what).toEqual([RUN_SCRIPT_TOOL, "Run a small program"]);
+    await view.unmount();
+  });
+
+  /*
+   * WHAT BECAME OF THE FILES A RUN MADE, WHERE IT WAS NOT "FILED" (the second read). Three
+   * things a row says that the page had no words for, or drew nothing of: why a run's files
+   * were withheld by the place it ran (the line was there and no test drew it); why none of
+   * them was tried, where one fact settles all of them; and the files a filing never got to,
+   * named on a row of their own. Newest first, as the page is.
+   */
+  test("says why a run's files were withheld, why none was tried, and which files nobody got to — in words", async () => {
+    const ending = {
+      action: RUN_SCRIPT_TOOL,
+      bot: "bot-1",
+      actor: "user-1",
+      script,
+      ending: "exited",
+      exit: 0,
+      signal: null,
+      ms: 5,
+      stdoutBytes: 0,
+      stderrBytes: 0,
+      skipped: 0,
+    };
+    const { view, rows, cells } = await drawn([
+      {
+        ...base,
+        id: "left",
+        eventType: "computer.script_files_left",
+        createdAt: "2026-10-07T04:00:03.000Z",
+        payload: {
+          action: RUN_SCRIPT_TOOL,
+          bot: "bot-1",
+          actor: "user-1",
+          script,
+          because: "laf:stopped",
+          left: [
+            { name: "요일별 매출.csv", bytes: 29 },
+            { name: "notes.txt", bytes: 4 },
+          ],
+        },
+      },
+      {
+        ...base,
+        id: "unfiled",
+        eventType: "computer.script_finished",
+        createdAt: "2026-10-07T04:00:02.000Z",
+        payload: {
+          ...ending,
+          products: [{ name: "report.csv", bytes: 9 }],
+          unfiled: "laf:made_not_a_folder",
+        },
+      },
+      {
+        ...base,
+        id: "withheld",
+        eventType: "computer.script_finished",
+        createdAt: "2026-10-07T04:00:01.000Z",
+        payload: { ...ending, products: [], productsRefused: "too_many" },
+      },
+    ]);
+    expect(rows).toHaveLength(3);
+
+    // The files nobody got to: what the row is, which run, and each file by name.
+    const [, leftWhat, leftTarget, , leftVerdict] = cells(0);
+    expect(leftWhat).toBe("Run a small program");
+    expect(leftTarget).toBe(SHA.slice(0, 12));
+    expect(leftVerdict).toBe(
+      "Files it made were left untried" +
+        "The run was stopped before these files were tried" +
+        "Not tried: 2 files요일별 매출.csvnotes.txt",
+    );
+
+    // None of them tried, and the ending says why — in a sentence, never the code.
+    expect(cells(1)[4]).toBe(
+      "The program's run ended" +
+        "It ended by itself, with status 0" +
+        "5 ms · printed 0 bytes" +
+        "Where programs' files are kept there is something else called made, so none of these was kept" +
+        "Handed back 1 filesreport.csv",
+    );
+    expect(cells(1)[4]).not.toContain("laf:");
+
+    // Withheld by the place it ran, and why.
+    expect(cells(2)[4]).toBe(
+      "The program's run ended" +
+        "It ended by itself, with status 0" +
+        "5 ms · printed 0 bytes" +
+        "It left more files than a run hands back, so none was kept",
+    );
     await view.unmount();
   });
 });

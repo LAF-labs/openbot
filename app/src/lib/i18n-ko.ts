@@ -1837,6 +1837,7 @@ export const ko: Record<string, string> = {
   "An action": "봇의 행동",
   "The same action again": "같은 행동 반복",
   "A small program's run": "작은 프로그램 실행",
+  "A small program's files": "작은 프로그램이 만든 파일",
   "The wheel": "제어권",
   "A secret": "비밀값",
   "A question": "질문",
@@ -1880,6 +1881,15 @@ export const ko: Record<string, string> = {
     "이 계정의 모든 봇이 같은 브라우저를 써요. 세션과 파일과 로그인이 공유돼요",
   // 봇이 직접 짠 프로그램을 돌린 기록. 프로그램 내용과 출력은 기록에 없고, 여기 말에도 없다.
   "The program's run ended": "프로그램 실행이 끝남",
+  "Files it made were left untried": "만든 파일을 다루지 못하고 남김",
+  "The run was stopped before these files were tried":
+    "이 파일들을 다루기 전에 실행이 멈췄어요",
+  "A person was asked about a file before these, and they wait on that answer":
+    "앞선 파일을 사람에게 물어보는 중이라, 이 파일들은 그 답을 기다려요",
+  "These files were not tried": "이 파일들은 다루지 못했어요",
+  "Not tried: {count} files": "다루지 못한 파일 {count}개",
+  "Where programs' files are kept there is something else called made, so none of these was kept":
+    "프로그램이 만든 파일을 두는 자리에 made라는 다른 것이 있어서, 하나도 보관하지 못했어요",
   "It ended by itself, with status {code}": "스스로 끝남 (종료 코드 {code})",
   "It was stopped at the time it was given": "주어진 시간이 다 되어 멈춤",
   "It was stopped at the memory it was given": "주어진 메모리를 넘어 멈춤",
