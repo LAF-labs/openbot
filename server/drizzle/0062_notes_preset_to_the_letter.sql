@@ -29,11 +29,23 @@
 -- allowance would be listed under "it no longer asks about" while its file was asked about again.
 -- Moving it widens nothing: an allowance for a write is for one exact file, and every file the old
 -- rule asked about the new one asks about too — a file under `Notes/` has no allowance, because it
--- was never asked about. A withdrawn one is a record of what was given and taken back, under the
--- rule it was given under, and stays as it is. Where the same Bot already holds a standing
--- allowance for the same file under the new rule, the old one is left: two rows cannot stand for
--- one answer (`computer_standing_approvals_live_idx`), and a migration that failed on that would
--- be a deployment that did not start.
+-- was never asked about.
+--
+-- "STILL STANDS" IS THE STORE'S OWN MEANING OF IT (`standing-approvals.ts`, `standing()`): not
+-- withdrawn, and not past its own clock where it has one. A withdrawn one is a record of what was
+-- given and taken back, under the rule it was given under, and stays as it is. So does one whose
+-- clock has run out: an answer "for this conversation" or "for today" that ended is no longer
+-- anybody's answer, its `revoked_at` is still null — nothing withdraws it until somebody gives
+-- the same answer again — and moved, it would say it had been given under a rule that did not
+-- exist the day it ended. (The first version of this statement moved those too, reading
+-- `revoked_at` alone; Codex's read of the pull request found it.)
+--
+-- AND NEVER ONTO A SLOT THAT IS TAKEN. One row may hold a Bot's answer for a rule, a scope, a width,
+-- a conversation and a task (`computer_standing_approvals_live_idx`), and that index reads
+-- `revoked_at` and NOT the clock: a row whose time has run out still holds its slot. So where the
+-- new rule already has a row there — standing or run out — the old one is left as it is, and the
+-- inner half of the statement deliberately asks less than the outer half does. A migration that
+-- failed on that pair would be a deployment that did not start.
 --
 -- WHAT THIS DOES NOT REACH, AND WHAT DOES. A policy set in `AGENT_COMPUTER_POLICY` is
 -- configuration, not a row; and a migration runs once, while a window that read the policy before
@@ -65,14 +77,15 @@ UPDATE "computer_standing_approvals" AS "given"
 SET "rule" = 'intent == "write_file" && file.folder != "notes"'
 WHERE "given"."rule" = 'intent == "write_file" && !matches(file.path, "^notes/")'
   AND "given"."revoked_at" IS NULL
+  AND ("given"."expires_at" IS NULL OR "given"."expires_at" > now())
   AND NOT EXISTS (
     SELECT 1
-    FROM "computer_standing_approvals" AS "standing"
-    WHERE "standing"."rule" = 'intent == "write_file" && file.folder != "notes"'
-      AND "standing"."revoked_at" IS NULL
-      AND "standing"."bot_id" = "given"."bot_id"
-      AND "standing"."scope" = "given"."scope"
-      AND "standing"."tier" = "given"."tier"
-      AND coalesce("standing"."thread_id", '') = coalesce("given"."thread_id", '')
-      AND coalesce("standing"."task_id", '') = coalesce("given"."task_id", '')
+    FROM "computer_standing_approvals" AS "holding"
+    WHERE "holding"."rule" = 'intent == "write_file" && file.folder != "notes"'
+      AND "holding"."revoked_at" IS NULL
+      AND "holding"."bot_id" = "given"."bot_id"
+      AND "holding"."scope" = "given"."scope"
+      AND "holding"."tier" = "given"."tier"
+      AND coalesce("holding"."thread_id", '') = coalesce("given"."thread_id", '')
+      AND coalesce("holding"."task_id", '') = coalesce("given"."task_id", '')
   );

@@ -74,13 +74,19 @@ describe("migration 0062", () => {
     );
   });
 
-  test("moves an allowance that still stands under the old expression to the new one — and only where no other already stands for the same answer", () => {
+  test("moves an allowance that still stands under the old expression to the new one — and only where no other already holds its slot", () => {
     /*
-     * Not a withdrawn one (`revoked_at IS NULL`): that is a record of what was given and taken
-     * back. And not onto a row that is already there: the table lets one allowance stand for one
-     * Bot, rule, scope, width, conversation and task, so the old one is left where the new rule
-     * already has its own — every column of that index is named here, or a migration that met two
-     * would fail, and a deployment with it.
+     * STILL STANDS, as the store means it (`standing-approvals.ts`, `standing()`): not withdrawn,
+     * and not past its own clock. A withdrawn one, and one whose time ran out, are records of what
+     * was given under the rule it was given under. Codex's read of the pull request found the
+     * second: this held `revoked_at IS NULL` alone, and an answer "for today" that ended last
+     * month has a null `revoked_at` too.
+     *
+     * AND THE INNER HALF ASKS LESS THAN THE OUTER, ON PURPOSE. The table lets one row hold one
+     * Bot's answer for a rule, scope, width, conversation and task, and that index reads
+     * `revoked_at` and not the clock — a row that has run out still holds its slot. So the old
+     * allowance is left wherever the new rule has a row at all, and every column of the index is
+     * named here: a migration that met the pair it missed would fail, and a deployment with it.
      */
     expect(laidFlat(notesPresetMigration().allowances)).toBe(
       [
@@ -88,15 +94,16 @@ describe("migration 0062", () => {
         `SET "rule" = ${is}`,
         `WHERE "given"."rule" = ${was}`,
         'AND "given"."revoked_at" IS NULL',
+        'AND ("given"."expires_at" IS NULL OR "given"."expires_at" > now())',
         "AND NOT EXISTS (",
-        'SELECT 1 FROM "computer_standing_approvals" AS "standing"',
-        `WHERE "standing"."rule" = ${is}`,
-        'AND "standing"."revoked_at" IS NULL',
-        'AND "standing"."bot_id" = "given"."bot_id"',
-        'AND "standing"."scope" = "given"."scope"',
-        'AND "standing"."tier" = "given"."tier"',
-        `AND coalesce("standing"."thread_id", '') = coalesce("given"."thread_id", '')`,
-        `AND coalesce("standing"."task_id", '') = coalesce("given"."task_id", '')`,
+        'SELECT 1 FROM "computer_standing_approvals" AS "holding"',
+        `WHERE "holding"."rule" = ${is}`,
+        'AND "holding"."revoked_at" IS NULL',
+        'AND "holding"."bot_id" = "given"."bot_id"',
+        'AND "holding"."scope" = "given"."scope"',
+        'AND "holding"."tier" = "given"."tier"',
+        `AND coalesce("holding"."thread_id", '') = coalesce("given"."thread_id", '')`,
+        `AND coalesce("holding"."task_id", '') = coalesce("given"."task_id", '')`,
         ")",
       ].join(" "),
     );
