@@ -3092,6 +3092,142 @@ describe("a path a rule read one way and the computer would read another", () =>
     }
   });
 
+  /*
+   * AND THE LOOK ITSELF IS HANDED THE STOP. Until this, the listing took none: a Stop pressed
+   * while the computer was describing `made/` waited for its answer — the whole of its timeout,
+   * where the computer had stopped answering. The request is ended by the Stop now, and the
+   * call ends as stopped. (The check above stays: an answer already on its way when the Stop
+   * lands is still an answer.)
+   */
+  test("the look at made/ is handed the caller's Stop: a listing that would never answer is ended by it, and the call ends as stopped", async () => {
+    const stop = new AbortController();
+    const computer = fakeComputer();
+    const audit = fakeAudit();
+    /** The Stop each listing was handed, as the client is handed one. */
+    const handed: (AbortSignal | undefined)[] = [];
+    const client = {
+      ...computer.client,
+      forBot: () => client,
+      listFiles: (_input: { path?: string }, caller?: AbortSignal) => {
+        handed.push(caller);
+        // A computer that has stopped answering: nothing comes back but what ends the wait.
+        return new Promise<never>((_resolve, reject) => {
+          if (!caller) {
+            reject(
+              new Error("handed no Stop: this would wait out its timeout"),
+            );
+            return;
+          }
+          caller.addEventListener("abort", () =>
+            reject(new ComputerUnavailableError("laf:stopped")),
+          );
+          // The person presses Stop while it waits.
+          queueMicrotask(() => stop.abort());
+        });
+      },
+    } as unknown as typeof computer.client;
+    const gateway = createComputerGateway({
+      client,
+      auditStore: audit.store,
+      policy: () => PERMISSIVE,
+      workbench: fakeWorkbench(() =>
+        made(["report.csv", "r"], ["notes.txt", "n"]),
+      ).workbench,
+      now: () => AT,
+    });
+
+    const error = await failure(
+      gateway.runScript(
+        COMPUTER,
+        BOT,
+        ACTOR,
+        { script: SCRIPT, files: [] },
+        stop.signal,
+      ),
+    );
+
+    expect(handed).toEqual([stop.signal]);
+    expect((error as Error).message).toBe("laf:stopped");
+    expect(audit.rows.map((row) => row.eventType)).toEqual([
+      "computer.action_allowed",
+      "computer.script_finished",
+      "computer.script_files_left",
+    ]);
+    expect(audit.rows.at(-1)?.payload).toMatchObject({
+      because: "laf:stopped",
+      left: [
+        { name: "report.csv", bytes: 1 },
+        { name: "notes.txt", bytes: 1 },
+      ],
+    });
+    expect([...computer.files.keys()]).toEqual([]);
+  });
+
+  test("and so is the look the first file's own act takes, where the one before it failed for a reason of its own", async () => {
+    const stop = new AbortController();
+    const computer = fakeComputer();
+    const audit = fakeAudit();
+    const handed: (AbortSignal | undefined)[] = [];
+    const client = {
+      ...computer.client,
+      forBot: () => client,
+      listFiles: (_input: { path?: string }, caller?: AbortSignal) => {
+        handed.push(caller);
+        // The first look: the computer says something nobody has a name for.
+        if (handed.length === 1) {
+          return Promise.reject(new Error("the computer said something else"));
+        }
+        // The second, taken for the first file: it never answers, and the person presses Stop.
+        return new Promise<never>((_resolve, reject) => {
+          if (!caller) {
+            reject(
+              new Error("handed no Stop: this would wait out its timeout"),
+            );
+            return;
+          }
+          caller.addEventListener("abort", () =>
+            reject(new ComputerUnavailableError("laf:stopped")),
+          );
+          queueMicrotask(() => stop.abort());
+        });
+      },
+    } as unknown as typeof computer.client;
+    const gateway = createComputerGateway({
+      client,
+      auditStore: audit.store,
+      policy: () => PERMISSIVE,
+      workbench: fakeWorkbench(() =>
+        made(["report.csv", "r"], ["notes.txt", "n"]),
+      ).workbench,
+      now: () => AT,
+    });
+
+    const error = await failure(
+      gateway.runScript(
+        COMPUTER,
+        BOT,
+        ACTOR,
+        { script: SCRIPT, files: [] },
+        stop.signal,
+      ),
+    );
+
+    expect(handed).toEqual([stop.signal, stop.signal]);
+    expect((error as Error).message).toBe("laf:stopped");
+    // The first file was decided and its act was stopped; the one after it is named as left.
+    expect(said(audit.rows).slice(2)).toEqual([
+      "computer.action_allowed computer_write_file",
+      "computer.action_failed computer_write_file",
+      `computer.script_files_left ${RUN_SCRIPT_TOOL}`,
+    ]);
+    expect(audit.rows.at(-2)?.payload.failure).toBe("laf:stopped");
+    expect(audit.rows.at(-1)?.payload).toMatchObject({
+      because: "laf:stopped",
+      left: [{ name: "notes.txt", bytes: 1 }],
+    });
+    expect([...computer.files.keys()]).toEqual([]);
+  });
+
   test("a file a script calls by three spaces does not become a FILE where the run's folder belongs", async () => {
     const { gateway, root } = overTheDisk(PERMISSIVE, () =>
       made(["   ", "x"], ["report.csv", "r"]),
