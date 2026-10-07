@@ -25,7 +25,10 @@ import {
   fingerprintOf,
 } from "../src/computer/approvals";
 import { DEFAULT_ACTION_POLICY } from "../src/computer/default-policy";
-import { ComputerUnavailableError } from "../src/computer/client";
+import {
+  ComputerUnavailableError,
+  WorkspaceRequestError,
+} from "../src/computer/client";
 import {
   ActionNeedsApprovalError,
   ActionRefusedError,
@@ -3007,6 +3010,86 @@ describe("a path a rule read one way and the computer would read another", () =>
     expect(readFileSync(join(root, "made"), "utf8")).toBe(
       "a file, where the folder belongs",
     );
+  });
+
+  /*
+   * A STOP THAT ARRIVES WHILE THE FOLDER IS BEING DESCRIBED (Codex, on the pull request). The
+   * look at `made/` cannot be handed the caller's Stop — the computer's listing takes none — so
+   * a Stop during it is seen only when it answers. Where it answered "that is not a folder",
+   * the call went on to say so of every file and RETURNED: a call somebody had stopped,
+   * reported as one that completed. It ends as a stopped call ends, whatever the computer went
+   * on to say of the folder — as it already did where the folder was there.
+   */
+  test("a Stop while made/ is being looked at ends the call as stopped, whatever the computer goes on to say of the folder", async () => {
+    const answers: [string, () => never | { entries: []; truncated: false }][] =
+      [
+        [
+          "a file is there",
+          () => {
+            throw new WorkspaceRequestError("laf:file_wrong_kind");
+          },
+        ],
+        [
+          "nothing is there",
+          () => {
+            throw new WorkspaceRequestError("laf:file_not_found");
+          },
+        ],
+        ["an empty folder is there", () => ({ entries: [], truncated: false })],
+      ];
+    for (const [said, answer] of answers) {
+      const stop = new AbortController();
+      const computer = fakeComputer();
+      const audit = fakeAudit();
+      const client = {
+        ...computer.client,
+        forBot: () => client,
+        listFiles: async (input: { path?: string }) => {
+          // The Stop lands while the computer is still describing the folder; then it answers.
+          stop.abort();
+          return { path: input.path ?? ".", ...answer() };
+        },
+      } as typeof computer.client;
+      const gateway = createComputerGateway({
+        client,
+        auditStore: audit.store,
+        policy: () => PERMISSIVE,
+        workbench: fakeWorkbench(() =>
+          made(["report.csv", "r"], ["notes.txt", "n"]),
+        ).workbench,
+        now: () => AT,
+      });
+
+      const error = await failure(
+        gateway.runScript(
+          COMPUTER,
+          BOT,
+          ACTOR,
+          { script: SCRIPT, files: [] },
+          stop.signal,
+        ),
+      );
+
+      expect({ said, ended: (error as Error).message }).toEqual({
+        said,
+        ended: "laf:stopped",
+      });
+      // The run, how it ended, and both files named as left — by the Stop, which is what ended
+      // the call. Nothing was decided of either, and nothing was put.
+      expect(audit.rows.map((row) => row.eventType)).toEqual([
+        "computer.action_allowed",
+        "computer.script_finished",
+        "computer.script_files_left",
+      ]);
+      expect(audit.rows.at(-1)?.payload).toMatchObject({
+        because: "laf:stopped",
+        left: [
+          { name: "report.csv", bytes: 1 },
+          { name: "notes.txt", bytes: 1 },
+        ],
+      });
+      expect([...computer.files.keys()]).toEqual([]);
+    }
   });
 
   test("a file a script calls by three spaces does not become a FILE where the run's folder belongs", async () => {
