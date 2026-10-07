@@ -280,8 +280,9 @@ test("a request the daemon could only refuse is refused here, unsent", async () 
       refused("files"),
     );
   }
-  // What a trim would change: the computer trims the path it reads, and a rule judged it as
-  // written, so the two would not be reading the same path (the read of 2026-10-07).
+  // What a trim would change: the gateway reads a path trimmed, for a rule and for the computer,
+  // and the daemon places it as written, so the two would not be reading the same path (the
+  // read of 2026-10-07, when it was a rule that read it as written).
   for (const path of [
     "a ",
     " a",
