@@ -1716,15 +1716,79 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * in, to the model and on the trail, being true of a backslash too — they said "outside the
  * workspace", which a path like `notes\메모.md` is not.
  *
+ * RAISED 2026-10-07 with an empty calendar day that says what comes next, by exactly what was
+ * added: `server` from 3677 to 3686 and `root` from 807 to 842. Nine to `server` in
+ * `plugin-rest-adapters.test.ts`, each reading what Google was asked as well as what came of the
+ * answer: an empty stretch naming the nearest event after it; a day with something on it reading
+ * to the byte as it did whatever came back for the days after; the page's size as it was, and a
+ * later event taking no place in it; an all-day event tomorrow coming after today on the person's
+ * clock, in Seoul and west of Greenwich; an event that began before today still today's; seven of
+ * the person's midnights across both of New York's clock changes; an event whose start cannot be
+ * read left in the listing; a page Google did not finish not called an empty week; and — passing
+ * before and after, there so it stays so — a search asked and answered as it was. (The empty
+ * day's own test was there already: it now reads the second sentence and the one request.)
+ * Thirty-five to `root` in `eval-calendar.test.ts`, because none of this runs in the gate
+ * otherwise: three that hold the answers the empty day's scenarios open with to the transport's
+ * own text, so a reworded result cannot leave the eval measuring a fixture; twenty-one for the
+ * judge of an answer that tells the next event — the eleven ways the fleet's model and a careful
+ * one say it, eight ways of telling an event as today's or one that is not there (the judge
+ * before it marked down seven right answers of twelve), a saving spent, and today left unsaid;
+ * eight for the empty week's judge; and three for the wrong move — its calendar, which holds two
+ * events tomorrow, and its judge.
+ *
+ * RAISED AGAIN 2026-10-07, `root` from 842 to 846, by exactly the four more in
+ * `eval-calendar.test.ts`, written on reading that judge again after the pull request was open:
+ * a 미팅 beside a 없 in one sentence is still an event told ("미팅이 하나 있고 다른 건 없어요" had
+ * passed, for the empty day and for the empty week); and the judge held on dates the day a test
+ * runs on will seldom be — in January, where "1월 7일" is inside "11월 7일", and at a month's and a
+ * year's end.
+ *
+ * RAISED A THIRD TIME 2026-10-07 after the second read of that change, by exactly what was added:
+ * `server` from 3686 to 3693 and `root` from 846 to 910. Seven to `server` in
+ * `plugin-rest-adapters.test.ts`. Three, written before the fix and two of them failing on the
+ * head that was read: an all-day date begins where the calendar's own zone says — a calendar
+ * kept east of the person and one kept west, each holding Google's answer to the stretch's own
+ * request beside its answer to the wider one — and an answer that names no zone, or one nobody
+ * knows, read on the person's clock. Four for what comes after an empty stretch being a DAY, told
+ * whole: a day as the person's own across their midnight; an all-day event on the date it names
+ * whatever zone the calendar is kept in; one event and no count where a day is not known whole (a
+ * full page, the far day of a stretch that ends partway through it, a calendar kept a day's width
+ * west); and a working-location marker neither chosen nor counted nor listed. (The test that told
+ * one event tells the day now; it was there.) Sixty-four to `root` in `eval-calendar.test.ts`,
+ * which had 42 and has 106: the judges were rewritten to read what an answer claims
+ * (`evals/calendar.ts`) and there are four scenarios where there were three. Ten hold what the
+ * scenarios hand the model to the transport — the four openings, the cut page both ways Google
+ * cuts one, and six ways of asking again of each calendar. The rest are answers: the second
+ * reader's twenty, each under the result it was written about; the fleet's model's own from that
+ * day; a day that holds two; other dates; an empty week; a wrong move for tomorrow told right and
+ * told wrong; and two things the judges still get wrong, written down as that.
+ *
+ * RAISED A FOURTH TIME 2026-10-07 after a third read of that change (a second independent
+ * reader, of the day form), `server` by exactly the eight added to `plugin-rest-adapters.test.ts`:
+ * "whole only where it is known to be" held to its word at both ends of a day — a day the
+ * looking began partway through (from this minute on, in the first hour of a 25-hour day) and
+ * one it stopped partway through (Santiago, where the clock goes forward at midnight) are told
+ * by one event; a stretch with no width asked for exactly as it was; a calendar kept a day's
+ * width from the person (the stretch's own date, a date the stretch reached into, and a date
+ * that begins as the looking ends); a stretch ending on the second, as Google reads its bound;
+ * a full page not called an empty week, whatever it is full of; and two that passed already and
+ * hold what no test did — an all-day date that has begun before a stretch ends being the
+ * stretch's, and only a working-location marker being left out of a day's events. Six are red
+ * on the head that read was of; eleven mutations of the fix each fail one.
+ *
+ * THE NUMBERS ARE SUMS: this change was rebased onto the path a rule judges (above), which had
+ * raised `server` to 3708 — so 3708, the sixteen of the first three raisings here and these
+ * eight make 3732. `root`'s 910 is this change's alone.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3708, roots: ["server"] },
+  { name: "server", floor: 3732, roots: ["server"] },
   { name: "app", floor: 2159, roots: ["app"] },
   { name: "agent-computer", floor: 530, roots: ["agent-computer"] },
-  { name: "root", floor: 807, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 910, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
