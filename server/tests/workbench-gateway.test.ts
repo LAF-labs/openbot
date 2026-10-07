@@ -651,12 +651,100 @@ describe("a script's run and the trail it goes through", () => {
       gateway.runScript(COMPUTER, BOT, ACTOR, { script: SCRIPT, files: [] }),
     ).rejects.toThrow("the trail is not taking rows");
 
-    // It ran — and what it made is dropped, because nothing would say where it came from. The
-    // folder was looked at first, for what the ending itself may have to say of it; no file
-    // was put.
+    // It ran — and what it made is dropped, because nothing would say where it came from.
     expect(sent).toHaveLength(1);
-    expect(computer.asked).toEqual(["listFiles made"]);
+    expect(computer.asked).toEqual([]);
     expect([...computer.files.keys()]).toEqual([]);
+  });
+
+  /*
+   * AND IT IS ON THE TRAIL BEFORE THE CALL WAITS ON ANYTHING (Codex, on the pull request that
+   * moved it). For one afternoon the ending was written after the look at `made/` — a request
+   * to the computer, which may take the whole of its timeout — and after the call's turn in the
+   * line of calls filing. A server that stopped in that time left a run that had happened with
+   * a row saying it was allowed and none saying how it ended. How it ended is known when the
+   * sandbox answers, and is written then.
+   */
+  test("how a run ended is on the trail before the computer is asked anything about what it made", async () => {
+    const computer = fakeComputer();
+    const audit = fakeAudit();
+    /** What the trail held each time the computer was asked what `made/` holds. */
+    const heldWhenAsked: string[][] = [];
+    const client = {
+      ...computer.client,
+      forBot: () => client,
+      listFiles: async (
+        input: Parameters<typeof computer.client.listFiles>[0],
+      ) => {
+        heldWhenAsked.push(audit.rows.map((row) => row.eventType));
+        return computer.client.listFiles(input);
+      },
+    } as typeof computer.client;
+    const gateway = createComputerGateway({
+      client,
+      auditStore: audit.store,
+      policy: () => PERMISSIVE,
+      workbench: fakeWorkbench(() => made(["out.csv", "1"])).workbench,
+      now: () => AT,
+    });
+
+    await gateway.runScript(COMPUTER, BOT, ACTOR, {
+      script: SCRIPT,
+      files: [],
+    });
+
+    expect(heldWhenAsked).toEqual([
+      ["computer.action_allowed", "computer.script_finished"],
+    ]);
+  });
+
+  test("and before the call waits its turn behind another call's files", async () => {
+    const computer = fakeComputer();
+    const audit = fakeAudit();
+    /** The first put waits here, holding the line, until the test lets it go. */
+    const held = Promise.withResolvers<void>();
+    const reached = Promise.withResolvers<void>();
+    const client = {
+      ...computer.client,
+      forBot: () => client,
+      putFile: async (path: string, body: Uint8Array) => {
+        reached.resolve();
+        await held.promise;
+        return computer.client.putFile(path, body);
+      },
+    } as typeof computer.client;
+    const gateway = createComputerGateway({
+      client,
+      auditStore: audit.store,
+      policy: () => PERMISSIVE,
+      workbench: fakeWorkbench(() => made(["out.csv", "1"])).workbench,
+      now: () => AT,
+    });
+    const run = (call: string) =>
+      gateway.runScript(
+        COMPUTER,
+        BOT,
+        { ...ACTOR, toolCallId: call },
+        { script: SCRIPT, files: [] },
+      );
+    const endings = () =>
+      audit.rows.filter((row) => row.eventType === "computer.script_finished")
+        .length;
+
+    const first = run("call-a");
+    await reached.promise;
+    // The first call is filing and holds the line. The second call's script runs meanwhile —
+    // the sandbox here answers at once — and it can file nothing until the first has done.
+    const second = run("call-b");
+    for (let turn = 0; turn < 50 && endings() < 2; turn += 1) {
+      await Bun.sleep(1);
+    }
+    const whileWaiting = endings();
+    held.resolve();
+    await Promise.all([first, second]);
+
+    // It was 1: the second run's ending waited behind the first call's files.
+    expect(whileWaiting).toBe(2);
   });
 
   test("a trail that will not take a file's decision ends the call rather than calling it the computer's refusal", async () => {
@@ -2871,9 +2959,11 @@ describe("a path a rule read one way and the computer would read another", () =>
    * A FILE CALLED `made` (the second read). Where the folder for what programs make belongs,
    * something had put a file — a Bot's own write will do it. Every file of every run after that
    * was decided, dialled for and failed (`laf:file_wrong_kind`), a failed row apiece, for good:
-   * nothing here removes a file. The ending says it now, once, and nothing is tried.
+   * nothing here removes a file. One row says it now, of all of them, and nothing is tried. Not
+   * the ending's own row: that one is written before the folder is looked at (see "how a run
+   * ended is on the trail before the computer is asked anything", above).
    */
-  test("a file where made/ belongs: the ending says so with a fact of its own, no file is tried, and what is there is left as it was", async () => {
+  test("a file where made/ belongs: one row says so with a fact of its own and names every file, none is tried, and what is there is left as it was", async () => {
     const { gateway, root, rows, computer } = overTheDisk(PERMISSIVE, () =>
       made(["report.csv", "r"], ["notes.txt", "n"]),
     );
@@ -2889,17 +2979,29 @@ describe("a path a rule read one way and the computer would read another", () =>
       { name: "report.csv", bytes: 1, unfiled: "laf:made_not_a_folder" },
       { name: "notes.txt", bytes: 1, unfiled: "laf:made_not_a_folder" },
     ]);
-    // Two rows: the run, and its ending — which names both files and says why neither is kept.
+    // Three rows: the run, how it ended, and the one that names both files and says why neither
+    // was tried. No decision and no failed row for either file.
     expect(rows.map((row) => row.eventType)).toEqual([
       "computer.action_allowed",
       "computer.script_finished",
+      "computer.script_files_left",
     ]);
     expect(rows[1]?.payload).toMatchObject({
       products: [
         { name: "report.csv", bytes: 1 },
         { name: "notes.txt", bytes: 1 },
       ],
-      unfiled: "laf:made_not_a_folder",
+    });
+    expect(rows[2]?.payload).toEqual({
+      action: RUN_SCRIPT_TOOL,
+      bot: BOT,
+      actor: ACTOR.id,
+      script: { sha256: sha256(SCRIPT), bytes: Buffer.byteLength(SCRIPT) },
+      because: "laf:made_not_a_folder",
+      left: [
+        { name: "report.csv", bytes: 1 },
+        { name: "notes.txt", bytes: 1 },
+      ],
     });
     expect(computer.asked).toEqual(["listFiles made"]);
     expect(readFileSync(join(root, "made"), "utf8")).toBe(

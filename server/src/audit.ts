@@ -194,7 +194,9 @@ export const auditEventTypes = [
    * at all — and a question about one file, which pauses the call until somebody answers. Until
    * 2026-10-07 the files after that were on the ending's row and nowhere else, so the trail said
    * a file was handed back and never said what became of it (the second read of the script
-   * act). Names and sizes, as on the ending's row; never a byte of a file.
+   * act). And one thing keeps a filing from beginning at all: a file where the folder belongs
+   * (`laf:made_not_a_folder`) — then this row names every file of the run. Names and sizes, as
+   * on the ending's row; never a byte of a file.
    */
   "computer.script_files_left",
   /**
@@ -602,11 +604,11 @@ export const auditFactCodes = [
    * are the `failure` of a `computer.action_failed` row against the run, and so is
    * `script_inputs_invalid` where the sandbox's own client found the request unplaceable once
    * its files were read (a file too deep). `made_full` is the `failure` of a row against one
-   * file's write. `made_not_a_folder` is on the ending's own row (`unfiled`), once, for every
-   * file of the run. And two are never on any row: `script_too_large`, and
-   * `script_inputs_invalid` for a request that could be refused before anything was read —
-   * each is what the caller is told, about a request that left nothing for the trail to say
-   * happened.
+   * file's write. `made_not_a_folder` is the `because` of the one row that names every file of
+   * the run, none of them tried (`computer.script_files_left`). And two are never on any row:
+   * `script_too_large`, and `script_inputs_invalid` for a request that could be refused before
+   * anything was read — each is what the caller is told, about a request that left nothing for
+   * the trail to say happened.
    */
   "laf:workbench_unavailable",
   "laf:workbench_busy",
@@ -673,7 +675,8 @@ export const MADE_FULL: AuditFactCode = "laf:made_full";
 /**
  * Where the folder scripts' files are kept belongs, there is a FILE: something called `made` that
  * is not a folder. No file a run makes can be filed while it is there, and nothing here removes a
- * file — so it is said once, on the run's ending, and not once for every file the run made.
+ * file — so it is said once, on the one row that names every file the run made
+ * (`computer.script_files_left`), and not once for each of them.
  */
 export const MADE_NOT_A_FOLDER: AuditFactCode = "laf:made_not_a_folder";
 

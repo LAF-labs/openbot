@@ -4,7 +4,11 @@ import type {
   ProductsRefusal,
   RunEnding,
 } from "../../shared/workbench/protocol";
-import { auditEventTypes, auditFactCodes } from "../../server/src/audit";
+import {
+  auditEventTypes,
+  auditFactCodes,
+  MADE_NOT_A_FOLDER,
+} from "../../server/src/audit";
 import { STOPPED } from "../../server/src/computer/client";
 import { ActionNeedsApprovalError } from "../../server/src/computer/gateway/caller";
 import { RUN_SCRIPT_TOOL } from "../../server/src/computer/gateway/intent";
@@ -175,19 +179,22 @@ describe("what the trail says happened", () => {
 
   /*
    * WHY A RUN'S FILES WERE NEVER TRIED is read from a row by a variable too (`payload.because`),
-   * and it is one of the two facts a call can end its filing with: the caller's Stop, as the
-   * computer's client says it, and a question, as the gateway's error for one says it. Held to
-   * the server's own words for both, so neither can be respelled on one side.
+   * and it is one of three facts: the two a call can end its filing with — the caller's Stop, as
+   * the computer's client says it, and a question, as the gateway's error for one says it — and
+   * the one that keeps a filing from beginning, a file where the folder belongs. Held to the
+   * server's own words for all three, so none can be respelled on one side; and the third says
+   * what `FACTS` says for the same code.
    */
-  test("each reason a run's files were left untried has words, and they are the two the server ends a filing with", () => {
+  test("each reason a run's files were left untried has words, and they are the three the server writes", () => {
     const asked = new ActionNeedsApprovalError({
       id: "a",
       subject: { kind: "file", intent: "write_file", reason: "policy_ask" },
       rule: "true",
     } as unknown as ConstructorParameters<typeof ActionNeedsApprovalError>[0]);
     expect(Object.keys(SCRIPT_FILES_LEFT).sort()).toEqual(
-      [STOPPED, asked.code].sort(),
+      [STOPPED, asked.code, MADE_NOT_A_FOLDER].sort(),
     );
+    expect(SCRIPT_FILES_LEFT[MADE_NOT_A_FOLDER]).toBe(FACTS[MADE_NOT_A_FOLDER]);
   });
 
   test("every fact code the server records has a sentence", () => {

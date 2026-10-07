@@ -11,7 +11,6 @@ import type {
   RunEnding,
 } from "../../../../shared/workbench/protocol";
 import {
-  type AuditFactCode,
   type AuditStore,
   ELEMENT_NOT_IN_SNAPSHOT,
   recordAuditEvent,
@@ -409,12 +408,6 @@ export async function writeScriptFinished(
     productsRefused?: ProductsRefusal | undefined;
     /** How many things it left that were not files to hand back. */
     skipped: number;
-    /**
-     * Present when NONE of the files it handed back will be tried, for one reason that is not
-     * about any one of them: where they are filed there is a file (`laf:made_not_a_folder`).
-     * Said here, once, in place of a failed row for each.
-     */
-    unfiled?: AuditFactCode | undefined;
   },
 ) {
   await recordAuditEvent(auditStore, {
@@ -441,7 +434,6 @@ export async function writeScriptFinished(
         ? { productsRefused: entry.productsRefused }
         : {}),
       skipped: entry.skipped,
-      ...(entry.unfiled ? { unfiled: entry.unfiled } : {}),
     },
   });
 }
@@ -452,7 +444,13 @@ export async function writeScriptFinished(
  * Its own writer for the reason the ending has one: nothing is decided here. A file that is
  * tried has a decision and a row; these have neither, because the filing ended before them — by
  * the caller's Stop (`laf:stopped`), or at a question about a file before them
- * (`laf:awaiting_approval`). Field by field, as the ending's row is: a name and a size.
+ * (`laf:awaiting_approval`) — or never began: where the folder they are filed in belongs there
+ * is a file (`laf:made_not_a_folder`), which is about none of them and so is said once, of all
+ * of them. Field by field, as the ending's row is: a name and a size.
+ *
+ * NOT A FIELD OF THE ENDING'S ROW, which is where that last one was said for an afternoon: to
+ * say it there the ending had to wait for the computer to describe the folder, and a run that
+ * has ended is on the trail before the call waits on anything (`acts.ts`, step 3).
  */
 export async function writeScriptFilesLeft(
   auditStore: AuditStore,
@@ -462,7 +460,7 @@ export async function writeScriptFilesLeft(
     actor: ActionActor;
     computerId: string;
     script: { sha256: string; bytes: number };
-    /** What ended the filing: the fact the call itself ends with. */
+    /** Why none of these was tried: what ended the filing, or kept it from beginning. */
     because: string;
     left: readonly { name: string; bytes: number }[];
   },

@@ -299,9 +299,9 @@ describe("the trail's page and a script's run", () => {
   /*
    * WHAT BECAME OF THE FILES A RUN MADE, WHERE IT WAS NOT "FILED" (the second read). Three
    * things a row says that the page had no words for, or drew nothing of: why a run's files
-   * were withheld by the place it ran (the line was there and no test drew it); why none of
-   * them was tried, where one fact settles all of them; and the files a filing never got to,
-   * named on a row of their own. Newest first, as the page is.
+   * were withheld by the place it ran (the line was there and no test drew it); the files a
+   * filing never got to, named on a row of their own; and, on that same kind of row, why none
+   * of them was tried where one fact settles all of them. Newest first, as the page is.
    */
   test("says why a run's files were withheld, why none was tried, and which files nobody got to — in words", async () => {
     const ending = {
@@ -337,13 +337,16 @@ describe("the trail's page and a script's run", () => {
       },
       {
         ...base,
-        id: "unfiled",
-        eventType: "computer.script_finished",
+        id: "none-tried",
+        eventType: "computer.script_files_left",
         createdAt: "2026-10-07T04:00:02.000Z",
         payload: {
-          ...ending,
-          products: [{ name: "report.csv", bytes: 9 }],
-          unfiled: "laf:made_not_a_folder",
+          action: RUN_SCRIPT_TOOL,
+          bot: "bot-1",
+          actor: "user-1",
+          script,
+          because: "laf:made_not_a_folder",
+          left: [{ name: "report.csv", bytes: 9 }],
         },
       },
       {
@@ -366,13 +369,11 @@ describe("the trail's page and a script's run", () => {
         "Not tried: 2 files요일별 매출.csvnotes.txt",
     );
 
-    // None of them tried, and the ending says why — in a sentence, never the code.
+    // None of them tried, and that same kind of row says why — in a sentence, never the code.
     expect(cells(1)[4]).toBe(
-      "The program's run ended" +
-        "It ended by itself, with status 0" +
-        "5 ms · printed 0 bytes" +
+      "Files it made were left untried" +
         "Where programs' files are kept there is something else called made, so none of these was kept" +
-        "Handed back 1 filesreport.csv",
+        "Not tried: 1 filesreport.csv",
     );
     expect(cells(1)[4]).not.toContain("laf:");
 

@@ -203,8 +203,6 @@ describe("what counts as the same row", () => {
       { ...ran, products: [], productsRefused: "too_many" },
       // Withheld for another reason: two endings that differ only in WHY nothing came back.
       { ...ran, products: [], productsRefused: "too_large" },
-      // None of its files tried, for one reason that settles all of them.
-      { ...ran, unfiled: "laf:made_not_a_folder" },
     ];
     const signature = (payload: Record<string, unknown>) =>
       signatureOf(
@@ -245,7 +243,7 @@ describe("what counts as the same row", () => {
     ).toBe(3);
     expect(read("a".repeat(64))).toBe(read("a".repeat(64)));
 
-    // And the row that names the files nobody got to: which files, and why, are what it is.
+    // And the row that names the files nobody tried: which files, and why, are what it is.
     const left = (because: string, names: string[]) =>
       signatureOf(
         event(noonOn("2026-10-07"), "computer.script_files_left", {
@@ -260,10 +258,11 @@ describe("what counts as the same row", () => {
       new Set([
         left("laf:stopped", ["a.csv"]),
         left("laf:awaiting_approval", ["a.csv"]),
+        left("laf:made_not_a_folder", ["a.csv"]),
         left("laf:stopped", ["b.csv"]),
         left("laf:stopped", ["a.csv", "b.csv"]),
       ]).size,
-    ).toBe(4);
+    ).toBe(5);
     expect(left("laf:stopped", ["a.csv"])).toBe(left("laf:stopped", ["a.csv"]));
   });
 
