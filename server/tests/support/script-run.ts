@@ -4,17 +4,19 @@
  *
  * Each RECORDS what reached it, because what those tests hold is mostly what did NOT happen —
  * nothing sent before a decision, nothing read after a refusal, nothing filed without a row. The
- * real ones are elsewhere: the sandbox's walls where the service is real
- * (`scripts/workbench-probe.ts`), the computer's routes in its own workspace's tests.
+ * sandbox's walls are measured where the service is real (`scripts/workbench-probe.ts`). And for
+ * what a stand-in cannot say — WHICH file a path reads, or where a file lands — there is
+ * `realComputer` below: no stand-in at all.
  */
 import {
-  createWorkspace,
-  WorkspaceFileError,
-  WorkspacePathError,
-} from "../../../agent-computer/src/workspace";
+  fileBytes as bytesRoute,
+  listFiles as listRoute,
+  putFile as putRoute,
+} from "../../../agent-computer/src/file-routes";
+import { createWorkspace } from "../../../agent-computer/src/workspace";
 import {
   type ComputerClient,
-  WorkspaceRefusedError,
+  createComputerClient,
   WorkspaceRequestError,
 } from "../../src/computer/client";
 import type { SnapshotResult } from "../../src/computer/schema";
@@ -159,58 +161,73 @@ export function fakeComputer(
   };
 }
 
+/** One of the computer's routes, as its own server calls it (`agent-computer/src/computer.ts`). */
+type Route = (asked: never, computer: never) => Promise<Response> | Response;
+
+/** The three file routes a script's run reaches, by the address the server's client dials. */
+const FILE_ROUTES = new Map<string, Route>([
+  ["/files/bytes", bytesRoute as Route],
+  ["/files/put", putRoute as Route],
+  ["/files/list", listRoute as Route],
+]);
+
 /**
- * The Bot's computer, NOT standing in: the workspace the computer's own routes are written over
- * (`agent-computer/src/workspace.ts`), on a folder that is really on the disk.
+ * The Bot's computer, NOT standing in: the server's own client (`computer/client.ts`), dialling
+ * the computer's own route handlers (`agent-computer/src/file-routes.ts`), over the workspace
+ * they are written for (`workspace.ts`), on a folder that is really on the disk. Only the socket
+ * between the two is missing.
  *
- * For what a stand-in cannot show: how the computer READS a path it is handed. It trims one, and
- * a rule judged the path as it was written — so a path that differs only by what a trim removes
- * is one thing to the policy and another to the disk. A stand-in that looks a path up in a map
- * does whatever its author thought of; this does what the computer does.
+ * For what a stand-in cannot show: how the computer READS a path it is handed. A stand-in that
+ * looks a path up in a map does whatever its author thought of — the first tests of the path a
+ * rule judges asserted on what a computer that echoes was sent, and passed with the fix deleted
+ * (`gateway-file-paths.test.ts`, whose pattern this is). So every test that says which file was
+ * read for a run, or where one landed, is in front of this, and asserts on the disk.
  *
- * The failures are the computer's own codes, thrown as the server's client throws them, so the
- * gateway reads them as it would off the wire.
+ * The request is the one the client builds (a JSON body for a read and a listing; the path of a
+ * put percent-encoded in a header, its body the file) and a failure is the computer's own code,
+ * turned into an error by the client's own table — so the gateway reads both exactly as it would
+ * off the wire.
  */
 export function realComputer(root: string) {
   const workspace = createWorkspace(root);
   /** Every call that reached the computer, by method and path AS IT WAS HANDED, in order. */
   const asked: string[] = [];
-  const through = async <T>(work: () => Promise<T>): Promise<T> => {
-    try {
-      return await work();
-    } catch (error) {
-      if (error instanceof WorkspacePathError) {
-        throw new WorkspaceRefusedError(error.code);
+  const dialled = createComputerClient({
+    baseUrl: "http://computer.test",
+    fetchImpl: (async (input: Request | URL | string, init?: RequestInit) => {
+      const request = new Request(input, init);
+      const url = new URL(request.url);
+      const route = FILE_ROUTES.get(url.pathname);
+      if (!route) {
+        return Response.json({ code: "laf:not_found" }, { status: 404 });
       }
-      if (error instanceof WorkspaceFileError) {
-        throw new WorkspaceRequestError(error.code);
-      }
-      throw error;
-    }
-  };
-  const client = {
-    async fileBytes(path: string) {
-      asked.push(`fileBytes ${path}`);
-      const { bytes: held } = await through(() => workspace.whole(path));
-      return new Uint8Array(held);
-    },
-    async putFile(path: string, body: Uint8Array) {
-      asked.push(`putFile ${path}`);
-      return through(() =>
-        workspace.put(
-          path,
-          (async function* () {
-            yield body;
-          })(),
-        ),
+      return route(
+        {
+          request,
+          url,
+          botId: request.headers.get("x-openbot-bot-id") ?? "",
+        } as never,
+        { workspace } as never,
       );
-    },
-    async listFiles(input: { path?: string }) {
-      asked.push(`listFiles ${input.path ?? "."}`);
-      return through(() => workspace.list(input.path));
-    },
-    forBot() {
-      return client;
+    }) as typeof fetch,
+  });
+  const client = {
+    forBot(botId: string) {
+      const computer = dialled.forBot(botId);
+      return {
+        fileBytes(path: string) {
+          asked.push(`fileBytes ${path}`);
+          return computer.fileBytes(path);
+        },
+        putFile(path: string, body: Uint8Array) {
+          asked.push(`putFile ${path}`);
+          return computer.putFile(path, body);
+        },
+        listFiles(input: { path?: string }) {
+          asked.push(`listFiles ${input.path ?? "."}`);
+          return computer.listFiles(input);
+        },
+      };
     },
   } as unknown as ComputerClient;
   return { client, asked };
