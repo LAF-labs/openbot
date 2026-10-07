@@ -74,7 +74,7 @@ import type { ComputerClient } from "../src/computer/client";
 import { createDemonstrationRecorder } from "../src/computer/demonstration";
 import { createComputerGateway } from "../src/computer/gateway";
 import type { ActionPolicy } from "../src/computer/policy";
-import { createPolicyStore } from "../src/computer/policy-store";
+import { createPolicyStore, revisionOf } from "../src/computer/policy-store";
 import type { SnapshotResult } from "../src/computer/schema";
 import { createScreenViewAudit } from "../src/computer/screen-view";
 import { createSiteConnectionStore } from "../src/computer/site-connections";
@@ -503,6 +503,18 @@ function bodyFor(method: string, template: string): unknown {
         via: null,
         hint: null,
       };
+    case "PUT /api/computers/policy":
+      /*
+       * A save names the boundary it was made against, or stores nothing whoever sends it
+       * (`policy-store.ts`, `revisionOf`) — so the administrator's press is the boundary this file
+       * stands up, sent back as it is, with its mark: stored, and the same boundary afterwards
+       * however often the door is pressed. Until 2026-10-07 this was `{}`, which the route took as
+       * a policy with three empty lists: the matrix left its policy store holding a boundary that
+       * permits nothing, and only because no gateway here reads that store did nothing notice. CI
+       * found the empty body the day a save had to say what it read — a laptop never runs this
+       * file, and the change that asked for the mark was pushed without it.
+       */
+      return { ...PERMISSIVE, revision: revisionOf(PERMISSIVE) };
     default:
       return {};
   }
