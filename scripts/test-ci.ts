@@ -1931,12 +1931,23 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * being looked at ends the call as stopped, whatever the computer goes on to say of the folder.
  * By hand: 3859 and 3 are 3862.
  *
+ * RAISED 2026-10-07 by fourteen in `server`, to 3876, with a file act taken off the page. Eleven
+ * in a file of their own, `gateway-file-acts-off-the-page.test.ts`: a rule about a site that
+ * asks, and one that refuses, deciding a press there and not a read, a write or a listing
+ * (two); every kind of row a file act leaves filed under no page; an upload still on the page;
+ * a yes and a No about a file holding when the browser has moved (two); a file a run reads and
+ * the same file read by the Bot itself decided alike under either rule (two); the row that says
+ * a run came round again; the shipped policy on a money host, which was so before and is after;
+ * and "always" on a read that names no file being for the tool and never the site. Three for
+ * the look at `made/` being handed the caller's Stop: one in `computer-client.test.ts`, two in
+ * `workbench-gateway.test.ts`. By hand: 11 and 1 and 2 are 14; 3862 and 14 are 3876.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3862, roots: ["server"] },
+  { name: "server", floor: 3876, roots: ["server"] },
   { name: "app", floor: 2174, roots: ["app"] },
   { name: "agent-computer", floor: 530, roots: ["agent-computer"] },
   { name: "root", floor: 915, roots: ["tests", "agent-bot"] },
