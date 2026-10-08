@@ -2088,12 +2088,21 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * Seventeen mutations of this round each fail at least one of these.
  * By hand: 4 and 2 are 6, and 3915 and 6 are 3921; 2183 and 4 are 2187.
  *
+ * AND BY TWO MORE IN `server`, to 3923, for what Codex's read of that round found: a row that
+ * still holds the retired rule in BOTH lists could not be repaired from the screen — Remove takes
+ * a rule out of its own list and sends the rest back, so the other copy was still in the body and
+ * neither removal was taken. The rule is refused coming INTO a list, not for being handed back by
+ * a boundary whose list already holds it. One in `computer-policy.test.ts` (handed back, taken out
+ * of either list, not thereby taken in the other, `allow` holding it counting for nothing) and one
+ * in `computer-routes.test.ts`, at the route: saved around, taken out one list at a time, refused
+ * coming back. Four mutations each fail one. By hand: 3921 and 2 are 3923.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3921, roots: ["server"] },
+  { name: "server", floor: 3923, roots: ["server"] },
   { name: "app", floor: 2187, roots: ["app"] },
   { name: "agent-computer", floor: 530, roots: ["agent-computer"] },
   { name: "root", floor: 915, roots: ["tests", "agent-bot"] },

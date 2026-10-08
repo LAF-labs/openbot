@@ -743,7 +743,7 @@ export function createComputerRoutes(
     > | null;
     // What cannot be a policy at all is that before it is anything else: a body of the wrong
     // shape was never anybody's copy of the boundary, old or new.
-    const parsed = parseActionPolicy(body);
+    const parsed = parseActionPolicy(body, policyStore.get());
     if (!parsed.ok && parsed.code !== "laf:policy_rule_retired") {
       return context.json(policyRefused(parsed), 400);
     }
