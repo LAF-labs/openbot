@@ -1294,11 +1294,15 @@ describe("a folder a rule exempts is named to the letter", () => {
     expect(onlyNow).toBeGreaterThan(100);
   });
 
-  test("a cost, kept on purpose: an allowance given under the rule the preset used to write does not answer for the one it writes now", async () => {
+  test("an allowance still filed under the rule the preset used to write answers for nothing under the one it writes now", async () => {
     /*
      * An allowance is kept under the rule that asked (`standing-approvals.ts`: "the rule is part
-     * of the key, so rewriting the boundary asks again"), and this rule's meaning did change. So
-     * somebody who answered "always" for a file under the old one is asked about it once more.
+     * of the key, so rewriting the boundary asks again"), and it is looked for under the rule that
+     * asks now. This was written down as a cost every deployment paid on upgrade. It is not, any
+     * more: migration 0062 moves an allowance that still stands along with its rule
+     * (`notes-preset-migration.integration.test.ts`). What is held here is what is true of one the
+     * migration left where it was — its slot under the new rule was already taken — and of any
+     * rule a person rewrites: listed, able to be taken back, and answering for nothing.
      */
     const standing = createStandingApprovalStore();
     const given = await standing.grant({

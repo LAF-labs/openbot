@@ -80,7 +80,7 @@ function policyServer(
   /** Every boundary a save left behind it, in order. */
   const stored: Policy[] = [];
   const markOf = (policy: Policy) => `mark:${JSON.stringify(policy)}`;
-  const api: ApiAnswer = async ({ method, pathname, body }: ApiRequest) => {
+  const api: ApiAnswer = ({ method, pathname, body }: ApiRequest) => {
     if (pathname === "/api/approvals/standing") {
       return json({ standing: options.standing ?? [] });
     }
@@ -90,29 +90,32 @@ function policyServer(
       if (options.readFails?.(reads)) return json({ error: "gone" }, 500);
       return json({ policy: held, revision: markOf(held) });
     }
-    if (options.saveTakes) {
-      await new Promise((resolve) => setTimeout(resolve, options.saveTakes));
-    }
     const sent = body as Record<string, unknown> & Policy;
-    // In the server's own order: is this copy the boundary in force — and only then what it holds.
-    if (sent.revision !== markOf(held)) {
-      return json(
-        { error: "laf:policy_changed", code: "laf:policy_changed" },
-        409,
-      );
-    }
-    const refused = options.refuse?.(sent);
-    if (refused) return refused;
-    held = {
-      deny: sent.deny,
-      ask: sent.ask,
-      allow: sent.allow,
-      ...(sent.settleWithoutAsking
-        ? { settleWithoutAsking: sent.settleWithoutAsking }
-        : {}),
+    const save = (): Response => {
+      // In the server's own order: is this copy the boundary in force — and only then what it holds.
+      if (sent.revision !== markOf(held)) {
+        return json(
+          { error: "laf:policy_changed", code: "laf:policy_changed" },
+          409,
+        );
+      }
+      const refused = options.refuse?.(sent);
+      if (refused) return refused;
+      held = {
+        deny: sent.deny,
+        ask: sent.ask,
+        allow: sent.allow,
+        ...(sent.settleWithoutAsking
+          ? { settleWithoutAsking: sent.settleWithoutAsking }
+          : {}),
+      };
+      stored.push(held);
+      return json({ policy: held, revision: markOf(held) });
     };
-    stored.push(held);
-    return json({ policy: held, revision: markOf(held) });
+    if (!options.saveTakes) return save();
+    return new Promise<Response>((resolve) => {
+      setTimeout(() => resolve(save()), options.saveTakes);
+    });
   };
   return {
     api,
