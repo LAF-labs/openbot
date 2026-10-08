@@ -16,6 +16,14 @@ else — what it is for included — is settled by talking to it (2026-09-24,
 `docs/laf/deployment-model.md` "봇은 하나다"). Rooms and Bots asking each other
 were removed that day and live in git history.
 
+**Decided 2026-10-08, not yet built** (`docs/laf/redesign-2026-10.md`): a home
+panel of widgets replaces the sidebar; projects sit beside the one main
+conversation; the main conversation is an orchestrator on a fixed model and
+effort that hands browsing and background work to sub-agents; the profile is a
+name only, and effort is not shown; an 계정 menu keeps logins and cards. Still
+one Bot. Until a piece lands, the code and the rules below describe what runs —
+build toward that record, and move a rule here when its piece lands.
+
 The product is a **cloud engine plus an installed app shell**. The engine runs
 on a VM; `desktop/` is a Tauri window onto the deployed origin and holds no
 product logic.
