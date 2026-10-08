@@ -251,9 +251,10 @@ export function createPolicyStore(
        * SAID ONCE, AT BOOT, WHERE THE ROW STILL HOLDS THE RULE THAT IS NOT TAKEN. Migration 0062
        * rewrites the copy the button wrote, so this is a row written past it — by hand, or restored
        * from a copy made before. It is enforced as written, because a boundary is never loosened or
-       * mended on the way in; but every save from the screen is then refused until that rule is
-       * taken out of the list, and an operator reading the log should not have to find that out
-       * from somebody's failed save.
+       * mended on the way in, and the screen can save around it and take it out (`parseActionPolicy`,
+       * `inForce`). But it is a rule that does not ask about `Notes/`, under a row the screen has
+       * no name for, and an operator reading the log should not have to find that out from a file
+       * written unasked.
        */
       for (const list of ["deny", "ask"] as const) {
         if (current[list].includes(RETIRED_NOTES_RULE)) {
@@ -301,7 +302,15 @@ export type PolicyRefusal =
  * A refusal is a code, and the list it is about where it is about one. It was an English sentence,
  * which the route answered with and the Boundaries page printed as the reason a rule was not saved.
  */
-export function parseActionPolicy(input: unknown):
+export function parseActionPolicy(
+  input: unknown,
+  /**
+   * The boundary in force, where the policy coming in is a change to one (a save from the screen).
+   * Absent where it is a boundary from nowhere — configuration at startup. See the retired rule,
+   * below: what a list already holds is not this caller's to be refused for.
+   */
+  inForce?: ActionPolicy,
+):
   | { ok: true; policy: ActionPolicy }
   | {
       ok: false;
@@ -370,8 +379,21 @@ export function parseActionPolicy(input: unknown):
    * again would be a deployment unable to change any rule at all: the screen sends `allow` back as
    * it read it, and has no way to edit it.
    */
+  /*
+   * AND NOT WHERE THE LIST ALREADY HOLDS IT, in the boundary this save was made against. A row can
+   * still hold the rule — written past migration 0062, by hand or from a copy made before — and
+   * the screen sends the whole boundary back with one thing changed. Refused for what it was only
+   * handing back, such a deployment could save nothing at all; and with the rule in BOTH lists it
+   * could not even take it out, since either removal leaves the other copy in the body (Codex's
+   * read of this change). Bringing the rule in is what is refused: into a list that does not hold
+   * it. Keeping it where it is changes nothing that is enforced, and taking it out is the repair.
+   * (A window with an older copy never gets this far: the route asks about the mark first.)
+   */
   for (const key of ["deny", "ask"] as const) {
-    if (lists[key].includes(RETIRED_NOTES_RULE)) {
+    if (
+      lists[key].includes(RETIRED_NOTES_RULE) &&
+      !inForce?.[key].includes(RETIRED_NOTES_RULE)
+    ) {
       return {
         ok: false,
         code: "laf:policy_rule_retired",

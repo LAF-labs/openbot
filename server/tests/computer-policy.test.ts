@@ -798,6 +798,55 @@ describe("the rule that is not taken any more", () => {
     ).toEqual({ ok: false, code: "laf:policy_settle_invalid" });
   });
 
+  test("is refused coming IN to a list, not for being handed back by a boundary whose list already holds it", () => {
+    /*
+     * A save from the screen is the whole boundary with one thing changed. Where a row still holds
+     * the rule, refusing what was only handed back left that deployment unable to save anything —
+     * and with the rule in both lists, unable to take it out: either removal left the other copy
+     * in the body.
+     */
+    const both = { deny: [RETIRED_NOTES_RULE], ask: [RETIRED_NOTES_RULE] };
+    const held: ActionPolicy = { ...both, allow: ["true"] };
+    const against = (
+      lists: Parameters<typeof taking>[0],
+      inForce: ActionPolicy,
+    ) =>
+      parseActionPolicy(
+        { deny: [], ask: [], allow: ["true"], ...lists },
+        inForce,
+      );
+
+    // Handed back whole, with something else changed; and taken out of one list, then the other.
+    expect(against({ ...both, ask: [RETIRED_NOTES_RULE, "x"] }, held).ok).toBe(
+      true,
+    );
+    expect(against({ ask: [RETIRED_NOTES_RULE] }, held).ok).toBe(true);
+    expect(against({ deny: [RETIRED_NOTES_RULE] }, held).ok).toBe(true);
+    expect(against({}, held).ok).toBe(true);
+    // Held in one list, it is not thereby taken in the other: that is the rule coming in.
+    const inAsk: ActionPolicy = {
+      deny: [],
+      ask: [RETIRED_NOTES_RULE],
+      allow: ["true"],
+    };
+    expect(against(both, inAsk)).toMatchObject({
+      ok: false,
+      code: "laf:policy_rule_retired",
+      list: "deny",
+    });
+    // Held only in `allow`, or by a boundary that does not hold it at all, it is refused as ever.
+    for (const inForce of [
+      { deny: [], ask: [], allow: [RETIRED_NOTES_RULE, "true"] },
+      { deny: [], ask: [NOTES_RULE], allow: ["true"] },
+    ]) {
+      expect(against({ ask: [RETIRED_NOTES_RULE] }, inForce)).toMatchObject({
+        ok: false,
+        code: "laf:policy_rule_retired",
+        list: "ask",
+      });
+    }
+  });
+
   test("is taken in `allow`, where it is a narrower grant and not an exemption", () => {
     // The migration leaves it there too. And the screen sends `allow` back as it read it, with no
     // way to edit it: refused there, a deployment holding it could never change a rule again.

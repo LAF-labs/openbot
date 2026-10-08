@@ -925,6 +925,55 @@ describe("a save and the boundary it was made against", () => {
     expect(policyStore.get()).toEqual(before);
     expect(changed(rows)).toEqual([]);
   });
+  test("a boundary that still holds the retired rule can be saved around and repaired from the screen — in both lists, one removal at a time", async () => {
+    /*
+     * Codex's read of this change. The screen's Remove takes a rule out of its own list and sends
+     * the rest back; with the rule in both lists the other copy was still in the body, so neither
+     * removal was taken and every other save was refused with them. What is refused is the rule
+     * coming into a list — not a list handing back what it holds.
+     */
+    const { app, policyStore, rows } = surface(ADMIN);
+    // Past the door on purpose: a row written by hand, or restored from a copy made before.
+    await policyStore.set(
+      {
+        deny: [RETIRED_NOTES_RULE],
+        ask: ["repeat.count >= 5", RETIRED_NOTES_RULE],
+        allow: ["true"],
+      },
+      { revision: policyStore.revision() },
+    );
+    const window = windowOn(app);
+    const held = await window.read();
+
+    // Something else changed, the rule handed back where it was: stored.
+    expect(
+      (await window.save({ ask: [...held.policy.ask, 'intent == "upload"'] }))
+        .status,
+    ).toBe(200);
+    // Taken out of one list, with the other's copy still in the body: stored.
+    expect((await window.save({ deny: [] })).status).toBe(200);
+    // Brought back into the list that no longer holds it: refused, by that list's name.
+    const back = await window.save({ deny: [RETIRED_NOTES_RULE] });
+    expect([back.status, back.code, back.body.list]).toEqual([
+      400,
+      "laf:policy_rule_retired",
+      "deny",
+    ]);
+    // And out of the other.
+    expect(
+      (await window.save({ ask: ["repeat.count >= 5", 'intent == "upload"'] }))
+        .status,
+    ).toBe(200);
+    expect(policyStore.get()).toEqual({
+      deny: [],
+      ask: ["repeat.count >= 5", 'intent == "upload"'],
+      allow: ["true"],
+    });
+    // Gone from the boundary, it is the rule nobody may bring in again.
+    expect((await window.save({ ask: [RETIRED_NOTES_RULE] })).status).toBe(400);
+    expect(changed(rows)).toHaveLength(3);
+  });
+
   test("a body that is no policy is told so before anything about the mark or the rule, whichever else it holds", async () => {
     /*
      * The three answers have an order — what is no policy (400), then a copy that is out of date
