@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import {
   type ActionPolicy,
   evaluateActionPolicy,
@@ -781,6 +781,23 @@ describe("the rule that is not taken any more", () => {
     ).toMatchObject({ ok: false, list: "deny" });
   });
 
+  test("is looked for last: a body that is no policy at all is told that, whether or not it holds the rule", () => {
+    // The route answers this refusal after the mark and every other before it (`routes.ts`). Met
+    // before the switch was looked at, a body that was no policy and also held the rule went the
+    // later way, and was told its copy of the boundary was old.
+    expect(
+      taking({ ask: [RETIRED_NOTES_RULE], allow: "true" as never }),
+    ).toEqual({ ok: false, code: "laf:policy_list_invalid", list: "allow" });
+    expect(
+      parseActionPolicy({
+        deny: [RETIRED_NOTES_RULE],
+        ask: [RETIRED_NOTES_RULE],
+        allow: ["true"],
+        settleWithoutAsking: "sometimes",
+      }),
+    ).toEqual({ ok: false, code: "laf:policy_settle_invalid" });
+  });
+
   test("is taken in `allow`, where it is a narrower grant and not an exemption", () => {
     // The migration leaves it there too. And the screen sends `allow` back as it read it, with no
     // way to edit it: refused there, a deployment holding it could never change a rule again.
@@ -982,5 +999,125 @@ describe("the boundary's mark, and a write made against it", () => {
       await store.set({ ...P, ask: ["kept"] }, { revision: read }),
     ).toEqual({ stored: true });
     expect(written).toEqual([["kept"]]);
+  });
+});
+
+/**
+ * WHAT THE RECORD IS HANDED, AND WHAT A BOOT SAYS ABOUT THE ROW IT READ.
+ *
+ * Two things nothing held (the last read of this change, 2026-10-07): who saved the boundary could
+ * be dropped from the row on either branch of the upsert, and a row still holding the rule that is
+ * not taken was loaded without a word — found out later by somebody whose save was refused.
+ */
+describe("the row a boundary is kept in", () => {
+  type Kept = {
+    deny: string[];
+    ask: string[];
+    allow: string[];
+    settleWithoutAsking: string | null;
+    updatedBy: string | null;
+  };
+
+  /** A record of one row, behind the shape of the statements the store makes. */
+  function record(row: Kept | null = null) {
+    const handed: { values: Kept; set: Kept }[] = [];
+    const database = {
+      insert: () => ({
+        values: (values: Kept) => ({
+          onConflictDoUpdate: async (conflict: { set: Kept }) => {
+            handed.push({ values, set: conflict.set });
+          },
+        }),
+      }),
+      select: () => ({
+        from: () => ({
+          where: () => ({ limit: async () => (row ? [row] : []) }),
+        }),
+      }),
+    } as unknown as Database;
+    return { database, handed };
+  }
+
+  /** Every line the logger printed while `act` ran, as the objects they are. */
+  async function printedDuring(act: () => Promise<unknown>) {
+    const lines: Record<string, unknown>[] = [];
+    const spies = (["error", "warn", "log"] as const).map((method) =>
+      spyOn(console, method).mockImplementation((line: unknown) => {
+        lines.push(JSON.parse(String(line)) as Record<string, unknown>);
+      }),
+    );
+    await act().then(
+      () => undefined,
+      () => undefined,
+    );
+    for (const spy of spies) spy.mockRestore();
+    return lines;
+  }
+
+  test("who saved it is on the row whether the row is new or written over, and nobody is nobody", async () => {
+    const P: ActionPolicy = { deny: [], ask: [], allow: ["true"] };
+    const { database, handed } = record();
+    const store = createPolicyStore(P, database);
+
+    await store.set(
+      { ...P, ask: ["first"] },
+      { revision: store.revision(), by: "manager@laf.test" },
+    );
+    await store.set({ ...P, ask: ["second"] }, { revision: store.revision() });
+
+    expect(
+      handed.map(({ values, set }) => [
+        values.ask,
+        values.updatedBy,
+        set.ask,
+        set.updatedBy,
+      ]),
+    ).toEqual([
+      [["first"], "manager@laf.test", ["first"], "manager@laf.test"],
+      [["second"], null, ["second"], null],
+    ]);
+  });
+
+  test("a row that still holds the rule that is not taken is enforced as written, and said once per list at boot", async () => {
+    const stuck: Kept = {
+      deny: [],
+      ask: ["repeat.count >= 5", RETIRED_NOTES_RULE],
+      allow: [RETIRED_NOTES_RULE, "true"],
+      settleWithoutAsking: null,
+      updatedBy: null,
+    };
+    const store = createPolicyStore(
+      { deny: [], ask: [], allow: ["true"] },
+      record(stuck).database,
+    );
+    const lines = await printedDuring(() => store.load());
+
+    // Not mended on the way in: the boundary a deployment saved is the one it gets back.
+    expect(store.get().ask).toEqual(stuck.ask);
+    const said = lines.filter(
+      (line) => line.event === "computer_policy_retired_rule_held",
+    );
+    // `allow` holds it too and is not named: there it is a narrower grant, and it is taken.
+    expect(
+      said.map((line) => [line.level, line.list, line.replacement]),
+    ).toEqual([["warn", "ask", NOTES_RULE]]);
+  });
+
+  test("a row the migration rewrote, and no row at all, say nothing", async () => {
+    const migrated: Kept = {
+      deny: [],
+      ask: [NOTES_RULE],
+      allow: ["true"],
+      settleWithoutAsking: null,
+      updatedBy: null,
+    };
+    for (const row of [migrated, null]) {
+      const store = createPolicyStore(
+        { deny: [], ask: [], allow: ["true"] },
+        record(row).database,
+      );
+      const lines = await printedDuring(() => store.load());
+      expect(lines).toEqual([]);
+    }
   });
 });

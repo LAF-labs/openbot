@@ -247,6 +247,22 @@ export function createPolicyStore(
                 row.settleWithoutAsking === "allowed" ? "allowed" : "off",
             }),
       };
+      /*
+       * SAID ONCE, AT BOOT, WHERE THE ROW STILL HOLDS THE RULE THAT IS NOT TAKEN. Migration 0062
+       * rewrites the copy the button wrote, so this is a row written past it — by hand, or restored
+       * from a copy made before. It is enforced as written, because a boundary is never loosened or
+       * mended on the way in; but every save from the screen is then refused until that rule is
+       * taken out of the list, and an operator reading the log should not have to find that out
+       * from somebody's failed save.
+       */
+      for (const list of ["deny", "ask"] as const) {
+        if (current[list].includes(RETIRED_NOTES_RULE)) {
+          log.warn("computer_policy_retired_rule_held", {
+            list,
+            replacement: NOTES_RULE,
+          });
+        }
+      }
       return "the database";
     },
   };
@@ -328,11 +344,25 @@ export function parseActionPolicy(input: unknown):
     lists[key] = value as string[];
   }
 
+  // Absent means allowed, like `ask` defaulting to empty: a policy written before this existed
+  // still parses and still means what it meant. Anything else is refused rather than read as one of
+  // the two, because a typo silently meaning "allowed" is the direction that loosens a boundary.
+  const standing = candidate.settleWithoutAsking;
+  if (standing !== undefined && standing !== "allowed" && standing !== "off") {
+    return { ok: false, code: "laf:policy_settle_invalid" };
+  }
+
   /*
-   * THE ONE RULE THAT IS NOT TAKEN, in the two lists where it lets something past
+   * LAST, ONCE THE BODY IS KNOWN TO BE A POLICY AT ALL: the one rule that is not taken, in the two lists where it lets something past
    * ({@link RETIRED_NOTES_RULE}). Refused, not rewritten: "we accepted your rule but not in the
    * shape you wrote it" is the one thing this function never does, and a window still holding the
    * old boundary should be told its copy is no good rather than have it quietly mended.
+   *
+   * AFTER EVERY CHECK OF SHAPE, because the route answers this refusal later than the others — a
+   * copy that is out of date is told that before it is told about a rule (`routes.ts`). Met before
+   * the switch was looked at, a body that was no policy (`settleWithoutAsking: "sometimes"`) and
+   * also held this rule was told its copy was old, and sent to read a boundary it never was a copy
+   * of.
    *
    * NOT IN `allow`. There the same expression is a narrower grant — "writes that are not under
    * notes/" — and what it leaves out by ignoring case it leaves to the next rule. The migration
@@ -350,14 +380,6 @@ export function parseActionPolicy(input: unknown):
         replacement: NOTES_RULE,
       };
     }
-  }
-
-  // Absent means allowed, like `ask` defaulting to empty: a policy written before this existed
-  // still parses and still means what it meant. Anything else is refused rather than read as one of
-  // the two, because a typo silently meaning "allowed" is the direction that loosens a boundary.
-  const standing = candidate.settleWithoutAsking;
-  if (standing !== undefined && standing !== "allowed" && standing !== "off") {
-    return { ok: false, code: "laf:policy_settle_invalid" };
   }
 
   return {

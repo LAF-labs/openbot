@@ -159,10 +159,15 @@ function surface(
    * list is pressed by an administrator who owns none, which is the arrangement that broke it.
    */
   drives: (botId: string) => boolean = (botId) => botId === "bot-1",
+  /** How long the trail takes over a row, in milliseconds: the one wait between a save and its answer. */
+  auditTakes = 0,
 ) {
   const rows: AuditEventInput[] = [];
   const auditStore: AuditStore = {
     insert: async (event) => {
+      if (auditTakes > 0) {
+        await new Promise((resolve) => setTimeout(resolve, auditTakes));
+      }
       if (auditFailure) throw auditFailure;
       rows.push(event);
     },
@@ -919,6 +924,101 @@ describe("a save and the boundary it was made against", () => {
     ).toEqual([400, "laf:policy_list_invalid"]);
     expect(policyStore.get()).toEqual(before);
     expect(changed(rows)).toEqual([]);
+  });
+  test("a body that is no policy is told so before anything about the mark or the rule, whichever else it holds", async () => {
+    /*
+     * The three answers have an order — what is no policy (400), then a copy that is out of date
+     * (409), then the rule that is not taken (400) — and the first has to be first for every way
+     * of being no policy. The switch was looked at after the rule, so a body with both went the
+     * later way: told its copy was old, and sent to read a boundary it was never a copy of.
+     */
+    const { app, policyStore, rows } = surface(ADMIN);
+    const before = policyStore.get();
+    const current = policyStore.revision();
+    const send = async (body: unknown, raw = false) => {
+      const response = await app.request("/policy", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: raw ? String(body) : JSON.stringify(body),
+      });
+      const answer = (await response.json()) as Record<string, unknown>;
+      return [response.status, answer.code, answer.list ?? null];
+    };
+    const retired = { ask: [RETIRED_NOTES_RULE] };
+    const noPolicy: [unknown, string, string | null, boolean?][] = [
+      ["{ not json", "laf:policy_not_object", null, true],
+      [null, "laf:policy_not_object", null],
+      ["a policy", "laf:policy_not_object", null],
+      [{ ...retired, deny: "everything" }, "laf:policy_list_invalid", "deny"],
+      [
+        { deny: [RETIRED_NOTES_RULE], ask: [1] },
+        "laf:policy_list_invalid",
+        "ask",
+      ],
+      [{ ...retired, allow: "true" }, "laf:policy_list_invalid", "allow"],
+      [
+        { ...retired, settleWithoutAsking: "sometimes" },
+        "laf:policy_settle_invalid",
+        null,
+      ],
+    ];
+    for (const [body, code, list, raw] of noPolicy) {
+      // With no mark, with one that was never handed out, and with the one in force.
+      for (const revision of [undefined, "not a mark", current]) {
+        const sent =
+          raw || body === null || typeof body !== "object"
+            ? body
+            : { ...body, ...(revision === undefined ? {} : { revision }) };
+        expect([code, revision, await send(sent, raw)]).toEqual([
+          code,
+          revision,
+          [400, code, list],
+        ]);
+      }
+    }
+    expect(policyStore.get()).toBe(before);
+    expect(changed(rows)).toEqual([]);
+  });
+
+  test("a save is answered with the boundary in force and that boundary's mark — also when another save landed before the answer left", async () => {
+    /*
+     * The answer is what the window holds from then on, and its next save presents that mark. So
+     * the two are a pair, read from the store together. Answered with the rules it had sent beside
+     * the mark in force, the first window here would hold its own older rules under the second
+     * window's mark, and its next save would write them over the second's with nothing refused:
+     * the lost update this mark exists to stop, by way of the answer.
+     *
+     * The one wait between the write and the answer is the trail's row, so that is what is slow.
+     */
+    const { app, policyStore, rows } = surface(
+      ADMIN,
+      undefined,
+      undefined,
+      undefined,
+      20,
+    );
+    const one = windowOn(app);
+    const two = windowOn(app);
+    await one.read();
+
+    const first = one.save({ deny: ["one"] });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    // Stored, and its answer still waiting on the trail.
+    expect(policyStore.get().deny).toEqual(["one"]);
+    await two.read();
+    expect((await two.save({ ask: ["two"] })).status).toBe(200);
+
+    const answered = await first;
+    const inForce = { deny: ["one"], ask: ["two"], allow: ["true"] };
+    expect([answered.status, answered.body]).toEqual([
+      200,
+      { policy: inForce, revision: revisionOf(inForce) },
+    ]);
+    expect(answered.body.revision).toBe(policyStore.revision());
+    // And so the first window's next save is made against what is there, and keeps the second's.
+    expect((await one.save({ deny: ["one", "more"] })).status).toBe(200);
+    expect(policyStore.get()).toEqual({ ...inForce, deny: ["one", "more"] });
+    expect(changed(rows)).toHaveLength(3);
   });
 });
 
