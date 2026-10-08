@@ -395,6 +395,18 @@ export async function mountApp(options: {
       });
       await settle();
     },
+    /** One key going down on a field, as its own event: what a second press of Enter is. */
+    press: async (target: Element, key: string) => {
+      await act(async () => {
+        target.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      });
+    },
     /** Buttons with a visible name, for finding one by what a person reads. */
     buttonNamed: (name: string) =>
       [...host.querySelectorAll<HTMLButtonElement>("button")].find(

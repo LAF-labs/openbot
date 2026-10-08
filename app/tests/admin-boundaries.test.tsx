@@ -69,17 +69,29 @@ function policyServer(
     /** What a save is answered with instead of being looked at. */
     refuse?: (body: Record<string, unknown>) => Response | undefined;
     standing?: unknown[];
+    /** How long a save takes to be answered, in milliseconds. */
+    saveTakes?: number;
+    /** Which reads fail, counted from one: the first is the page loading. */
+    readFails?: (nth: number) => boolean;
   } = {},
 ) {
   let held = first;
+  let reads = 0;
+  /** Every boundary a save left behind it, in order. */
+  const stored: Policy[] = [];
   const markOf = (policy: Policy) => `mark:${JSON.stringify(policy)}`;
-  const api: ApiAnswer = ({ method, pathname, body }: ApiRequest) => {
+  const api: ApiAnswer = async ({ method, pathname, body }: ApiRequest) => {
     if (pathname === "/api/approvals/standing") {
       return json({ standing: options.standing ?? [] });
     }
     if (pathname !== "/api/computers/policy") return undefined;
     if (method === "GET") {
+      reads += 1;
+      if (options.readFails?.(reads)) return json({ error: "gone" }, 500);
       return json({ policy: held, revision: markOf(held) });
+    }
+    if (options.saveTakes) {
+      await new Promise((resolve) => setTimeout(resolve, options.saveTakes));
     }
     const sent = body as Record<string, unknown> & Policy;
     // In the server's own order: is this copy the boundary in force — and only then what it holds.
@@ -99,11 +111,13 @@ function policyServer(
         ? { settleWithoutAsking: sent.settleWithoutAsking }
         : {}),
     };
+    stored.push(held);
     return json({ policy: held, revision: markOf(held) });
   };
   return {
     api,
     markOf,
+    stored,
     /** Another window's save, as far as this page can tell: the boundary is simply another one. */
     changeElsewhere: (next: Policy) => {
       held = next;
@@ -117,13 +131,25 @@ const policyRequests = (requests: ApiRequest[]) =>
     .filter((request) => request.pathname === "/api/computers/policy")
     .map((request) => request.method);
 
-const alerts = (main: Element | null) => [
-  ...new Set(
-    [...(main?.querySelectorAll('[role="alert"]') ?? [])].map(
-      (alert) => alert.textContent ?? "",
-    ),
-  ),
-];
+/**
+ * Every alert on the page, as many times as it is there. This was a set, which is how one failed
+ * save could be said in three places at once with every test here reading "the only thing it says".
+ */
+const alerts = (main: Element | null) =>
+  [...(main?.querySelectorAll('[role="alert"]') ?? [])].map(
+    (alert) => alert.textContent ?? "",
+  );
+
+/** One of the page's sections, by the title a person reads over it. */
+const sectionTitled = (main: Element | null, title: string) =>
+  [...(main?.querySelectorAll("section") ?? [])].find(
+    (section) => section.querySelector("h2")?.textContent === title,
+  ) ?? null;
+
+const askBox = (main: Element | null) =>
+  main?.querySelector<HTMLInputElement>(
+    'input[aria-label="A rule that asks a person first, written in CEL"]',
+  );
 
 const denyBox = (main: Element | null) =>
   main?.querySelector<HTMLInputElement>(
@@ -284,10 +310,207 @@ describe("the Boundaries page, saving", () => {
     expect(server.held()).toEqual(AS_READ);
     expect(denyBox(view.main())?.value).toBe(RETIRED);
   });
+  test("Enter twice on a typed rule is one save: the key is held back while a save is on its way, as the button is", async () => {
+    /*
+     * The button beside the box is disabled while saving and the key was not. Two presses sent the
+     * rule twice against one mark; the first was stored and the second turned away, so the page
+     * said "nothing was saved" under a list that held the rule (the last read of this change).
+     */
+    const server = policyServer(AS_READ, { saveTakes: 15 });
+    const view = await mountApp({
+      path: "/admin/boundaries",
+      role: "admin",
+      api: server.api,
+    });
+    await view.waitFor(
+      () => denyBox(view.main()) !== undefined && denyBox(view.main()) !== null,
+      "the box for a rule",
+    );
+    const enter = (box: HTMLInputElement) => view.press(box, "Enter");
+
+    for (const [box, list] of [
+      [denyBox, "deny"],
+      [askBox, "ask"],
+    ] as const) {
+      const before = server.stored.length;
+      await view.type(box(view.main()) as HTMLInputElement, MINE);
+      await enter(box(view.main()) as HTMLInputElement);
+      await enter(box(view.main()) as HTMLInputElement);
+      await view.waitFor(
+        () => server.stored.length > before,
+        `the ${list} rule to be stored`,
+      );
+      await view.settle(60);
+      expect([list, server.stored.length - before]).toEqual([list, 1]);
+      expect([list, server.held()[list]]).toEqual([list, [MINE]]);
+      expect([list, alerts(view.main())]).toEqual([list, []]);
+      expect([list, box(view.main())?.value]).toEqual([list, ""]);
+    }
+    expect(policyRequests(view.requests)).toEqual(["GET", "PUT", "PUT"]);
+    expect(view.main()?.textContent).toContain(
+      "Saved. It applies to the next action any Bot takes.",
+    );
+  });
+
+  test("when the read after a refused save fails, the page says it could not read — not that it is showing the current boundary", async () => {
+    // The first read is the page loading; the second is the one made after the refusal.
+    const server = policyServer(AS_READ, { readFails: (nth) => nth === 2 });
+    const view = await mountApp({
+      path: "/admin/boundaries",
+      role: "admin",
+      api: server.api,
+    });
+    await view.waitFor(
+      () => denyBox(view.main()) !== undefined && denyBox(view.main()) !== null,
+      "the box for a rule",
+    );
+    server.changeElsewhere({ deny: [], ask: ["theirs"], allow: ["true"] });
+    await view.type(denyBox(view.main()) as HTMLInputElement, MINE);
+    const add = view.buttonNamed("Add rule") as HTMLButtonElement;
+    await view.click(add);
+    await view.waitFor(
+      () => alerts(view.main()).length > 0,
+      "the page to say something",
+    );
+
+    expect(policyRequests(view.requests)).toEqual(["GET", "PUT", "GET"]);
+    expect(alerts(view.main())).toEqual(["The boundary could not be read."]);
+    // It is still showing what it read first, and it has not said otherwise.
+    expect(view.main()?.textContent).not.toContain("theirs");
+    expect(denyBox(view.main())?.value).toBe(MINE);
+    expect(server.held().deny).toEqual([]);
+
+    // Pressed again it is turned away again, reads — answered this time — and still saves nothing.
+    await view.click(add);
+    await view.waitFor(
+      () => view.main()?.textContent?.includes("theirs") === true,
+      "the current boundary to be shown",
+    );
+    expect(alerts(view.main())).toEqual([
+      BOUNDARY_REFUSALS["laf:policy_changed"] ?? "",
+    ]);
+    expect(server.stored).toEqual([]);
+  });
+
+  test("a save that fails says so once, beside the control that was pressed", async () => {
+    /*
+     * One sentence, where the person is looking. It was three: under the box for a rule, under the
+     * box for a rule that asks, and at the foot of the page — the same words in three alerts, and
+     * "that rule is already in this list" under the list it was not about.
+     */
+    const server = policyServer(
+      { deny: [MINE], ask: ["asks"], allow: ["true"] },
+      { refuse: () => json({ error: "laf:x", code: "laf:x" }, 503) },
+    );
+    const view = await mountApp({
+      path: "/admin/boundaries",
+      role: "admin",
+      api: server.api,
+    });
+    await view.waitFor(
+      () => denyBox(view.main()) !== undefined && denyBox(view.main()) !== null,
+      "the box for a rule",
+    );
+    const where = () =>
+      ["It may never", "Ask me first", "Getting past without asking"].map(
+        (title) => alerts(sectionTitled(view.main(), title)),
+      );
+    const failed = "The boundary could not be saved.";
+    const addIn = (title: string) =>
+      [
+        ...(sectionTitled(view.main(), title)?.querySelectorAll("button") ??
+          []),
+      ].find(
+        (button) => button.textContent?.trim() === "Add rule",
+      ) as HTMLButtonElement;
+
+    // A rule the list already holds: said under that list, and nothing is sent.
+    await view.type(denyBox(view.main()) as HTMLInputElement, MINE);
+    await view.click(addIn("It may never"));
+    expect(where()).toEqual([["That rule is already in this list."], [], []]);
+    expect(alerts(view.main())).toHaveLength(1);
+    expect(policyRequests(view.requests)).toEqual(["GET"]);
+
+    // A save from the second box that fails: said there, and the first box's sentence is gone.
+    await view.type(askBox(view.main()) as HTMLInputElement, "another");
+    await view.click(addIn("Ask me first"));
+    await view.waitFor(() => where()[1]?.length === 1, "the refusal");
+    expect(where()).toEqual([[], [failed], []]);
+    expect(alerts(view.main())).toHaveLength(1);
+
+    // A save from the first box that fails.
+    await view.type(denyBox(view.main()) as HTMLInputElement, "a third");
+    await view.click(addIn("It may never"));
+    await view.waitFor(() => where()[0]?.length === 1, "the refusal");
+    expect(where()).toEqual([[failed], [], []]);
+    expect(alerts(view.main())).toHaveLength(1);
+
+    // And the switch, which is neither box.
+    await view.type(
+      view
+        .main()
+        ?.querySelector(
+          'input[aria-label="Why this is changing"]',
+        ) as HTMLInputElement,
+      "every one gets a pair of eyes",
+    );
+    await view.click(view.buttonNamed("Ask every time") as HTMLButtonElement);
+    await view.waitFor(() => where()[2]?.length === 1, "the refusal");
+    expect(where()).toEqual([[], [], [failed]]);
+    expect(alerts(view.main())).toHaveLength(1);
+    expect(server.stored).toEqual([]);
+  });
+
+  test("a rule is dressed in the words of the list it is in: one expression asks under one label and refuses under another", async () => {
+    // The two tables offer this expression under two labels, and the first table used to win.
+    const SUBMIT =
+      '(intent == "activate" && contains(element.name, "submit")) || (tool.name == "computer_key" && key == "Enter") || submit';
+    const LOOP = "repeat.count >= 10";
+    const server = policyServer({
+      deny: [LOOP],
+      ask: [SUBMIT, LOOP],
+      allow: [SUBMIT, "true"],
+    });
+    const view = await mountApp({
+      path: "/admin/boundaries",
+      role: "admin",
+      api: server.api,
+    });
+    await view.waitFor(
+      () => denyBox(view.main()) !== undefined && denyBox(view.main()) !== null,
+      "the box for a rule",
+    );
+    /** The rows of a section's own list — the first list in it; the presets are the second. */
+    const rowsOf = (title: string) =>
+      [
+        ...(sectionTitled(view.main(), title)
+          ?.querySelector("ul")
+          ?.querySelectorAll("li") ?? []),
+      ].map((row) => row.textContent ?? "");
+    const NEVER = "Never submit a form";
+    const ASK = "Ask before submitting a form";
+    const STOP = "Stop a Bot repeating itself";
+
+    const [asksSubmit, asksLoop] = rowsOf("Ask me first");
+    expect([asksSubmit?.includes(ASK), asksSubmit?.includes(NEVER)]).toEqual([
+      true,
+      false,
+    ]);
+    // A rule only the other table has words for is shown bare: there it refuses, and here it asks.
+    expect(asksLoop?.includes(STOP)).toBe(false);
+    expect(rowsOf("It may never")[0]?.includes(STOP)).toBe(true);
+    // In the last list it neither refuses nor asks, and the one rule with words is the default's.
+    const [maySubmit, mayRest] = rowsOf("Otherwise it may");
+    expect([maySubmit?.includes(ASK), maySubmit?.includes(NEVER)]).toEqual([
+      false,
+      false,
+    ]);
+    expect(mayRest).toContain("Anything not refused above");
+  });
 });
 
 describe("the Boundaries page, what it no longer asks about", () => {
-  test("an allowance whose rule no longer asks — gone, or refusing now — is said not to be in force; one whose rule still asks, and a floor's, are not", async () => {
+  test("an allowance whose rule no longer asks — gone, refusing now, or only allowing — is said not to be in force; one whose rule still asks, and a floor's, are not", async () => {
     /*
      * An allowance is kept under the rule that asked and looked for under the rule that asks now.
      * When somebody edits that rule the allowance is still listed here, under a heading that says
@@ -327,7 +550,9 @@ describe("the Boundaries page, what it no longer asks about", () => {
           // A floor's question is filed under no written rule: there is none of it to go missing.
           allowance("a-floor", "", "reports/floor.csv"),
           allowance("a-guard", "laf:money", "reports/guard.csv"),
-          // An allowance for a question the high-risk check raised over an `allow` rule.
+          // Filed under a rule that is in `allow` now — moved down from "Ask me first", say. Nothing
+          // asks under such a rule: the high-risk check's question is filed under its own name and
+          // offers nothing wider, so no allowance is looked for there (`settle.ts`).
           allowance("a-allow", "true", "reports/allowed.csv"),
         ],
       },
@@ -357,7 +582,7 @@ describe("the Boundaries page, what it no longer asks about", () => {
       ["reports/first.csv", true],
       ["reports/floor.csv", false],
       ["reports/guard.csv", false],
-      ["reports/allowed.csv", false],
+      ["reports/allowed.csv", true],
     ]);
     expect(ko[NOT_IN_FORCE]).toContain("적용되지 않음");
     // It can still be taken back from where it is listed.

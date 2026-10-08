@@ -278,6 +278,17 @@ function BoundariesPage() {
   const [saved, setSaved] = useState(false);
   /** Said beside the box that produced it, not four sections below the fold. */
   const [notice, setNotice] = useState<string | null>(null);
+  /**
+   * Which of the page's three controls was pressed last: where a refusal is said.
+   *
+   * ONE PLACE, THE ONE BEING LOOKED AT. `notice ?? problem` was drawn under both boxes and
+   * `problem` again at the foot, so one failed save was three alerts — read three times over by a
+   * screen reader — and "that rule is already in this list" appeared under the list it was not
+   * about as well. Null until something is pressed; a refusal with nothing pressed is the foot's.
+   */
+  const [pressed, setPressed] = useState<"deny" | "ask" | "switch" | null>(
+    null,
+  );
   const [draft, setDraft] = useState("");
   const [askDraft, setAskDraft] = useState("");
   /** Why the switch below is being moved. Required, and kept only in the audit row. */
@@ -337,9 +348,16 @@ function BoundariesPage() {
    * somewhere they were not looking.
    */
   const save = useCallback(
-    async (next: PolicyChange): Promise<boolean> => {
+    async (
+      next: PolicyChange,
+      from: "deny" | "ask" | "switch",
+    ): Promise<boolean> => {
       setSaving(true);
       setSaved(false);
+      setPressed(from);
+      // What an earlier press was told is not this one's to carry.
+      setNotice(null);
+      setProblem(null);
       // `try`…`catch`…`finally`: the `try`…`catch` in `putPolicy`, which never throws, and the
       // `finally` through `ensure` — the React Compiler cannot compile the statement in a component.
       return ensure(
@@ -418,25 +436,31 @@ function BoundariesPage() {
    * A RULE THAT REFUSES NOW DOES NOT ASK EITHER. Written into the list of what the Bot may never
    * do, the same expression refuses what it used to ask about; a refusal is never answered for,
    * so the allowance is as spent as one whose rule is gone — on a row that would otherwise read
-   * as though its file were let through. A rule in `allow` does count: the question an allowance
-   * was given for there is the high-risk check's, raised over the rule that allowed.
+   * as though its file were let through.
+   *
+   * NOR DOES A RULE IN `allow`. This counted one as asking, on the reasoning that the high-risk
+   * check raises its question over the rule that allowed. It does, and that question is filed
+   * under the floor's own name and offers nothing wider — no allowance is ever kept under an
+   * `allow` rule, and one planted there is never looked for (measured on the gateway by the last
+   * read of this change, 2026-10-07). So a rule moved from "Ask me first" down to the last list
+   * left its allowance drawn as in force, for a reason that was not true.
    */
   const stillAnswers = (allowance: StandingAllowance) =>
     allowance.rule === "" ||
     allowance.rule.startsWith("laf:") ||
     (!policy.deny.includes(allowance.rule) &&
-      [...policy.ask, ...policy.allow].includes(allowance.rule));
+      policy.ask.includes(allowance.rule));
 
   const addRule = async (rule: string) => {
     const trimmed = rule.trim();
     if (!trimmed) return;
     // A rule already in the list was a dead click: nothing happened and nothing said why.
     if (policy.deny.includes(trimmed)) {
+      setPressed("deny");
       setNotice(t("That rule is already in this list."));
       return;
     }
-    setNotice(null);
-    if (await save({ ...policy, deny: [...policy.deny, trimmed] })) {
+    if (await save({ ...policy, deny: [...policy.deny, trimmed] }, "deny")) {
       setDraft("");
     }
   };
@@ -452,11 +476,11 @@ function BoundariesPage() {
     const trimmed = rule.trim();
     if (!trimmed) return;
     if (policy.ask.includes(trimmed)) {
+      setPressed("ask");
       setNotice(t("That rule is already in this list."));
       return;
     }
-    setNotice(null);
-    if (await save({ ...policy, ask: [...policy.ask, trimmed] })) {
+    if (await save({ ...policy, ask: [...policy.ask, trimmed] }, "ask")) {
       setAskDraft("");
     }
   };
@@ -500,15 +524,18 @@ function BoundariesPage() {
                   <RemoveRule
                     isBusy={saving}
                     onRemove={() =>
-                      void save({
-                        ...policy,
-                        deny: policy.deny.filter((one) => one !== rule),
-                      })
+                      void save(
+                        {
+                          ...policy,
+                          deny: policy.deny.filter((one) => one !== rule),
+                        },
+                        "deny",
+                      )
                     }
                     rule={rule}
                   />
                 }
-                gloss={glossOf(rule)}
+                gloss={glossOf(rule, "deny")}
                 key={rule}
                 rule={rule}
               />
@@ -527,6 +554,11 @@ function BoundariesPage() {
             onKeyDown={(event) => {
               // A rule can hold a Korean string literal, and Enter accepts the syllable first.
               if (isImeKey(event)) return;
+              // The button beside this box is not pressable while a save is on its way, and the
+              // key was: Enter twice sent the rule twice against one mark, and the second answer
+              // — "the boundary was changed somewhere else" — was said over a rule that had been
+              // saved, by the same hand, a moment before.
+              if (saving) return;
               if (event.key === "Enter") void addRule(draft);
             }}
             placeholder='tool.name == "computer_click" && contains(element.name, "submit")'
@@ -540,8 +572,8 @@ function BoundariesPage() {
             {t("Add rule")}
           </Button>
         </div>
-        {/* Under the box that produced it. `problem` also renders far below, for a failed save. */}
-        {notice || problem ? (
+        {/* Under the box that produced it, and nowhere else: see `pressed`. */}
+        {pressed === "deny" && (notice || problem) ? (
           <p className="mt-2 text-destructive text-xs" role="alert">
             {notice ?? problem}
           </p>
@@ -583,15 +615,18 @@ function BoundariesPage() {
                   <RemoveRule
                     isBusy={saving}
                     onRemove={() =>
-                      void save({
-                        ...policy,
-                        ask: policy.ask.filter((one) => one !== rule),
-                      })
+                      void save(
+                        {
+                          ...policy,
+                          ask: policy.ask.filter((one) => one !== rule),
+                        },
+                        "ask",
+                      )
                     }
                     rule={rule}
                   />
                 }
-                gloss={glossOf(rule)}
+                gloss={glossOf(rule, "ask")}
                 key={rule}
                 rule={rule}
               />
@@ -609,6 +644,7 @@ function BoundariesPage() {
             }}
             onKeyDown={(event) => {
               if (isImeKey(event)) return;
+              if (saving) return;
               if (event.key === "Enter") void addAskRule(askDraft);
             }}
             placeholder='intent == "write_file" && file.folder != "notes"'
@@ -622,8 +658,7 @@ function BoundariesPage() {
             {t("Add rule")}
           </Button>
         </div>
-        {/* Under the box that produced it. `problem` also renders far below, for a failed save. */}
-        {notice || problem ? (
+        {pressed === "ask" && (notice || problem) ? (
           <p className="mt-2 text-destructive text-xs" role="alert">
             {notice ?? problem}
           </p>
@@ -694,11 +729,14 @@ function BoundariesPage() {
               onClick={() => {
                 if ((policy.settleWithoutAsking ?? "allowed") === choice)
                   return;
-                void save({
-                  ...policy,
-                  settleWithoutAsking: choice,
-                  reason: settleReason.trim(),
-                }).then((ok) => {
+                void save(
+                  {
+                    ...policy,
+                    settleWithoutAsking: choice,
+                    reason: settleReason.trim(),
+                  },
+                  "switch",
+                ).then((ok) => {
                   if (ok) setSettleReason("");
                 });
               }}
@@ -728,6 +766,11 @@ function BoundariesPage() {
             value={settleReason}
           />
         </div>
+        {pressed === "switch" && problem ? (
+          <p className="mt-2 text-destructive text-xs" role="alert">
+            {problem}
+          </p>
+        ) : null}
         <p className="mt-2 text-xs text-muted-foreground">
           {t("Changing this needs a reason, which is kept in the audit trail.")}{" "}
           {(policy.settleWithoutAsking ?? "allowed") === "allowed"
@@ -872,13 +915,13 @@ function BoundariesPage() {
       <PageSection title={t("Otherwise it may")}>
         <ul className="mt-2 divide-y divide-border rounded-md border border-border">
           {policy.allow.map((rule) => (
-            <RuleRow gloss={glossOf(rule)} key={rule} rule={rule} />
+            <RuleRow gloss={glossOf(rule, "allow")} key={rule} rule={rule} />
           ))}
         </ul>
       </PageSection>
 
       <p className="mt-8 text-muted-foreground text-xs">
-        {problem ? (
+        {problem && pressed === null ? (
           <span className="text-destructive" role="alert">
             {problem}
           </span>
@@ -1006,8 +1049,21 @@ const RemoveRule = ({
  * "outside notes/" over a rule that does not ask about `Notes/`, and bare it reads as what it
  * is — a rule this screen does not offer.
  */
-function glossOf(rule: string): string | undefined {
-  if (rule === "true") return "Anything not refused above";
-  return [...PRESETS, ...ASK_PRESETS].find((preset) => preset.rule === rule)
-    ?.label;
+function glossOf(
+  rule: string,
+  list: "deny" | "ask" | "allow",
+): string | undefined {
+  /*
+   * THE WORDS ARE THE LIST'S OWN. One expression is offered in two lists under two labels — "never
+   * submit a form" and "ask before submitting a form" — and looked up in both tables at once, the
+   * first table won: a rule sitting under "Ask me first" read "Never submit a form". A label says
+   * what a rule DOES, and that is decided by the list it is in. So a rule is dressed only in words
+   * written for the list it is in, and the last list has one: the default the server ships.
+   */
+  if (list === "allow") {
+    return rule === "true" ? "Anything not refused above" : undefined;
+  }
+  return (list === "deny" ? PRESETS : ASK_PRESETS).find(
+    (preset) => preset.rule === rule,
+  )?.label;
 }
