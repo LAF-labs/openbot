@@ -1942,13 +1942,159 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * the look at `made/` being handed the caller's Stop: one in `computer-client.test.ts`, two in
  * `workbench-gateway.test.ts`. By hand: 11 and 1 and 2 are 14; 3862 and 14 are 3876.
  *
+ * RAISED 2026-10-07 FOR A FOLDER A RULE EXEMPTS, by exactly what was added: `server` from 3876 to
+ * 3892 and `app` from 2174 to 2178. The boundaries screen's "ask before writing a file outside
+ * notes/" was a negated `matches`, which ignores letter case, in front of a disk that does not:
+ * `Notes/x.md` was written unasked into a second folder (pressed on the real computer, on what
+ * v0.5.17 ships). Eleven to `server` in `gateway-file-paths.test.ts`, in front of the real
+ * workspace like the rest, and reading the preset off the screen's own source — the test that
+ * was there held a copy of it under "as the boundaries screen offers it", and would have passed
+ * whatever the screen offered next. `file.folder` as a table, a file's and a folder's, nothing
+ * folded, trimmed or normalised, blank for a string that is no path's spelling, and with no
+ * default for what the path names (a line the typecheck reads); TO THE LETTER AS AN IDENTITY —
+ * a path's folder is its first name, code unit for code unit, over names made to be taken for
+ * `notes` (a Cyrillic letter, full-width ones, letters that take no room, control characters,
+ * a trailing dot) and over every spelling in the file; what a rule is handed as it for a write,
+ * a read, an upload and a listing, read by which of several rules asked; a listing's folder
+ * being one fact under both of its folder's names; the preset asking about each of those names,
+ * the top and a file called `notes`, and not about `notes/` however it is written; no read,
+ * listing or upload asked about by it; the old expression not asking — the reason for all of
+ * this — with what landed said for the disk it landed on; the third read's F1 said of
+ * `file.folder` (the folder's own listing under every spelling, another folder and the whole
+ * folder refused) beside what a negated match does instead; a string the computer refuses as a
+ * path being in no folder — a question about a FILE under the preset, on a row that names it,
+ * and a yes to it landing nowhere; the preset asking about everything the rule it replaced
+ * asked about, over some 3,300 strings (the first version of `file.folder` read `notes` off
+ * `/notes/x.md`, and was quieter there than the old rule); and an allowance still
+ * filed under the old rule answering for nothing under the new one. A LAPTOP'S DISK DOES NOT
+ * TELL LETTER CASE APART AND CI'S DOES, so these are asserted on whether a person was asked, on
+ * the question and its row, and on what the computer was handed; they were run on both kinds of
+ * disk before they were pushed (a case-sensitive scratch volume, `TMPDIR` pointed at it). One in
+ * `computer-gateway.test.ts` and one in `plugin-store.integration.test.ts`: a rule about a
+ * folder is false, not unevaluable, for an act and for another server's tool that name no file
+ * — the fact there, and blank. One in `workbench-gateway.test.ts`: the same fact said of a run's
+ * files, what it makes being in `made` to the letter and what it reads being where it is — a
+ * run's file acts go through the one place the fact is made. Two for migration 0062, which
+ * rewrites a stored copy of the old
+ * expression: `notes-preset-migration.test.ts` holds the statement to its text — what it looks
+ * for, what it leaves (the rule the screen offers, read off the screen) and nothing else, with
+ * every string in it compared to the letter — and `notes-preset-migration.integration.test.ts`
+ * runs it over rows: rewritten in `ask` and `deny` where a row holds it, `allow` and every other
+ * column as they were, a look-alike not written at all (by the row's `ctid`: a statement with no
+ * WHERE leaves every column of every row as it was and still writes them all) and a second run
+ * writing nothing. Four to `app` in the new `boundary-presets.test.ts`: no rule in either preset
+ * table, and neither box's example, exempting by a match that ignores letter case — negated,
+ * compared to a boolean, chosen between, or inverted inside its own pattern; the check seeing
+ * each shape it was written about; the old expression nowhere on the screen; and the preset's
+ * cost saying, in both languages, that the name is matched to the letter.
+ *
+ * Thirty-nine mutations of the change each fail at least one of these on a laptop. Seven of
+ * them only since they were found to pass: the migration's text was being compared with the
+ * white space inside its strings collapsed; and an independent read of the change, before it was pushed,
+ * tidied the folder four ways (above) that each reopened the fault and failed nothing, made a
+ * string that is no path into no file at all, and stood a dash in for the blank — the identity
+ * test, the question's subject and row, and a rule that is true of anything but a blank are
+ * what came of that. What only a database can show runs in CI and nowhere else: the migration
+ * with its WHERE gone, over rows (tried by hand first, on a PostgreSQL of this change's own),
+ * and a connected service's call with no `folder`.
+ *
+ * THE NUMBERS ARE SUMS, redone by hand each time main moved under this change: onto a script's
+ * run as an act, onto what the second read of that act and Codex's of it added, and then onto a
+ * file act taken off the page (all above), which left `server` at 3876 and `app` at 2174 — so
+ * 3876 and these sixteen make 3892, and 2174 and these four make 2178. `agent-computer`'s 530 and
+ * `root`'s 915 are as those changes left them.
+ *
+ * RAISED AGAIN 2026-10-07, FOR THE SAVE THAT UNDID IT, by exactly what was added: `server` from
+ * 3892 to 3915 and `app` from 2178 to 2183. An independent read of that change, and then Codex's
+ * of the pull request, found the same thing: a window that was on the boundaries screen across the
+ * upgrade writes the policy it read back whole on its next save — the old rule over the one the
+ * migration had just written — and `Notes/x.md` is unasked again (measured). That is one case of
+ * a general one: any window holding an older copy undoes whatever was decided since, the switch
+ * that decides whether anybody is asked at all included. So a save names the boundary it was made
+ * against, and the one retired rule is refused where a policy comes in. Eight to `server` in
+ * `computer-routes.test.ts`: a read handing out the boundary's mark and a save handing out the
+ * next; a save that names none storing nothing; a save made against an older boundary storing
+ * nothing — not its rules, not the switch it would have moved back; two windows in turn; two
+ * saves arriving together, one stored; a save that changes nothing turning nobody away; the
+ * retired rule refused by name in `ask` and `deny` with what to write instead; and the window
+ * that was measured, told its copy is old rather than about a rule nobody typed (the mark is
+ * asked about before the rule is, and what is no policy at all before either) — each with the
+ * trail holding one row for each change that was stored and none for one that was not. Eight in
+ * `computer-policy.test.ts`: the retired rule refused in the two lists that hold an action back,
+ * taken in `allow`, exactly that string and no look-alike, and the rule named in its place
+ * asking about everything the old one asked about; the mark being the boundary's own digest (the
+ * same for the same boundary, another for anything a decision could turn on); a write made
+ * against any other boundary storing nothing; two writes against one boundary while the first is
+ * still on its way to the record — what the lock is for, which a record that answers at once
+ * cannot show; and a write the record refuses leaving boundary and mark as they were. Three in
+ * `config.test.ts`: a configured policy holding the retired rule in `ask`, or in `deny`, refusing
+ * to start with the rule to write in its place, and the policy `.env.example` shows being one
+ * the server starts on. Two more in `notes-preset-migration.test.ts` and one in its
+ * `.integration` sibling, for the migration's second statement: an allowance that still stands
+ * under the old rule goes with it — not a withdrawn one, not a look-alike, and never onto a row
+ * that already stands for the same answer, which would fail the migration and a deployment with
+ * it. One in `policy-durability.integration.test.ts`: a save made against a boundary no longer in
+ * force writes nothing to the row. Five to `app`: four in the new `admin-boundaries.test.tsx`,
+ * which mounts the page against a server that answers as the real one does — a save refused for
+ * being out of date is followed by one read and NO second save, the page shows the current
+ * boundary and says so, and what was typed stays in its box; every later save presents the mark
+ * the last was answered with; the retired rule is said to be that, with the rule to write; and
+ * an allowance whose rule no longer asks — gone, or refusing now — is said not to be in force,
+ * where one whose rule still asks, and a floor's, are not — and one in `boundary-presets.test.ts`,
+ * the refusal's words naming the rule the preset writes. (`computer-routes-codes.test.ts` and
+ * `workbench-gateway.test.ts` each hold more than they did, in tests that were there: the two
+ * facts as the route answers them, and the preset asking about what a small program makes.)
+ * Both `.integration` files were run as plain scripts first, on a PostgreSQL of this change's
+ * own, since a laptop never runs them.
+ * By hand: 8, 8, 3, 2, 1 and 1 are 23, and 3892 and 23 are 3915; 4 and 1 are 5, and 2178 and 5
+ * are 2183.
+ *
+ * WHAT THE FIRST RUN OF THAT FOUND, the same day, with no test added and no floor moved. CI: the
+ * authorization matrix pressed the policy's save with `{}` — a file that needs a database, so a
+ * laptop had never run it against the change — and the administrator's own door answered 409;
+ * its press now names the boundary it was made against. (That `{}` had been leaving the matrix's
+ * policy store permitting nothing, unnoticed.) And Codex: the second statement moved an allowance
+ * whose clock had run out, because one that ended is never withdrawn; it reads the clock as the
+ * store does now, while its inner half still does not — a row that has run out holds its slot —
+ * and `notes-preset-migration.integration.test.ts` seeds both, and the pair that would collide.
+ *
+ * Forty-three more mutations — of the mark, the lock, the two refusals and the order they are
+ * given in, the migration's second statement and the clock it reads, and the page — each fail at
+ * least one of these; the three of the clock were tried over rows as well, on that PostgreSQL.
+ *
+ * RAISED A THIRD TIME 2026-10-08, FOR WHAT THE LAST READ OF IT FOUND, by exactly what was added:
+ * `server` from 3915 to 3921 and `app` from 2183 to 2187. A second independent read, of the save
+ * and the page, found nine things; none reopened the fault, and each was either a wrong answer to
+ * a person or something no test held. Four to `server` in `computer-policy.test.ts`: the retired
+ * rule looked for LAST — the route answers that refusal after the mark, so a body that was no
+ * policy and also held the rule was told its copy of the boundary was old; who saved the boundary
+ * on the row on both branches of the upsert; a row that still holds the retired rule enforced as
+ * written and said once per list at boot (it was loaded without a word, and every save from the
+ * screen then refused); and a row the migration rewrote, or none, saying nothing. Two in
+ * `computer-routes.test.ts`: every way of being no policy answered 400 with its own code under no
+ * mark, a wrong one and the right one; and a save answered with the boundary in force and that
+ * boundary's mark when another save landed before the answer left — the trail made slow, since
+ * its row is the one wait between the write and the answer. (Answered with the rules it had sent
+ * beside the mark in force, that window's next save writes its older rules over the other's,
+ * nothing refused.) Four to `app` in `admin-boundaries.test.tsx`: Enter twice on a typed rule
+ * being one save, in both boxes — the key was not held back while a save was on its way, and the
+ * page said nothing was saved under a list that held the rule; the read after a refused save
+ * failing, said as that and not as the current boundary; a failed save said ONCE, beside the box
+ * or the switch that was pressed (it was three alerts, and the file's own count of them was a
+ * set); and a rule dressed in the words of the list it is in — one expression is offered under
+ * "never submit a form" and "ask before submitting a form", and under "Ask me first" it read the
+ * first. The test of allowances there holds one more row than it did: an allowance filed under a
+ * rule that is in `allow` now is not in force either, since nothing asks under such a rule.
+ * Seventeen mutations of this round each fail at least one of these.
+ * By hand: 4 and 2 are 6, and 3915 and 6 are 3921; 2183 and 4 are 2187.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3876, roots: ["server"] },
-  { name: "app", floor: 2174, roots: ["app"] },
+  { name: "server", floor: 3921, roots: ["server"] },
+  { name: "app", floor: 2187, roots: ["app"] },
   { name: "agent-computer", floor: 530, roots: ["agent-computer"] },
   { name: "root", floor: 915, roots: ["tests", "agent-bot"] },
 ] as const;
