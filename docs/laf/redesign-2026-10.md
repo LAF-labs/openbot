@@ -148,8 +148,23 @@ Hark의 project와 같다.
   새 경로다.
 - 한 봇의 상태를 대화끼리 같이 쓴다: 30분 "아니요" 기억(`server/src/computer/approvals.ts`), 반복
   카운터(`server/src/computer/repeat.ts`). 프로젝트에서 거절한 동작이 메인에서도 막힌다 — 의도인지 정한다.
-- `laf_thread_messages`에는 외래 키가 없다. 프로젝트를 지우면 메시지와
-  `laf_conversation_contexts`를 명시적으로 지운다.
+- **프로젝트 삭제는 그 대화를 가리키는 것을 전부 다룬다.** 채널을 지우면 외래 키가 있는 것
+  (`channel_memberships`, `channel_agents`, `channel_threads`, `laf_answer_ratings`,
+  `laf_attachments`)은 함께 가지만, 대화를 글자로만 가리키는 열은 남는다. 2026-10-08 스키마를 훑어
+  나온 그런 열과 처리:
+
+  | 표 | 열 | 처리 |
+  |---|---|---|
+  | `laf_thread_messages` | `thread_id` | 지운다 |
+  | `laf_conversation_contexts` | `thread_id` | 지운다 |
+  | `laf_thread_runs` | `thread_id` | 지운다(기록의 원본은 감사다) |
+  | `laf_notifications` | `channel_id` | 지운다 — 남기면 알림이 계속 뜨고 누르면 없는 대화로 간다 |
+  | `computer_standing_approvals` | `thread_id` | 지우지 않고 끝낸다(`endThread`) — 경계의 기록이 그 대화가 끝났다고 말해야 한다 |
+  | `agent_memories` | `evidence_thread_id` | 기억은 봇의 것이라 남기고 근거 링크만 비운다 |
+
+  `audit_events`는 지우지 않는다(append-only, 0047과 같은 원칙). **이 목록은 테스트가 지킨다:**
+  스키마에서 대화나 채널을 외래 키 없이 가리키는 열을 모두 찾아, 프로젝트 삭제의 목록에 없는 열이
+  있으면 실패한다. 새 표가 대화를 가리키면서 삭제를 잊는 것을 리뷰가 하나씩 찾게 두지 않는다.
 - **지우기 전에 그 프로젝트에서 도는 일을 멈추고, 멈춘 것을 기다린다.** 줄 서 있거나 돌고 있는
   턴이 있으면 행을 지운 뒤에도 엔진(`server/src/turns/engine.ts`)이 메시지를 덧붙여, 지운 프로젝트에
   주인 없는 기록이 새로 생긴다. 계정 삭제가 바로 이 경합 때문에 하는 일과 같다
