@@ -14,30 +14,111 @@ import { type Workspace, WorkspaceFileError } from "./workspace";
 /** How often the volume is asked for its room while a download lands. */
 const DOWNLOAD_WATCH_MS = 1_000;
 
+/** A look, called on a clock; what is handed back stops the clock. */
+type Clock = (look: () => Promise<void>) => () => void;
+
+const eachSecond: Clock = (look) => {
+  const clock = setInterval(() => void look(), DOWNLOAD_WATCH_MS);
+  return () => clearInterval(clock);
+};
+
 /**
  * A DOWNLOAD IS WATCHED WHILE IT LANDS. How large it is cannot be asked until it has landed, and it
  * lands on the deployment's one disk: a link to a file larger than what is free would fill it under
  * the database before anything measured it. So the volume is asked on a clock, and a download that
- * has taken the room it must leave is cancelled — once; `saveAs` then fails, and `ranOut` is how
- * the caller tells that failure from any other and says too large, not failed.
+ * has taken the room it must leave is cancelled — once. Waiting for it then fails, and `ranOut` is
+ * how the caller tells that failure from any other and says too large, not failed.
+ *
+ * ONLY WHILE IT LANDS. Cancelling does nothing to a download that has finished, and from there its
+ * size is known and the workspace decides before copying a byte (`saveDownload`); so the caller
+ * stops this the moment the download has landed, and a look that was already on its way when it
+ * was stopped cancels nothing.
+ *
+ * The clock is handed in so that a test can make each look happen and wait for it, rather than
+ * sleep and hope the machine was not busy.
  */
 export function watchRoom(
   hasRoom: () => Promise<boolean>,
   cancel: () => Promise<unknown>,
-  everyMs: number = DOWNLOAD_WATCH_MS,
+  clock: Clock = eachSecond,
 ): { ranOut: () => boolean; stop: () => void } {
   let ranOut = false;
-  const clock = setInterval(() => {
-    void hasRoom().then(
-      (room) => {
-        if (room || ranOut) return;
-        ranOut = true;
-        void cancel().catch(() => undefined);
-      },
-      () => undefined,
+  let stopped = false;
+  const stopClock = clock(async () => {
+    if (stopped || ranOut) return;
+    // A volume that cannot be asked cancels nothing.
+    const room = await hasRoom().catch(() => true);
+    if (room || stopped || ranOut) return;
+    ranOut = true;
+    await cancel().catch(() => undefined);
+  });
+  return {
+    ranOut: () => ranOut,
+    stop: () => {
+      stopped = true;
+      stopClock();
+    },
+  };
+}
+
+/** As much of Playwright's `Download` as landing one takes: what a test stands in for. */
+export type LandingDownload = {
+  suggestedFilename(): string;
+  /** Where the finished file is. Waits for it to finish, and throws for one that failed or was cancelled. */
+  path(): Promise<string>;
+  cancel(): Promise<void>;
+  /** Removes the browser's own copy. */
+  delete(): Promise<void>;
+};
+
+/**
+ * A file a page handed the browser, from its first byte to the note that says what became of it.
+ *
+ * THE BROWSER'S OWN COPY IS DELETED WHATEVER HAPPENED. Chromium keeps a finished download in its
+ * temporary directory until the browser closes, and a Bot's browser stays open for days. A kept
+ * file was on the disk twice for all that time; a refused one — refused for being too large — was
+ * still there whole, so refusing a few of them filled the disk the refusal was protecting (Codex's
+ * read of this change).
+ */
+export async function landDownload(
+  download: LandingDownload,
+  workspace: Pick<Workspace, "saveDownload" | "hasRoom">,
+  told: (entry: {
+    code: "laf:downloaded" | "laf:download_too_large" | "laf:download_failed";
+    path?: string;
+    bytes?: number;
+  }) => void,
+  failed: (reason: unknown) => void,
+  clock?: Clock,
+): Promise<void> {
+  const room = watchRoom(
+    () => workspace.hasRoom(),
+    () => download.cancel(),
+    clock,
+  );
+  try {
+    const landed = await download.path();
+    room.stop();
+    const saved = await workspace.saveDownload(
+      download.suggestedFilename(),
+      landed,
     );
-  }, everyMs);
-  return { ranOut: () => ranOut, stop: () => clearInterval(clock) };
+    told({ code: "laf:downloaded", path: saved.path, bytes: saved.bytes });
+  } catch (error) {
+    told({
+      // By the workspace's own code: a download that never arrived is not one that was too big.
+      code:
+        room.ranOut() ||
+        (error instanceof WorkspaceFileError &&
+          error.code === "laf:file_too_large")
+          ? "laf:download_too_large"
+          : "laf:download_failed",
+    });
+    failed(error);
+  } finally {
+    room.stop();
+    await download.delete().catch(() => undefined);
+  }
 }
 
 export function watchPage(
@@ -81,36 +162,11 @@ export function watchPage(
   });
 
   page.on("download", (download) => {
-    void (async () => {
-      const room = watchRoom(
-        () => workspace.hasRoom(),
-        () => download.cancel(),
-      );
-      try {
-        const saved = await workspace.saveDownload(
-          download.suggestedFilename(),
-          (to) => download.saveAs(to),
-        );
-        note(session, {
-          code: "laf:downloaded",
-          path: saved.path,
-          bytes: saved.bytes,
-        });
-      } catch (error) {
-        await download.cancel().catch(() => undefined);
-        note(session, {
-          // By the workspace's own code: a download that never arrived is not one that was too big.
-          code:
-            room.ranOut() ||
-            (error instanceof WorkspaceFileError &&
-              error.code === "laf:file_too_large")
-              ? "laf:download_too_large"
-              : "laf:download_failed",
-        });
-        log.error("download_not_saved", { bot: botId, reason: error });
-      } finally {
-        room.stop();
-      }
-    })();
+    void landDownload(
+      download,
+      workspace,
+      (entry) => note(session, entry),
+      (reason) => log.error("download_not_saved", { bot: botId, reason }),
+    );
   });
 }

@@ -22,6 +22,7 @@
  */
 import { createReadStream } from "node:fs";
 import {
+  copyFile,
   mkdir,
   open,
   readdir,
@@ -135,6 +136,8 @@ export type WorkspaceLimits = {
   spareBytes?: number;
   /** What is free on the folder's volume, in bytes. Left out, the volume is asked (`statfs`). */
   freeBytes?: () => Promise<number>;
+  /** How a file that landed is put in the folder. Left out, the disk's own copy (`copyFile`). */
+  copyLanded?: (from: string, to: string) => Promise<void>;
 };
 
 /**
@@ -144,7 +147,12 @@ export type WorkspaceLimits = {
  */
 export const LANDED_MAX_BYTES = 1_000_000_000;
 
-/** What a download must leave free on the volume: two gigabytes, for everything else that lives there. */
+/**
+ * What a download must leave free on the volume: two gigabytes, for everything else that lives
+ * there. Held at every step and not only at the end: while a download lands the watch stops it at
+ * this line (to within what arrives between two looks), and one that has landed is copied only if
+ * the line still holds with the copy counted as new bytes (`saveDownload`).
+ */
 export const SPARE_BYTES = 2_000_000_000;
 
 /**
@@ -314,6 +322,8 @@ export function createWorkspace(
       const volume = await statfs(rootPath);
       return volume.bavail * volume.bsize;
     });
+  const copyLanded =
+    limits.copyLanded ?? ((from: string, to: string) => copyFile(from, to));
 
   /**
    * A path that has to be a file: where it really is, and what the disk says about it.
@@ -689,26 +699,64 @@ export function createWorkspace(
     /**
      * Put a file the browser downloaded into the workspace.
      *
-     * `save` is Playwright's `download.saveAs`, handed the path this decides on: the file exists in
-     * Chromium's own temporary directory until then, and is deleted when the browser closes, so a
-     * download that is not moved here is a download the Bot cannot ever open.
+     * `landed` is where Chromium left the finished file (Playwright's `download.path()`): in its
+     * own temporary directory, deleted when the browser closes, so a download that is not put here
+     * is a download the Bot cannot ever open.
      *
      * BOUNDED BY THE DISK, NOT BY WHAT A BOT MAY WRITE (owner, 2026-10-08). It was the write's
      * megabyte, which refused an ordinary workbook. Two bounds now, and a download is kept only
-     * inside both: a ceiling on one file (`landedBytes`), and room left on the volume once it is
-     * there (`spareBytes`) — a Bot clicking a link to a 40 GB file must still be refused, or what
-     * one click puts on the deployment's only disk is decided by whatever it happened to click.
-     * The size is only knowable after the file has landed, so an oversized one is written and then
-     * removed — the refusal is real either way. WHILE it is landing, `hasRoom` is what the caller
-     * watches, so a file that would fill the disk is stopped before it has (`page-watch.ts`).
+     * inside both: a ceiling on one file (`landedBytes`), and room left on the volume with it there
+     * (`spareBytes`) — a Bot clicking a link to a 40 GB file must still be refused, or what one
+     * click puts on the deployment's only disk is decided by whatever it happened to click.
+     *
+     * DECIDED BEFORE A BYTE IS COPIED. The file has landed, so its size is known, and both bounds
+     * are asked of that number. It used to be copied first and measured afterwards, through a copy
+     * nothing could stop: a file too large for the disk was copied until the disk said so, and the
+     * part that had arrived stayed (Codex's read of this change). WHILE it is landing its size is
+     * not known, and `hasRoom` is what the caller watches (`page-watch.ts`).
+     *
+     * THE ROOM IS ASKED AS IF THE COPY WERE ALL NEW BYTES. For the moment of the copy there are two
+     * of the file — the browser's and this one — and whether the browser's is on the same disk
+     * cannot be told from here (in a deployment it is: the container's own layer and the folder's
+     * volume are one host disk under two mounts). Asked this way the disk keeps its spare through
+     * that moment whichever it is; the cost is that on one disk a file is refused while there is
+     * still its own size of room above the spare, at most the ceiling. The browser's copy is
+     * deleted by the caller as soon as this returns, kept or not.
+     *
+     * A COPY THAT FAILS LEAVES NOTHING. Whatever part arrived is removed before the failure is
+     * passed on — a disk that filled from something else half-way, a source that went.
      *
      * A name already taken is suffixed rather than overwritten. Downloading 정산내역.xlsx twice is
      * two months' figures, and the second silently replacing the first is a lost month.
      */
     async saveDownload(
       suggested: string,
-      save: (to: string) => Promise<void>,
+      landed: string,
     ): Promise<{ path: string; bytes: number }> {
+      const source = await stat(landed).catch(() => null);
+      if (!source?.isFile()) {
+        throw new WorkspaceFileError(
+          "The download did not arrive.",
+          "laf:file_not_found",
+        );
+      }
+      if (source.size > landedBytes) {
+        throw new WorkspaceFileError(
+          `That download is ${source.size} bytes and the limit is ${landedBytes}.`,
+          "laf:file_too_large",
+          { bytes: source.size, limit: landedBytes },
+        );
+      }
+      // A volume that cannot be asked is not a reason to refuse somebody's file: the ceiling held.
+      const free = await freeBytes().catch(() => null);
+      if (free !== null && free - source.size < spareBytes) {
+        throw new WorkspaceFileError(
+          `That download is ${source.size} bytes, ${free} are free and ${spareBytes} must stay free.`,
+          "laf:file_too_large",
+          { bytes: source.size, limit: landedBytes },
+        );
+      }
+
       const name = safeDownloadName(suggested);
       const directory = resolve(await realpath(rootPath), DOWNLOADS_DIRECTORY);
       await mkdir(directory, { recursive: true });
@@ -727,42 +775,20 @@ export function createWorkspace(
       // that stays true if it ever is not.
       const relativePath = `${DOWNLOADS_DIRECTORY}/${chosen}`;
       const full = await resolvePath(relativePath, true);
-      await save(full);
-
-      const written = await stat(full).catch(() => null);
-      if (!written) {
-        throw new WorkspaceFileError(
-          "The download did not arrive.",
-          "laf:file_not_found",
-        );
-      }
-      if (written.size > landedBytes) {
+      try {
+        await copyLanded(landed, full);
+      } catch (error) {
         await rm(full, { force: true }).catch(() => undefined);
-        throw new WorkspaceFileError(
-          `That download is ${written.size} bytes and the limit is ${landedBytes}.`,
-          "laf:file_too_large",
-          { bytes: written.size, limit: landedBytes },
-        );
+        throw error;
       }
-      // Asked with the file on the disk: what is free now is what it left. A volume that cannot be
-      // asked is not a reason to delete somebody's file — the ceiling above still held.
-      const free = await freeBytes().catch(() => null);
-      if (free !== null && free < spareBytes) {
-        await rm(full, { force: true }).catch(() => undefined);
-        throw new WorkspaceFileError(
-          `That download is ${written.size} bytes and leaves ${free} free; ${spareBytes} must stay free.`,
-          "laf:file_too_large",
-          { bytes: written.size, limit: landedBytes },
-        );
-      }
-      return { path: relativePath, bytes: written.size };
+      return { path: relativePath, bytes: source.size };
     },
 
     /**
      * Whether the volume still has the room a download must leave. Asked while one is landing
      * (`page-watch.ts`): its size is not known until it has, and by then a large enough file has
      * already filled the disk under the database. True where the volume cannot be asked — the
-     * check after landing still runs.
+     * ceiling is still asked once it has landed.
      */
     async hasRoom(): Promise<boolean> {
       const free = await freeBytes().catch(() => null);
