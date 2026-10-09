@@ -46,6 +46,7 @@ import { Glob, SQL } from "bun";
 import {
   type FileVerdict,
   fileVerdict,
+  PER_FILE_SECONDS,
   secondsPerFile,
   spread,
 } from "./test-ci-report";
@@ -2356,15 +2357,24 @@ maintenanceUrl.pathname = "/postgres";
 
 const admin = new SQL(maintenanceUrl.toString(), { max: 1 });
 try {
+  // Quoted so a name with a hyphen or a capital works, and the quotes doubled because the name
+  // comes out of DATABASE_URL rather than out of this file.
+  const quotedTest = `"${testDatabase.replaceAll('"', '""')}"`;
+  /*
+   * MADE AFRESH WHEN WORKERS COPY IT. Migrating keeps whatever rows a database already holds, and
+   * the workers' databases are copies of this one: a run with `LAF_TEST_WORKERS=1`, or one killed
+   * half way, would have left its rows in all four (review of pull request 131). So when it is a
+   * template it is dropped and migrated from nothing, and every copy holds the migrations alone.
+   * With one worker it is the database the tests use, kept as it was.
+   */
+  if (workers > 1) {
+    await admin.unsafe(`drop database if exists ${quotedTest} with (force)`);
+  }
   const existing =
     await admin`select 1 from pg_database where datname = ${testDatabase}`;
   if (existing.length === 0) {
-    // Quoted so a name with a hyphen or a capital works, and the quotes doubled because the name
-    // comes out of DATABASE_URL rather than out of this file.
-    await admin.unsafe(
-      `create database "${testDatabase.replaceAll('"', '""')}"`,
-    );
-    console.error(`Created ${testDatabase}.`);
+    await admin.unsafe(`create database ${quotedTest}`);
+    if (workers === 1) console.error(`Created ${testDatabase}.`);
   }
   await admin.close();
 } catch (error) {
@@ -2531,7 +2541,9 @@ function runsOf(group: (typeof GROUPS)[number]): Run[] {
   for (let index = 0; index < lists.length; index += 1) {
     const files = lists[index] as string[];
     let weight = 0;
-    for (const file of files) weight += durations.get(file) ?? 0;
+    for (const file of files) {
+      weight += (durations.get(file) ?? 0) + PER_FILE_SECONDS;
+    }
     runs.push({ group, share: index + 1, of: lists.length, files, weight });
   }
   return runs;

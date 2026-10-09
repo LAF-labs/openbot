@@ -50,34 +50,49 @@ function fake(input: { closeResolves: boolean }): Fake {
   };
 }
 
-describe("closing a browser that will not close", () => {
-  test("a hung close returns after the grace, and the process is killed", async () => {
-    const browser = fake({ closeResolves: false });
-    const started = Date.now();
-    await closeAndWait(browser.context, {
-      pid: 4242,
-      kill: (pid) => {
-        browser.killed.push(pid);
-        browser.disconnect();
-      },
-    });
-    const elapsed = Date.now() - started;
-    expect(browser.killed).toEqual([4242]);
-    expect(elapsed).toBeGreaterThanOrEqual(CLOSE_GRACE_MS - 50);
-    // The grace, the disconnect it produced, and the flush — never the old unbounded wait.
-    expect(elapsed).toBeLessThan(CLOSE_GRACE_MS + 2_000);
-  });
+/**
+ * The two hung closes wait out the real grace. The one with no pid allows itself the grace and
+ * three seconds more, which Bun's default timeout of five seconds would cut short; with four workers
+ * sharing the cores it took 4.3 seconds.
+ */
+const OUTLASTS_THE_GRACE_MS = CLOSE_GRACE_MS + 5_000;
 
-  test("a hung close with no pid still returns, so a reset is never queued behind it", async () => {
-    const browser = fake({ closeResolves: false });
-    const started = Date.now();
-    await closeAndWait(browser.context, {
-      pid: null,
-      kill: (pid) => browser.killed.push(pid),
-    });
-    expect(browser.killed).toEqual([]);
-    expect(Date.now() - started).toBeLessThan(CLOSE_GRACE_MS + 3_000);
-  });
+describe("closing a browser that will not close", () => {
+  test(
+    "a hung close returns after the grace, and the process is killed",
+    async () => {
+      const browser = fake({ closeResolves: false });
+      const started = Date.now();
+      await closeAndWait(browser.context, {
+        pid: 4242,
+        kill: (pid) => {
+          browser.killed.push(pid);
+          browser.disconnect();
+        },
+      });
+      const elapsed = Date.now() - started;
+      expect(browser.killed).toEqual([4242]);
+      expect(elapsed).toBeGreaterThanOrEqual(CLOSE_GRACE_MS - 50);
+      // The grace, the disconnect it produced, and the flush — never the old unbounded wait.
+      expect(elapsed).toBeLessThan(CLOSE_GRACE_MS + 2_000);
+    },
+    OUTLASTS_THE_GRACE_MS,
+  );
+
+  test(
+    "a hung close with no pid still returns, so a reset is never queued behind it",
+    async () => {
+      const browser = fake({ closeResolves: false });
+      const started = Date.now();
+      await closeAndWait(browser.context, {
+        pid: null,
+        kill: (pid) => browser.killed.push(pid),
+      });
+      expect(browser.killed).toEqual([]);
+      expect(Date.now() - started).toBeLessThan(CLOSE_GRACE_MS + 3_000);
+    },
+    OUTLASTS_THE_GRACE_MS,
+  );
 
   test("a browser that closes when asked is never killed", async () => {
     const browser = fake({ closeResolves: true });
