@@ -1,5 +1,5 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, jest, test } from "bun:test";
 import { createElement } from "react";
 import { ko } from "../src/lib/i18n-ko";
 import { mount, unmountAll } from "./support/mount";
@@ -26,6 +26,7 @@ beforeAll(() => {
   ).IS_REACT_ACT_ENVIRONMENT = true;
 });
 afterEach(async () => {
+  jest.useRealTimers();
   await unmountAll();
   (globalThis as WindowWithTauri).__TAURI__ = undefined;
   emit = null;
@@ -104,14 +105,25 @@ test("a saved file is said with the name it was saved under, and then goes away"
 });
 
 test("the same file saved again is a new notice with a hold of its own", async () => {
-  const { host, ended, settle } = await notice(60);
+  const { host, ended } = await notice(60);
+  /*
+   * ON THE TEST'S CLOCK, NOT THE MACHINE'S. Real 40 ms waits against a 60 ms hold failed one run of
+   * the gate in three once four workers shared the cores (measured 2026-10-09): a wait that ran
+   * long let the second notice's own hold run out before it was looked at.
+   */
+  const { act } = await import("react");
+  const after = (ms: number) =>
+    act(async () => {
+      jest.advanceTimersByTime(ms);
+    });
+  jest.useFakeTimers();
   await ended({ name: "a.csv", saved: true });
-  await settle(40);
+  await after(40);
   // The first notice's timer has 20ms left when the second arrives, and must not take it down.
   await ended({ name: "a (1).csv", saved: true });
-  await settle(40);
+  await after(40);
   expect(host.textContent).toContain("a (1).csv");
-  await settle(60);
+  await after(30);
   expect(host.querySelector("[data-download-notice]")).toBeNull();
 });
 

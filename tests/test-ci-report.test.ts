@@ -2,7 +2,12 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileVerdict, testsPerFile } from "../scripts/test-ci-report";
+import {
+  fileVerdict,
+  secondsPerFile,
+  spread,
+  testsPerFile,
+} from "../scripts/test-ci-report";
 
 /**
  * How the gate reads bun's JUnit report, against a report bun writes here and now.
@@ -89,5 +94,64 @@ describe("the gate's reading of bun's JUnit report", () => {
       ranNothing: [join(dir, "names.test.ts")],
       accounted: 0,
     });
+  });
+});
+
+describe("the time each file takes, and the files spread over the workers by it", () => {
+  test("a file's time is the sum of its tests' own, and a name forges no file", () => {
+    const seconds = secondsPerFile(report);
+    expect([...seconds.keys()]).toEqual(["names.test.ts"]);
+    expect(seconds.get("names.test.ts")).toBeGreaterThanOrEqual(0);
+    expect(
+      secondsPerFile(
+        '<testcase name="a" time="1.5" file="x.test.ts" /><testcase name="b" file="x.test.ts" time="0.25" />',
+      ),
+    ).toEqual(new Map([["x.test.ts", 1.75]]));
+  });
+
+  test("the longest go first, each to the shortest list, and no list is left over-full", () => {
+    const seconds = new Map([
+      ["a.test.ts", 40],
+      ["b.test.ts", 30],
+      ["c.test.ts", 20],
+      ["d.test.ts", 10],
+      ["e.test.ts", 10],
+    ]);
+    // 40 | 30+10 | 20+10, each list in path order: nobody waits on a list a later file could have evened.
+    expect(
+      spread(
+        ["e.test.ts", "d.test.ts", "c.test.ts", "b.test.ts", "a.test.ts"],
+        seconds,
+        3,
+      ),
+    ).toEqual([
+      ["a.test.ts"],
+      ["b.test.ts", "e.test.ts"],
+      ["c.test.ts", "d.test.ts"],
+    ]);
+  });
+
+  test("a file never measured counts as the middle time, and no list is made empty", () => {
+    const seconds = new Map([
+      ["slow.test.ts", 9],
+      ["mid.test.ts", 5],
+      ["quick.test.ts", 1],
+    ]);
+    // `new` weighs 5, the middle time: it joins `mid`, and `quick` evens `slow`. 10 and 10.
+    expect(
+      spread(
+        ["slow.test.ts", "new.test.ts", "mid.test.ts", "quick.test.ts"],
+        seconds,
+        2,
+      ),
+    ).toEqual([
+      ["quick.test.ts", "slow.test.ts"],
+      ["mid.test.ts", "new.test.ts"],
+    ]);
+    expect(spread(["only.test.ts"], seconds, 4)).toEqual([["only.test.ts"]]);
+    expect(spread(["x.test.ts", "y.test.ts"], new Map(), 4)).toEqual([
+      ["x.test.ts"],
+      ["y.test.ts"],
+    ]);
   });
 });

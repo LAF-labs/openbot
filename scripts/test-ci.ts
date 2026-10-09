@@ -21,13 +21,34 @@
  *
  * The floors are floors and not exact numbers. Tests are added constantly, and a check that has to
  * be edited for every new test is a check people learn to edit without thinking.
+ *
+ * **The files run on several workers at once, each with a database of its own.** Each group's
+ * files are spread over `LAF_TEST_WORKERS` runs (one per core by default, at most four) whose
+ * measured times are as even as the files allow (`scripts/test-durations.json`), and the runs of
+ * every group are queued longest first onto that many workers. A run is one `bun test` process, so
+ * the files in it share a process exactly as a group's files always did; a worker's database is a
+ * copy of the migrated test database made at the start of the run (`<name>_test_w1`, `_w2` …), so
+ * two files that delete what they find never meet unless they share a run, and every run of the
+ * gate starts from a database holding nothing but its migrations. `LAF_TEST_WORKERS=1` is the gate
+ * as it was until 2026-10-09: one process per group, one group at a time, in the test database.
+ *
+ * MEASURED 2026-10-09 on a 4-core machine with Bun 1.3.14 (CI's): one process per group, one after
+ * another, took 586 s, the app group alone 407 s of it. `bun test --parallel`, which Bun 1.3.14
+ * has, was tried first and set aside: it runs each file in a fresh global object, and under it
+ * `tests/eval-support-programs.test.ts` fails alone (`Cannot access 'UNIT' before
+ * initialization`) where it passes without it; Bun 1.4 does not.
  */
 
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { availableParallelism, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Glob, SQL } from "bun";
-import { fileVerdict } from "./test-ci-report";
+import {
+  type FileVerdict,
+  fileVerdict,
+  secondsPerFile,
+  spread,
+} from "./test-ci-report";
 
 const projectRoot = resolve(import.meta.dir, "..");
 
@@ -2097,15 +2118,26 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * in `computer-routes.test.ts`, at the route: saved around, taken out one list at a time, refused
  * coming back. Four mutations each fail one. By hand: 3921 and 2 are 3923.
  *
+ * RAISED 2026-10-09, `server` from 3923 to 3932 and `root` from 915 to 918, by exactly what was
+ * added, when the gate came to run its files on four workers at once. Three property tests that
+ * walked every spelling of a path under four rules in one test became one test per rule, because
+ * each took the default five seconds or near it alone and more beside three other files: in
+ * `gateway-file-paths.test.ts` "no spelling reads a file a rule denies" and "no spelling writes
+ * over a file a rule denies", in `workbench-gateway.test.ts` "a deny on a file holds through a run
+ * under every spelling of it" — each one test become four, nothing walked less. And three in
+ * `tests/test-ci-report.test.ts` for the gate's own spread: a file's time read off bun's report,
+ * the longest first into the shortest list, and an unmeasured file weighed as the middle one. By
+ * hand: 3 × 3 is 9, and 3923 plus 9 is 3932; 915 plus 3 is 918.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3923, roots: ["server"] },
+  { name: "server", floor: 3932, roots: ["server"] },
   { name: "app", floor: 2187, roots: ["app"] },
   { name: "agent-computer", floor: 530, roots: ["agent-computer"] },
-  { name: "root", floor: 915, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 918, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
@@ -2240,12 +2272,42 @@ if (suffix && !/^[A-Za-z0-9_]+$/.test(suffix)) {
 }
 
 const testDatabase = `${sourceDatabase}_test${suffix ? `_${suffix}` : ""}`;
+
+/**
+ * How many processes a group's files are spread over: `LAF_TEST_WORKERS`, or one per core up to four.
+ *
+ * FOUR AT MOST BY DEFAULT, because that is what CI has (`ubuntu-latest`, 4 vCPU) and what the run
+ * was measured on: past the cores, the files that render in a child process of their own wait on
+ * each other for the CPU, not on anything they are testing.
+ */
+const workers = (() => {
+  const asked = process.env.LAF_TEST_WORKERS?.trim();
+  if (!asked) return Math.max(1, Math.min(4, availableParallelism()));
+  if (!/^[1-9][0-9]?$/.test(asked)) {
+    fail(
+      `LAF_TEST_WORKERS is "${asked}". It is how many processes run the tests: a whole number from\n` +
+        "1 to 99, or unset for one per core up to four.",
+    );
+  }
+  return Number.parseInt(asked, 10);
+})();
+
+/**
+ * A worker's own database: the test database's name and its number, the name
+ * `server/scripts/test-preload.ts` gives the worker numbered so by `bun test --parallel`.
+ */
+const workerDatabase = (worker: number) => `${testDatabase}_w${worker}`;
+
 /*
  * PostgreSQL truncates an identifier at 63 bytes without complaining. Two worktrees whose suffixes
  * differ only past that point would silently share one database, which is the one thing the suffix
- * exists to prevent, so the truncation is refused instead of absorbed.
+ * exists to prevent, so the truncation is refused instead of absorbed. Checked on the longest name
+ * this run makes, a worker's.
  */
-if (new TextEncoder().encode(testDatabase).length > 63) {
+if (
+  new TextEncoder().encode(workers > 1 ? workerDatabase(workers) : testDatabase)
+    .length > 63
+) {
   fail(
     `The test database would be named "${testDatabase}", which PostgreSQL would truncate to 63\n` +
       "bytes. Shorten LAF_TEST_DB_SUFFIX.",
@@ -2298,6 +2360,35 @@ if ((await migration.exited) !== 0) {
   fail(`Migrating ${testDatabase} failed, so no tests were run.`);
 }
 
+/*
+ * A DATABASE PER WORKER, COPIED FROM THE ONE JUST MIGRATED. Made again on every run, so whatever a
+ * file left behind last time is gone: the copy holds the migrations and nothing else. Copying needs
+ * nobody connected to the source, which the migration's own process has ended by now; a worker's
+ * database still open from a run that was killed is closed by `WITH (FORCE)`.
+ */
+if (workers > 1) {
+  const copier = new SQL(maintenanceUrl.toString(), { max: 1 });
+  const quoted = (name: string) => `"${name.replaceAll('"', '""')}"`;
+  try {
+    for (let worker = 1; worker <= workers; worker += 1) {
+      const name = workerDatabase(worker);
+      await copier.unsafe(
+        `drop database if exists ${quoted(name)} with (force)`,
+      );
+      await copier.unsafe(
+        `create database ${quoted(name)} template ${quoted(testDatabase)}`,
+      );
+    }
+    await copier.close();
+  } catch (error) {
+    fail(
+      `Could not copy ${testDatabase} for ${workers} workers.\n` +
+        `${error instanceof Error ? error.message : String(error)}\n\n` +
+        "Something may still be connected to it. `LAF_TEST_WORKERS=1` runs without copies.",
+    );
+  }
+}
+
 // --- which tests belong under which floor ------------------------------------------------------
 
 const owns = (roots: readonly string[], path: string) =>
@@ -2327,12 +2418,10 @@ type Outcome = {
   accounted: number;
 };
 
-const outcomes: Outcome[] = [];
-
-/** Where bun writes each group's JUnit report; read once, then left for the OS to sweep. */
+/** Where bun writes each run's JUnit report; read once, then left for the OS to sweep. */
 const reports = mkdtempSync(join(tmpdir(), "laf-test-ci-"));
 
-/** The files under any of `roots`, sorted. Out here rather than in the loop below: see the loop. */
+/** The files under any of `roots`, sorted. Out here rather than in a loop: see `work`. */
 function filesOwnedBy(
   roots: readonly string[],
   paths: Iterable<string>,
@@ -2342,88 +2431,213 @@ function filesOwnedBy(
   return owned.sort();
 }
 
-/** A path as the tree names it, made absolute. Out here rather than in the loop below: see the loop. */
+/**
+ * A path as the tree names it, made absolute.
+ *
+ * Absolute, because Bun matches a positional argument as a substring of the file path and
+ * `tests/workspace.test.ts` is a substring of `agent-computer/tests/workspace.test.ts`. Anchoring
+ * at the repository root is what makes a run's file list mean only that run's files.
+ */
 const absolute = (path: string) => resolve(projectRoot, path);
 
-/*
- * One group at a time. The groups share the one test database, and the deletions described at the
- * top of this file are exactly as destructive between two parallel groups as they were against a
- * developer's own database.
+/**
+ * How long each file's tests took when they were last measured: `scripts/test-durations.json`.
  *
- * Absolute paths, because Bun matches a positional argument as a substring of the file path and
- * `tests/workspace.test.ts` is a substring of `agent-computer/tests/workspace.test.ts`. Anchoring
- * at the repository root is what makes a group's file list mean only that group's files.
+ * Read only to spread the files evenly over the workers (`spread`), never to judge a run: a stale
+ * or missing entry makes a run uneven, not wrong. `bun run test:ci --update-durations` writes it
+ * again from the run it ends, once that run has passed. Gone or unreadable, every file weighs the
+ * same, which is still a spread.
  */
-for (const group of GROUPS) {
-  /*
-   * NOTHING IN THIS LOOP MAKES A FUNCTION. The group's files and the verdict on its report come from
-   * functions defined outside it, handed what they need as arguments.
-   *
-   * MEASURED 2026-09-14. Under Bun 1.3.11, once a group's run has held this loop at an `await` for
-   * about half a minute, a closure made in a later pass can read an EARLIER pass's variables while
-   * the loop body beside it reads its own. The gate said "agent-computer: 18 test file(s) ran no
-   * test at all", and the same of root's 28, while bun ran 222 and 304 tests and both reports were
-   * whole: `owned.filter((path) => (perFile.get(path) ?? 0) === 0)` was looking their files up in
-   * the FIRST pass's `perFile`, server's. Shown with each run replaced by a sleep and a copy of a
-   * saved report, misread in: 0 of 10 runs waiting 20 s or less, 21 of 23 waiting 30 s or more;
-   * 0 of 4 with the JIT off, 0 of 3 with only the baseline JIT; 0 of 7 once server's report also
-   * listed those files. The real groups take 26, 33 and 50 s, so it came and went between runs of
-   * one tree. The same waits against this loop as it is now: 12 of 12 read right. The note that
-   * stood here from 2026-09-13 — a filter taken again after the run made `root` own app's 92 files
-   * — was this bug reading `group`; taking that list before the run moved it, and did not end it.
-   */
-  const owned = filesOwnedBy(group.roots, discovered);
-  const files = owned.map(absolute);
+const DURATIONS = resolve(projectRoot, "scripts/test-durations.json");
+const durations = (() => {
+  try {
+    const kept = JSON.parse(readFileSync(DURATIONS, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    const seconds = new Map<string, number>();
+    for (const [file, value] of Object.entries(kept)) {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        seconds.set(file, value);
+      }
+    }
+    return seconds;
+  } catch {
+    return new Map<string, number>();
+  }
+})();
 
-  console.error(`\n=== ${group.name} (${files.length} files) ===`);
+/** One `bun test` process: a group's share of its files. */
+type Run = {
+  group: (typeof GROUPS)[number];
+  share: number;
+  of: number;
+  files: string[];
+  /** What the files took when last measured, for the order the runs are started in. */
+  weight: number;
+};
 
-  // `bun run test` rather than `bun test`, so the pretest hook fires and the generated application
-  // config exists before route imports need it. `--silent` keeps a file list this long out of the
-  // log without hiding anything bun itself reports. The JUnit report is written beside the console
-  // output, not instead of it: bun keeps printing its summary, which is what the floors read.
-  const report = join(reports, `${group.name}.xml`);
+/** What one run came to. */
+type RunResult = {
+  run: Run;
+  count: number | null;
+  status: number;
+  verdict: FileVerdict;
+  /** Each file's tests' time in this run, for `--update-durations`. */
+  seconds: Map<string, number>;
+};
+
+/** Each group's files, spread over as many runs as there are workers. */
+function runsOf(group: (typeof GROUPS)[number]): Run[] {
+  const lists = spread(
+    filesOwnedBy(group.roots, discovered),
+    durations,
+    workers,
+  );
+  const runs: Run[] = [];
+  for (let index = 0; index < lists.length; index += 1) {
+    const files = lists[index] as string[];
+    let weight = 0;
+    for (const file of files) weight += durations.get(file) ?? 0;
+    runs.push({ group, share: index + 1, of: lists.length, files, weight });
+  }
+  return runs;
+}
+
+/** The database a worker's runs use: its own copy, or the test database itself with one worker. */
+function databaseFor(worker: number): string {
+  if (workers === 1) return testUrl.toString();
+  const own = new URL(testUrl);
+  own.pathname = `/${encodeURIComponent(workerDatabase(worker))}`;
+  return own.toString();
+}
+
+/**
+ * One run, start to finish: bun on the run's files, in the worker's database, its output held and
+ * printed whole when it ends, so the runs side by side do not interleave their lines.
+ *
+ * `bun test` rather than `bun run test`: the pretest hook, which writes the generated application
+ * config route imports need, is run once before any run starts rather than by each of them at
+ * once. The JUnit report is written beside the console output, not instead of it: bun keeps
+ * printing its summary, which is what the floors read.
+ */
+async function runOne(run: Run, worker: number): Promise<RunResult> {
+  const report = join(reports, `${run.group.name}-${run.share}.xml`);
+  const started = performance.now();
   const proc = Bun.spawn(
     [
       "bun",
-      "run",
-      "--silent",
       "test",
       "--reporter=junit",
       `--reporter-outfile=${report}`,
-      ...files,
+      ...run.files.map(absolute),
     ],
     {
       cwd: projectRoot,
-      env: { ...process.env, DATABASE_URL: testUrl.toString() },
-      stdout: "inherit",
+      env: { ...process.env, DATABASE_URL: databaseFor(worker) },
+      stdout: "pipe",
       stderr: "pipe",
     },
   );
-
   // Bun writes its summary to stderr, so it is captured and echoed rather than inherited.
-  const stderr = await new Response(proc.stderr).text();
-  process.stderr.write(stderr);
-
+  const [stdout, stderr] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
   const status = await proc.exited;
+  const seconds = ((performance.now() - started) / 1000).toFixed(1);
+  process.stderr.write(
+    `\n=== ${run.group.name} ${run.share}/${run.of}: ${run.files.length} files, ${seconds} s, worker ${worker} ===\n${stdout}${stderr}`,
+  );
   const ran = stderr.match(/Ran (\d+) tests? across/);
 
   let reportText: string | null = null;
   try {
     reportText = readFileSync(report, "utf8");
   } catch {
-    // No report at all is the same verdict for every file in the group, made below.
+    // No report at all is the same verdict for every file in the run, made below.
   }
-  const verdict = fileVerdict(owned, reportText);
-
-  outcomes.push({
-    name: group.name,
-    floor: group.floor,
+  return {
+    run,
     count: ran ? Number.parseInt(ran[1] as string, 10) : null,
     status,
-    emptyFiles: verdict.ranNothing,
-    accounted: verdict.accounted,
-  });
+    verdict: fileVerdict(run.files, reportText),
+    seconds: reportText === null ? new Map() : secondsPerFile(reportText),
+  };
 }
+
+/** The runs nobody has started, longest first, so the last to start are the shortest. */
+const queue: Run[] = GROUPS.flatMap(runsOf).sort((a, b) => b.weight - a.weight);
+
+/**
+ * One worker: the next run from the queue, until there is none.
+ *
+ * NOTHING IN THIS LOOP MAKES A FUNCTION. A run's files, its output and the verdict on its report
+ * come from functions defined outside it, handed what they need as arguments. The bug below was
+ * this gate's own loop over the groups, which ran one at a time until 2026-10-09:
+ *
+ * MEASURED 2026-09-14. Under Bun 1.3.11, once a group's run has held this loop at an `await` for
+ * about half a minute, a closure made in a later pass can read an EARLIER pass's variables while
+ * the loop body beside it reads its own. The gate said "agent-computer: 18 test file(s) ran no
+ * test at all", and the same of root's 28, while bun ran 222 and 304 tests and both reports were
+ * whole: `owned.filter((path) => (perFile.get(path) ?? 0) === 0)` was looking their files up in
+ * the FIRST pass's `perFile`, server's. Shown with each run replaced by a sleep and a copy of a
+ * saved report, misread in: 0 of 10 runs waiting 20 s or less, 21 of 23 waiting 30 s or more;
+ * 0 of 4 with the JIT off, 0 of 3 with only the baseline JIT; 0 of 7 once server's report also
+ * listed those files. The real groups take 26, 33 and 50 s, so it came and went between runs of
+ * one tree. The same waits against this loop as it is now: 12 of 12 read right. The note that
+ * stood here from 2026-09-13 — a filter taken again after the run made `root` own app's 92 files
+ * — was this bug reading `group`; taking that list before the run moved it, and did not end it.
+ */
+async function work(worker: number, results: RunResult[]): Promise<void> {
+  for (let run = queue.shift(); run; run = queue.shift()) {
+    results.push(await runOne(run, worker));
+  }
+}
+
+/** One group's runs, summed into what the floors and the manifest are held to. */
+function outcomeOf(
+  group: (typeof GROUPS)[number],
+  results: readonly RunResult[],
+): Outcome {
+  let count: number | null = 0;
+  let status = 0;
+  let accounted = 0;
+  const emptyFiles: string[] = [];
+  for (const result of results) {
+    if (result.run.group !== group) continue;
+    count =
+      count === null || result.count === null ? null : count + result.count;
+    if (status === 0) status = result.status;
+    accounted += result.verdict.accounted;
+    emptyFiles.push(...result.verdict.ranNothing);
+  }
+  return {
+    name: group.name,
+    floor: group.floor,
+    count,
+    status,
+    emptyFiles: emptyFiles.sort(),
+    accounted,
+  };
+}
+
+const setup = Bun.spawn(["bun", "run", "--silent", "generate:app-config"], {
+  cwd: projectRoot,
+  stdout: "inherit",
+  stderr: "inherit",
+});
+if ((await setup.exited) !== 0) {
+  fail(
+    "Writing the generated application config failed, so no tests were run.",
+  );
+}
+
+const results: RunResult[] = [];
+await Promise.all(
+  Array.from({ length: workers }, (_, index) => work(index + 1, results)),
+);
+const outcomes = GROUPS.map((group) => outcomeOf(group, results));
 
 // --- the verdict -------------------------------------------------------------------------------
 
@@ -2488,4 +2702,28 @@ if (problems.length > 0) {
 }
 
 const total = outcomes.reduce((sum, outcome) => sum + (outcome.count ?? 0), 0);
-console.error(`\n${total} tests ran in ${testDatabase}.\n${table}`);
+console.error(
+  `\n${total} tests ran on ${workers} worker${workers === 1 ? "" : "s"} in ${testDatabase}${workers === 1 ? "" : " and its copies"}.\n${table}`,
+);
+
+/*
+ * The times this run measured, kept for the next run's spread when asked for — only from a run
+ * that passed, so a file that hung and was killed is not remembered as one that takes that long.
+ * Every file in the tree is written, measured or not, so a file that ran nothing this time keeps
+ * the time it had.
+ */
+if (process.argv.includes("--update-durations")) {
+  const measured = new Map<string, number>();
+  for (const result of results) {
+    for (const [file, seconds] of result.seconds) measured.set(file, seconds);
+  }
+  const kept: Record<string, number> = {};
+  for (const file of [...discovered].sort()) {
+    const seconds = measured.get(file) ?? durations.get(file);
+    if (seconds !== undefined) kept[file] = Math.round(seconds * 100) / 100;
+  }
+  writeFileSync(DURATIONS, `${JSON.stringify(kept, null, 2)}\n`);
+  console.error(
+    `${Object.keys(kept).length} file times written to scripts/test-durations.json.`,
+  );
+}

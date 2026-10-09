@@ -71,7 +71,8 @@ describe("rating an answer", () => {
     expect(shown.offlineAlert).toBe(
       "서버에 닿지 못했어요. 잠시 후 다시 시도해 주세요.",
     );
-  });
+    // A render in a process of its own, as the three below are, and given the time they are given.
+  }, 120_000);
 
   test("좋아요, then 아쉬워요 with a reason and a note, then 좋아요 again — each drawn once the server has it", async () => {
     const note = "어제 매출을 알려 줬어요";
