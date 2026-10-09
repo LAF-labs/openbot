@@ -2207,10 +2207,10 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  *    once it is on;
  *  - `app` 2153 → 2154: `connection-choices.test.tsx`, the card offers a site only once it is on.
  *
- * RAISED 2026-10-09, `agent-computer` from 476 to 487, for a download bounded by the disk and not
+ * RAISED 2026-10-09, `agent-computer` from 476 to 488, for a download bounded by the disk and not
  * by what a Bot may write (owner, 2026-10-08: a download over 1 MB works). All in
  * `korean-browser.test.ts`, where the one test that held the old megabyte ("one too big for the
- * workspace is refused") became twelve. Of the folder: a file larger than a Bot's own write is
+ * workspace is refused") became thirteen. Of the folder: a file larger than a Bot's own write is
  * kept, and the write is still refused; the shipped bounds keep three megabytes and are the two
  * numbers the documents say; one over the ceiling is refused before a byte of it is copied, and
  * one at it is kept; one the volume has no room to copy — asked as if the copy were all new
@@ -2224,9 +2224,12 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * deleted; the watch is over the moment a download has landed; and one that runs the volume out
  * while it lands is cancelled, said to be too large, and its copy deleted. The last seven are
  * what Codex's read of the first version found unheld — a copy nothing could stop, the part of
- * it that stayed, the browser's copy left behind, a test that slept. Fifteen mutations each fail
- * one of them. Counted by running the file on main and here: 22 and 33.
- * By hand: one became twelve, which is eleven more; 476 and 11 are 487.
+ * it that stayed, the browser's copy left behind, a test that slept. And one for its second read:
+ * two downloads that finish together are let in one at a time, the second asked of the disk the
+ * first left (each had asked before either copied), told the room there was and not the ceiling,
+ * and a landing that fails does not hold up the one behind it. Eighteen mutations each fail one
+ * of them. Counted by running the file on main and here: 22 and 34.
+ * By hand: one became thirteen, which is twelve more; 476 and 12 are 488.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -2260,7 +2263,7 @@ const GROUPS: readonly {
   { name: "app", floor: 2154, roots: ["app"] },
   {
     name: "agent-computer",
-    floor: 487,
+    floor: 488,
     roots: ["agent-computer"],
     processes: 1,
   },

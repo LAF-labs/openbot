@@ -233,6 +233,58 @@ describe("a download arriving in the workspace", () => {
     expect(await workspace.hasRoom()).toBe(false);
   });
 
+  test("two that finish together are let in one at a time: the second is asked of the disk the first left", async () => {
+    // Each used to ask before either had copied, and both were let in past the room they must leave.
+    let free = 1_100;
+    const order: string[] = [];
+    const workspace = createWorkspace(root, {
+      ...small,
+      spareBytes: 500,
+      freeBytes: async () => free,
+      copyLanded: async (from, to) => {
+        order.push("copy starts");
+        // A turn of the loop: the other one would have asked by now, were it allowed to.
+        await new Promise((resolve) => setImmediate(resolve));
+        await copyFile(from, to);
+        free -= 400;
+        order.push("copy ends");
+      },
+    });
+    const [first, second] = await Promise.allSettled([
+      workspace.saveDownload("a.csv", await landed("x".repeat(400))),
+      workspace.saveDownload("b.csv", await landed("x".repeat(400))),
+    ]);
+    expect(first.status).toBe("fulfilled");
+    expect(second.status).toBe("rejected");
+    const refused = (second as PromiseRejectedResult)
+      .reason as WorkspaceFileError;
+    expect(refused.code).toBe("laf:file_too_large");
+    // What it is told is the room there was above the spare, not the ceiling for one file.
+    expect(refused.facts).toEqual({ bytes: 400, limit: 200 });
+    expect([order, await kept(), free]).toEqual([
+      ["copy starts", "copy ends"],
+      ["a.csv"],
+      700,
+    ]);
+
+    // And one that fails does not hold up the one behind it.
+    let failing = true;
+    const other = createWorkspace(root, {
+      ...small,
+      copyLanded: async (from, to) => {
+        if (!failing) return copyFile(from, to);
+        failing = false;
+        throw new Error("the disk went away");
+      },
+    });
+    const [lost, after] = await Promise.allSettled([
+      other.saveDownload("c.csv", await landed("c")),
+      other.saveDownload("d.csv", await landed("d")),
+    ]);
+    expect([lost.status, after.status]).toEqual(["rejected", "fulfilled"]);
+    expect(await kept()).toEqual(["a.csv", "d.csv"]);
+  });
+
   test("a copy that fails leaves nothing of the file behind, and what was already kept is untouched", async () => {
     // A disk that filled from something else half-way, or a source that went: the part that had
     // arrived used to stay.
