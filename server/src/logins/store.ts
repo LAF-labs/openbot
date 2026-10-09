@@ -134,16 +134,28 @@ export function createLoginVault(input: {
     if (!Array.isArray(written) || written.length === 0) {
       throw new LoginRefused("laf:login_origin_refused", "origins");
     }
+    /*
+     * REFUSED AT THE NINTH, NOT AFTER THE LAST. A body may be a megabyte, which is tens of
+     * thousands of addresses: read to the end with the bound checked afterwards, each was looked
+     * for in a list that kept growing, and one request held the deployment's one API process for
+     * as long as that took (Codex's third read of this change). The list never holds more than a
+     * login may have, and a body that is mostly the same address over and over is not read past
+     * a few times that either.
+     */
+    if (written.length > LOGIN_ORIGINS_MAX * 8) {
+      throw new LoginRefused("laf:login_origin_refused", "origins");
+    }
     const origins: string[] = [];
     for (const one of written) {
       const origin =
         typeof one === "string" ? loginOriginOf(one, originOptions) : null;
       if (!origin)
         throw new LoginRefused("laf:login_origin_refused", "origins");
-      if (!origins.includes(origin)) origins.push(origin);
-    }
-    if (origins.length > LOGIN_ORIGINS_MAX) {
-      throw new LoginRefused("laf:login_origin_refused", "origins");
+      if (origins.includes(origin)) continue;
+      if (origins.length === LOGIN_ORIGINS_MAX) {
+        throw new LoginRefused("laf:login_origin_refused", "origins");
+      }
+      origins.push(origin);
     }
     return origins;
   };
@@ -217,7 +229,12 @@ export function createLoginVault(input: {
    */
   const orRefused = async <T>(
     userId: string,
-    loginId: string | undefined,
+    /**
+     * The login a change was sent for: its id for the row's target, and where it may go — as it
+     * STANDS, never as the change would have had it — so a reader of the trail can tell which
+     * login a refusal was about. Absent for a save, which made no login to name.
+     */
+    about: SavedLogin | undefined,
     act: () => Promise<T>,
   ): Promise<T> => {
     try {
@@ -234,9 +251,9 @@ export function createLoginVault(input: {
           eventType: "account.login_refused",
           targetType: "saved_login",
           // A save that was refused made no login to name.
-          targetId: loginId ?? "unsaved",
+          targetId: about?.id ?? "unsaved",
           actorUserId: userId,
-          payload: refusal,
+          payload: { ...(about ? onTrail(about) : {}), ...refusal },
         }).catch(auditRowLost("account.login_refused"));
       }
       throw error;
@@ -344,7 +361,7 @@ export function createLoginVault(input: {
         : [null];
       if (sent.every((one) => one === undefined)) return view(row);
 
-      return orRefused(userId, row.id, async () => {
+      return orRefused(userId, view(row), async () => {
         /*
          * A BODY THAT COULD NOT BE READ IS A REFUSAL LIKE ANY, WITH ITS ROW. Answered at the door
          * it wrote none — and "a change somebody sent that this could not read" is exactly the
