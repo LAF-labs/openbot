@@ -2207,17 +2207,26 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  *    once it is on;
  *  - `app` 2153 → 2154: `connection-choices.test.tsx`, the card offers a site only once it is on.
  *
- * RAISED 2026-10-09, `agent-computer` from 476 to 481, for a download bounded by the disk and not
+ * RAISED 2026-10-09, `agent-computer` from 476 to 487, for a download bounded by the disk and not
  * by what a Bot may write (owner, 2026-10-08: a download over 1 MB works). All in
  * `korean-browser.test.ts`, where the one test that held the old megabyte ("one too big for the
- * workspace is refused") became five: a file larger than a Bot's own write is kept, and the write
- * is still refused; the shipped bounds keep three megabytes; one over the ceiling for a single
- * file is refused and removed, and one at it is kept; one that leaves the volume less room than
- * it must is refused and removed whatever its size, the file before it untouched; and a volume
- * that cannot be asked deletes nobody's file. And one more for the watch while a download lands:
- * out of room it is cancelled once and said to be that, stopped it asks no more, and a volume that
- * cannot be asked cancels nothing. Eight mutations each fail one of them.
- * By hand: one became five and one was added, which is five more; 476 and 5 are 481.
+ * workspace is refused") became twelve. Of the folder: a file larger than a Bot's own write is
+ * kept, and the write is still refused; the shipped bounds keep three megabytes and are the two
+ * numbers the documents say; one over the ceiling is refused before a byte of it is copied, and
+ * one at it is kept; one the volume has no room to copy — asked as if the copy were all new
+ * bytes — is refused before a byte is copied, and one byte less is kept; a copy that fails leaves
+ * nothing of the file behind; a volume that cannot be asked refuses nobody's file; and a download
+ * that never landed, or landed as no file, is said not to have arrived. Of the watch while one
+ * lands: out of room it is cancelled once and said to be that; a look already on its way when the
+ * download landed cancels nothing, and neither does a volume that cannot be asked — each look
+ * made to happen and waited for, on a clock the test holds. Of the whole landing, with a download
+ * that writes down what was asked of it: kept, refused or failed, the browser's own copy is
+ * deleted; the watch is over the moment a download has landed; and one that runs the volume out
+ * while it lands is cancelled, said to be too large, and its copy deleted. The last seven are
+ * what Codex's read of the first version found unheld — a copy nothing could stop, the part of
+ * it that stayed, the browser's copy left behind, a test that slept. Fifteen mutations each fail
+ * one of them. Counted by running the file on main and here: 22 and 33.
+ * By hand: one became twelve, which is eleven more; 476 and 11 are 487.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -2251,7 +2260,7 @@ const GROUPS: readonly {
   { name: "app", floor: 2154, roots: ["app"] },
   {
     name: "agent-computer",
-    floor: 481,
+    floor: 487,
     roots: ["agent-computer"],
     processes: 1,
   },
