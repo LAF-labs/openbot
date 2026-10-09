@@ -47,7 +47,7 @@
     "@types/bun": "^1.4.0",
     "knip": "6.38.0",
     "roughjs": "^4.6.6",
-    "typescript": "^5.9.3",
+    "typescript": "^7.0.2",
     "yaml": "^2.9.0"
   },
   "dependencies": {}
