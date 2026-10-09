@@ -49,6 +49,7 @@ import { createAccountDeletion } from "../src/account/deletion";
 import { createMadeReader } from "../src/agents/made";
 import { createFeedStore } from "../src/feed/store";
 import { createGoalStore } from "../src/goals/store";
+import { createLoginVault } from "../src/logins/store";
 import { createAccountExport } from "../src/account/export";
 import { createConsentStore } from "../src/account/consent";
 import { createAgentMemoryStore } from "../src/agents/memory-store";
@@ -360,6 +361,12 @@ function deployment() {
     feed: createFeedStore({ database }),
     // 목표: the person's goals and their presses on them.
     goals: createGoalStore({ database }),
+    // 로그인 보관함: mounted as `main.ts` mounts it, so its four doors are pressed by every person.
+    logins: createLoginVault({
+      database,
+      auditStore,
+      keyEncryptionKey: config.keyEncryptionKey,
+    }),
   });
   return { app, routineService, approvals };
 }
@@ -799,6 +806,9 @@ const B_ALLOWED = [
   "GET /api/health",
   // 아이디어: the person's own cards, in their order — keys and connection states, nobody else's.
   "GET /api/ideas",
+  // 로그인 보관함: the person's own saved logins — what each is called, never a value. A login's
+  // own doors name it by id, and the matrix's id is nobody's.
+  "GET /api/logins",
   "GET /api/me",
   "GET /api/me/export",
   "GET /api/me/notifications",

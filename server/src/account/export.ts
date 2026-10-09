@@ -43,6 +43,7 @@ import {
   lafRoutineNotepads,
   lafRoutineRuns,
   lafRoutines,
+  lafSavedLogins,
   lafThreadRuns,
   skills,
   userRoles,
@@ -391,6 +392,29 @@ export function createAccountExport(database: Database): AccountExport {
         .from(lafFeedPosts)
         .where(eq(lafFeedPosts.userId, userId))
         .orderBy(asc(lafFeedPosts.createdAt)),
+    )}`;
+
+    /*
+     * 로그인 보관함: WHICH logins they saved — what each is called, the site, where it may be put,
+     * and when — AND NOT ONE VALUE. The columns are named rather than the row selected, so a
+     * column added to the table is not in somebody's download until it is added here: the name
+     * and the password are sealed, and a sealed value is still not something to hand out in a
+     * file a person may keep anywhere (`docs/laf/data-lifecycle.md` §2).
+     */
+    yield `,\n"savedLogins":${JSON.stringify(
+      await database
+        .select({
+          id: lafSavedLogins.id,
+          label: lafSavedLogins.label,
+          site: lafSavedLogins.site,
+          origins: lafSavedLogins.origins,
+          createdAt: lafSavedLogins.createdAt,
+          updatedAt: lafSavedLogins.updatedAt,
+          lastUsedAt: lafSavedLogins.lastUsedAt,
+        })
+        .from(lafSavedLogins)
+        .where(eq(lafSavedLogins.userId, userId))
+        .orderBy(asc(lafSavedLogins.createdAt)),
     )}`;
 
     /*

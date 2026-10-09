@@ -19,6 +19,9 @@
  *            laf_feedback.user_id       ← what they wrote to the operator is theirs (migration 0037)
  *            laf_answer_ratings.user_id ← how they rated answers (migration 0043) — deleted below
  *                                         first all the same, so the tally can count them
+ *            laf_saved_logins.user_id   ← the logins they saved for their Bot's browser (migration
+ *                                         0063) — deleted below first all the same, by name:
+ *                                         they are passwords
  *   SET NULL agent_profiles.owner_user_id  ← a Bot would survive its owner, unowned and running
  *            laf_routines.created_by_id    ← deliberate: a routine outlives its author (see laf.ts)
  *
@@ -72,8 +75,6 @@ import type {
 import type { ComputerClient } from "../computer/client";
 import { releaseComputerFor } from "../computer/release";
 import type { Database } from "../db/client";
-import { describeFailure } from "../failure-text";
-import { log } from "../log";
 import {
   accounts,
   actionPolicy,
@@ -92,11 +93,12 @@ import {
   credentials,
   lafAnswerRatings,
   lafAttachments,
+  lafConversationContexts,
   lafFeedPosts,
   lafGoals,
-  lafConversationContexts,
   lafRoutineRuns,
   lafRoutines,
+  lafSavedLogins,
   lafThreadMessages,
   lafThreadRuns,
   mcpServers,
@@ -107,7 +109,9 @@ import {
   userRoles,
   users,
 } from "../db/schema";
+import { describeFailure } from "../failure-text";
 import { countAccounts } from "../fleet/notify";
+import { log } from "../log";
 import type { NotificationOutbox } from "../notifications/outbox";
 import { pseudonymFor } from "./pseudonym";
 
@@ -443,6 +447,22 @@ export function createAccountDeletion(
             .delete(lafGoals)
             .where(eq(lafGoals.userId, userId))
             .returning({ id: lafGoals.id }),
+        );
+
+        /*
+         * 로그인 보관함: every login they saved, BY NAME AND BEFORE THE `users` ROW. The foreign key
+         * would take them with the person anyway; they are written out because of what they are —
+         * passwords — and because the vault that was here before (`credentials`) is only emptied
+         * of what this module names: a new store left to the cascade is one an edit to the schema
+         * can quietly leave behind, on a machine whose destruction may be late or fail
+         * (`docs/laf/redesign-2026-10.md` §6). And so the tally counts them.
+         */
+        record(
+          "savedLogins",
+          await transaction
+            .delete(lafSavedLogins)
+            .where(eq(lafSavedLogins.userId, userId))
+            .returning({ id: lafSavedLogins.id }),
         );
 
         const memberOf = await transaction

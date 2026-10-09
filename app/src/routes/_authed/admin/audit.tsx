@@ -903,6 +903,11 @@ export const DECISIONS: Record<string, string> = {
   // no name left to write.
   "account.exported": "A person took a copy of their data",
   "account.deleted": "An account was deleted",
+  // A login saved for the Bot's browser (2026-10-10). Which one and for where is in the row; the
+  // name and the password are in no row at all.
+  "account.login_saved": "A person saved a login for their Bot",
+  "account.login_replaced": "A person changed a saved login",
+  "account.login_removed": "A person deleted a saved login",
 
   // Not a permission and not a refusal either: the machine this deployment runs on is created and
   // destroyed elsewhere, and these two say whether that elsewhere heard about it. The failure is
@@ -1268,6 +1273,9 @@ export const EVENTS: Record<string, string> = {
   "component.function_failed": "A component's data",
   "account.exported": "An account",
   "account.deleted": "An account",
+  "account.login_saved": "A saved login",
+  "account.login_replaced": "A saved login",
+  "account.login_removed": "A saved login",
   "fleet.notified": "The fleet",
   "fleet.notify_failed": "The fleet",
   "support.feedback_sent": "A message to the operator",
