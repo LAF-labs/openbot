@@ -157,6 +157,9 @@ describe("what counts as the same row", () => {
       { ...base, origins: ["https://nid.naver.com", "https://www.naver.com"] },
       { ...base, code: "laf:login_origin_refused" },
       { ...base, code: "laf:logins_full" },
+      // The same refusal about two fields: a missing name and a missing password.
+      { ...base, code: "laf:login_value_required", field: "username" },
+      { ...base, code: "laf:login_value_required", field: "password" },
       {
         ...base,
         signedInSince: "2026-09-01T00:00:00.000Z",

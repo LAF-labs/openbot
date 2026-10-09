@@ -435,6 +435,11 @@ function Row({
         typeof payload.code === "string" ? (
           <div className="mt-0.5 text-xs text-muted-foreground">
             {fact(payload.code)}
+            {/* And which part of the login it was about, where the row says. */}
+            {typeof payload.field === "string" &&
+            own(LOGIN_FIELDS, payload.field) ? (
+              <span> · {t(own(LOGIN_FIELDS, payload.field) ?? "")}</span>
+            ) : null}
           </div>
         ) : null}
         {/* Refusal reasons mirror the conversation-facing reason. */}
@@ -740,6 +745,19 @@ function leftOf(
       : undefined;
   return { words: words ?? "These files were not tried", names };
 }
+
+/**
+ * The parts of a saved login a refusal can be about (`account.login_refused`, `payload.field`),
+ * in this column's words. A table, walked for its Korean by `audit-labels.test.ts`, because the
+ * words are read through a variable and the coverage check sees only literals.
+ */
+export const LOGIN_FIELDS: Record<string, string> = {
+  label: "its name",
+  origins: "where it may go",
+  site: "its site",
+  username: "the sign-in name",
+  password: "the password",
+};
 
 /**
  * Which saved login a row is about, as the row can say it: the site, where the deployment knows

@@ -56,7 +56,9 @@ const row = (
 
 /** Newest first, as the API returns them. */
 const EVENTS = [
+  // A change that was refused: about a login there is, so the row says which.
   row("row-5", 5, "account.login_refused", LOGIN, {
+    ...where,
     code: "laf:login_seal_unreadable",
   }),
   row("row-4", 4, "account.login_refused", "unsaved", {
@@ -129,14 +131,18 @@ describe("the trail's page and a saved login", () => {
     const [, what, target, , verdict] = cells(1);
     expect(what).toBe("A saved login");
     expect(target).toBe("-");
+    // Why, and which part of the login it was about.
     expect(verdict).toBe(
       "Saving or changing a login was refused" +
-        "An address was not an HTTPS site",
+        "An address was not an HTTPS site · where it may go",
     );
     expect(rows[1]?.querySelector(".text-destructive")?.textContent).toBe(
       "Saving or changing a login was refused",
     );
-    // A change of a login this deployment's key no longer opens.
+    // A change of a login this deployment's key no longer opens: which login, and why.
+    expect(cells(0)[2]).toBe(
+      `${siteById("naver-smartstore")?.name}nid.naver.com, sell.smartstore.naver.com`,
+    );
     expect(cells(0)[4]).toBe(
       "Saving or changing a login was refused" +
         "The saved values could not be opened with this deployment's key",

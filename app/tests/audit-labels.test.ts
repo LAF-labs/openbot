@@ -1,9 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { COMPUTER_TOOLS } from "../../shared/tools/computer";
-import type {
-  ProductsRefusal,
-  RunEnding,
-} from "../../shared/workbench/protocol";
 import {
   auditEventTypes,
   auditFactCodes,
@@ -12,6 +7,12 @@ import {
 import { STOPPED } from "../../server/src/computer/client";
 import { ActionNeedsApprovalError } from "../../server/src/computer/gateway/caller";
 import { RUN_SCRIPT_TOOL } from "../../server/src/computer/gateway/intent";
+import { COMPUTER_TOOLS } from "../../shared/tools/computer";
+import type {
+  ProductsRefusal,
+  RunEnding,
+} from "../../shared/workbench/protocol";
+import { ko } from "../src/lib/i18n-ko";
 import {
   COMPUTER_FACTS,
   DECISIONS,
@@ -19,6 +20,7 @@ import {
   decisionOf,
   EVENTS,
   FACTS,
+  LOGIN_FIELDS,
   OUTCOME_EVENT_TYPES,
   SCRIPT_ENDINGS,
   SCRIPT_FILES_LEFT,
@@ -26,7 +28,6 @@ import {
   TOOLS,
   UNLABELLED_OUTCOMES,
 } from "../src/routes/_authed/admin/audit";
-import { ko } from "../src/lib/i18n-ko";
 
 /**
  * The audit table's labels are `t()` called on a VARIABLE, so `i18n-coverage.test.ts` cannot see
@@ -53,6 +54,7 @@ describe("the audit trail's labels", () => {
       ...Object.values(SCRIPT_ENDINGS),
       ...Object.values(SCRIPT_FILES_WITHHELD),
       ...Object.values(SCRIPT_FILES_LEFT),
+      ...Object.values(LOGIN_FIELDS),
       "These files were not tried",
       ...UNLABELLED_OUTCOMES,
     ].filter((label) => !(label in ko));

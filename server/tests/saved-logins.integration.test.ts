@@ -351,6 +351,27 @@ describe("a login a person saves", () => {
         "origins",
       ],
       [{ ...NAVER, origins: nine }, "laf:login_origin_refused", "origins"],
+      // The same address sixty-five times, and twenty thousand different ones: neither is read
+      // to its end to be refused — a body may be a megabyte, and the bound is on what is READ.
+      [
+        {
+          ...NAVER,
+          origins: Array.from({ length: 65 }, () => "nid.naver.com"),
+        },
+        "laf:login_origin_refused",
+        "origins",
+      ],
+      [
+        {
+          ...NAVER,
+          origins: Array.from(
+            { length: 20_000 },
+            (_, n) => `https://s${n}.example`,
+          ),
+        },
+        "laf:login_origin_refused",
+        "origins",
+      ],
       [{ ...NAVER, label: "   " }, "laf:login_label_required", "label"],
       [{ ...NAVER, username: "" }, "laf:login_value_required", "username"],
       [
@@ -414,9 +435,16 @@ describe("a login a person saves", () => {
       [
         "account.login_refused",
         mine?.id,
-        { code: "laf:login_origin_refused", field: "origins" },
+        // Which login, by where it may go AS IT STANDS — the refused address is not in the row.
+        {
+          site: "naver-smartstore",
+          origins: mine?.origins,
+          code: "laf:login_origin_refused",
+          field: "origins",
+        },
       ],
     ]);
+    expect(JSON.stringify(rows)).not.toContain("http://");
 
     /*
      * A BODY THAT CANNOT BE READ IS REFUSED AS THAT, never taken for an empty one: a change of
@@ -461,7 +489,11 @@ describe("a login a person saves", () => {
       ...Array.from({ length: 4 }, () => [
         "account.login_refused",
         mine?.id,
-        { code: "laf:login_invalid" },
+        {
+          site: "naver-smartstore",
+          origins: mine?.origins,
+          code: "laf:login_invalid",
+        },
       ]),
     ]);
   });
@@ -606,6 +638,11 @@ describe("a login a person saves", () => {
 
   test("writes those rows on the change's own transaction when nobody says otherwise: they are in the trail's table, under the person", async () => {
     // As `main.ts` makes it: no `trailWithin`. The rows go where every row of the trail goes.
+    //
+    // THESE THREE ROWS ARE NOT CLEANED UP, and cannot be: the table refuses DELETE ("Audit events
+    // are append-only"), which is the property `audit-append-only.integration.test.ts` exists to
+    // hold. They are under a person only this run made, so no other file's reading meets them —
+    // the same as `account-lifecycle.integration.test.ts` leaves its own.
     const person = `login-trail-${tag}`;
     await database
       .insert(users)
