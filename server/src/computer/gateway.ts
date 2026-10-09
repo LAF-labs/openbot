@@ -47,6 +47,7 @@
  * Every name another directory imports from here is still exported from here.
  */
 
+import type { LoginVault } from "../logins/store";
 import type { AuditStore } from "../audit";
 import { type ApprovalRegistry, createApprovalRegistry } from "./approvals";
 import type { ReviewSubject, ReviewVerdict } from "./auto-review";
@@ -137,6 +138,12 @@ export type ComputerGatewayOptions = {
    */
   siteSeen?: SiteSeen;
   /**
+   * What the deployment's people saved for their Bot's browser (`logins/store.ts`). With it, a
+   * request for a sign-in's values is answered from the vault where the person saved a login for
+   * that origin (`gateway/secrets.ts`); without it, every value is asked of a person.
+   */
+  logins?: Pick<LoginVault, "forOrigin" | "open" | "used">;
+  /**
    * The high-risk check (`high-risk.ts`) and where it reads the owner's task from. Absent, nothing
    * is escalated — the gateway behaves as it did before the check existed.
    */
@@ -179,6 +186,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
     snapshots,
     // Made just below, from what this hands it; called only once a request arrives.
     govern: (...call) => govern(...call),
+    ...(options.logins ? { logins: options.logins } : {}),
   });
   const govern = createGovern({
     auditStore,

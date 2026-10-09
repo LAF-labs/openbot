@@ -191,6 +191,14 @@ export const ko: Record<string, string> = {
     "‘{name}’ 칸에 넣을 값을 여쭤보려 해요.",
   "It wants to ask you for a value to put into “{name}” on {host}.":
     "{host}의 ‘{name}’ 칸에 넣을 값을 여쭤보려 해요.",
+  "It wants to put a login you saved into a field on the page it has open.":
+    "저장해 두신 로그인을 열어 둔 페이지의 입력칸에 넣으려 해요.",
+  "It wants to put a login you saved into a field on {host}.":
+    "저장해 두신 로그인을 {host}의 입력칸에 넣으려 해요.",
+  "It wants to put a login you saved into “{name}”.":
+    "저장해 두신 로그인을 ‘{name}’ 칸에 넣으려 해요.",
+  "It wants to put a login you saved into “{name}” on {host}.":
+    "저장해 두신 로그인을 {host}의 ‘{name}’ 칸에 넣으려 해요.",
   "It wants to type into a field on the page it has open.":
     "열어 둔 페이지의 어떤 칸에 입력하려 해요.",
   "It wants to type into a field on {host}.":
@@ -1761,6 +1769,13 @@ export const ko: Record<string, string> = {
   "Switch tab": "탭 전환",
   "Upload a file": "파일 올리기",
   "Ask for a secret": "비밀값 요청",
+  "Fill in a saved login": "저장한 로그인 넣기",
+  "From a saved login": "저장한 로그인으로 넣음",
+  "Several saved logins": "저장한 로그인이 여럿",
+  "A saved login was not put in: the box was not on the site it was saved for":
+    "저장한 로그인을 넣지 않음: 칸이 저장한 사이트의 것이 아님",
+  "The Bot named a saved login that was not saved for this site":
+    "봇이 고른 로그인이 이 사이트에 저장한 것이 아님",
   "Ask for help": "도움 요청",
   "List files": "파일 목록",
   "Read a file": "파일 읽기",
@@ -2199,6 +2214,8 @@ export const ko: Record<string, string> = {
   "An address inside this deployment was blocked": "배포 안쪽 주소라 막음",
   "This app's own address was not opened": "이 앱 자신의 주소라 열지 않음",
   "The screen had changed": "화면이 바뀌어 있었음",
+  "The saved login is not for that box's site":
+    "저장한 로그인이 그 칸의 사이트 것이 아님",
   "The control had been renamed": "누르려던 요소의 이름이 바뀌었음",
   "Skipped: the step before it stopped or changed the page":
     "앞 행동이 멈추거나 페이지를 바꿔서 건너뜀",
@@ -2535,6 +2552,13 @@ export const ko: Record<string, string> = {
   "asking you for a value on {host}": "{host}의 입력칸에 넣을 값을 여쭤보기",
   "asking you for a value on the page":
     "열린 페이지의 입력칸에 넣을 값을 여쭤보기",
+  "putting a saved login into “{name}” on {host}":
+    "{host}의 ‘{name}’에 저장한 로그인 넣기",
+  "putting a saved login into “{name}”": "‘{name}’에 저장한 로그인 넣기",
+  "putting a saved login into a field on {host}":
+    "{host}의 입력칸에 저장한 로그인 넣기",
+  "putting a saved login into a field on the page":
+    "열린 페이지의 입력칸에 저장한 로그인 넣기",
   "typing into “{name}” on {host}": "{host}의 ‘{name}’에 입력하기",
   "typing into “{name}”": "‘{name}’에 입력하기",
   "typing into a field on {host}": "{host}의 입력칸에 입력하기",

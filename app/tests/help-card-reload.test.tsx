@@ -576,4 +576,44 @@ describe("a request for a value that a rule asks about first", () => {
     expect(view.host.textContent).not.toContain("Done");
     expect(view.host.textContent).not.toContain("Entered");
   });
+
+  /*
+   * A LOGIN THE PERSON SAVED ANSWERED (2026-10-10, record §6, piece 2-4). Nobody typed, so the
+   * card does not say "Entered" — that would tell a person they had done a thing they did not —
+   * and it does not say "Done" either, which is how an ending this card did not know was drawn.
+   */
+  test("that a saved login answered says so, and one waiting on which login says that — neither as entered", async () => {
+    const { HelpCard } = await import("../src/components/computer/help-card");
+    const { ActiveBotProvider, useActiveBot } = await import(
+      "../src/lib/copilot/active-bot"
+    );
+    for (const [code, label] of [
+      ["laf:login_filled", "From a saved login"],
+      ["laf:login_choice", "Several saved logins"],
+    ] as const) {
+      function Answered() {
+        useActiveBot(`agent-${code}`);
+        return (
+          <HelpCard
+            kind="secret"
+            result={JSON.stringify({ ok: true, code })}
+            said="네이버 아이디, 네이버 비밀번호"
+            status="complete"
+            toolCallId={`call-${code}`}
+          />
+        );
+      }
+      const view = await mount(
+        <ActiveBotProvider>
+          <Answered />
+        </ActiveBotProvider>,
+      );
+      await view.settle(30);
+      expect(view.host.textContent).toContain(label);
+      expect(view.host.textContent).not.toContain("Entered");
+      expect(view.host.textContent).not.toContain("Done");
+      // And nothing asks the person for anything: no masked box is drawn.
+      expect(view.host.querySelector('input[type="password"]')).toBeNull();
+    }
+  });
 });

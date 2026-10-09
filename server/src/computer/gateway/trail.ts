@@ -84,6 +84,8 @@ export async function write(
      * `ref` above are then the one the decision turned on (`govern.ts`, `alsoRefs`).
      */
     fields?: readonly { ref: string; role: string; name: string }[] | undefined;
+    /** The saved login an act put into a page (`FILL_LOGIN_TOOL`). */
+    login?: { id: string; site?: string } | undefined;
     /** Which key, for a keypress. Recorded because a keypress can act without naming a button. */
     key?: string | undefined;
     filePath: string | undefined;
@@ -147,6 +149,9 @@ export async function write(
       page: pageForTrail(entry.pageUrl),
       ref: entry.ref ?? null,
       ...(entry.fields ? { fields: entry.fields } : {}),
+      // Which saved login, by its id and the site it was saved under — never what the person
+      // called it, and never anything of what it holds (the vault's own rows say the same).
+      ...(entry.login ? { login: entry.login } : {}),
       /*
        * The key, where there is one. A keypress can submit a form from inside a text field, so the
        * element it was aimed at is not always the thing it acted on. Without the key, the trail

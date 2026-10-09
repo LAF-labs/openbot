@@ -130,10 +130,14 @@ describe("the tool a model is handed", () => {
       >;
     };
     expect(schema.required).toEqual(["fields", "snapshotId"]);
+    // `login` is the one thing beside them, and never required: which saved login, by an id the
+    // tool itself handed back, where a site has several (2026-10-10, record §6, piece 2-4).
     expect(Object.keys(schema.properties).sort()).toEqual([
       "fields",
+      "login",
       "snapshotId",
     ]);
+    expect(schema.properties.login).toMatchObject({ type: "string" });
     expect(schema.properties.fields).toMatchObject({
       type: "array",
       minItems: 1,

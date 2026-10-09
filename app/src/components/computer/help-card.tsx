@@ -416,6 +416,10 @@ function boxesOf(control: ControlState | null): SecretBox[] {
 type HelpEnding =
   | "done"
   | "entered"
+  /** A login the person saved for the site answered: nobody typed, and nobody was asked. */
+  | "saved"
+  /** The site has several saved logins and the Bot has to say which: nothing went in yet. */
+  | "several"
   | "skipped"
   | "unanswered"
   | "stopped"
@@ -429,6 +433,10 @@ function endingOf(result: string | undefined): HelpEnding {
       return "done";
     case "laf:secret_entered":
       return "entered";
+    case "laf:login_filled":
+      return "saved";
+    case "laf:login_choice":
+      return "several";
     case "laf:help_skipped":
     case "laf:secret_skipped":
       return "skipped";
@@ -453,6 +461,10 @@ function endingLabel(ending: HelpEnding): string {
       return t("Done");
     case "entered":
       return t("Entered");
+    case "saved":
+      return t("From a saved login");
+    case "several":
+      return t("Several saved logins");
     case "skipped":
       return t("Skipped");
     case "unanswered":

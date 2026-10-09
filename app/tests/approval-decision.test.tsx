@@ -156,6 +156,7 @@ function everySubject(): approvals.AskSubject[] {
     "upload",
     "run_script",
     "fill_secret",
+    "fill_login",
     "call_tool",
     "act",
   ];

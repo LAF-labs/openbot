@@ -2435,6 +2435,31 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * By hand: 25 and 3 are 28, and 504 and 28 are 532; 7, 1, 1, 1 and 2 are 12, and 3930 and 12 are
  * 3942; 2140 and 2 are 2142; 933 and 2 are 935.
  *
+ * RAISED 2026-10-10 FOR A SAVED LOGIN THAT ANSWERS A SIGN-IN, `server` from 3942 to 3958,
+ * `agent-computer` from 532 to 537 and `app` from 2142 to 2143 (record §6, piece 2-4): a request
+ * for a sign-in's values is answered from the vault where the person saved a login for the origin
+ * the boxes are in, and by the person otherwise. Five to `agent-computer`, in the new
+ * `login-fill-site.test.ts`, a real Chromium: the values go into the boxes of a page of the
+ * saved origin, each into its own, and are in nothing the Bot is handed; what each box is for is
+ * said by its own markup, and a code, a new password, a card number and a text area are not a
+ * login's; on a page of another origin nothing goes in and nothing is held; a login belongs to
+ * the frame its boxes are in, not to the page the tab is on; and each box is held to what it was
+ * judged as and to the look it was named on. Sixteen to `server`. Thirteen in the new
+ * `saved-login-fill.test.ts`: answered from the vault with one row that names the login and no
+ * value; the password into the password box whichever order the card names them; only a sign-in;
+ * only one document of a saved origin; the person where nothing was saved, there is no vault or
+ * the computer cannot say; a seal that does not open; several logins named back and nothing put
+ * in; a login that is not this site's refused before anything is opened; a rule that asks; a
+ * rule that refuses the saved login does not refuse the person, and a person's own no is a no;
+ * a rule about asking a person is not a rule about a saved login; a box found elsewhere when the
+ * values arrive. One in `computer-client.test.ts`: the two calls on the wire. One in
+ * `chat-tools.test.ts`: the turn is told at once, in a sentence of its own, and the Bot's choice
+ * goes to the gateway as an id. One in `saved-logins.integration.test.ts`: a login is found by
+ * any of its origins however the address is spelled and by no other, and says when it was last
+ * put in. One to `app`, in `help-card-reload.test.tsx`: a card a saved login answered says so,
+ * and is not drawn as entered or done. Thirty-six mutations each fail one of these.
+ * By hand: 3942 and 13, 1, 1 and 1 are 3958; 532 and 5 are 537; 2142 and 1 are 2143.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2463,11 +2488,11 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 3942, roots: ["server"] },
-  { name: "app", floor: 2142, roots: ["app"] },
+  { name: "server", floor: 3958, roots: ["server"] },
+  { name: "app", floor: 2143, roots: ["app"] },
   {
     name: "agent-computer",
-    floor: 532,
+    floor: 537,
     roots: ["agent-computer"],
     processes: 1,
   },

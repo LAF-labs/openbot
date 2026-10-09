@@ -433,7 +433,15 @@ export type SecretInto = {
  * recorded. `ref` names the field it goes in, because a secret typed into whatever happens to have
  * focus goes nowhere when nothing does, and reports success while doing it.
  */
-export type SecretRequest = { snapshotId: number } & (
+export type SecretRequest = {
+  snapshotId: number;
+  /**
+   * Which saved login to use, by its id — only where the Bot was told this site has several
+   * (`gateway/secrets.ts`). Never a value, and never trusted: it has to be one saved for the
+   * origin the boxes are in.
+   */
+  login?: string;
+} & (
   | { fields: SecretField[] }
   // One box, written the short way: what the tool took until a card held several (2026-10-10).
   | { label: string; ref: string }

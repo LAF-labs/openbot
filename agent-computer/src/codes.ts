@@ -95,8 +95,8 @@ export const COMPUTER_CODES = {
   // The control is still there and is not called what the server judged it as (label-hold.ts).
   "laf:label_changed": { status: 409, caller: "bot" },
   // A saved login's box is not in a document of an origin the login was saved for — or not over
-  // HTTPS. Nothing was put in (login-routes.ts).
-  "laf:login_origin_mismatch": { status: 409, caller: "bot" },
+  // HTTPS. Nothing was put in (login-routes.ts). Never, not "look again": the box is where it is.
+  "laf:login_origin_mismatch": { status: 403, caller: "bot" },
   // The element would not take the action: hidden, covered, disabled, not a field. Also what the
   // masked box's own door answers when the box a person's value was for cannot take it.
   "laf:element_not_actionable": { status: 409, caller: "bot" },

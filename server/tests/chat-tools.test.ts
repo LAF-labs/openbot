@@ -286,6 +286,94 @@ describe("a computer call, answered as the window answered it", () => {
     });
   });
 
+  /*
+   * A LOGIN THE PERSON SAVED ANSWERED (2026-10-10, record §6, piece 2-4). The gateway settles who
+   * holds the values; where the vault did, there is no card and nobody to wait for, and the Bot
+   * is told so in a sentence of its own — "이 사람이 직접 입력했다" would be a thing that did not
+   * happen. Where the site has several, it is handed what each is called and nothing else.
+   */
+  test("a request a saved login answered ends at once: filled is said as filled from a saved login, and several are named back to choose from", async () => {
+    const handed: unknown[] = [];
+    let answer: Record<string, unknown> = {};
+    const gateway = {
+      requestSecret: async (
+        _computer: string,
+        _bot: string,
+        _actor: unknown,
+        input: unknown,
+      ) => {
+        handed.push(input);
+        return {
+          holder: "bot",
+          since: "2026-10-10T00:00:00.000Z",
+          requested: false,
+          ...answer,
+        };
+      },
+      // Never read: a call the vault answered waits on nobody's card.
+      control: async () => {
+        throw new Error("the control state was polled");
+      },
+    } as unknown as ComputerGateway;
+    const toolkit = await createChatTools({
+      gateway,
+      people: createPersonAnswers(),
+      controlPollMs: 20,
+    })(context, [tool("computer_request_secret")]);
+    const fields = [
+      { ref: "e1", label: "아이디" },
+      { ref: "e2", label: "비밀번호" },
+    ];
+
+    answer = { loginFilled: { id: "login-1", site: "naver", fields: 2 } };
+    expect(
+      await toolkit.execute(
+        "computer_request_secret",
+        { fields, snapshotId: 3 },
+        call("filled"),
+      ),
+    ).toEqual({
+      ok: true,
+      code: "laf:login_filled",
+      result: toolResultText("laf:login_filled"),
+    });
+
+    answer = {
+      loginChoice: [
+        { id: "login-1", label: "회사 계정", site: "naver" },
+        { id: "login-2", label: "개인 계정" },
+      ],
+    };
+    expect(
+      await toolkit.execute(
+        "computer_request_secret",
+        { fields, snapshotId: 3 },
+        call("several"),
+      ),
+    ).toEqual({
+      ok: true,
+      code: "laf:login_choice",
+      result: toolResultText("laf:login_choice"),
+      logins: [
+        { id: "login-1", label: "회사 계정", site: "naver" },
+        { id: "login-2", label: "개인 계정" },
+      ],
+    });
+
+    // The one it chose goes to the gateway as an id, and as nothing when it wrote none.
+    answer = { loginFilled: { id: "login-2", fields: 2 } };
+    await toolkit.execute(
+      "computer_request_secret",
+      { fields, snapshotId: 3, login: "  login-2 " },
+      call("chosen"),
+    );
+    expect(handed).toEqual([
+      { fields, snapshotId: 3 },
+      { fields, snapshotId: 3 },
+      { fields, snapshotId: 3, login: "login-2" },
+    ]);
+  });
+
   test("one card, however it is written: a list of boxes, or the one box the tool took before — and a list that is no card reaches nothing", async () => {
     /*
      * The tool takes every box of a form at once since 2026-10-10 (`shared/secret-ask.ts`). A

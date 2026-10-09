@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, count, eq, sql } from "drizzle-orm";
-import { loginOriginOf } from "../../../shared/login-origin";
+import { isSavedOrigin, loginOriginOf } from "../../../shared/login-origin";
 import { siteById } from "../../../shared/sites/catalogue";
 import { cutOnGraphemes, soundText } from "../../../shared/sound-text";
 import { pseudonymFor } from "../account/pseudonym";
@@ -328,6 +328,37 @@ export function createLoginVault(input: {
         .where(eq(lafSavedLogins.userId, userId))
         .orderBy(asc(lafSavedLogins.createdAt), asc(lafSavedLogins.id));
       return rows.map(view);
+    },
+
+    /**
+     * The logins a person saved that may go into a document at this address — its origin is one
+     * of theirs, by the one rule that read the origin when it was saved. None for an address that
+     * is not an HTTPS origin at all.
+     *
+     * For whoever is about to put one into a page (`computer/gateway/secrets.ts`): which login is
+     * this site's is answered here, where the rule about origins lives, and not by a second
+     * comparison written beside the fill.
+     */
+    async forOrigin(userId: string, address: string): Promise<SavedLogin[]> {
+      if (!loginOriginOf(address, originOptions)) return [];
+      const rows = await database
+        .select()
+        .from(lafSavedLogins)
+        .where(eq(lafSavedLogins.userId, userId))
+        .orderBy(asc(lafSavedLogins.createdAt), asc(lafSavedLogins.id));
+      return rows
+        .map(view)
+        .filter((login) =>
+          isSavedOrigin(login.origins, address, originOptions),
+        );
+    },
+
+    /** Note that a login was put into a page just now. No row of the trail: the fill writes its own. */
+    async used(userId: string, id: string): Promise<void> {
+      await database
+        .update(lafSavedLogins)
+        .set({ lastUsedAt: now() })
+        .where(mine(userId, id));
     },
 
     /**

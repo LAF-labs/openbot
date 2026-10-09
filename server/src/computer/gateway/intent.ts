@@ -69,6 +69,16 @@ export const RUN_SCRIPT_TOOL = "mcp__workbench__run_script";
 export const WORKBENCH_FAMILY = "workbench";
 
 /**
+ * What a saved login being put into a sign-in is called, where a rule or the trail names it.
+ *
+ * NOT A TOOL ANYBODY IS OFFERED, like the script above: the Bot asks for the boxes to be filled
+ * (`computer_request_secret`), and whether a person types or the vault answers is this server's
+ * to settle (`secrets.ts`). The act that follows is a different one — nobody is asked, a stored
+ * credential is used — so it is judged and recorded under a name of its own.
+ */
+export const FILL_LOGIN_TOOL = "computer_fill_login";
+
+/**
  * The intents this gateway can produce, which is every one that is not about somebody else's server.
  *
  * Named so that both readers of an intent take the same value: the policy context, whose union also
@@ -107,6 +117,8 @@ export function intentOf(
     // Asking a person to put a value into a field. Not `type`: see `PolicyContext.intent`.
     case "computer_request_secret":
       return "fill_secret";
+    case FILL_LOGIN_TOOL:
+      return "fill_login";
     case "computer_read_file":
       return "read_file";
     case "computer_write_file":
