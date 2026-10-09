@@ -158,10 +158,15 @@ export function createLoginVault(input: {
     return written;
   };
 
-  /** What a row of the trail says of a login: which, called what, for where. Never a value. */
+  /**
+   * What a row of the trail says of a login: which one — the row's target, by the login's own id
+   * — and for where. Never a value, AND NOT WHAT THE PERSON CALLED IT. The trail is append-only
+   * and outlives the account: when a person leaves, their rows are re-pointed at a pseudonym and
+   * nothing else in them can be rewritten (migration 0028). A label is words they typed — "엄마
+   * 계좌", their own name — and the person's id in a row's target would be the one thing still
+   * pointing at them. So the target is the login, and the payload is the site and the origins.
+   */
   const onTrail = (login: SavedLogin) => ({
-    login: login.id,
-    label: login.label,
     ...(login.site ? { site: login.site } : {}),
     origins: login.origins,
   });
@@ -219,8 +224,8 @@ export function createLoginVault(input: {
       const saved = view(row);
       await recordAuditEvent(auditStore, {
         eventType: "account.login_saved",
-        targetType: "user",
-        targetId: userId,
+        targetType: "saved_login",
+        targetId: saved.id,
         actorUserId: userId,
         payload: onTrail(saved),
       });
@@ -244,6 +249,15 @@ export function createLoginVault(input: {
         .from(lafSavedLogins)
         .where(mine(userId, id));
       if (!row) return null;
+      // Nothing was sent: nothing is written, and the trail is not told of a change that was not.
+      const sent = [
+        written.label,
+        written.site,
+        written.origins,
+        written.username,
+        written.password,
+      ];
+      if (sent.every((one) => one === undefined)) return view(row);
 
       const label =
         written.label === undefined ? row.label : labelOf(written.label);
@@ -281,8 +295,8 @@ export function createLoginVault(input: {
       const saved = view(changed);
       await recordAuditEvent(auditStore, {
         eventType: "account.login_replaced",
-        targetType: "user",
-        targetId: userId,
+        targetType: "saved_login",
+        targetId: saved.id,
         actorUserId: userId,
         payload: {
           ...onTrail(saved),
@@ -302,8 +316,8 @@ export function createLoginVault(input: {
       if (!gone) return false;
       await recordAuditEvent(auditStore, {
         eventType: "account.login_removed",
-        targetType: "user",
-        targetId: userId,
+        targetType: "saved_login",
+        targetId: gone.id,
         actorUserId: userId,
         payload: onTrail(view(gone)),
       });

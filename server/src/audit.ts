@@ -460,9 +460,10 @@ export const auditEventTypes = [
   "account.deleted",
   /**
    * A login a person saved for their Bot's browser, changed, or deleted (`logins/store.ts`,
-   * 2026-10-10). The row says which login — what the person called it, the site, the origins it
-   * may be put on — and, for a change, whether its values were replaced. NEVER A VALUE: the name
-   * and the password are sealed before a row is written and are not what this trail is told.
+   * 2026-10-10). The row's target is the login, by its own id, and its payload is the site and
+   * the origins it may be put on — and, for a change, whether its values were replaced. NEVER A
+   * VALUE: the name and the password are sealed before a row is written. And not what the person
+   * called it, nor their id as the target: this trail outlives the account, and those are theirs.
    * Written under the person, like everything of theirs; pseudonymised with them when they go.
    */
   "account.login_saved",
