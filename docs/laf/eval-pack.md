@@ -2699,6 +2699,81 @@ connect every account. And a routine still guesses a tool's name once more, abou
 report's two hashes sit still through all of this — the lookup's answer and the context layer are
 in neither.
 
+## The profile is a name, and no effort is sent — the pack on this tree (2026-10-10)
+
+Three things in one change move what the model is sent, so the verdict of 2026-10-02 stopped
+describing the product (`docs/laf/redesign-2026-10.md` §8): the prompt's "이름과 얼굴은 이 사람이
+정했고" became "이름은 이 사람이 정했고"; `update_profile` lost its `effort` parameter; and the main
+conversation is sent **no effort** by default, where every run had carried `balanced`
+(`BOT_MODEL_EFFORT`, false unless a deployment says otherwise). The pack was run on the branch
+(`e3e3d16c`, prompt `cca32351312f9cc4`, catalogue `e1cddfc5b420dbbc`) and, the same hour, on main
+before the change (`4f497b31`, prompt `4366088f0a42d74a`, catalogue `590b326be9bebdb7`, sending
+`balanced`). Model `meta/muse-spark-1.3-contributor`, unpinned, one run of 82 scenarios.
+
+| | main, `balanced` sent | this tree, nothing sent |
+|---|---|---|
+| Scenarios passed | 82 of 82 — **PASS** | 80 of 82 — **FAIL**, by the strict rule |
+| Rounds | 192 | 186 |
+| First chunk, median / p90 | 2.9 s / 5.0 s | 3.0 s / 5.6 s |
+| A round, median / p90 | 3.8 s / 9.2 s | 4.3 s / 9.1 s |
+| All rounds together | 903 s | 954 s |
+| Reasoning tokens (median a round) | 39,872 (123) | 39,249 (134) |
+| Completion tokens | 57,599 | 56,404 |
+| Prompt tokens | 1,232,396 | 1,190,567 |
+
+**Sending no effort is sending the model's own middle.** Reasoning tokens are the same to within
+2% over the pack, and on the one scenario measured many times below (median a round 342 with
+nothing sent, 358 on main, 361 on this tree with `balanced` sent). That was the claim the change
+rests on — "false sends nothing, and Muse Spark answers at medium" — and until now nothing had
+measured it.
+
+**The two that failed, and what each was.**
+
+- `this-weeks-friday` 0/1 was the provider, not the model: `laf:model_rate_limited` in 0.4 s, no
+  request made. Alone, 5/5 on this tree and 5/5 on main.
+- `weather-for-the-place-just-said` 0/1 was the model: the weather was fetched and the place it had
+  just been told was not saved ("들은 위치를 remember의 place로 저장하지 않음"). It is a scenario
+  this model misses about one time in five **on main too**, which one run of main did not show:
+
+  | `weather-for-the-place-just-said`, run alone | passed |
+  |---|---|
+  | main (`balanced` sent) | 5/5, 9/10, 16/20 — 30 of 35 |
+  | this tree (nothing sent) | 4/5, 8/10, 16/20 — 28 of 35 |
+  | this tree with `EVAL_EFFORT=balanced` | 17/20 |
+
+  One of each tree's twenty was lost to the provider's rate limit, not to an answer. The misses
+  are the same kinds on both: the place not saved, the card's forecast said over again in the
+  answer, a card for another place. Nothing here tells the two trees apart. It was 6/6 on
+  2026-10-05 (above) at six runs; at thirty-five it is five in six, and that is the number to
+  hold it to.
+
+**The verdict.** By the pack's rule — every scenario, every run — this tree's run is a FAIL, and
+so would main's be on a day `weather-for-the-place-just-said` misses in its one run: the pack at
+one run cannot hold a scenario that passes five times in six. What was asked of this measurement
+is whether the change moved the model's work, and on that it is clean: the one real miss is as
+frequent before the change as after it, at thirty-five runs each, and the reasoning the model does
+is unchanged. **Carried forward, not closed:** the scenario itself. Saving a place said in passing
+while answering about its weather fails one time in five or six on the fleet's model; that is a
+product miss on main today, and it is the first thing to look at when the next change to the
+head of the prompt is measured (the release that carries this one carries three more — record,
+"묶음 A").
+
+**The evals send what production sends, and now say so for a deployment that opts in.** Until this
+change they sent `balanced` always, which is what every Bot carried. They send nothing by default
+now, and `balanced` where `BOT_MODEL_EFFORT=true` (`evals/lib.ts` `evalEffort`); `EVAL_EFFORT`
+overrides both for a comparison, as the third row above used it. The first version of this change
+read `EVAL_EFFORT` alone, so a deployment that had opted back in would have been judged on a
+request it does not make (Codex's read of the pull request).
+
+**The deferral arm** ran on this tree and is a measurement, not a verdict: each scenario once under
+the product's whole schema, with and without the bridge. Seventeen of the 82 did not pass one arm
+or both there (fifteen of them neither). Main's deferral arm was not run, so that is not compared
+with anything and is recorded only so the next run has a number beside it.
+
+**Not measured.** Three runs of the pack, which is what a swap is judged on: this was one, on each
+tree. The provider unpinned on both, so two endpoints may have answered. A deployment with
+`BOT_MODEL_EFFORT=true`: none exists, and only the one scenario was run that way.
+
 ## 이 다음
 
 pack 통과 후: 카나리(이 배포 하나)에 1주 → 이상 없으면 전체. 전환의 실체는
