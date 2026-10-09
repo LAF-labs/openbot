@@ -181,12 +181,21 @@ describe("a login a person saves", () => {
     expect(rows.map((one) => [one.eventType, one.actorUserId])).toEqual([
       ["account.login_saved", owner],
     ]);
+    // The row is about the login, by the login's own id; it says for where. Not what the person
+    // called it — the trail outlives the account, and those are their words — and not their id
+    // as its target, which nothing could re-point when they leave.
+    expect([rows[0]?.targetType, rows[0]?.targetId]).toEqual([
+      "saved_login",
+      login.id,
+    ]);
     expect(rows[0]?.payload).toEqual({
-      login: login.id,
-      label: "네이버 (가게)",
       site: "naver-smartstore",
       origins: login.origins,
     });
+    expect(JSON.stringify(rows)).not.toContain("네이버 (가게)");
+    expect(
+      JSON.stringify(rows.map((one) => [one.targetId, one.payload])),
+    ).not.toContain(owner);
 
     // And the values are there, for the one caller that puts them into a page — exactly as typed.
     const opened = await vault.open(owner, login.id);
@@ -282,6 +291,27 @@ describe("a login a person saves", () => {
     ]);
     expect(JSON.stringify(rows)).not.toContain(NEW);
     expect(await stored(owner)).not.toContain(NEW);
+
+    // A change that changes nothing writes nothing: the row is answered as it stands, its seals
+    // and its time untouched, and the trail is not told of a change that was not.
+    const [held] = await database
+      .select()
+      .from(lafSavedLogins)
+      .where(eq(lafSavedLogins.id, mine.id));
+    rows.length = 0;
+    const nothing = await call("PATCH", `/${mine.id}`, {});
+    expect(nothing.status).toBe(200);
+    expect(await nothing.json()).toMatchObject({
+      id: mine.id,
+      label: "네이버",
+    });
+    expect(rows).toEqual([]);
+    expect(
+      await database
+        .select()
+        .from(lafSavedLogins)
+        .where(eq(lafSavedLogins.id, mine.id)),
+    ).toEqual(held ? [held] : []);
   });
 
   test("is not saved at all when it is not one: no HTTPS origin, no name, no value, a site nobody knows", async () => {
@@ -355,7 +385,10 @@ describe("a login a person saves", () => {
     expect(await stored(owner)).toBe("[]");
     expect(await vault.open(owner, mine.id)).toBeNull();
     expect(rows.map((one) => one.eventType)).toEqual(["account.login_removed"]);
-    expect(rows[0]?.payload).toMatchObject({ login: mine.id, label: "네이버" });
+    expect([rows[0]?.targetId, rows[0]?.payload]).toEqual([
+      mine.id,
+      { site: "naver-smartstore", origins: mine.origins },
+    ]);
     // Deleting what is not there is said as that, and writes nothing.
     expect((await call("DELETE", `/${mine.id}`)).status).toBe(404);
     expect(rows).toHaveLength(1);

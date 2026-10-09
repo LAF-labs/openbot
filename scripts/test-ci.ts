@@ -2387,6 +2387,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * by origin, and not by host. `account-lifecycle.integration.test.ts` and the authorization
  * matrix hold more and count the same: a person's saved logins go with them, by name and
  * counted, the other account's stay, and the four doors are pressed by all five people.
+ * Nineteen mutations each fail one of these.
  * By hand: 5, 4 and 6 are 15, and 3910 and 15 are 3925; 927 and 5 are 932.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
