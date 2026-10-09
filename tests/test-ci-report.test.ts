@@ -109,6 +109,16 @@ describe("the time each file takes, and the files spread over the workers by it"
     ).toEqual(new Map([["x.test.ts", 1.75]]));
   });
 
+  test("a skipped test is no time at all, and a file of skipped tests is not timed", () => {
+    expect(
+      secondsPerFile(
+        '<testcase name="ran" time="2" file="mixed.test.ts" />' +
+          '<testcase name="browser" time="0" file="mixed.test.ts"><skipped /></testcase>' +
+          '<testcase name="browser" time="0" file="browser.test.ts"><skipped /></testcase>',
+      ),
+    ).toEqual(new Map([["mixed.test.ts", 2]]));
+  });
+
   test("the longest go first, each to the shortest list, and no list is left over-full", () => {
     const seconds = new Map([
       ["a.test.ts", 40],
@@ -129,6 +139,23 @@ describe("the time each file takes, and the files spread over the workers by it"
       ["b.test.ts", "e.test.ts"],
       ["c.test.ts", "d.test.ts"],
     ]);
+  });
+
+  test("many small files are spread by their number, not packed behind one large one", () => {
+    // Three timed files and thirty that took nothing where they were timed (skipped browser suites).
+    const seconds = new Map([
+      ["big-1.test.ts", 8],
+      ["big-2.test.ts", 3],
+      ["big-3.test.ts", 3],
+    ]);
+    const small = Array.from({ length: 30 }, (_, i) => `small-${i}.test.ts`);
+    const lists = spread([...seconds.keys(), ...small], seconds, 4);
+    const smallPerList = lists.map(
+      (list) => list.filter((file) => file.startsWith("small-")).length,
+    );
+    // Not thirty in one list: no list holds more than half of them.
+    expect(Math.max(...smallPerList)).toBeLessThanOrEqual(15);
+    expect(smallPerList.reduce((a, b) => a + b, 0)).toBe(30);
   });
 
   test("a file never measured counts as the middle time, and no list is made empty", () => {
