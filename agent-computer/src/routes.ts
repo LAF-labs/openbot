@@ -42,6 +42,7 @@ import {
 } from "./file-routes";
 import { withoutFilledValues } from "./filled-values";
 import type { StreamData } from "./live-screen";
+import { fillLogin, whereFields } from "./login-routes";
 import type { Profiles } from "./profiles";
 import { navigate } from "./navigation";
 import { readPage, screenshot, snapshot, switchTab } from "./page-routes";
@@ -58,6 +59,8 @@ const BOT_ROUTES = new Map<string, BotRoute>([
   ["POST /control/release", releaseControl],
   ["POST /control/secret/withdraw", withdrawSecret],
   ["POST /run/ended", runEnded],
+  ["POST /login/where", whereFields],
+  ["POST /login/fill", fillLogin],
   ["POST /computers/stop", stopComputer],
   ["POST /computers/reset", resetComputer],
   ["POST /navigate", navigate],

@@ -492,6 +492,48 @@ const SHOWN_BACK_RECEIPT_HTML = `<!doctype html>
   </script>
 </body></html>`;
 
+/** What `/saved-sign-in` calls its two boxes, and how it says what is in them. */
+export const SIGN_IN = {
+  id: "아이디",
+  password: "비밀번호",
+  /** Two lengths, and nothing of the values — how a test knows which box got which. */
+  lengths: (id: number, password: number) =>
+    `칸에 든 글자 수 ${id}/${password}`,
+  /** What `/framed-saved-sign-in` is called: a page of one origin holding that sign-in from another. */
+  framing: "다른 곳의 로그인 창",
+} as const;
+
+/**
+ * A sign-in of two boxes, served at `/saved-sign-in`, for a saved login to be put into (2026-10-10,
+ * record §6). It says how long each box's value is and nothing else.
+ *
+ * `/framed-saved-sign-in?from=<origin>` is a page that holds it in a frame FROM ANOTHER ORIGIN — this
+ * fixture answers on `127.0.0.1` and on `localhost`, which are two origins to a browser. A saved
+ * login belongs to the document its boxes are in, which there is not the page the tab is on.
+ */
+const SIGN_IN_HTML = `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>로그인</title></head>
+<body>
+  <h1>로그인</h1>
+  <input id="id" type="text" aria-label="${SIGN_IN.id}">
+  <input id="pw" type="password" aria-label="${SIGN_IN.password}">
+  <p id="lengths">${SIGN_IN.lengths(0, 0)}</p>
+  <script>
+    const box = (id) => document.getElementById(id);
+    function say() {
+      box('lengths').textContent = '칸에 든 글자 수 ' + box('id').value.length + '/' + box('pw').value.length;
+    }
+    for (const id of ['id', 'pw']) box(id).addEventListener('input', say);
+  </script>
+</body></html>`;
+
+const framedSignIn = (from: string) => `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>${SIGN_IN.framing}</title></head>
+<body>
+  <h1>${SIGN_IN.framing}</h1>
+  <iframe src="${from}/saved-sign-in" title="로그인" width="400" height="200"></iframe>
+</body></html>`;
+
 /**
  * The box on `/get-form` (`fixtures/get-form.html`), by the name the tree gives it.
  *
@@ -708,6 +750,17 @@ export function serveFixture(port = 0) {
         return new Response(CARD_HTML, {
           headers: { "content-type": "text/html; charset=utf-8" },
         });
+      }
+      if (path === "/saved-sign-in") {
+        return new Response(SIGN_IN_HTML, { headers: html });
+      }
+      if (path === "/framed-saved-sign-in") {
+        // Only an origin of this fixture's own: the page is written from the query.
+        const from = url.searchParams.get("from") ?? "";
+        if (!/^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(from)) {
+          return new Response("not found", { status: 404 });
+        }
+        return new Response(framedSignIn(from), { headers: html });
       }
       if (path === "/shown-back-receipt") {
         return new Response(SHOWN_BACK_RECEIPT_HTML, { headers: html });

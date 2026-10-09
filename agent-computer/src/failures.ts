@@ -7,6 +7,7 @@
  * there is.
  */
 import { LabelChangedError } from "./label-hold";
+import { LoginOriginError } from "./origin-hold";
 import {
   ELEMENT_NOT_ACTIONABLE,
   ElementActionError,
@@ -70,6 +71,11 @@ export function actionFailure(error: unknown): Response {
   // the control is still there under another name, and the Bot must look before it acts on it.
   if (error instanceof LabelChangedError) {
     return fact("laf:label_changed", { stale: true });
+  }
+  // Not stale, and no new look mends it: the box is where it is, and that is not where the login
+  // was saved for.
+  if (error instanceof LoginOriginError) {
+    return fact("laf:login_origin_mismatch");
   }
   if (
     error instanceof WorkspacePathError ||

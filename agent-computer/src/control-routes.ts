@@ -7,8 +7,10 @@
  * is no door here, or anywhere in this process, by which a person clicks or types on the Bot's page
  * themselves (owner, 2026-10-09).
  */
+import type { Locator, Page } from "playwright";
 import { isSameAsk, secretFieldsOf } from "../../shared/secret-ask";
 import type { BotRoute } from "./computer";
+import type { ComputerConfig } from "./config";
 import { ControlRequestError, NO_SECRET_PENDING } from "./control";
 import { actionFailure } from "./failures";
 import {
@@ -21,6 +23,7 @@ import { holdToLabel } from "./label-hold";
 import { onElement, resolveRef, STALE_REFS, StaleSnapshotError } from "./refs";
 import { bodyOf, fact, invalid, json } from "./respond";
 import { rememberSecretField, SECRET_JOIN_TIMEOUT_MS } from "./secret-fields";
+import type { BotSession } from "./sessions";
 import { assertLooked } from "./tab-loss";
 import { digestOf } from "./typed-values";
 import { within } from "./within";
@@ -94,6 +97,72 @@ export const requestSecret: BotRoute = async (
     return actionFailure(error);
   }
 };
+
+/** A box a value is about to go into: the control, what the gate judged it as, and its ref. */
+export type Box = { field: Locator; judged: unknown; ref: string };
+
+/**
+ * Put each value into its box, in order, and say how many characters went in.
+ *
+ * ONE WAY IN, WHOEVER THE VALUE IS FROM. A person answering the card and a saved login filling the
+ * same boxes (`login-routes.ts`) are held to the same things in the same order — the click, the
+ * box asked again, the value held before it goes in, the node followed afterwards — because each
+ * of those was learnt on one of them and is as true of the other.
+ */
+export async function putValues(
+  {
+    session,
+    target,
+    config,
+  }: { session: BotSession; target: Page; config: ComputerConfig },
+  boxes: readonly Box[],
+  texts: readonly string[],
+): Promise<number> {
+  let characters = 0;
+  for (const [index, { field, judged, ref }] of boxes.entries()) {
+    const text = texts[index] ?? "";
+    await onElement(() => field.click({ timeout: config.actionTimeoutMs }));
+    // ASKED AGAIN, AFTER THE CLICK AND BEFORE THE VALUE. The click is this process's own, and a
+    // page may answer it: a box whose focus handler turns it into something else passed the
+    // hold above as a password box and would have been filled as a comment box (Codex's read of
+    // the change that began holding it). What a value is held to is what the box is when the
+    // value goes in — and, on a card of several, after the boxes before it were filled.
+    await holdToLabel(field, judged);
+    // HELD BEFORE IT GOES IN, so that no answer after this line carries it — the one that says
+    // the fill failed included (`filled-values.ts`).
+    rememberFilled(session, target, text);
+    // A failure here must not say what it was filling: Playwright's message for it does.
+    await onElement(() =>
+      field.fill(text, { timeout: config.actionTimeoutMs }),
+    );
+    /*
+     * THE NODE, NOT THE REF AND NOT THE VALUE. The next snapshot has to blank this field
+     * whatever the page calls it, and a ref is re-minted the moment the page renames the box
+     * while the value is the one thing this process must not keep. The element itself is
+     * neither: it is where the secret is, until the page is gone. The short wait is for a page
+     * that left on the keystroke — the value left with it, and the person is waiting.
+     *
+     * AND A DIGEST OF THE VALUE, which is not the value: the page this box is on may send it
+     * away in an address — a form sent by GET — after the box itself is gone (audit R3-03), and
+     * the digest is how that address is blanked (`typed-values.ts`).
+     *
+     * BOX BY BOX, AS EACH LANDS: a card that fails at its third box has put two values into
+     * the page, and those two are blanked from the next snapshot like any that went in.
+     */
+    const handle = await field
+      .elementHandle({ timeout: SECRET_JOIN_TIMEOUT_MS })
+      .catch(() => null);
+    const frame = handle
+      ? await within(SECRET_JOIN_TIMEOUT_MS, handle.ownerFrame())
+      : null;
+    rememberSecretField(session, handle, ref, {
+      ...(frame ? { frame } : {}),
+      digest: digestOf(text),
+    });
+    characters += text.length;
+  }
+  return characters;
+}
 
 /**
  * A person supplying that value.
@@ -210,49 +279,11 @@ export const supplySecret: BotRoute = async (
       await holdToLabel(field, judged);
       boxes.push({ field, judged, ref: asked.ref });
     }
-    let characters = 0;
-    for (const [index, { field, judged, ref }] of boxes.entries()) {
-      const text = texts[index] ?? "";
-      await onElement(() => field.click({ timeout: config.actionTimeoutMs }));
-      // ASKED AGAIN, AFTER THE CLICK AND BEFORE THE VALUE. The click is this process's own, and a
-      // page may answer it: a box whose focus handler turns it into something else passed the
-      // hold above as a password box and would have been filled as a comment box (Codex's read of
-      // the change that began holding it). What a value is held to is what the box is when the
-      // value goes in — and, on a card of several, after the boxes before it were filled.
-      await holdToLabel(field, judged);
-      // HELD BEFORE IT GOES IN, so that no answer after this line carries it — the one that says
-      // the fill failed included (`filled-values.ts`).
-      rememberFilled(session, target, text);
-      // A failure here must not say what it was filling: Playwright's message for it does.
-      await onElement(() =>
-        field.fill(text, { timeout: config.actionTimeoutMs }),
-      );
-      /*
-       * THE NODE, NOT THE REF AND NOT THE VALUE. The next snapshot has to blank this field
-       * whatever the page calls it, and a ref is re-minted the moment the page renames the box
-       * while the value is the one thing this process must not keep. The element itself is
-       * neither: it is where the secret is, until the page is gone. The short wait is for a page
-       * that left on the keystroke — the value left with it, and the person is waiting.
-       *
-       * AND A DIGEST OF THE VALUE, which is not the value: the page this box is on may send it
-       * away in an address — a form sent by GET — after the box itself is gone (audit R3-03), and
-       * the digest is how that address is blanked (`typed-values.ts`).
-       *
-       * BOX BY BOX, AS EACH LANDS: a card that fails at its third box has put two values into
-       * the page, and those two are blanked from the next snapshot like any that went in.
-       */
-      const handle = await field
-        .elementHandle({ timeout: SECRET_JOIN_TIMEOUT_MS })
-        .catch(() => null);
-      const frame = handle
-        ? await within(SECRET_JOIN_TIMEOUT_MS, handle.ownerFrame())
-        : null;
-      rememberSecretField(session, handle, ref, {
-        ...(frame ? { frame } : {}),
-        digest: digestOf(text),
-      });
-      characters += text.length;
-    }
+    const characters = await putValues(
+      { session, target, config },
+      boxes,
+      texts,
+    );
     // Cleared only after every value actually landed.
     session.control.secretSupplied();
     session.secretTab = undefined;
