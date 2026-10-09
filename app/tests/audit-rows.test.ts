@@ -151,6 +151,12 @@ describe("what counts as the same row", () => {
       { ...base, decision: { allowed: true, rule: "true", approvedBy: "kim" } },
       { ...base, silentForMs: 60_000, chunks: 0 },
       { ...base, opaqueFrames: 2 },
+      // A saved login's row: the site, the hosts it may go to, and why one was refused.
+      { ...base, site: "naver-smartstore" },
+      { ...base, origins: ["https://nid.naver.com"] },
+      { ...base, origins: ["https://nid.naver.com", "https://www.naver.com"] },
+      { ...base, code: "laf:login_origin_refused" },
+      { ...base, code: "laf:logins_full" },
       {
         ...base,
         signedInSince: "2026-09-01T00:00:00.000Z",

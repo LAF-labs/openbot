@@ -126,6 +126,14 @@ export function signatureOf(event: AuditEvent): string {
     Array.isArray(payload.left) ? JSON.stringify(payload.left) : "",
     // A file read or filed for a run says which run: one file read for two scripts is two rows.
     text(payload.forScript),
+    /*
+     * A saved login's row is drawn from the site, the hosts it may go to and — for one that was
+     * refused — why. Two refusals of a save share a target (neither became a login), so without
+     * the fact two different reasons would fold into "one row, twice" under the first's.
+     */
+    text(payload.site),
+    Array.isArray(payload.origins) ? JSON.stringify(payload.origins) : "",
+    text(payload.code),
   ]);
 }
 

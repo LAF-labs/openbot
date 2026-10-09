@@ -160,13 +160,19 @@ describe("the saved logins' doors", () => {
         list: async () => [],
         save: async (_user, written) => {
           calls.push(written);
+          // As the vault refuses what could not be read as a login at all.
+          if (!written) throw new LoginRefused("laf:login_invalid");
           throw written.label === "가득"
             ? new LoginRefused("laf:logins_full")
             : new LoginRefused("laf:login_origin_refused", "origins");
         },
-        replace: async (_user, id) => {
+        replace: async (_user, id, written) => {
           // A row whose seal this deployment's key does not open.
           if (id === "login_sealed-elsewhere") throw new LoginSealError();
+          if (!written) {
+            calls.push(written);
+            throw new LoginRefused("laf:login_invalid");
+          }
           throw new LoginRefused("laf:login_value_too_long", "password");
         },
         remove: async () => false,
@@ -225,10 +231,11 @@ describe("the saved logins' doors", () => {
     ]);
 
     /*
-     * A list, a string, or bytes that are not JSON: refused as a body that cannot be read, and
-     * the vault is not asked — never taken for an empty body, which on a change answers 200 with
-     * the row as it stood (Codex's read of this change). `{}` is still a change of nothing, and
-     * is the vault's to answer.
+     * A list, a string, or bytes that are not JSON: never taken for an empty body, which on a
+     * change answers 200 with the row as it stood (Codex's read of this change). The door hands
+     * the vault NOTHING — `null`, not an object of undefined fields — and the vault refuses it
+     * like any refusal, which is what leaves a row (its second read). `{}` is still a change of
+     * nothing, and is the vault's to answer.
      */
     calls.length = 0;
     for (const body of ['["label"]', '"label"', "{not json", ""]) {
@@ -247,6 +254,7 @@ describe("the saved logins' doors", () => {
         ]);
       }
     }
-    expect(calls).toEqual([]);
+    // Eight bodies that could not be read, each handed over as nothing at all.
+    expect(calls).toEqual(Array.from({ length: 8 }, () => null));
   });
 });

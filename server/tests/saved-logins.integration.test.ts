@@ -421,7 +421,8 @@ describe("a login a person saves", () => {
     /*
      * A BODY THAT CANNOT BE READ IS REFUSED AS THAT, never taken for an empty one: a change of
      * nothing answers 200 with the row as it stands, and a window that had sent a new password
-     * as bytes this could not read would be told it was saved.
+     * as bytes this could not read would be told it was saved. AND IT LEAVES ITS ROW like any
+     * refusal — answered at the door it left none (Codex's second read).
      */
     rows.length = 0;
     for (const [method, path] of [
@@ -448,6 +449,21 @@ describe("a login a person saves", () => {
       }
     }
     expect(await stored(owner)).toBe(before);
+    // Four that never became a login, and four about the login a change was sent for.
+    expect(
+      rows.map((one) => [one.eventType, one.targetId, one.payload]),
+    ).toEqual([
+      ...Array.from({ length: 4 }, () => [
+        "account.login_refused",
+        "unsaved",
+        { code: "laf:login_invalid" },
+      ]),
+      ...Array.from({ length: 4 }, () => [
+        "account.login_refused",
+        mine?.id,
+        { code: "laf:login_invalid" },
+      ]),
+    ]);
   });
 
   test("is gone the moment it is deleted, and the trail says which one went", async () => {
