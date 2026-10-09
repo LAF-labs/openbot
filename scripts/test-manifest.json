@@ -200,7 +200,6 @@
   "app/tests/question-off-screen.test.tsx",
   "app/tests/queued-correction.test.tsx",
   "app/tests/queued-message-kept.test.tsx",
-  "app/tests/quiet-header.test.tsx",
   "app/tests/quote-reply.test.ts",
   "app/tests/react-compiler.test.ts",
   "app/tests/read-states-render.test.tsx",

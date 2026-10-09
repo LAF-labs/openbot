@@ -4,13 +4,12 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { z } from "zod";
 import { AgentProfile } from "@/components/agents/agent-profile";
-import { BotHeader, PresencePill } from "@/components/channels/bot-header";
+import { BotHeader } from "@/components/channels/bot-header";
 import { ServerChannelChat } from "@/components/channels/server-channel-chat";
 import {
   offerDraft,
   withdrawDraft,
 } from "@/components/channels/composer/prefill";
-import { PresenceDrawer } from "@/components/channels/presence-drawer";
 import { LiveView } from "@/components/computer/live-view";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { SectionBoundary } from "@/components/layout/section-boundary";
@@ -236,13 +235,6 @@ function RouteComponent() {
         }
         agentId={agentId}
         name={headerAgent?.name ?? channel.data?.name ?? t("Channel")}
-        pill={(presence) =>
-          agentId ? (
-            <PresenceDrawer botId={agentId} presence={presence} />
-          ) : (
-            <PresencePill presence={presence} />
-          )
-        }
       />
       {/*
        * THE CONVERSATION, BELOW ITS HEADER. The header stays out of it on purpose: it holds the two

@@ -3,18 +3,19 @@ import { useRouterState } from "@tanstack/react-router";
 import { HomeButton } from "@/components/home/home-panel";
 import { HeaderSlot } from "@/components/layout/header-slots";
 import { PhonePagerTabs } from "@/components/layout/phone-pager";
-import { BotMark } from "@/components/layout/bot-mark";
+import { BotState } from "@/components/layout/bot-state";
 import { ProfileMenu } from "@/components/layout/profile-menu";
 import { ReadNotice } from "@/components/layout/read-states";
 import { shellLightsInset } from "@/components/layout/shell-titlebar";
 import { UpdateNotice } from "@/components/layout/update-notice";
+import { ViewSwitcher } from "@/components/layout/view-switcher";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { rosterNotice } from "@/lib/agents/roster-state";
 import { useRunEndRefresh } from "@/lib/agents/run-end-refresh";
 import { channelListQueryOptions } from "@/lib/channels/queries";
 import { useHomePanel } from "@/lib/home-panel";
 import { settledOf, useReading } from "@/lib/reading";
-import { useIsSideBySide } from "@/lib/use-wide-viewport";
+import { useIsSideBySide } from "@/lib/use-side-by-side";
 import { cn } from "@/lib/utils";
 
 /**
@@ -23,20 +24,18 @@ import { cn } from "@/lib/utils";
  * the home panel is folded away, because while it is open the button is in the panel's own first
  * row, at the same corner of the window.
  *
- * THE MIDDLE IS EMPTY ON A PC UNTIL THERE ARE PROJECTS. The record puts `[채팅 | 프로젝트]` there,
- * and a switcher with one half that goes somewhere and one that goes to a screen able to do
- * nothing is not drawn (the owner's rule for every control; the user's word on this one,
- * 2026-10-09). It comes with the projects it switches to. ON A PHONE the middle is 홈 | 채팅
- * (`phone-pager.tsx`): there the home panel is not beside the screen but a page before it, and
- * those two are what a person swipes between.
+ * THE MIDDLE IS THE SWITCHER: `[채팅 | 프로젝트]` on a PC (`view-switcher.tsx`), and on a phone
+ * 홈 | 채팅 (`phone-pager.tsx`) — there the home panel is not beside the screen but a page before
+ * it, and those two are what a person swipes between.
  *
  * THREE COLUMNS, THE OUTER TWO EQUAL, so what is in the middle is in the middle of the window
  * whatever stands either side of it.
  *
- * WHAT THE SCREEN PUTS IN IT. The conversation draws the Bot's face, name and state into the left
- * of the row and its own buttons into the right (`header-slots.tsx`); it had a row of its own under
- * this one until 2026-10-09. On every other screen the row draws the Bot's name and state itself
- * (`bot-mark.tsx`), so what the Bot is doing is said in the same place whichever screen is open.
+ * THE LEFT IS EMPTY TO THE EYE (the user, 2026-10-09, as Hark's is): the home button while the
+ * panel is folded, and nothing else. The Bot's name and state stood there for a day; they are in
+ * the document still, for a screen reader, said by the conversation on its own screen and by
+ * `bot-state.tsx` on every other. The conversation also draws its own buttons into the right of
+ * the row (`header-slots.tsx`).
  *
  * NO GROUND OF ITS OWN: the window's backdrop shows through, as it does behind the panel.
  *
@@ -93,8 +92,9 @@ export function AppHeader() {
         {/* A phone has no panel to fold: 홈 is a page there, and the tabs are the way to it. */}
         {isSideBySide && !panel.isOpen ? <HomeButton /> : null}
         <HeaderSlot className="flex min-w-0 items-center" name="leading" />
-        {isConversation ? null : <BotMark />}
+        {isConversation ? null : <BotState />}
       </div>
+      <ViewSwitcher />
       <PhonePagerTabs />
       {/*
        * NAMED COLUMNS. With the tabs not drawn — every PC — an unplaced right zone took the middle

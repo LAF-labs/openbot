@@ -16,7 +16,7 @@ import {
   useHomePanel,
 } from "@/lib/home-panel";
 import { t } from "@/lib/i18n";
-import { useIsSideBySide } from "@/lib/use-wide-viewport";
+import { useIsSideBySide } from "@/lib/use-side-by-side";
 import { cn } from "@/lib/utils";
 
 /** The panel's place in the layout's grid on a PC, and in the pager on a phone. */

@@ -515,7 +515,6 @@ export const ko: Record<string, string> = {
     "봇이 이 앱 밖에서 건드릴 수 있는 모든 것과 그 한계.",
   "Explain the latest": "최근 항목 설명 요청",
   Channel: "대화",
-  "Following something up": "확인하는 중",
   "For a server that is not in the catalogue. Nobody has reviewed it, so every tool it offers is treated as one that changes something, and the server is recorded as custom wherever it appears.":
     "카탈로그에 없는 서버용이에요. 검토된 적이 없으므로 제공하는 모든 도구를 무언가를 바꾸는 도구로 취급하며, 이 서버는 어디에 나타나든 사용자 추가로 기록돼요.",
   "Going in circles": "같은 일 반복",
@@ -2764,9 +2763,7 @@ export const ko: Record<string, string> = {
   "Busy working": "일하는 중",
   Answering: "답하는 중",
   Ready: "쉬는 중",
-  "{status}. See what the Bot is doing": "{status}. 봇이 하는 일 보기",
   Now: "지금",
-  "Nothing going on right now.": "지금 하는 일은 없어요.",
   "Show me": "보기",
   "See all routines": "루틴 모두 보기",
   Conversation: "대화",
@@ -3387,6 +3384,9 @@ export const ko: Record<string, string> = {
   "Home panel width": "홈 패널 너비",
   "The home panel": "홈 패널",
   "Home or chat": "홈 또는 채팅",
+  "Chat or projects": "채팅 또는 프로젝트",
+  Projects: "프로젝트",
+  "Projects cannot be made yet.": "아직 프로젝트를 만들 수 없어요.",
   Chat: "채팅",
   "The row at the top": "맨 윗줄",
 };

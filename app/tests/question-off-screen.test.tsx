@@ -324,19 +324,8 @@ function windowHidden(): () => void {
   };
 }
 
-const pill = (host: HTMLElement) => {
-  const mark = [...host.querySelectorAll("a[aria-label]")].find((link) =>
-    link.getAttribute("aria-label")?.startsWith("닻 · "),
-  );
-  if (mark) {
-    const label = mark.getAttribute("aria-label") ?? "";
-    return label.slice("닻 · ".length).replace(/\. Conversation$/, "");
-  }
-  return (
-    host.querySelector("[data-bot-identity] [title]")?.getAttribute("title") ??
-    ""
-  );
-};
+const pill = (host: HTMLElement) =>
+  host.querySelector("[data-bot-state]")?.getAttribute("data-bot-state") ?? "";
 
 /**
  * The rows under "Waiting on the owner", in one part of the window: the screen itself — 소식 is the

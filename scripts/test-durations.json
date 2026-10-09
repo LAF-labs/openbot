@@ -192,7 +192,6 @@
   "app/tests/question-off-screen.test.tsx": 15.62,
   "app/tests/queued-correction.test.tsx": 0.38,
   "app/tests/queued-message-kept.test.tsx": 11.44,
-  "app/tests/quiet-header.test.tsx": 0.12,
   "app/tests/quote-reply.test.ts": 0,
   "app/tests/react-compiler.test.ts": 23.43,
   "app/tests/read-states-render.test.tsx": 3.31,

@@ -544,16 +544,10 @@ test("every row that reserves the title bar's height can move the window", () =>
   expect(panelRow?.[0]).toContain("data-tauri-drag-region");
 
   /*
-   * The conversation's header is the Bot's presence now (`bot-header.tsx`), 56px rather than 44 —
-   * and Tauri drags only from an element that carries the attribute ITSELF, not from its children,
-   * so the header, the face-and-name group and the name each carry it. Both conversation screens
-   * draw that header.
+   * The conversation has no row of its own since 2026-10-09: what it had is drawn into the row
+   * across the top (`bot-header.tsx` through `header-slots.tsx`), which is the handle above. Both
+   * conversation screens still go through that one component.
    */
-  const header = read("app/src/components/channels/bot-header.tsx");
-  expect(header.match(/<header[^>]*>/)?.[0]).toContain(
-    "data-tauri-drag-region",
-  );
-  expect(header.match(/<h1[^>]*>/)?.[0]).toContain("data-tauri-drag-region");
   for (const path of [
     "app/src/routes/_authed/_app/channel/$channelId.tsx",
     "app/src/routes/_authed/_app/channel/new.tsx",

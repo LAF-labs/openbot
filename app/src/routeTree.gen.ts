@@ -29,6 +29,7 @@ import { Route as AuthedAppHelpRouteImport } from './routes/_authed/_app/help'
 import { Route as AuthedAppIdeasRouteImport } from './routes/_authed/_app/ideas'
 import { Route as AuthedAppMadeRouteImport } from './routes/_authed/_app/made'
 import { Route as AuthedAppNotebookRouteImport } from './routes/_authed/_app/notebook'
+import { Route as AuthedAppProjectsRouteImport } from './routes/_authed/_app/projects'
 import { Route as AuthedAppRoutinesRouteImport } from './routes/_authed/_app/routines'
 import { Route as AuthedAppSkillsRouteImport } from './routes/_authed/_app/skills'
 import { Route as AuthedAdminIndexRouteImport } from './routes/_authed/admin/index'
@@ -146,6 +147,11 @@ const AuthedAppMadeRoute = AuthedAppMadeRouteImport.update({
 const AuthedAppNotebookRoute = AuthedAppNotebookRouteImport.update({
   id: '/notebook',
   path: '/notebook',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
+const AuthedAppProjectsRoute = AuthedAppProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
   getParentRoute: () => AuthedAppRoute,
 } as any)
 const AuthedAppRoutinesRoute = AuthedAppRoutinesRouteImport.update({
@@ -271,6 +277,7 @@ export interface FileRoutesByFullPath {
   '/ideas': typeof AuthedAppIdeasRoute
   '/made': typeof AuthedAppMadeRoute
   '/notebook': typeof AuthedAppNotebookRoute
+  '/projects': typeof AuthedAppProjectsRoute
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
@@ -309,6 +316,7 @@ export interface FileRoutesByTo {
   '/ideas': typeof AuthedAppIdeasRoute
   '/made': typeof AuthedAppMadeRoute
   '/notebook': typeof AuthedAppNotebookRoute
+  '/projects': typeof AuthedAppProjectsRoute
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
@@ -351,6 +359,7 @@ export interface FileRoutesById {
   '/_authed/_app/ideas': typeof AuthedAppIdeasRoute
   '/_authed/_app/made': typeof AuthedAppMadeRoute
   '/_authed/_app/notebook': typeof AuthedAppNotebookRoute
+  '/_authed/_app/projects': typeof AuthedAppProjectsRoute
   '/_authed/_app/routines': typeof AuthedAppRoutinesRoute
   '/_authed/_app/skills': typeof AuthedAppSkillsRoute
   '/_authed/admin/audit': typeof AuthedAdminAuditRoute
@@ -394,6 +403,7 @@ export interface FileRouteTypes {
     | '/ideas'
     | '/made'
     | '/notebook'
+    | '/projects'
     | '/routines'
     | '/skills'
     | '/admin/audit'
@@ -432,6 +442,7 @@ export interface FileRouteTypes {
     | '/ideas'
     | '/made'
     | '/notebook'
+    | '/projects'
     | '/routines'
     | '/skills'
     | '/admin/audit'
@@ -473,6 +484,7 @@ export interface FileRouteTypes {
     | '/_authed/_app/ideas'
     | '/_authed/_app/made'
     | '/_authed/_app/notebook'
+    | '/_authed/_app/projects'
     | '/_authed/_app/routines'
     | '/_authed/_app/skills'
     | '/_authed/admin/audit'
@@ -647,6 +659,13 @@ declare module '@tanstack/react-router' {
       path: '/notebook'
       fullPath: '/notebook'
       preLoaderRoute: typeof AuthedAppNotebookRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
+    '/_authed/_app/projects': {
+      id: '/_authed/_app/projects'
+      path: '/projects'
+      fullPath: '/projects'
+      preLoaderRoute: typeof AuthedAppProjectsRouteImport
       parentRoute: typeof AuthedAppRoute
     }
     '/_authed/_app/routines': {
@@ -845,6 +864,7 @@ interface AuthedAppRouteChildren {
   AuthedAppIdeasRoute: typeof AuthedAppIdeasRoute
   AuthedAppMadeRoute: typeof AuthedAppMadeRoute
   AuthedAppNotebookRoute: typeof AuthedAppNotebookRoute
+  AuthedAppProjectsRoute: typeof AuthedAppProjectsRoute
   AuthedAppRoutinesRoute: typeof AuthedAppRoutinesRoute
   AuthedAppSkillsRoute: typeof AuthedAppSkillsRoute
   AuthedAppIndexRoute: typeof AuthedAppIndexRoute
@@ -861,6 +881,7 @@ const AuthedAppRouteChildren: AuthedAppRouteChildren = {
   AuthedAppIdeasRoute: AuthedAppIdeasRoute,
   AuthedAppMadeRoute: AuthedAppMadeRoute,
   AuthedAppNotebookRoute: AuthedAppNotebookRoute,
+  AuthedAppProjectsRoute: AuthedAppProjectsRoute,
   AuthedAppRoutinesRoute: AuthedAppRoutinesRoute,
   AuthedAppSkillsRoute: AuthedAppSkillsRoute,
   AuthedAppIndexRoute: AuthedAppIndexRoute,

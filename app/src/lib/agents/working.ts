@@ -1,5 +1,4 @@
 import { queryOptions } from "@tanstack/react-query";
-import { t } from "@/lib/i18n";
 import { polled } from "@/lib/polling";
 
 /**
@@ -50,22 +49,4 @@ export function workingQueryOptions() {
     ...polled(30_000),
     staleTime: 2000,
   });
-}
-
-/**
- * What to say a Bot is doing.
- *
- * A routine carries its own name, which is always better than anything this could invent — it is
- * the sentence the person wrote when they asked for the work. Everything else falls back to what
- * kind of run it is, because "working" alone tells you nothing you did not already see.
- */
-export function workingLabel(run: WorkingRun): string {
-  /*
-   * A routine's name only. A chat run carries a label too since 오늘 (the start of what the person
-   * typed, `run-ledger.ts`), and the roster row saying back the sentence the person just sent is not
-   * news about what the Bot is doing.
-   */
-  if (run.origin === "routine") return run.label || t("Running a routine");
-  if (run.origin === "wake") return t("Following something up");
-  return t("Working…");
 }

@@ -24,8 +24,8 @@ export type ProfileMenuShown = {
     text: string;
     menu: { label: string | null; title: string | null; text: string };
   };
-  /** The Bot's mark in the row: what it is named, and where it goes. */
-  mark: { label: string | null; to: string | null };
+  /** What the row says the Bot is doing, to a screen reader: the line, and the state's word alone. */
+  state: { line: string | null; word: string | null };
   /** What the button opens, in order: each item's words and, for one that goes somewhere, where. */
   items: [name: string, to: string | null][];
 };
@@ -145,6 +145,7 @@ const PATHS = [
   "/ideas",
   "/goals",
   "/made",
+  "/projects",
   "/channel/$channelId",
   "/channel/new",
   "/sign",
@@ -193,10 +194,10 @@ const items = () => [
 const shown: ProfileMenuShown = await mounted(async (host) => {
   const row = host.querySelector("[data-app-header]");
   const menu = host.querySelector("[data-profile-menu]");
-  const botMark = host.querySelector("[data-bot-mark]");
-  const mark = {
-    label: botMark?.getAttribute("aria-label") ?? null,
-    to: botMark?.getAttribute("href") ?? null,
+  const botState = host.querySelector("[data-bot-state]");
+  const state = {
+    line: botState?.textContent ?? null,
+    word: botState?.getAttribute("data-bot-state") ?? null,
   };
   const standing = {
     text: row?.textContent ?? "",
@@ -211,7 +212,7 @@ const shown: ProfileMenuShown = await mounted(async (host) => {
     item.textContent ?? "",
     item.getAttribute("href"),
   ]);
-  return { row: standing, mark, items: opened };
+  return { row: standing, state, items: opened };
 });
 
 console.log(`PROFILE_MENU ${JSON.stringify(shown)}`);

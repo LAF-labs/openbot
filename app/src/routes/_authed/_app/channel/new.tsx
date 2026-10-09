@@ -11,7 +11,6 @@ import {
   offerDraft,
 } from "@/components/channels/composer/prefill";
 import { ConversationView } from "@/components/channels/conversation-view";
-import { PresenceDrawer } from "@/components/channels/presence-drawer";
 import { seedMessage } from "@/components/channels/transcript-messages";
 import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -226,9 +225,6 @@ function FirstConversation({
         }
         agentId={botId}
         name={bot?.name}
-        pill={(presence) => (
-          <PresenceDrawer botId={botId} presence={presence} />
-        )}
       />
       <ConversationView
         // Commands must be loaded before the first channel message is sent.

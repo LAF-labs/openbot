@@ -125,23 +125,13 @@ function server(options: {
 }
 
 /**
- * What the row at the top says the Bot is doing. On any screen but its conversation that is the
- * Bot's mark (`bot-mark.tsx`), a link named for the Bot and its state; on the conversation it is
- * the state's own button beside the name, which the conversation draws into the same row.
+ * What the row at the top says the Bot is doing — to a screen reader, since 2026-10-09, when the
+ * name and the dot stopped being drawn. One line, said by the conversation on its own screen
+ * (`bot-header.tsx`) and by the row on every other (`bot-state.tsx`); the state's word alone is on
+ * `data-bot-state`.
  */
-const pill = (host: HTMLElement) => {
-  const mark = [...host.querySelectorAll("a[aria-label]")].find((link) =>
-    link.getAttribute("aria-label")?.startsWith("닻 · "),
-  );
-  if (mark) {
-    const label = mark.getAttribute("aria-label") ?? "";
-    return label.slice("닻 · ".length).replace(/\. Conversation$/, "");
-  }
-  return (
-    host.querySelector("[data-bot-identity] [title]")?.getAttribute("title") ??
-    ""
-  );
-};
+const pill = (host: HTMLElement) =>
+  host.querySelector("[data-bot-state]")?.getAttribute("data-bot-state") ?? "";
 
 describe("the pill, once the conversation has left the screen", () => {
   test("a turn that is still going reads as working on another screen, and as ready when it ends", async () => {
