@@ -65,7 +65,6 @@ async function botThroughAgentBot(
           name: "리뷰봇",
           roleDescription: "리뷰에 답글 초안을 쓴다.",
         },
-        effort: "balanced",
       },
     ],
     { provider: "openai", defaultModel: "laf-1", supportsEffort: false },

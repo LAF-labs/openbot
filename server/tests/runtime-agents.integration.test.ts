@@ -145,9 +145,6 @@ describe("runtime agent loading", () => {
           "Review receipts, categorize expenses, and prepare reimbursement reports.",
         memories: [],
       },
-      // Every Bot anybody creates is remote, so this loader is where a remote Bot's model setting
-      // has to arrive from. The column's default, for a Bot nobody has chosen one for.
-      effort: "balanced",
     });
   });
 
@@ -506,7 +503,6 @@ describe("where a Bot is dialled", () => {
     const renamed = await profileStore.update(owner, pointed.id, {
       name: "새 이름",
       roleDescription: "",
-      effort: "thorough",
     });
     expect(renamed.name).toBe("새 이름");
     expect(await configurationOf(pointed.id)).toEqual(POINTED);

@@ -142,7 +142,6 @@ const joinedProjection = {
   name: agents.name,
   roleDescription: agentProfiles.roleDescription,
   avatarSeed: agentProfiles.avatarSeed,
-  effort: agentProfiles.effort,
   autoReview: agentProfiles.autoReview,
   ownerUserId: agentProfiles.ownerUserId,
   packageId: deploymentPackages.id,
@@ -188,7 +187,6 @@ function mapProfile(
     name: row.name,
     roleDescription: row.roleDescription,
     avatarSeed: row.avatarSeed,
-    effort: row.effort,
     autoReview: row.autoReview,
     ownerUserId: row.ownerUserId,
     systemOwned: row.packageId !== null,
@@ -422,9 +420,6 @@ export function createAgentProfileStore(
            * again. The column stays because every face is drawn from it, and it is NOT NULL.
            */
           avatarSeed: id,
-          // Absent takes the column's default rather than being written as one here, so the default
-          // lives in exactly one place.
-          ...(input.effort === undefined ? {} : { effort: input.effort }),
           ...(input.autoReview === undefined
             ? {}
             : { autoReview: input.autoReview }),
@@ -482,8 +477,6 @@ export function createAgentProfileStore(
             .update(agentProfiles)
             .set({
               roleDescription: input.roleDescription,
-              // Absent leaves how hard it thinks alone: a form that did not show it must not reset it.
-              ...(input.effort === undefined ? {} : { effort: input.effort }),
               ...(input.autoReview === undefined
                 ? {}
                 : { autoReview: input.autoReview }),

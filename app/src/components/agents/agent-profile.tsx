@@ -19,13 +19,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { AUTO_REVIEW_EXAMPLES } from "@/lib/agents/auto-review";
 import {
-  AGENT_EFFORTS,
-  type AgentEffort,
-  effortLabel,
-} from "@/lib/agents/effort-label";
-import {
   deleteAgentMutationOptions,
-  setAgentEffortMutationOptions,
   setAgentPreferencesMutationOptions,
   updateAgentMutationOptions,
 } from "@/lib/agents/mutations";
@@ -93,10 +87,12 @@ function ProfileSkeleton() {
  * setting too (docs/laf/redesign-2026-10.md §8): it is the mascot the Bot was given when it was
  * made, drawn here as everywhere else, with nothing to press.
  *
- * WHAT STAYS BELOW THE NAME IS NOT PROFILE, IT IS HOW THE BOT BEHAVES: how hard it thinks, what it
- * may do without asking, what it remembers, the skills it holds, and whether it may notify. None of
- * those can be set by chatting — the one about asking must never be (CLAUDE.md, "Never let a Bot
- * write the rule that decides whether it gets asked about") — so they keep their controls.
+ * WHAT STAYS BELOW THE NAME IS NOT PROFILE, IT IS HOW THE BOT BEHAVES: what it may do without
+ * asking, what it remembers, the skills it holds, and whether it may notify. None of those can be
+ * set by chatting — the one about asking must never be (CLAUDE.md, "Never let a Bot write the rule
+ * that decides whether it gets asked about") — so they keep their controls. How hard it thinks was
+ * among them until 2026-10-08: it is fixed now and shown nowhere (§8 of the same record), so its
+ * card is gone rather than hidden.
  */
 export function AgentProfile({
   agentId,
@@ -212,10 +208,6 @@ export function AgentProfile({
       </header>
 
       {/* Above notifications: how the Bot works comes before how it reaches you. */}
-      {profile.canManage ? (
-        <EffortCard agentId={agentId} effort={profile.effort} />
-      ) : null}
-
       {profile.canManage ? (
         <AutoReviewCard agentId={agentId} instruction={profile.autoReview} />
       ) : null}
@@ -348,99 +340,6 @@ function NameField({
         {problem}
       </LiveRegion>
     </div>
-  );
-}
-
-/**
- * How hard this Bot thinks, and nothing else about the model.
- *
- * THE ONLY MODEL SETTING THERE IS. A list of model names asks somebody to know which of a dozen
- * vendors' products is better at their particular job, and the honest answer changes every month;
- * so the model is the deployment's decision, one for everybody, and what a person chooses is how
- * long they are willing to wait. That is a question only they can answer, and the one that genuinely
- * differs between "summarise this" and "work out what happened".
- *
- * Applied on the press, like the notification switch, because it is a setting and not
- * a draft. It goes through `/profile`, which merges into what is stored, so pressing it cannot
- * overwrite something half-typed in the form above.
- *
- * NOT DRAWN AT ALL where the deployment's model takes no such setting. The alternative — showing it
- * and quietly sending nothing — is a control that lies, and the person most likely to press it is
- * the one who most wants it to work.
- */
-function EffortCard({
-  agentId,
-  effort,
-}: {
-  agentId: string;
-  effort: AgentEffort;
-}) {
-  const queryClient = useQueryClient();
-  const { data: user } = useQuery(currentUserQueryOptions());
-  const setEffort = useMutation(setAgentEffortMutationOptions(queryClient));
-  const labelId = useId();
-
-  if (user && !user.deployment.effort) return null;
-
-  return (
-    <section className="flex flex-col gap-2 rounded-xl bg-muted p-3">
-      {/*
-       * A fieldset, and `aria-pressed` on the buttons. One
-       * choice out of three, and a reader arriving on the middle button should hear which one is
-       * already made rather than three identical-sounding options.
-       */}
-      <fieldset className="flex flex-col gap-2">
-        <legend className="flex flex-col gap-0.5 pb-2">
-          <span className="font-medium text-base" id={labelId}>
-            {t("How hard it thinks")}
-          </span>
-          <span className="block text-muted-foreground text-sm">
-            {t("Thinking longer costs time. It is worth it on the hard ones.")}
-          </span>
-        </legend>
-        {/*
-         * ONE TRACK WITH ONE BORDER, AND THE CHOSEN SEGMENT MARKED THE WAY THE APP MARKS CHOSEN.
-         *
-         * Three outline buttons was the wrong shape for one choice out of three. Two things were
-         * measured wrong with it: the selected mark was `ring-2 ring-primary` — a heavy black
-         * rectangle indistinguishable from the focus ring, so a screenshot could not tell a set
-         * value from a focused one — and three bordered boxes side by side put two hairlines
-         * between each pair, which reads as a table rather than as a choice.
-         *
-         * A segmented control has ONE border, round the group. The chosen segment says so through
-         * `aria-pressed`, which `Button` now styles for the whole app (`selectedWhenPressed` in
-         * `ui/focus.ts`): a border in the foreground colour over a tinted ground. Inventing a fill
-         * here would be a fifth dialect for "this is the one you picked" in a codebase that has
-         * just finished collapsing four into one.
-         */}
-        <div className="flex w-full gap-0.5 rounded-lg border border-border bg-background p-0.5">
-          {AGENT_EFFORTS.map((option) => {
-            const chosen = option === effort;
-            return (
-              <Button
-                aria-pressed={chosen}
-                className="flex-1"
-                disabled={setEffort.isPending}
-                key={option}
-                onClick={() => {
-                  if (chosen) return;
-                  setEffort.mutate({ agentId, effort: option });
-                }}
-                size="sm"
-                variant="ghost"
-              >
-                {effortLabel(option)}
-              </Button>
-            );
-          })}
-        </div>
-      </fieldset>
-      {setEffort.error ? (
-        <p className="text-destructive text-sm" role="alert">
-          {saveFailure(setEffort.error)}
-        </p>
-      ) : null}
-    </section>
   );
 }
 
@@ -698,9 +597,9 @@ function SkillsCard({ agentId }: { agentId: string }) {
  * PATCH, not `/profile`. The merging endpoint is what a Bot's own tool posts to, and this is the
  * one field a Bot must never write.
  *
- * NOT DRAWN WHERE THIS DEPLOYMENT'S MODEL CANNOT DO IT, for the same reason the effort card is not:
- * on a model that cannot answer a yes/no inside the boundary's timeout the promise is silently
- * false — they keep being asked, exactly as if the box were empty. A Bot that already has an
+ * NOT DRAWN WHERE THIS DEPLOYMENT'S MODEL CANNOT DO IT: a control that saves and does nothing is
+ * worse than none, and on a model that cannot answer a yes/no inside the boundary's timeout the
+ * promise is silently false — they keep being asked, exactly as if the box were empty. A Bot that already has an
  * instruction saved gets a sentence instead of nothing at all, because removing the card outright
  * would leave somebody believing a rule they wrote is in force.
  */

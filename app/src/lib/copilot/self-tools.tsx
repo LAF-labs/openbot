@@ -1,17 +1,9 @@
 import { useFrontendTool } from "@copilotkit/react-core/v2";
 import { TOOL_RESULT_KO, toolResultText } from "@shared/prompt/tool-results.ko";
-import {
-  MANAGE_ROUTINE,
-  REMEMBER,
-  UPDATE_PROFILE,
-  UPDATE_PROFILE_WITHOUT_EFFORT,
-} from "@shared/tools/self";
+import { MANAGE_ROUTINE, REMEMBER, UPDATE_PROFILE } from "@shared/tools/self";
 import { asStandardSchema } from "@shared/tools/standard-schema";
-import { useQuery } from "@tanstack/react-query";
 import { ToolLine } from "@/components/channels/tool-line";
 import { RoutineCard } from "@/components/routines/routine-card";
-import type { AgentEffort } from "@/lib/agents/effort-label";
-import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
 import { own } from "@/lib/own";
 import { useDeclaredBotId } from "./active-bot";
@@ -67,25 +59,14 @@ export function SelfTools() {
   // Which Bot's routines a card may be drawn from.
   const declaredBot = useDeclaredBotId();
 
-  /*
-   * No `effort` field where the deployment's model takes none — the same fact that keeps the effort
-   * card off the profile. Offered anyway, a Bot could tell its owner it now thinks more carefully
-   * when nothing it is sent has changed. Read the way the card reads it, so the two cannot disagree.
-   */
-  const { data: user } = useQuery(currentUserQueryOptions());
-  const profileTool =
-    user && !user.deployment.effort
-      ? UPDATE_PROFILE_WITHOUT_EFFORT
-      : UPDATE_PROFILE;
-
+  // A name and a description, and no `effort`: how hard a Bot thinks is fixed since 2026-10-08.
   useFrontendTool({
-    name: profileTool.name,
-    description: profileTool.description,
+    name: UPDATE_PROFILE.name,
+    description: UPDATE_PROFILE.description,
     parameters: asStandardSchema<{
       name?: string;
       description?: string;
-      effort?: AgentEffort;
-    }>(profileTool.parameters),
+    }>(UPDATE_PROFILE.parameters),
     /*
      * Named for what happened, not for the tool. A person watching their Bot change its own profile
      * should read "this Bot updated its own profile", not `update_profile`.

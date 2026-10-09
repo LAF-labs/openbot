@@ -3,20 +3,12 @@
  * `ownerUserId` below is the whole of that, and `agents/profile-policy.ts` is where it is read.
  */
 
-/**
- * How hard a Bot thinks before it answers.
- *
- * The only thing about the model a person chooses; which model answers is the deployment's decision.
- * See `agentEffort` in `db/schema/coworker.ts` for the argument, and `RuntimeModel.supportsEffort`
- * for why a deployment can be running a model that takes no such setting.
+/*
+ * There is no `AgentEffort` either. How hard a Bot thinks was the one thing about the model a
+ * person chose, until 2026-10-08: it is fixed now and shown nowhere (docs/laf/redesign-2026-10.md
+ * §8), and the column that held the choice is kept and read by nothing that decides a run
+ * (`agentEffort` in `db/schema/coworker.ts`; what is sent is `FIXED_EFFORT` in `copilot.ts`).
  */
-export type AgentEffort = "quick" | "balanced" | "thorough";
-
-export const AGENT_EFFORTS: readonly AgentEffort[] = [
-  "quick",
-  "balanced",
-  "thorough",
-];
 
 export type AgentActor = {
   id: string;
@@ -28,7 +20,6 @@ export type AgentProfile = {
   name: string;
   roleDescription: string;
   avatarSeed: string;
-  effort: AgentEffort;
   /**
    * What this Bot may be waved through for, in the owner's own words. Empty means ask about
    * everything the policy stops. See `agentProfiles.autoReview`.
@@ -67,14 +58,8 @@ export type CreateAgentInput = Pick<
   /*
    * No `avatarSeed`. The face is given when the Bot is made and nothing changes it afterwards
    * (2026-10-08, docs/laf/redesign-2026-10.md §8); `AgentProfile.avatarSeed` is read, never written.
+   * No `effort` either, since the same decision: a new Bot takes the column's default and keeps it.
    */
-  /**
-   * How hard it thinks.
-   *
-   * Absent means "leave it alone": a form that saves a name must not reset a setting it did not
-   * show, and a Bot made before anybody could choose keeps the column's default.
-   */
-  effort?: AgentEffort;
   /**
    * The standing instruction for waving actions through, when a person is changing it.
    *

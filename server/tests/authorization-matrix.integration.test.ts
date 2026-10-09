@@ -329,7 +329,6 @@ function deployment() {
     messageTimeReader: createMessageTimeReader(database),
     readWorking: createWorkingReader(database),
     standingApprovals: standing,
-    deploymentEffort: true,
     agentMemoryStore: createAgentMemoryStore(database),
     accountService: {
       exporter: createAccountExport(database),

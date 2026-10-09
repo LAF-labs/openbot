@@ -229,10 +229,14 @@ describe("tenant YAML validation", () => {
     expect(tenantPackage.model.defaultModel).not.toBe("");
   });
 
-  test("the package's default model and its effort default agree with agent-bot's table", async () => {
-    // A control drawn for a model that is sent no effort saves and does nothing (CLAUDE.md). The
-    // package decides whether it is drawn and agent-bot decides what is sent, so they are held
-    // together here: whatever the default model is, its default effort answers to its words.
+  /*
+   * NO EFFORT IS SENT BY DEFAULT since 2026-10-08 (docs/laf/redesign-2026-10.md §8): the main
+   * conversation's is fixed, and the default model's own default is its middle. A deployment that
+   * says yes is sent `balanced` alone (`FIXED_EFFORT`, copilot.ts), so what is held against
+   * agent-bot's table is that `balanced` is then the middle of three different words — or, for a
+   * model that defines none, that nothing at all is sent.
+   */
+  test("the package sends no effort by default, and the fixed one is the default model's middle where a deployment says yes", async () => {
     const { model } = await loadTenantPackage(
       new URL("../../tenant/laf", import.meta.url).pathname,
       {},
@@ -246,7 +250,8 @@ describe("tenant YAML validation", () => {
         model.defaultModel,
       ),
     );
-    if (!model.supportsEffort) {
+    expect(model.supportsEffort).toBe(false);
+    if (words[1] === undefined) {
       expect(words).toEqual([undefined, undefined, undefined]);
     } else {
       expect(new Set(words).size).toBe(3);

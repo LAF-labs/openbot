@@ -99,7 +99,10 @@ export type TenantPackage = {
     provider: "openai";
     credentialSecretRef: string;
     defaultModel: string;
-    /** Whether this model takes an effort setting. See `agent_effort` and `model.yaml`. */
+    /**
+     * Whether the main conversation is sent an effort — the one fixed one (`FIXED_EFFORT`,
+     * copilot.ts) — or none. See `model.yaml supports_effort`, false by default since 2026-10-08.
+     */
     supportsEffort: boolean;
     /**
      * Whether this model sees pictures, so a photo the owner attaches can be handed to it. False
@@ -179,7 +182,7 @@ function requiredString(value: unknown, name: string): string {
  * A yes/no a package may leave out.
  *
  * The strings as well as the booleans, because these values come out of YAML with environment
- * substitution in them: `${BOT_MODEL_EFFORT:-true}` is the string "true" however the variable is
+ * substitution in them: `${BOT_MODEL_EFFORT:-false}` is the string "false" however the variable is
  * set, and a parser that only accepted real booleans would read every one of them as malformed.
  */
 function asBoolean(value: unknown, fallback: boolean, name: string): boolean {

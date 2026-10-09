@@ -142,7 +142,7 @@ function server(
             ? { ...held, near: options.nameAnyway }
             : named(held),
         },
-        deployment: { effort: true, autoReview: true },
+        deployment: { autoReview: true },
       });
     }
     if (pathname === "/api/me/place") {

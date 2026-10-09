@@ -250,14 +250,6 @@ export type CreateAppOptions = {
    */
   standingApprovals?: StandingApprovalStore;
   /**
-   * Whether this deployment's model takes an effort setting, for the surface to draw or not draw.
-   *
-   * The same fact `RuntimeModel.supportsEffort` decides with, read from the same package, so the
-   * control appears exactly where the parameter is actually sent. Absent reads as yes, matching the
-   * package's own default.
-   */
-  deploymentEffort?: boolean;
-  /**
    * What each Bot has learned about each person.
    *
    * Absent leaves the three memory endpoints unmounted, so a deployment without the store answers
@@ -468,7 +460,6 @@ export function createApp({
   messageTimeReader,
   readWorking,
   standingApprovals,
-  deploymentEffort,
   agentMemoryStore,
   pluginConnect,
   autoReviewCapable,
@@ -562,7 +553,15 @@ export function createApp({
    * be drawn on one screen and dead on the next.
    */
   const capabilities = async () => ({
-    effort: deploymentEffort !== false,
+    /*
+     * ALWAYS FALSE, AND STILL SAID, for the reason `serverTurns` below is. How hard a Bot thinks is
+     * fixed and shown nowhere since 2026-10-08 (docs/laf/redesign-2026-10.md §8), and this build's
+     * app no longer reads the field. An app build from before that, still open in a window, does:
+     * absent, it reads yes and draws the effort card, whose presses this server now ignores — a
+     * control that saves and does nothing. False takes the card off that window too. It can go
+     * once no deployment can be upgraded from a build that reads it.
+     */
+    effort: false,
     autoReview: autoReviewCapable ? await autoReviewCapable() : true,
     // Whether the composer offers to take a file at all, and whether a photo is among what it takes.
     attachments: attachments !== undefined,
@@ -736,10 +735,10 @@ export function createApp({
      * it draws anything, and a second round trip to find out whether to draw a control is a control
      * that flickers. Both read one function, so they cannot disagree.
      *
-     * Two booleans, and each one is a control that must not be drawn where it does nothing: whether
-     * the model takes an effort setting, and whether it can judge a "do not ask me about"
-     * instruction. The surface cannot work either out for itself — it is never told which model this
-     * deployment serves, and it should not have to know model names to draw a form.
+     * Each one is a control that must not be drawn where it does nothing — today whether the model
+     * can judge a "do not ask me about" instruction (`effort` is always false now; see above). The
+     * surface cannot work that out for itself — it is never told which model this deployment
+     * serves, and it should not have to know model names to draw a form.
      */
     /*
      * Which text they agreed to, beside which text is current. Two facts and no verdict: the app

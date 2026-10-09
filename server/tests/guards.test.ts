@@ -147,7 +147,9 @@ describe("server authorization", () => {
       // Attachments are the exception to "true when nothing says otherwise": with no service to
       // keep a file, the composer must not offer to take one.
       deployment: {
-        effort: true,
+        // FALSE ALWAYS, and still said: nobody sets how hard a Bot thinks since 2026-10-08, and an
+        // app build from before reads it to decide whether to draw that control (`app.ts`).
+        effort: false,
         autoReview: true,
         attachments: false,
         images: false,

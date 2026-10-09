@@ -927,7 +927,6 @@ describeDb("what a model is given of a tool that waits for review", () => {
           type: "remote_ag_ui",
           endpoint: "http://agent-bot.internal/ag-ui",
           profile: { id: botId, name: "Paused Bot", roleDescription: "" },
-          effort: "balanced",
         },
       ],
       { provider: "openai", defaultModel: "test/model", supportsEffort: true },

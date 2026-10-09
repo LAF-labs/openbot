@@ -45,7 +45,6 @@ function profile(overrides: Partial<AgentProfile> = {}): AgentProfile {
     name: validInput.name,
     roleDescription: validInput.roleDescription,
     avatarSeed: "expense-manager",
-    effort: "balanced",
     autoReview: "",
     ownerUserId: actor.id,
     systemOwned: false,
@@ -335,7 +334,6 @@ describe("agent lifecycle routes", () => {
           name: validInput.name,
           roleDescription: validInput.roleDescription,
           avatarSeed: "expense-manager",
-          effort: "balanced",
           autoReview: "",
           hidden: false,
           notify: true,
@@ -350,7 +348,6 @@ describe("agent lifecycle routes", () => {
           name: validInput.name,
           roleDescription: validInput.roleDescription,
           avatarSeed: "expense-manager",
-          effort: "balanced",
           autoReview: "",
           hidden: false,
           notify: true,
@@ -365,7 +362,6 @@ describe("agent lifecycle routes", () => {
           name: validInput.name,
           roleDescription: validInput.roleDescription,
           avatarSeed: "expense-manager",
-          effort: "balanced",
           autoReview: "",
           hidden: false,
           notify: true,
@@ -635,48 +631,57 @@ describe("agent route composition", () => {
 });
 
 /**
- * How hard a Bot thinks — the one thing about the model anybody sets.
+ * How hard a Bot thinks — set by nobody since 2026-10-08 (docs/laf/redesign-2026-10.md §8).
  *
- * The failures worth pinning are all about a value reaching a Postgres enum: an unknown one is a
- * failed transaction rather than a 400, which is the same refusal dressed as a server fault, and an
- * absent one must mean "leave it alone" rather than "reset it" — otherwise saving a name through
- * the form quietly puts a Bot somebody set to thorough back to balanced.
+ * It was the one thing about the model a person set, parsed here against the three words of a
+ * Postgres enum; four tests held that parse. The main conversation's effort is fixed now and the
+ * field went from the API the way the face did: ignored, not refused, because the profile's effort
+ * buttons and the Bot's own `update_profile` both sent one, and a window or a conversation from
+ * before may still. A value the parser used to refuse goes through too — it is not looked at.
  */
 describe("how hard a Bot thinks", () => {
-  test("is one of three, checked before it reaches the column", () => {
-    const parsed = parseAgentInput({
-      name: "Analyst",
-      effort: "as hard as possible",
-    });
-    expect(parsed.ok).toBe(false);
-    if (!parsed.ok) expect(parsed.code).toBe("laf:agent_effort_invalid");
-  });
-
-  test("takes the three it does allow", () => {
-    for (const effort of ["quick", "balanced", "thorough"] as const) {
-      const parsed = parseAgentInput({
-        name: "Analyst",
-        effort,
+  test("is taken at no door: create, the edit form's save and /profile go through, and none hands it to the store", async () => {
+    const store = fakeStore();
+    const app = appFor(store);
+    const send = (path: string, method: string, body: object) =>
+      app.request(`http://laf.test${path}`, {
+        method,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
       });
-      expect(parsed.ok).toBe(true);
-      if (parsed.ok) expect(parsed.value.effort).toBe(effort);
+
+    expect(
+      (await send("/", "POST", { ...validInput, effort: "thorough" })).status,
+    ).toBe(201);
+    expect(
+      (await send("/agent-1", "PATCH", { ...validInput, effort: "quick" }))
+        .status,
+    ).toBe(200);
+    expect(
+      (
+        await send("/agent-1", "PATCH", {
+          ...validInput,
+          effort: "as hard as possible",
+        })
+      ).status,
+    ).toBe(200);
+
+    const writes = store.calls.filter(
+      ([method]) => method === "create" || method === "update",
+    );
+    expect(writes.map(([method]) => method)).toEqual([
+      "create",
+      "update",
+      "update",
+    ]);
+    for (const write of writes) {
+      expect(write.at(-1)).not.toHaveProperty("effort");
     }
-  });
-
-  test("is absent when nothing said, so the column's default stands", () => {
-    // Not defaulted here. A second place that knows the default is a second place to get it wrong,
-    // and an absent field on an update has to keep meaning "leave it alone".
-    const parsed = parseAgentInput({ name: "Analyst" });
-    expect(parsed.ok).toBe(true);
-    if (parsed.ok) expect(parsed.value.effort).toBeUndefined();
-  });
-
-  test("a blank one is refused rather than read as a default", () => {
-    const parsed = parseAgentInput({
-      name: "Analyst",
-      effort: "",
-    });
-    expect(parsed.ok).toBe(false);
+    // And the Bot as the app is told of it says nothing about it either.
+    const told = (await json(await app.request("http://laf.test/agent-1"))) as {
+      agent: Record<string, unknown>;
+    };
+    expect(told.agent).not.toHaveProperty("effort");
   });
 });
 
@@ -858,10 +863,16 @@ describe("what a Bot writes into its own profile", () => {
     );
   });
 
-  test("a change that carries no text is not judged as text: the effort buttons still work", async () => {
+  /*
+   * The profile's effort buttons sent exactly this until 2026-10-08. A window opened before then
+   * still may, and is answered rather than refused as text — with nothing of it stored.
+   */
+  test("a change that carries no text is not judged as text, and an effort in it reaches nothing", async () => {
     const store = fakeStore();
     const response = await post(store, { effort: "thorough" });
     expect(response.status).toBe(200);
+    const update = store.calls.find(([method]) => method === "update");
+    expect(update?.[3]).not.toHaveProperty("effort");
   });
 });
 
@@ -1324,12 +1335,11 @@ describe("a hosted deployment takes no endpoint of a person's own for a Bot", ()
     expect(store.calls).toEqual([]);
   });
 
-  test("the ordinary save — a name, a description, how hard it thinks, what it need not ask about — goes through as it did", async () => {
+  test("the ordinary save — a name, a description, what it need not ask about — goes through as it did", async () => {
     const store = fakeStore();
     const hosted = appFor(store);
     const ordinary = {
       ...validInput,
-      effort: "thorough",
       autoReview: "Reading a page needs no question.",
     };
     expect((await send(hosted, "PATCH", ordinary)).status).toBe(200);

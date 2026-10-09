@@ -1,7 +1,7 @@
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
 import { own } from "@/lib/own";
 import { t } from "../i18n";
-import { type AgentEffort, type AgentProfile, agentKeys } from "./queries";
+import { type AgentProfile, agentKeys } from "./queries";
 
 /**
  * What the agents API can refuse, in this surface's own words.
@@ -21,8 +21,8 @@ export const AGENT_REFUSALS: Record<string, string> = {
     "You already have your Bot. Change its name on its profile instead.",
   /*
    * The rest are the codes `/profile` and `/memories` answer with. A Bot's own tool is their usual
-   * caller, but this app posts to `/profile` too — the effort buttons do — so a person can reach
-   * them, and a person reaching one must not be handed the server's English.
+   * caller — this app's effort buttons posted to `/profile` too, until 2026-10-08 — and a person
+   * reaching one must not be handed the server's English.
    */
   "laf:profile_invalid": "That change could not be read. Try again.",
   "laf:profile_looks_like_prompt":
@@ -64,7 +64,6 @@ export const AGENT_REFUSALS: Record<string, string> = {
    */
   "laf:agent_endpoint_not_taken":
     "Every Bot runs on this deployment. It cannot be pointed at another server here.",
-  "laf:agent_effort_invalid": "Choose how hard this Bot thinks.",
   "laf:agent_auto_review_too_long":
     "That instruction can be up to 1,000 characters.",
   "laf:agent_auth_header_invalid": "That header name cannot be used.",
@@ -104,19 +103,6 @@ export type AgentInput = {
   autoReview?: string;
 };
 
-/**
- * A change to one part of a Bot's profile, merged into what is stored.
- *
- * `AgentInput` above replaces: every required field has to be sent or the parser refuses it. This
- * one is what `/profile` takes, and it is how a single control changes a single thing without
- * carrying the rest of the form along with it.
- */
-export type AgentProfilePatch = {
-  name?: string;
-  roleDescription?: string;
-  effort?: AgentEffort;
-};
-
 /** Which of this person's preferences for a Bot to change. Absent means "leave it alone". */
 export type AgentPreferencePatch = {
   hidden?: boolean;
@@ -127,7 +113,7 @@ async function agentRequest(
   path: string,
   init: {
     method: string;
-    body?: AgentInput | AgentPreferencePatch | AgentProfilePatch;
+    body?: AgentInput | AgentPreferencePatch;
   },
 ): Promise<Response> {
   const response = await fetch(path, {
@@ -179,28 +165,6 @@ export function updateAgentMutationOptions(queryClient: QueryClient) {
         await agentRequest(`/api/agents/${variables.agentId}`, {
           method: "PATCH",
           body: variables.input,
-        }),
-      ),
-    onSuccess: () => invalidateAgents(queryClient),
-  });
-}
-
-/**
- * One setting, changed on its own.
- *
- * The PATCH above replaces the fields it carries and therefore needs every required one sent back,
- * which is right for a form and wrong for a switch: a control that had to resend the name and the
- * role to change how hard a Bot thinks would overwrite whatever somebody typed into the form beside
- * it and had not saved yet. `/profile` merges into what is stored, so this carries only what
- * changed — the same endpoint a Bot uses to write its own profile.
- */
-export function setAgentEffortMutationOptions(queryClient: QueryClient) {
-  return mutationOptions({
-    mutationFn: async (variables: { agentId: string; effort: AgentEffort }) =>
-      agentFrom(
-        await agentRequest(`/api/agents/${variables.agentId}/profile`, {
-          method: "POST",
-          body: { effort: variables.effort },
         }),
       ),
     onSuccess: () => invalidateAgents(queryClient),

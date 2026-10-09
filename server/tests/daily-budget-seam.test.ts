@@ -86,7 +86,6 @@ function shop(fetch: ReturnType<typeof endpoint>["fetch"], meter?: RunMeter) {
           name: "미소",
           roleDescription: "주문을 챙긴다.",
         },
-        effort: "balanced",
       },
     ],
     { provider: "openai", defaultModel: "laf-1", supportsEffort: false },

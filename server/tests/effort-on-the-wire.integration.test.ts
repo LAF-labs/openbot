@@ -57,7 +57,6 @@ const bot = {
     roleDescription: "주문과 영수증을 챙긴다.",
     memories: ["일요일은 쉰다."],
   },
-  effort: "thorough" as const,
 };
 
 /**
@@ -119,7 +118,7 @@ describe("what reaches the model", () => {
     expect(system).toHaveLength(1);
     const prompt = system[0]?.content ?? "";
     expect(prompt).toContain("이 배포의 언어는 한국어다");
-    // The name, and no job title after it: the profile is a name and a face (2026-09-24).
+    // The name, and no job title after it: the profile is a name (2026-09-24, 2026-10-08).
     expect(prompt).toContain("너는 미소다.");
     expect(prompt).toContain("주문과 영수증을 챙긴다.");
     expect(prompt).toContain("일요일은 쉰다.");
@@ -154,8 +153,13 @@ describe("what reaches the model", () => {
     expect(prompt).toContain("Asia/Seoul(KST) 기준");
   });
 
-  test("the effort, translated by the service that speaks that API", async () => {
-    // `thorough` on the wire between the two services; the model's own word on the wire to the
+  /*
+   * THE ONE FIXED EFFORT (2026-10-08, docs/laf/redesign-2026-10.md §8). It was the Bot's own and
+   * this sent a Bot set to `thorough`; a Bot has none now, and a caller forwarding one does not get
+   * it through either — what reaches the provider is `balanced` in the model's own word.
+   */
+  test("the one fixed effort, translated by the service that speaks that API", async () => {
+    // `balanced` on the wire between the two services; the model's own word on the wire to the
     // provider. Which word depends on the model agent-bot read at import — another file in this
     // process may have imported it first with the machine's BOT_MODEL — so ask agent-bot's table
     // rather than hard-coding one model's spelling.
@@ -163,17 +167,18 @@ describe("what reaches the model", () => {
     const { reasoningEffortOf } = await import(
       "../../agent-bot/src/transcript"
     );
-    const expected = reasoningEffortOf(
-      { forwardedProps: { effort: "thorough" } } as never,
-      MODEL,
-    );
-    const sent = await requestFor(true);
+    const wordFor = (effort: string) =>
+      reasoningEffortOf({ forwardedProps: { effort } } as never, MODEL);
+    const expected = wordFor("balanced");
+    const sent = await requestFor(true, { effort: "thorough" });
     if (expected === undefined) {
       // A model that defines no effort of its own (MiMo-V2.6) is sent none, whatever was asked.
       expect(sent).not.toHaveProperty("reasoning_effort");
       return;
     }
-    expect(expected === "high" || expected === "max").toBe(true);
+    // The model's middle: neither the floor nor the top a Bot set to 꼼꼼하게 used to be sent.
+    expect(expected).not.toBe(wordFor("quick"));
+    expect(expected).not.toBe(wordFor("thorough"));
     expect(sent.reasoning_effort).toBe(expected);
   });
 

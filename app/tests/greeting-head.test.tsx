@@ -79,7 +79,7 @@ const me = (
       shop,
       whereabouts: { timeZone: null, locale: null, ...held },
     },
-    deployment: { effort: true, autoReview: true },
+    deployment: { autoReview: true },
   });
 
 /** What the screen asked of anything but the app's own record of the person. */
