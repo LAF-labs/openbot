@@ -1083,6 +1083,7 @@ test("the signal a run ended by is a signal's name or the answer is not passed o
   }
 });
 
+// Six runs of 600 ms each through one queue: 3.7 seconds with four workers sharing the cores.
 test("a caller that gives up while waiting its turn is told at once, and its run is never sent", async () => {
   const { socketPath, asked } = fakeDaemon(async () => {
     await Bun.sleep(600);
@@ -1104,7 +1105,7 @@ test("a caller that gives up while waiting its turn is told at once, and its run
   );
   expect(more.every((answer) => answer.ok)).toBe(true);
   expect(asked()).toBe(6);
-});
+}, 30_000);
 
 /*
  * WHAT THE FAR SIDE SAYS ITS ANSWER IS, IS THE FAR SIDE'S TO SAY (the second independent read of
@@ -1116,6 +1117,13 @@ test("a caller that gives up while waiting its turn is told at once, and its run
  * gzip by 0.6 GB; thirteen megabytes sent as a url-encoded form by 0.7 GB. And a form with ten
  * thousand parts nobody named, or a megabyte of headers on one, was passed on as a run.
  */
+
+/**
+ * For a test that squeezes its own bombs before it starts. Three times half a gigabyte of zeros is
+ * real compression work, about 2.3 seconds alone, and over Bun's default of five seconds with four
+ * workers sharing the cores. The refusal it is checking still has to land inside a second.
+ */
+const BOMB_BUILD_MS = 30_000;
 
 /** `megabytes` of zeros through a compressor, a megabyte at a time: what they are on the wire. */
 async function squeezed(
@@ -1210,61 +1218,68 @@ const reportPart = (extra = "") =>
 
 const FORM_TYPE = { "content-type": "multipart/form-data; boundary=x" };
 
-test("an answer that names an encoding is refused by that name and never inflated", async () => {
-  const half = 512;
-  const bombs: [string, Uint8Array<ArrayBuffer>][] = [
-    ["gzip", await squeezed(createGzip(), half)],
-    ["deflate", await squeezed(createDeflate(), half)],
-    [
-      "br",
-      await squeezed(
-        createBrotliCompress({
-          params: { [zlib.BROTLI_PARAM_QUALITY]: 4 },
+test(
+  "an answer that names an encoding is refused by that name and never inflated",
+  async () => {
+    const half = 512;
+    const bombs: [string, Uint8Array<ArrayBuffer>][] = [
+      ["gzip", await squeezed(createGzip(), half)],
+      ["deflate", await squeezed(createDeflate(), half)],
+      [
+        "br",
+        await squeezed(
+          createBrotliCompress({
+            params: { [zlib.BROTLI_PARAM_QUALITY]: 4 },
+          }),
+          half,
+        ),
+      ],
+    ];
+    for (const [encoding, bytes] of bombs) {
+      // Half a gigabyte of nothing, in a megabyte or less on the wire.
+      expect(bytes.byteLength, encoding).toBeLessThan(2 * MEBIBYTE);
+      const { socketPath } = fakeDaemon(
+        () =>
+          new Response(bytes, {
+            headers: { ...FORM_TYPE, "content-encoding": encoding },
+          }),
+      );
+      const { log, events } = recorded();
+      const began = performance.now();
+      const { value, grew } = await grownBy(() =>
+        createWorkbench({ key: KEY, socketPath, log }).run({
+          script,
+          files: [],
         }),
-        half,
-      ),
-    ],
-  ];
-  for (const [encoding, bytes] of bombs) {
-    // Half a gigabyte of nothing, in a megabyte or less on the wire.
-    expect(bytes.byteLength, encoding).toBeLessThan(2 * MEBIBYTE);
-    const { socketPath } = fakeDaemon(
-      () =>
-        new Response(bytes, {
-          headers: { ...FORM_TYPE, "content-encoding": encoding },
-        }),
-    );
-    const { log, events } = recorded();
-    const began = performance.now();
-    const { value, grew } = await grownBy(() =>
-      createWorkbench({ key: KEY, socketPath, log }).run({ script, files: [] }),
-    );
-    expect(value, encoding).toEqual({ ok: false, failure: "malformed" });
-    expect(events, encoding).toContainEqual([
-      "workbench_answer_malformed",
-      { reason: "encoded" },
-    ]);
-    // What this process held: nothing of the half gigabyte. It was 0.6 and 1.2 GB.
-    expect(grew / MEBIBYTE, encoding).toBeLessThan(64);
-    expect(performance.now() - began, encoding).toBeLessThan(1_000);
-  }
-  // Any encoding at all is a lie here, the one that means "none" included: none was asked for.
-  const named = fakeDaemon(() => {
-    const answer = honest();
-    answer.headers.set("content-encoding", "identity");
-    return answer;
-  });
-  expect(
-    await createWorkbench({
-      key: KEY,
-      socketPath: named.socketPath,
-      log: quiet,
-    }).run({
-      script,
-      files: [],
-    }),
-  ).toEqual({ ok: false, failure: "malformed" });
-});
+      );
+      expect(value, encoding).toEqual({ ok: false, failure: "malformed" });
+      expect(events, encoding).toContainEqual([
+        "workbench_answer_malformed",
+        { reason: "encoded" },
+      ]);
+      // What this process held: nothing of the half gigabyte. It was 0.6 and 1.2 GB.
+      expect(grew / MEBIBYTE, encoding).toBeLessThan(64);
+      expect(performance.now() - began, encoding).toBeLessThan(1_000);
+    }
+    // Any encoding at all is a lie here, the one that means "none" included: none was asked for.
+    const named = fakeDaemon(() => {
+      const answer = honest();
+      answer.headers.set("content-encoding", "identity");
+      return answer;
+    });
+    expect(
+      await createWorkbench({
+        key: KEY,
+        socketPath: named.socketPath,
+        log: quiet,
+      }).run({
+        script,
+        files: [],
+      }),
+    ).toEqual({ ok: false, failure: "malformed" });
+  },
+  BOMB_BUILD_MS,
+);
 
 test("no encoding is asked for, of a run or of health", async () => {
   const asked: (string | null)[] = [];
@@ -1280,36 +1295,40 @@ test("no encoding is asked for, of a run or of health", async () => {
   expect(asked).toEqual(["identity"]);
 });
 
-test("a refusal or a health answer that names an encoding is not believed either", async () => {
-  const bomb = await squeezed(createGzip(), 256);
-  const encoded = (status: number) =>
-    new Response(bomb, {
-      status,
-      headers: {
-        "content-type": "application/json",
-        "content-encoding": "gzip",
-      },
-    });
-  const refusing = fakeDaemon(() => encoded(503));
-  const answering = fakeDaemon(
-    () => honest(),
-    () => encoded(200),
-  );
-  const { value, grew } = await grownBy(async () => [
-    await createWorkbench({
-      key: KEY,
-      socketPath: refusing.socketPath,
-      log: quiet,
-    }).run({ script, files: [] }),
-    await createWorkbench({
-      key: KEY,
-      socketPath: answering.socketPath,
-      log: quiet,
-    }).health(),
-  ]);
-  expect(value).toEqual([{ ok: false, failure: "failed" }, null]);
-  expect(grew / MEBIBYTE).toBeLessThan(64);
-});
+test(
+  "a refusal or a health answer that names an encoding is not believed either",
+  async () => {
+    const bomb = await squeezed(createGzip(), 256);
+    const encoded = (status: number) =>
+      new Response(bomb, {
+        status,
+        headers: {
+          "content-type": "application/json",
+          "content-encoding": "gzip",
+        },
+      });
+    const refusing = fakeDaemon(() => encoded(503));
+    const answering = fakeDaemon(
+      () => honest(),
+      () => encoded(200),
+    );
+    const { value, grew } = await grownBy(async () => [
+      await createWorkbench({
+        key: KEY,
+        socketPath: refusing.socketPath,
+        log: quiet,
+      }).run({ script, files: [] }),
+      await createWorkbench({
+        key: KEY,
+        socketPath: answering.socketPath,
+        log: quiet,
+      }).health(),
+    ]);
+    expect(value).toEqual([{ ok: false, failure: "failed" }, null]);
+    expect(grew / MEBIBYTE).toBeLessThan(64);
+  },
+  BOMB_BUILD_MS,
+);
 
 test("only a form is read as a run, and only JSON as a refusal or as health", async () => {
   // Thirteen megabytes that are a form of four million fields, if anybody parses them as one.

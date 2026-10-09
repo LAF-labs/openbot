@@ -57,6 +57,14 @@ const TOKEN = "test-computer-token";
  * (load, then network idle), and a 400ms swap had happened before the snapshot was taken.
  */
 const RELABEL_AFTER_MS = 2_000;
+/**
+ * For a test that opens real pages and waits for each to settle. One `/navigate` waits for the load
+ * and then for the network to go quiet, about a second a page, so the test that opens five pages was
+ * five and a half seconds alone, against Bun's default of five. It timed out on CI with four workers
+ * sharing the runner. The timeout also killed the computer this file had started, so the three
+ * tests after it failed on a refused connection.
+ */
+const PAGE_WALK_MS = 30_000;
 
 let base = "";
 let fixture: ReturnType<typeof serveFixture> | null = null;
@@ -427,83 +435,91 @@ describe.skipIf(!HAS_BROWSER)("a hop to a host nobody judged", () => {
 });
 
 describe.skipIf(!HAS_BROWSER)("holding a click to its label", () => {
-  test("a control the page renamed after the snapshot is refused", async () => {
-    const opened = await post("/navigate", {
-      url: `${fixture?.url}relabel?after=${RELABEL_AFTER_MS}`,
-    });
-    expect(opened.status).toBe(200);
+  test(
+    "a control the page renamed after the snapshot is refused",
+    async () => {
+      const opened = await post("/navigate", {
+        url: `${fixture?.url}relabel?after=${RELABEL_AFTER_MS}`,
+      });
+      expect(opened.status).toBe(200);
 
-    const shot = await snapshot();
-    const button = shot.elements.find(
-      (element) => element.name === RELABEL_BEFORE,
-    );
-    if (!button) {
-      throw new Error(
-        `the snapshot had no ${RELABEL_BEFORE} button: ${shot.elements
-          .map((element) => element.name)
-          .join(" | ")}`,
+      const shot = await snapshot();
+      const button = shot.elements.find(
+        (element) => element.name === RELABEL_BEFORE,
       );
-    }
+      if (!button) {
+        throw new Error(
+          `the snapshot had no ${RELABEL_BEFORE} button: ${shot.elements
+            .map((element) => element.name)
+            .join(" | ")}`,
+        );
+      }
 
-    // Let the page swap the label under the ref.
-    await Bun.sleep(RELABEL_AFTER_MS + 300);
+      // Let the page swap the label under the ref.
+      await Bun.sleep(RELABEL_AFTER_MS + 300);
 
-    // The gateway sends `element` as the name it judged; here that is the OLD name.
-    const refused = await post("/click", {
-      ref: button.ref,
-      snapshotId: shot.snapshotId,
-      element: { role: button.role, name: RELABEL_BEFORE },
-    });
-    expect(refused.status).toBe(409);
-    expect(refused.body.code).toBe("laf:label_changed");
+      // The gateway sends `element` as the name it judged; here that is the OLD name.
+      const refused = await post("/click", {
+        ref: button.ref,
+        snapshotId: shot.snapshotId,
+        element: { role: button.role, name: RELABEL_BEFORE },
+      });
+      expect(refused.status).toBe(409);
+      expect(refused.body.code).toBe("laf:label_changed");
 
-    // And asking did not spend the ref: held to the name the control has now, the same ref lands.
-    // (The first attempt at this read the name with an aria snapshot, which replaced the snapshot the
-    // ref resolves against — this click then answered `laf:stale_refs`.)
-    const clicked = await post("/click", {
-      ref: button.ref,
-      snapshotId: shot.snapshotId,
-      element: { role: button.role, name: RELABEL_AFTER },
-    });
-    expect(clicked.status).toBe(200);
-  });
+      // And asking did not spend the ref: held to the name the control has now, the same ref lands.
+      // (The first attempt at this read the name with an aria snapshot, which replaced the snapshot the
+      // ref resolves against — this click then answered `laf:stale_refs`.)
+      const clicked = await post("/click", {
+        ref: button.ref,
+        snapshotId: shot.snapshotId,
+        element: { role: button.role, name: RELABEL_AFTER },
+      });
+      expect(clicked.status).toBe(200);
+    },
+    PAGE_WALK_MS,
+  );
 
   /*
    * MEASURED 2026-09-14, the real container through the server's routes: a button the page hid after
    * the snapshot answered `laf:label_changed` in 31 ms, because the role engine the hold asks leaves
    * hidden nodes out — and the Bot was told the control had been renamed. It had not; it was gone.
    */
-  test("a control the page hid after the snapshot is not called renamed", async () => {
-    const opened = await post("/navigate", {
-      url: `${fixture?.url}relabel?after=${RELABEL_AFTER_MS}&hide`,
-    });
-    expect(opened.status).toBe(200);
-    const shot = await snapshot();
-    const button = shot.elements.find(
-      (element) => element.name === RELABEL_BEFORE,
-    );
-    if (!button) {
-      throw new Error(
-        `the snapshot had no ${RELABEL_BEFORE} button: ${shot.elements
-          .map((element) => element.name)
-          .join(" | ")}`,
+  test(
+    "a control the page hid after the snapshot is not called renamed",
+    async () => {
+      const opened = await post("/navigate", {
+        url: `${fixture?.url}relabel?after=${RELABEL_AFTER_MS}&hide`,
+      });
+      expect(opened.status).toBe(200);
+      const shot = await snapshot();
+      const button = shot.elements.find(
+        (element) => element.name === RELABEL_BEFORE,
       );
-    }
-    await Bun.sleep(RELABEL_AFTER_MS + 300);
+      if (!button) {
+        throw new Error(
+          `the snapshot had no ${RELABEL_BEFORE} button: ${shot.elements
+            .map((element) => element.name)
+            .join(" | ")}`,
+        );
+      }
+      await Bun.sleep(RELABEL_AFTER_MS + 300);
 
-    const started = Date.now();
-    const refused = await post("/click", {
-      ref: button.ref,
-      snapshotId: shot.snapshotId,
-      element: { role: button.role, name: RELABEL_BEFORE },
-    });
-    expect([refused.status, refused.body.code]).toEqual([
-      409,
-      "laf:element_not_actionable",
-    ]);
-    // Refused on the question, not after Playwright's action timeout waiting for it to reappear.
-    expect(Date.now() - started).toBeLessThan(5_000);
-  });
+      const started = Date.now();
+      const refused = await post("/click", {
+        ref: button.ref,
+        snapshotId: shot.snapshotId,
+        element: { role: button.role, name: RELABEL_BEFORE },
+      });
+      expect([refused.status, refused.body.code]).toEqual([
+        409,
+        "laf:element_not_actionable",
+      ]);
+      // Refused on the question, not after Playwright's action timeout waiting for it to reappear.
+      expect(Date.now() - started).toBeLessThan(5_000);
+    },
+    PAGE_WALK_MS,
+  );
 
   test("a control that kept its label is acted on, on the page and inside a frame", async () => {
     const opened = await post("/navigate", { url: fixture?.url });
@@ -556,62 +572,68 @@ describe.skipIf(!HAS_BROWSER)("holding a click to its label", () => {
    * way the role engine names them (`page-names.ts`), every one not hidden from the accessibility
    * tree was held exactly — 203 of 203 on the same five pages that evening.
    */
-  test("a link the tree left nameless is held to the name the page gives it, and can be clicked", async () => {
-    for (const [key, name] of Object.entries(HEADLINE_LINKS)) {
-      const opened = await post("/navigate", {
-        url: `${fixture?.url}headlines`,
-      });
-      expect(opened.status).toBe(200);
-      const shot = await snapshot();
-      const link = shot.elements.find(
-        (element) => element.role === "link" && element.name === name,
-      );
-      if (!link) {
-        throw new Error(
-          `the snapshot had no link named ${name}: ${shot.elements
-            .map((element) => `${element.ref}:${element.role}:${element.name}`)
-            .join(" | ")}`,
+  test(
+    "a link the tree left nameless is held to the name the page gives it, and can be clicked",
+    async () => {
+      for (const [key, name] of Object.entries(HEADLINE_LINKS)) {
+        const opened = await post("/navigate", {
+          url: `${fixture?.url}headlines`,
+        });
+        expect(opened.status).toBe(200);
+        const shot = await snapshot();
+        const link = shot.elements.find(
+          (element) => element.role === "link" && element.name === name,
         );
-      }
-      // What the list used to call it, which the browser does not: blank before pull request 65,
-      // the tree's words after it — a ★ the browser leaves out, a space the browser does not put in.
-      const before =
-        key in HEADLINE_TREE_NAMES
-          ? HEADLINE_TREE_NAMES[key as keyof typeof HEADLINE_TREE_NAMES]
-          : key === "headline"
-            ? ""
-            : undefined;
-      if (before !== undefined) {
-        const refused = await post("/click", {
+        if (!link) {
+          throw new Error(
+            `the snapshot had no link named ${name}: ${shot.elements
+              .map(
+                (element) => `${element.ref}:${element.role}:${element.name}`,
+              )
+              .join(" | ")}`,
+          );
+        }
+        // What the list used to call it, which the browser does not: blank before pull request 65,
+        // the tree's words after it — a ★ the browser leaves out, a space the browser does not put in.
+        const before =
+          key in HEADLINE_TREE_NAMES
+            ? HEADLINE_TREE_NAMES[key as keyof typeof HEADLINE_TREE_NAMES]
+            : key === "headline"
+              ? ""
+              : undefined;
+        if (before !== undefined) {
+          const refused = await post("/click", {
+            ref: link.ref,
+            snapshotId: shot.snapshotId,
+            element: { role: "link", name: before },
+          });
+          // Refused either way. The ★ is found by the hold's second question, which counts what is
+          // hidden from the accessibility tree, so that click is refused as one on a hidden control.
+          expect([key, refused.status, refused.body.code]).toEqual([
+            key,
+            409,
+            key === "decorated"
+              ? "laf:element_not_actionable"
+              : "laf:label_changed",
+          ]);
+        }
+        const clicked = await post("/click", {
           ref: link.ref,
           snapshotId: shot.snapshotId,
-          element: { role: "link", name: before },
+          element: { role: link.role, name: link.name },
         });
-        // Refused either way. The ★ is found by the hold's second question, which counts what is
-        // hidden from the accessibility tree, so that click is refused as one on a hidden control.
-        expect([key, refused.status, refused.body.code]).toEqual([
-          key,
-          409,
-          key === "decorated"
-            ? "laf:element_not_actionable"
-            : "laf:label_changed",
+        expect([name, clicked.status, clicked.body.code]).toEqual([
+          name,
+          200,
+          undefined,
         ]);
+        // Landed where that link goes: the click reached the link it was judged as.
+        const landed = await post("/snapshot", {});
+        expect(String(landed.body.url)).toEndWith(`/landed-${key}`);
       }
-      const clicked = await post("/click", {
-        ref: link.ref,
-        snapshotId: shot.snapshotId,
-        element: { role: link.role, name: link.name },
-      });
-      expect([name, clicked.status, clicked.body.code]).toEqual([
-        name,
-        200,
-        undefined,
-      ]);
-      // Landed where that link goes: the click reached the link it was judged as.
-      const landed = await post("/snapshot", {});
-      expect(String(landed.body.url)).toEndWith(`/landed-${key}`);
-    }
-  });
+    },
+    PAGE_WALK_MS,
+  );
 
   /*
    * NEVER A FIELD'S CONTENTS IN A NAME. The browser names a button wrapped around a search box by what

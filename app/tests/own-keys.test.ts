@@ -119,6 +119,7 @@ describe("a code from outside finds only what the table was given", () => {
     expect(koreanFor(known)).toBe(ko[known]);
   });
 
+  // Every file under src/, read and searched: 5.9 seconds with four workers sharing the cores.
   test("no table declared with string keys is read bare anywhere in src/", async () => {
     const root = `${import.meta.dir}/../src`;
     const files: Array<[string, string]> = [];
@@ -175,7 +176,7 @@ describe("a code from outside finds only what the table was given", () => {
       .filter(([, text]) => /\bkoreanFor\(/.test(text))
       .map(([file]) => file);
     expect(askers).toEqual(["lib/i18n.ts"]);
-  });
+  }, 30_000);
 
   test("a card's tone is a model's argument: one the tables do not hold draws no badge and no class of its own", async () => {
     const { renderToStaticMarkup } = await import("react-dom/server");
