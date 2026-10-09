@@ -84,16 +84,8 @@ describe("the saved logins' doors", () => {
     ]);
   });
 
-  test("hand the vault the five things a login is made of, and nothing else a body carries", async () => {
+  test("hand the vault the five things a login is made of — and a body that names anything else is handed over as nothing", async () => {
     const { calls, send } = doors();
-    const stray = {
-      id: "login_of-my-choosing",
-      userId: "somebody-else",
-      wrappedKey: "lv1.AAAA.AAAA",
-      sealedPassword: "lv1.AAAA.AAAA",
-      kekId: "0000000000000000",
-      lastUsedAt: "2020-01-01T00:00:00.000Z",
-    };
     const login = {
       label: "네이버",
       site: "naver-smartstore",
@@ -101,25 +93,43 @@ describe("the saved logins' doors", () => {
       username: "sajang",
       password: "hunter2",
     };
-    await send("POST", "/", { ...login, ...stray });
+    await send("POST", "/", login);
     expect(calls[0]).toEqual(["save", "person-1", login]);
 
     // A change carries what was sent and only that: a field left out is not sent as "undefined",
     // which the vault would read as a value to refuse.
-    await send("PATCH", "/login_1", { password: "new", ...stray });
+    await send("PATCH", "/login_1", { password: "new" });
     expect(calls[1]).toEqual([
       "replace",
       "person-1",
       "login_1",
       { password: "new" },
     ]);
-    await send("PATCH", "/login_1", { label: "가게" });
-    expect(calls[2]).toEqual([
-      "replace",
-      "person-1",
-      "login_1",
-      { label: "가게" },
-    ]);
+    await send("PATCH", "/login_1", {});
+    expect(calls[2]).toEqual(["replace", "person-1", "login_1", {}]);
+
+    /*
+     * A KEY A LOGIN IS NOT MADE OF IS A BODY THIS CANNOT READ. Dropped and gone on from, an id,
+     * an owner or a sealed column in a body reached nothing — and so did `passwrod`, a typo the
+     * door answered as a change of nothing: 200, the row as it stood, and a window told its new
+     * password was saved (Codex's fourth read of this change). The vault is handed nothing.
+     */
+    calls.length = 0;
+    for (const stray of [
+      { passwrod: "new" },
+      { id: "login_of-my-choosing" },
+      { userId: "somebody-else" },
+      { wrappedKey: "lv1.AAAA.AAAA", sealedPassword: "lv1.AAAA.AAAA" },
+      { lastUsedAt: "2020-01-01T00:00:00.000Z" },
+    ]) {
+      await send("POST", "/", { ...login, ...stray });
+      await send("PATCH", "/login_1", { label: "가게", ...stray });
+      await send("PATCH", "/login_1", stray);
+    }
+    expect(calls).toHaveLength(15);
+    expect(calls.map((call) => call.at(-1))).toEqual(
+      Array.from({ length: 15 }, () => null),
+    );
   });
 
   test("answer with what the row is called and where it may go, kept by nothing on the way", async () => {

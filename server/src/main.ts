@@ -1146,7 +1146,6 @@ const app = createApp({
   // 로그인 보관함: what a person saved for their Bot's browser. Sealed under the deployment's key.
   logins: createLoginVault({
     database,
-    auditStore: bootAuditStore,
     keyEncryptionKey: config.keyEncryptionKey,
     // A developer's stack only: a page under test on a loopback address has no certificate.
     allowLoopbackHttp: config.computer?.allowPrivateHosts ?? false,

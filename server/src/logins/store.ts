@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, count, eq } from "drizzle-orm";
 import { loginOriginOf } from "../../../shared/login-origin";
 import { siteById } from "../../../shared/sites/catalogue";
+import { pseudonymFor } from "../account/pseudonym";
 import {
   type AuditEventInput,
   type AuditStore,
@@ -9,7 +10,7 @@ import {
   recordAuditEvent,
 } from "../audit";
 import type { Database } from "../db/client";
-import { auditEvents, lafSavedLogins } from "../db/schema";
+import { auditEvents, lafSavedLogins, users } from "../db/schema";
 import { LoginSealError, openLogin, type SealedFor, sealLogin } from "./crypto";
 
 /** A transaction of this database: what a change and the trail's row about it are written on. */
@@ -46,7 +47,10 @@ export type LoginRefusal =
   // What was sent is not something a login can be read from: bytes that are not JSON, a list.
   | "laf:login_invalid"
   | "laf:login_label_required"
+  // An address that is not an HTTPS site; no address at all; more than a login may have.
   | "laf:login_origin_refused"
+  | "laf:login_origins_required"
+  | "laf:login_origins_too_many"
   | "laf:login_site_unknown"
   | "laf:login_value_required"
   | "laf:login_value_too_long"
@@ -99,7 +103,6 @@ export type LoginVault = ReturnType<typeof createLoginVault>;
 
 export function createLoginVault(input: {
   database: Database;
-  auditStore: AuditStore;
   /** The deployment's key, base64 of 32 bytes (`KEY_ENCRYPTION_KEY`). Not in the database. */
   keyEncryptionKey: string;
   /**
@@ -109,12 +112,13 @@ export function createLoginVault(input: {
   allowLoopbackHttp?: boolean;
   now?: () => Date;
   /**
-   * Where a change's own row is written, given the change's transaction. For a test that needs
-   * the trail to fail; a deployment leaves it out and the row goes on the transaction itself.
+   * Where a row of the trail is written, given the transaction it is written in. For a test that
+   * reads the rows or needs the trail to fail; a deployment leaves it out and every row goes on
+   * the transaction itself — there is no other way this vault writes to the trail.
    */
   trailWithin?: (transaction: Transaction) => AuditStore;
 }) {
-  const { database, auditStore, keyEncryptionKey } = input;
+  const { database, keyEncryptionKey } = input;
   const now = input.now ?? (() => new Date());
   const originOptions = { allowLoopbackHttp: input.allowLoopbackHttp === true };
 
@@ -131,8 +135,11 @@ export function createLoginVault(input: {
    * typed `http://…` and saw their login saved would believe it is used there.
    */
   const originsOf = (written: unknown): string[] => {
+    // THREE DIFFERENT THINGS, SAID AS THREE. No address at all, too many, and one that is not an
+    // HTTPS site were one fact, and the trail's page said "not an HTTPS site" of all of them —
+    // false of a list of nine good ones (Codex's fourth read of this change).
     if (!Array.isArray(written) || written.length === 0) {
-      throw new LoginRefused("laf:login_origin_refused", "origins");
+      throw new LoginRefused("laf:login_origins_required", "origins");
     }
     /*
      * REFUSED AT THE NINTH, NOT AFTER THE LAST. A body may be a megabyte, which is tens of
@@ -143,7 +150,7 @@ export function createLoginVault(input: {
      * a few times that either.
      */
     if (written.length > LOGIN_ORIGINS_MAX * 8) {
-      throw new LoginRefused("laf:login_origin_refused", "origins");
+      throw new LoginRefused("laf:login_origins_too_many", "origins");
     }
     const origins: string[] = [];
     for (const one of written) {
@@ -153,7 +160,7 @@ export function createLoginVault(input: {
         throw new LoginRefused("laf:login_origin_refused", "origins");
       if (origins.includes(origin)) continue;
       if (origins.length === LOGIN_ORIGINS_MAX) {
-        throw new LoginRefused("laf:login_origin_refused", "origins");
+        throw new LoginRefused("laf:login_origins_too_many", "origins");
       }
       origins.push(origin);
     }
@@ -224,8 +231,8 @@ export function createLoginVault(input: {
    * A SAVE OR A CHANGE THAT WAS NOT MADE LEAVES A ROW TOO: that it was refused, as which fact,
    * and about which field — and nothing of what was written. A login somebody tried to save for
    * an origin that is not HTTPS is something the trail should be able to say happened; so is a
-   * row whose seal no longer opens. This row has nothing to be written together with, so it goes
-   * through the audit store, and its loss is logged rather than made the refusal's.
+   * row whose seal no longer opens. This row has nothing to be written together with, so its
+   * loss is logged rather than made the refusal's.
    */
   const orRefused = async <T>(
     userId: string,
@@ -247,14 +254,36 @@ export function createLoginVault(input: {
             ? { code: error.code }
             : null;
       if (refusal) {
-        await recordAuditEvent(auditStore, {
-          eventType: "account.login_refused",
-          targetType: "saved_login",
-          // A save that was refused made no login to name.
-          targetId: about?.id ?? "unsaved",
-          actorUserId: userId,
-          payload: { ...(about ? onTrail(about) : {}), ...refusal },
-        }).catch(auditRowLost("account.login_refused"));
+        /*
+         * UNDER THE PERSON WHILE THERE IS ONE, AND UNDER THEIR PSEUDONYM ONCE THERE IS NOT. This
+         * row has no key to the person, so it can be written after they have left: a request
+         * that was already past the session check when their account's deletion committed
+         * would put their id back into a trail that had just been re-pointed away from it
+         * (Codex's fourth read of this change). The person's row is looked for, and held, in
+         * the transaction that writes this one; where it is gone the row is written under the
+         * same string everything else of theirs now carries (`account/pseudonym.ts`).
+         *
+         * Not closed by this: a row written while a deletion is under way but has not yet
+         * removed the person. That is every row any request writes under its actor, and is the
+         * deletion's to close by taking the person's row first — not one writer's.
+         */
+        await database
+          .transaction(async (transaction) => {
+            const [here] = await transaction
+              .select({ id: users.id })
+              .from(users)
+              .where(eq(users.id, userId))
+              .for("key share");
+            await recordAuditEvent(trailWithin(transaction), {
+              eventType: "account.login_refused",
+              targetType: "saved_login",
+              // A save that was refused made no login to name.
+              targetId: about?.id ?? "unsaved",
+              actorUserId: here ? userId : pseudonymFor(userId),
+              payload: { ...(about ? onTrail(about) : {}), ...refusal },
+            });
+          })
+          .catch(auditRowLost("account.login_refused"));
       }
       throw error;
     }

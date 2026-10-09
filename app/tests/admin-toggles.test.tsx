@@ -116,6 +116,12 @@ describe("the audit trail's filters", () => {
           ?.startsWith("computer.action_refused"),
     );
     expect(refusals).toBeDefined();
+    // Every family of refusal is in that slice — a login that was not saved or changed among
+    // them: drawn as a refusal under Everything, it was missing from the one view that collects
+    // what was blocked (Codex's fourth read of the change that added it).
+    expect(refusals?.url.searchParams.get("eventType")?.split(",")).toContain(
+      "account.login_refused",
+    );
     await view.unmount();
   });
 });

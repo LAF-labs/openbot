@@ -160,6 +160,9 @@ describe("what counts as the same row", () => {
       // The same refusal about two fields: a missing name and a missing password.
       { ...base, code: "laf:login_value_required", field: "username" },
       { ...base, code: "laf:login_value_required", field: "password" },
+      // A change that kept the login's values and one that replaced them.
+      { ...base, values: "kept" },
+      { ...base, values: "replaced" },
       {
         ...base,
         signedInSince: "2026-09-01T00:00:00.000Z",
