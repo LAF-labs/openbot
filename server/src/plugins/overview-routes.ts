@@ -253,6 +253,12 @@ export type ConnectionSwitch = { id: string; connected: boolean };
  * `connected` IS THE SCREEN'S WORD. An account that needs reconnecting and a site whose login
  * lapsed are both rows on 연결, and neither is something a Bot can work through — so neither is
  * "on" here. The partner card is left out: it is a registration with steps, not a switch.
+ *
+ * A SITE IS A SWITCH ONLY ONCE IT IS ON. Since 2026-10-09 nothing on a card can sign a site in: the
+ * switch that did went with the handoff, and the row says connecting comes back with the password
+ * card. Offered anyway, a site that is off held the Bot's turn ten minutes on a switch that is not
+ * there (review, 2026-10-09). Left out, it is not offered, and the Bot is told to do what it can in
+ * its browser. One that is on stays, so a card for it still says it is on.
  */
 export async function readConnectionSwitches(
   sources: ConnectionsOverviewSources,
@@ -266,10 +272,9 @@ export async function readConnectionSwitches(
         id: account.id,
         connected: account.status === "connected",
       })),
-    ...overview.sites.map((site) => ({
-      id: site.id,
-      connected: site.status === "connected",
-    })),
+    ...overview.sites
+      .filter((site) => site.status === "connected")
+      .map((site) => ({ id: site.id, connected: true })),
   ];
 }
 
