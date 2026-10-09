@@ -50,6 +50,7 @@ import {
   NOTE,
   PAYROLL,
   RULES,
+  SPELLING_WALK_MS,
   SECRET,
   spellingsOf,
 } from "./support/path-spellings";
@@ -303,26 +304,32 @@ describe("a path in the Bot's folder has one spelling", () => {
     }
   });
 
-  test("the computer reads a spelling exactly as it reads what was written", async () => {
-    // The whole claim, against the reader it is a claim about: for every string that has a
-    // spelling, the real route gives the same answer — the same file, or the same refusal —
-    // for the string as written and for its spelling.
-    let compared = 0;
-    for (const written of EVERY_SPELLING) {
-      const spelling = workspacePathOf(written);
-      if (spelling === null) continue;
-      for (const route of [readRoute, listRoute] as Route[]) {
-        const asWritten = await cameOf(() => through(route, { path: written }));
-        const asSpelled = await cameOf(() =>
-          through(route, { path: spelling }),
-        );
-        expect(`${written} → ${asSpelled}`).toBe(`${written} → ${asWritten}`);
-        compared++;
+  test(
+    "the computer reads a spelling exactly as it reads what was written",
+    async () => {
+      // The whole claim, against the reader it is a claim about: for every string that has a
+      // spelling, the real route gives the same answer — the same file, or the same refusal —
+      // for the string as written and for its spelling.
+      let compared = 0;
+      for (const written of EVERY_SPELLING) {
+        const spelling = workspacePathOf(written);
+        if (spelling === null) continue;
+        for (const route of [readRoute, listRoute] as Route[]) {
+          const asWritten = await cameOf(() =>
+            through(route, { path: written }),
+          );
+          const asSpelled = await cameOf(() =>
+            through(route, { path: spelling }),
+          );
+          expect(`${written} → ${asSpelled}`).toBe(`${written} → ${asWritten}`);
+          compared++;
+        }
       }
-    }
-    // A corpus that quietly became empty would pass everything above.
-    expect(compared).toBeGreaterThan(600);
-  });
+      // A corpus that quietly became empty would pass everything above.
+      expect(compared).toBeGreaterThan(600);
+    },
+    SPELLING_WALK_MS,
+  );
 
   test("the computer refuses a backslash itself, so a spelling it never sees is one it would not read", async () => {
     // The root of the third read's finding, closed where it is: `resolvePath` read a backslash as
@@ -348,8 +355,15 @@ describe("a path in the Bot's folder has one spelling", () => {
 });
 
 describe("a rule about a file holds however the path is written", () => {
-  test("no spelling reads a file a rule denies, or hands it to a site", async () => {
-    for (const rule of RULES) {
+  /*
+   * ONE TEST PER RULE. Each walks every spelling through the real gateway twice — some ten thousand
+   * calls a rule — and the four in one test took 5.0 s on a 4-core machine with nothing beside it,
+   * the default timeout to the millisecond (measured 2026-10-09). Split, every rule is still walked
+   * through every spelling, and no rule waits on the others.
+   */
+  test.each([...RULES])(
+    "no spelling reads a file a rule denies, or hands it to a site: %s",
+    async (rule) => {
       const { gateway } = await gatewayUnder(allowingAllBut(rule));
       for (const path of EVERY_SPELLING) {
         const read = await cameOf(() =>
@@ -365,11 +379,13 @@ describe("a rule about a file holds however the path is written", () => {
           PAYROLL,
         );
       }
-    }
-  });
+    },
+    SPELLING_WALK_MS,
+  );
 
-  test("no spelling writes over a file a rule denies", async () => {
-    for (const rule of RULES) {
+  test.each([...RULES])(
+    "no spelling writes over a file a rule denies: %s",
+    async (rule) => {
       // Each rule starts from the folder as it was.
       await folderAsItWas();
       const { gateway } = await gatewayUnder(allowingAllBut(rule));
@@ -384,49 +400,59 @@ describe("a rule about a file holds however the path is written", () => {
           `${rule} · ${JSON.stringify(path)} · ${await readDisk(join(root, "private", "pay.csv"), "utf8")}`,
         ).toBe(`${rule} · ${JSON.stringify(path)} · ${PAYROLL}`);
       }
-    }
-  });
+    },
+    SPELLING_WALK_MS,
+  );
 
-  test("a path with no one reading is refused with a row and never sent, whatever the policy allows", async () => {
-    const { gateway, sent, rows } = await gatewayUnder(allowingAllBut());
-    const before = await everything();
-    let refused = 0;
-    for (const path of EVERY_SPELLING.filter(hasNoOneReading)) {
-      for (const came of [
-        await cameOf(() =>
-          gateway.readFile("default", "bot-1", ACTOR, { path }),
-        ),
-        await cameOf(() =>
-          gateway.writeFile("default", "bot-1", ACTOR, { path, contents: "x" }),
-        ),
-        await cameOf(() =>
-          gateway.listFiles("default", "bot-1", ACTOR, { path }),
-        ),
-        await cameOf(() =>
-          gateway.uploadFile("default", "bot-1", ACTOR, { ...TARGET, path }),
-        ),
-      ]) {
-        expect(`${JSON.stringify(path)} · ${came}`).toBe(
-          `${JSON.stringify(path)} · laf:file_path_refused`,
-        );
-        refused++;
+  test(
+    "a path with no one reading is refused with a row and never sent, whatever the policy allows",
+    async () => {
+      const { gateway, sent, rows } = await gatewayUnder(allowingAllBut());
+      const before = await everything();
+      let refused = 0;
+      for (const path of EVERY_SPELLING.filter(hasNoOneReading)) {
+        for (const came of [
+          await cameOf(() =>
+            gateway.readFile("default", "bot-1", ACTOR, { path }),
+          ),
+          await cameOf(() =>
+            gateway.writeFile("default", "bot-1", ACTOR, {
+              path,
+              contents: "x",
+            }),
+          ),
+          await cameOf(() =>
+            gateway.listFiles("default", "bot-1", ACTOR, { path }),
+          ),
+          await cameOf(() =>
+            gateway.uploadFile("default", "bot-1", ACTOR, { ...TARGET, path }),
+          ),
+        ]) {
+          expect(`${JSON.stringify(path)} · ${came}`).toBe(
+            `${JSON.stringify(path)} · laf:file_path_refused`,
+          );
+          refused++;
+        }
       }
-    }
-    expect(refused).toBeGreaterThan(1000);
-    // Nothing reached the computer, nothing changed on the disk, and every attempt has its row:
-    // a refusal, by the fact, under the string as it was written — there is no other to give it.
-    expect(sent).toEqual([]);
-    expect(await everything()).toEqual(before);
-    const refusals = rows.filter(
-      (row) => row.eventType === "computer.action_refused",
-    );
-    expect(refusals.length).toBe(refused);
-    expect(
-      new Set(
-        refusals.map((row) => (row.payload.decision as { code?: string }).code),
-      ),
-    ).toEqual(new Set(["laf:file_path_refused"]));
-  });
+      expect(refused).toBeGreaterThan(1000);
+      // Nothing reached the computer, nothing changed on the disk, and every attempt has its row:
+      // a refusal, by the fact, under the string as it was written — there is no other to give it.
+      expect(sent).toEqual([]);
+      expect(await everything()).toEqual(before);
+      const refusals = rows.filter(
+        (row) => row.eventType === "computer.action_refused",
+      );
+      expect(refusals.length).toBe(refused);
+      expect(
+        new Set(
+          refusals.map(
+            (row) => (row.payload.decision as { code?: string }).code,
+          ),
+        ),
+      ).toEqual(new Set(["laf:file_path_refused"]));
+    },
+    SPELLING_WALK_MS,
+  );
 
   test("a dotfile denied by name is not read as `.env/`", async () => {
     const { gateway } = await gatewayUnder(
@@ -1251,48 +1277,52 @@ describe("a folder a rule exempts is named to the letter", () => {
     );
   });
 
-  test("the preset asks about everything the rule it replaced asked about, however a path is written", async () => {
-    /*
-     * The change goes one way. Over every spelling in this file — of paths in `notes/`, out of it
-     * and under another lettering of it, and of strings that are no path at all — wherever the
-     * old rule put a question, the new one does. It is quieter about nothing.
-     */
-    const was = await gatewayUnder(asking(RETIRED_NOTES_RULE));
-    const is = await gatewayUnder(asking(presetOnTheScreen(NOTES_PRESET)));
-    const asks = async (of: Gateway, path: string) =>
-      (await cameOf(() => write(path)(of))) === "asked";
-    const corpus = [
-      ...EVERY_SPELLING,
-      ...["Notes/b.md", "NOTES/b.md", "notes/../b.md", "notes"].flatMap(
-        spellingsOf,
-      ),
-      ...NOT_A_PATH,
-      "/notes/x.md",
-      "//notes/x.md",
-      "./notes/../x.md",
-      "notes/./../x.md",
-      "notes/a\0b",
-    ];
-    const quieter: string[] = [];
-    let both = 0;
-    let onlyNow = 0;
-    let neither = 0;
-    for (const path of corpus) {
-      const before = await asks(was.gateway, path);
-      const now = await asks(is.gateway, path);
-      if (before && !now) quieter.push(JSON.stringify(path));
-      else if (before) both++;
-      else if (now) onlyNow++;
-      else neither++;
-    }
-    expect(quieter).toEqual([]);
-    // Each kind is in the corpus, or the line above says less than it seems to: asked about by
-    // both, by neither (`notes/` itself, and what the gateway refuses unread), and only now —
-    // another lettering, and a string that only begins like the folder.
-    expect(both).toBeGreaterThan(500);
-    expect(neither).toBeGreaterThan(100);
-    expect(onlyNow).toBeGreaterThan(100);
-  });
+  test(
+    "the preset asks about everything the rule it replaced asked about, however a path is written",
+    async () => {
+      /*
+       * The change goes one way. Over every spelling in this file — of paths in `notes/`, out of it
+       * and under another lettering of it, and of strings that are no path at all — wherever the
+       * old rule put a question, the new one does. It is quieter about nothing.
+       */
+      const was = await gatewayUnder(asking(RETIRED_NOTES_RULE));
+      const is = await gatewayUnder(asking(presetOnTheScreen(NOTES_PRESET)));
+      const asks = async (of: Gateway, path: string) =>
+        (await cameOf(() => write(path)(of))) === "asked";
+      const corpus = [
+        ...EVERY_SPELLING,
+        ...["Notes/b.md", "NOTES/b.md", "notes/../b.md", "notes"].flatMap(
+          spellingsOf,
+        ),
+        ...NOT_A_PATH,
+        "/notes/x.md",
+        "//notes/x.md",
+        "./notes/../x.md",
+        "notes/./../x.md",
+        "notes/a\0b",
+      ];
+      const quieter: string[] = [];
+      let both = 0;
+      let onlyNow = 0;
+      let neither = 0;
+      for (const path of corpus) {
+        const before = await asks(was.gateway, path);
+        const now = await asks(is.gateway, path);
+        if (before && !now) quieter.push(JSON.stringify(path));
+        else if (before) both++;
+        else if (now) onlyNow++;
+        else neither++;
+      }
+      expect(quieter).toEqual([]);
+      // Each kind is in the corpus, or the line above says less than it seems to: asked about by
+      // both, by neither (`notes/` itself, and what the gateway refuses unread), and only now —
+      // another lettering, and a string that only begins like the folder.
+      expect(both).toBeGreaterThan(500);
+      expect(neither).toBeGreaterThan(100);
+      expect(onlyNow).toBeGreaterThan(100);
+    },
+    SPELLING_WALK_MS,
+  );
 
   test("an allowance still filed under the rule the preset used to write answers for nothing under the one it writes now", async () => {
     /*
@@ -1472,18 +1502,24 @@ describe("everything about one file is about its one spelling", () => {
     ).toEqual(["notes/a.md"]);
   });
 
-  test("for every spelling that is sent, the row names the string the computer was sent", async () => {
-    const { gateway, sent, rows } = await gatewayUnder(allowingAllBut());
-    for (const path of EVERY_SPELLING) {
-      await cameOf(() => gateway.readFile("default", "bot-1", ACTOR, { path }));
-    }
-    const judged = rows
-      .filter((row) => row.eventType === "computer.action_allowed")
-      .map((row) => row.payload.file ?? "");
-    // One reading, made once: what a rule was asked about, what the row says, what was sent.
-    expect(judged).toEqual(sent);
-    expect(sent.length).toBeGreaterThan(300);
-  });
+  test(
+    "for every spelling that is sent, the row names the string the computer was sent",
+    async () => {
+      const { gateway, sent, rows } = await gatewayUnder(allowingAllBut());
+      for (const path of EVERY_SPELLING) {
+        await cameOf(() =>
+          gateway.readFile("default", "bot-1", ACTOR, { path }),
+        );
+      }
+      const judged = rows
+        .filter((row) => row.eventType === "computer.action_allowed")
+        .map((row) => row.payload.file ?? "");
+      // One reading, made once: what a rule was asked about, what the row says, what was sent.
+      expect(judged).toEqual(sent);
+      expect(sent.length).toBeGreaterThan(300);
+    },
+    SPELLING_WALK_MS,
+  );
 
   test("an allowed act reaches the computer under the path's one spelling", async () => {
     const { gateway, sent, rows } = await gatewayUnder(allowingAllBut());

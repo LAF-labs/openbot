@@ -80,6 +80,18 @@ export const CORES = [
 ] as const;
 export const EVERY_SPELLING = CORES.flatMap(spellingsOf);
 
+/**
+ * The time a test that walks every spelling is given.
+ *
+ * Each walk is thousands of real calls — through the gateway's policy, onto a folder on disk, into a
+ * fake computer — about a second and a half alone. The gate runs four files at once on four cores
+ * (`scripts/test-ci.ts`), and there one rule's walk took the default five seconds to the
+ * millisecond while three other workers wrote to their databases (measured 2026-10-09). The work is
+ * real and the loop has no wait in it to remove, so the walks are split one rule to a test and given
+ * this, rather than the five seconds meant for a test that does one thing.
+ */
+export const SPELLING_WALK_MS = 30_000;
+
 /** None of these is a path in the folder: each is something the computer refuses as one. */
 export const NOT_A_PATH = [
   "/etc/passwd",

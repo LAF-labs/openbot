@@ -75,6 +75,7 @@ import {
   NOTE,
   PAYROLL,
   RULES as PAYROLL_RULES,
+  SPELLING_WALK_MS,
   SECRET,
 } from "./support/path-spellings";
 import {
@@ -3598,64 +3599,80 @@ describe("every path a run sends has one reading, and is its own spelling", () =
    * first kind, the string the file is STAGED under is that one spelling, and it has to be a path
    * the sandbox takes (`isRunPath`, which the gateway no longer asks: its client does, unsent).
    */
-  test("no string a call names is refused before `govern` for how it is written, and what a spelled one is staged under is a path the sandbox takes", () => {
-    const wrong: string[] = [];
-    let spelled = 0;
-    let forTheFloor = 0;
-    let noPath = 0;
-    for (const path of [...PATHS, ...EVERY_SPELLING, ...NOT_A_PATH, "", " "]) {
-      if (requestProblem({ script: SCRIPT, files: [path] }) !== null) {
-        wrong.push(`refused before govern: ${JSON.stringify(path)}`);
-      }
-      const staged = workspacePathOf(path);
-      if (hasNoOneReading(path)) forTheFloor += 1;
-      else if (staged === null) noPath += 1;
-      else {
-        spelled += 1;
-        // Its own spelling — read again, it is the same string — and, but for the folder
-        // itself, which is not a file and is never staged, a path the daemon places.
-        if (workspacePathOf(staged) !== staged || hasNoOneReading(staged)) {
-          wrong.push(`staged under what is not a spelling: ${staged}`);
+  test(
+    "no string a call names is refused before `govern` for how it is written, and what a spelled one is staged under is a path the sandbox takes",
+    () => {
+      const wrong: string[] = [];
+      let spelled = 0;
+      let forTheFloor = 0;
+      let noPath = 0;
+      for (const path of [
+        ...PATHS,
+        ...EVERY_SPELLING,
+        ...NOT_A_PATH,
+        "",
+        " ",
+      ]) {
+        if (requestProblem({ script: SCRIPT, files: [path] }) !== null) {
+          wrong.push(`refused before govern: ${JSON.stringify(path)}`);
         }
-        if (!isRunPath(staged) && staged !== ".") {
-          wrong.push(`staged under what the sandbox refuses: ${staged}`);
+        const staged = workspacePathOf(path);
+        if (hasNoOneReading(path)) forTheFloor += 1;
+        else if (staged === null) noPath += 1;
+        else {
+          spelled += 1;
+          // Its own spelling — read again, it is the same string — and, but for the folder
+          // itself, which is not a file and is never staged, a path the daemon places.
+          if (workspacePathOf(staged) !== staged || hasNoOneReading(staged)) {
+            wrong.push(`staged under what is not a spelling: ${staged}`);
+          }
+          if (!isRunPath(staged) && staged !== ".") {
+            wrong.push(`staged under what the sandbox refuses: ${staged}`);
+          }
         }
       }
-    }
-    expect(wrong).toEqual([]);
-    // Each of the three is most of nothing unless it is some of these.
-    expect(spelled).toBeGreaterThan(500);
-    expect(forTheFloor).toBeGreaterThan(500);
-    expect(noPath).toBeGreaterThan(300);
-  });
+      expect(wrong).toEqual([]);
+      // Each of the three is most of nothing unless it is some of these.
+      expect(spelled).toBeGreaterThan(500);
+      expect(forTheFloor).toBeGreaterThan(500);
+      expect(noPath).toBeGreaterThan(300);
+    },
+    SPELLING_WALK_MS,
+  );
 
-  test("a file named twice is named once: by one string, or by any two spellings of one path", () => {
-    const once = (files: string[]) => filesNamedBy({ script: SCRIPT, files });
-    expect(once(["uploads/a.csv", "uploads/a.csv"])).toEqual(["uploads/a.csv"]);
-    // The first way it was written is the one handed to `govern`, which reads it.
-    expect(
-      once([
-        "./uploads/a.csv",
+  test(
+    "a file named twice is named once: by one string, or by any two spellings of one path",
+    () => {
+      const once = (files: string[]) => filesNamedBy({ script: SCRIPT, files });
+      expect(once(["uploads/a.csv", "uploads/a.csv"])).toEqual([
         "uploads/a.csv",
-        " uploads//a.csv ",
-        "uploads/./a.csv/",
-        "uploads/b.csv",
-      ]),
-    ).toEqual(["./uploads/a.csv", "uploads/b.csv"]);
-    // Every spelling of the payroll that has one is the payroll, once.
-    const payroll = EVERY_SPELLING.filter(
-      (path) => workspacePathOf(path) === "private/pay.csv",
-    );
-    expect(payroll.length).toBeGreaterThan(100);
-    expect(once(payroll)).toEqual([payroll[0] as string]);
-    // What has no spelling stands as it was written, each string a thing of its own.
-    expect(once(["a\\b", "a\\b", "../x", "../x", "..", ""])).toEqual([
-      "a\\b",
-      "../x",
-      "..",
-      "",
-    ]);
-  });
+      ]);
+      // The first way it was written is the one handed to `govern`, which reads it.
+      expect(
+        once([
+          "./uploads/a.csv",
+          "uploads/a.csv",
+          " uploads//a.csv ",
+          "uploads/./a.csv/",
+          "uploads/b.csv",
+        ]),
+      ).toEqual(["./uploads/a.csv", "uploads/b.csv"]);
+      // Every spelling of the payroll that has one is the payroll, once.
+      const payroll = EVERY_SPELLING.filter(
+        (path) => workspacePathOf(path) === "private/pay.csv",
+      );
+      expect(payroll.length).toBeGreaterThan(100);
+      expect(once(payroll)).toEqual([payroll[0] as string]);
+      // What has no spelling stands as it was written, each string a thing of its own.
+      expect(once(["a\\b", "a\\b", "../x", "../x", "..", ""])).toEqual([
+        "a\\b",
+        "../x",
+        "..",
+        "",
+      ]);
+    },
+    SPELLING_WALK_MS,
+  );
 
   const DIRECTORY = madeDirectoryFor(AT, {
     botId: BOT,
@@ -3850,9 +3867,15 @@ describe("a file a call names for a run, however its path is written", () => {
     return { run };
   }
 
-  test("a deny on a file holds through a run under every spelling of it, the refused row names the file, and no attempt is unsaid", async () => {
-    let namedThePayroll = 0;
-    for (const rule of PAYROLL_RULES) {
+  /*
+   * One test per rule, for the reason `gateway-file-paths.test.ts` gives: the four in one took 4.2 s
+   * alone on a 4-core machine and over the default 5 s beside three other files (measured
+   * 2026-10-09). Each rule still runs every spelling.
+   */
+  test.each([...PAYROLL_RULES])(
+    "a deny on a file holds through a run under every spelling of it, the refused row names the file, and no attempt is unsaid: %s",
+    async (rule) => {
+      let namedThePayroll = 0;
       const { run } = overTheFolder(denying(rule));
       for (const path of EVERY_SPELLING) {
         const { threw, rows, staged } = await run([path]);
@@ -3883,86 +3906,95 @@ describe("a file a call names for a run, however its path is written", () => {
         });
         expect(rows[0]?.payload.forScript).toBe(sha256(SCRIPT));
       }
-    }
-    // Four rules, and well over a hundred ways of writing that one path under each.
-    expect(namedThePayroll).toBeGreaterThan(400);
-    expect(EVERY_SPELLING.length).toBeGreaterThan(2500);
-  });
+      // Well over a hundred ways of writing that one path, under this rule.
+      expect(namedThePayroll).toBeGreaterThan(100);
+      expect(EVERY_SPELLING.length).toBeGreaterThan(2500);
+    },
+    SPELLING_WALK_MS,
+  );
 
-  test("allowed, every spelling hands the script the file the computer reads for it, under its one spelling — and the row, the run's own name and what the caller is told agree", async () => {
-    const { run } = overTheFolder(PERMISSIVE);
-    /** What each file a Bot can name holds, by its one spelling. */
-    const holds: Record<string, string> = {
-      "private/pay.csv": PAYROLL,
-      ".env": SECRET,
-      "notes/a.md": NOTE,
-    };
-    const handed: Record<string, number> = {};
-    /** How often the trail said "the same call again", and of what. */
-    const again: string[] = [];
-    for (const path of EVERY_SPELLING) {
-      const { ended, threw, rows, repeated, staged, asked } = await run([path]);
-      const said = JSON.stringify(path);
-      again.push(...repeated.map((row) => String(row.payload.action)));
-      const spelling = workspacePathOf(path);
-      if (!ended) {
-        // No run: a path with no one reading, a folder, or a file that is not there. Nothing
-        // was staged, and the trail says what became of the attempt.
-        expect({ said, staged, rows: rows.length > 0 }).toEqual({
+  test(
+    "allowed, every spelling hands the script the file the computer reads for it, under its one spelling — and the row, the run's own name and what the caller is told agree",
+    async () => {
+      const { run } = overTheFolder(PERMISSIVE);
+      /** What each file a Bot can name holds, by its one spelling. */
+      const holds: Record<string, string> = {
+        "private/pay.csv": PAYROLL,
+        ".env": SECRET,
+        "notes/a.md": NOTE,
+      };
+      const handed: Record<string, number> = {};
+      /** How often the trail said "the same call again", and of what. */
+      const again: string[] = [];
+      for (const path of EVERY_SPELLING) {
+        const { ended, threw, rows, repeated, staged, asked } = await run([
+          path,
+        ]);
+        const said = JSON.stringify(path);
+        again.push(...repeated.map((row) => String(row.payload.action)));
+        const spelling = workspacePathOf(path);
+        if (!ended) {
+          // No run: a path with no one reading, a folder, or a file that is not there. Nothing
+          // was staged, and the trail says what became of the attempt.
+          expect({ said, staged, rows: rows.length > 0 }).toEqual({
+            said,
+            staged: [],
+            rows: true,
+          });
+          expect({
+            said,
+            named: (threw?.message ?? "").startsWith("laf:"),
+          }).toEqual({ said, named: true });
+          continue;
+        }
+        // A run: of the one file that spelling names, and of no other.
+        expect({ said, known: spelling !== null && spelling in holds }).toEqual(
+          {
+            said,
+            known: true,
+          },
+        );
+        const file = spelling as string;
+        handed[file] = (handed[file] ?? 0) + 1;
+        expect({ said, staged }).toEqual({
           said,
-          staged: [],
-          rows: true,
+          staged: [{ path: file, holds: holds[file] as string }],
         });
+        // One name for it everywhere: what the computer was asked for, the read's row, the run's
+        // own row, and what the caller is told its file is called.
+        expect({ said, asked }).toEqual({ said, asked: [`fileBytes ${file}`] });
         expect({
           said,
-          named: (threw?.message ?? "").startsWith("laf:"),
-        }).toEqual({ said, named: true });
-        continue;
+          rows: rows.map((row) => [
+            row.eventType,
+            row.payload.file ?? row.payload.files ?? null,
+          ]),
+        }).toEqual({
+          said,
+          rows: [
+            ["computer.action_allowed", file],
+            ["computer.action_allowed", [file]],
+            ["computer.script_finished", null],
+          ],
+        });
+        expect({ said, told: ended.files }).toEqual({ said, told: [file] });
       }
-      // A run: of the one file that spelling names, and of no other.
-      expect({ said, known: spelling !== null && spelling in holds }).toEqual({
-        said,
-        known: true,
-      });
-      const file = spelling as string;
-      handed[file] = (handed[file] ?? 0) + 1;
-      expect({ said, staged }).toEqual({
-        said,
-        staged: [{ path: file, holds: holds[file] as string }],
-      });
-      // One name for it everywhere: what the computer was asked for, the read's row, the run's
-      // own row, and what the caller is told its file is called.
-      expect({ said, asked }).toEqual({ said, asked: [`fileBytes ${file}`] });
-      expect({
-        said,
-        rows: rows.map((row) => [
-          row.eventType,
-          row.payload.file ?? row.payload.files ?? null,
-        ]),
-      }).toEqual({
-        said,
-        rows: [
-          ["computer.action_allowed", file],
-          ["computer.action_allowed", [file]],
-          ["computer.script_finished", null],
-        ],
-      });
-      expect({ said, told: ended.files }).toEqual({ said, told: [file] });
-    }
-    // Each of the three was reached, and by more than its own plain name.
-    expect(Object.keys(handed).sort()).toEqual(Object.keys(holds).sort());
-    for (const count of Object.values(handed)) {
-      expect(count).toBeGreaterThan(20);
-    }
-    /*
-     * AND A SPELLING DOES NOT MAKE IT ANOTHER RUN. One script over one file, named a hundred
-     * ways, is the same run a hundred times to the count — which is kept on the run, by the
-     * files as they were read — and the trail said so as it went. The reads were never counted
-     * (`forScript`): the only thing that came round again here is the run.
-     */
-    expect(again.length).toBeGreaterThan(3);
-    expect(new Set(again)).toEqual(new Set([RUN_SCRIPT_TOOL]));
-  });
+      // Each of the three was reached, and by more than its own plain name.
+      expect(Object.keys(handed).sort()).toEqual(Object.keys(holds).sort());
+      for (const count of Object.values(handed)) {
+        expect(count).toBeGreaterThan(20);
+      }
+      /*
+       * AND A SPELLING DOES NOT MAKE IT ANOTHER RUN. One script over one file, named a hundred
+       * ways, is the same run a hundred times to the count — which is kept on the run, by the
+       * files as they were read — and the trail said so as it went. The reads were never counted
+       * (`forScript`): the only thing that came round again here is the run.
+       */
+      expect(again.length).toBeGreaterThan(3);
+      expect(new Set(again)).toEqual(new Set([RUN_SCRIPT_TOOL]));
+    },
+    SPELLING_WALK_MS,
+  );
 
   test("the same file named twice — by one string or by several spellings — is judged once, read once and staged once", async () => {
     const { run } = overTheFolder(PERMISSIVE);

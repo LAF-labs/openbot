@@ -111,6 +111,35 @@ one floor per workspace, so a suite that quietly lost an area fails instead of
 going green. Raise a floor when that workspace grows; lower it only with a
 reason.
 
+### The gate runs on four workers
+
+`test:ci` spreads each workspace's files over `LAF_TEST_WORKERS` processes (one
+per core, at most four — what CI has), each on its own copy of the test
+database, as evenly as `scripts/test-durations.json` says they can be. Measured
+2026-10-09 with CI's Bun on 4 cores: 586 s one workspace at a time, about 196 s
+spread. Profiled per file, nothing in the suite is waiting any more — every
+file is CPU work — so the next second comes from doing less, not from waiting
+less. Keeping it that way, for every test written:
+
+- **Nothing near the five-second default.** A test that walks a large table —
+  every spelling of a path, every code — is one test per case (`test.each`),
+  so no case waits on the others and none times out beside three other files.
+- **A render in a process of its own carries its own timeout**, as its
+  neighbours do: a cold `bun` is seconds of CPU when every core is busy.
+- **Never sleep to prove something did not happen** where an event can be
+  awaited; anything on a clock gets fake timers.
+- **A file passes alone and beside any other.** Its own temp directory, port 0,
+  its own rows cleaned up, no state left in a module for the next file. Which
+  files share a process changes whenever the times do.
+- **After adding a slow file, refresh the times**: `bun run test:ci
+  --update-durations` from a passing run, committed with the file. A stale
+  file makes the spread uneven, never a run wrong.
+
+`LAF_TEST_WORKERS=1` is the gate as it was — one process per workspace, one
+after another — for telling whether a failure needs the parallel run. Not
+`bun test --parallel`: under Bun 1.3.14 it runs each file in a fresh global
+object, and some files fail there alone.
+
 ## How a change lands
 
 **Nothing is pushed to `main`** (owner, 2026-10-02). A change is a branch
@@ -283,7 +312,8 @@ cannot sit in the prompt (`~/laf/docs/agent-harness-design.md`, rows 1–5).
 ### The tests have a database of their own
 
 `test:ci` runs them in `<name>_test` on the server `DATABASE_URL` names,
-creating and migrating it if it is absent. The database you develop against is
+creating and migrating it if it is absent — each worker in its own copy of it,
+made afresh on every run (`<name>_test_w1` …). The database you develop against is
 never written to — one file deletes a row by identity rather than by what it
 made (the boundary policy row), and against a live database that is somebody's
 afternoon. Run the gate twice at once by giving each worktree
