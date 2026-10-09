@@ -66,6 +66,17 @@ export const APP_DOM_TIMEOUT_MS = 30_000;
 /** Call from `afterAll`. */
 export async function removeAppDom(): Promise<void> {
   await unmountApps();
+  /*
+   * WHAT THE BOT WAS DOING, FORGOTTEN WITH THE FILE. The task card a file's conversation published
+   * is module state, and the next file in the same process read it: `sidebar-rail.test.tsx`, run
+   * after `browsing-row-transcript.test.tsx` once the gate spread files over workers, found its Bot
+   * "Busy working" (measured 2026-10-09). Imported here, not at the top: it is the app's module,
+   * loaded after the document is (see `support/mount.tsx`).
+   */
+  const { forgetBrowsingNow } = await import(
+    "../../src/lib/computer/browsing-now"
+  );
+  forgetBrowsingNow();
   await GlobalRegistrator.unregister();
 }
 

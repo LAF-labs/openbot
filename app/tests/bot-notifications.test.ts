@@ -1,17 +1,52 @@
-import { afterEach, describe, expect, test } from "bun:test";
 import {
-  canRaiseNotice,
-  decideNotice,
-  noticeBody,
-  type NoticeRequest,
-  readNotificationSupport,
-  THROTTLE_MS,
-  throttleKey,
-} from "../src/lib/notifications/bot-notifications";
-import {
-  cardPlace,
-  openChannelFrom,
-} from "../src/lib/notifications/use-bot-notifications";
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  test,
+} from "bun:test";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import type { NoticeRequest } from "../src/lib/notifications/bot-notifications";
+
+type Notices = typeof import("../src/lib/notifications/bot-notifications");
+type Hooks = typeof import("../src/lib/notifications/use-bot-notifications");
+
+let canRaiseNotice: Notices["canRaiseNotice"];
+let decideNotice: Notices["decideNotice"];
+let noticeBody: Notices["noticeBody"];
+let readNotificationSupport: Notices["readNotificationSupport"];
+let THROTTLE_MS: Notices["THROTTLE_MS"];
+let throttleKey: Notices["throttleKey"];
+let cardPlace: Hooks["cardPlace"];
+let openChannelFrom: Hooks["openChannelFrom"];
+
+/*
+ * IMPORTED UNDER A DOCUMENT, AS EVERY FILE THAT REACHES THE APP'S MODULES IS (`support/mount.tsx`).
+ * `use-bot-notifications` brings in `use-channel-events`, whose socket state is an `EventTarget`
+ * made when the module loads. Loaded here with no document, it was Bun's own, and stayed so for
+ * every later file in the process: `socket-heartbeat.test.tsx`, run after this one once the gate
+ * spread files over workers, had its `Event` refused by it (measured 2026-10-09). happy-dom has no
+ * `Notification`, so nothing this file reads changes.
+ */
+beforeAll(async () => {
+  GlobalRegistrator.register({ url: "http://localhost:3110/" });
+  ({
+    canRaiseNotice,
+    decideNotice,
+    noticeBody,
+    readNotificationSupport,
+    THROTTLE_MS,
+    throttleKey,
+  } = await import("../src/lib/notifications/bot-notifications"));
+  ({ cardPlace, openChannelFrom } = await import(
+    "../src/lib/notifications/use-bot-notifications"
+  ));
+});
+
+afterAll(async () => {
+  await GlobalRegistrator.unregister();
+});
 
 const finished: NoticeRequest = {
   kind: "finished",
