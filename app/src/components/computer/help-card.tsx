@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/card-surface";
 import { focusRing } from "@/components/ui/focus";
 import { questionOn, watchQuestions } from "@/lib/approvals";
-import { outcomeOf } from "@/lib/computer/browsing";
+import { labelForCode, outcomeOf } from "@/lib/computer/browsing";
 import { setScreenOpen } from "@/lib/computer/screen-panel";
 import { useDeclaredBotId } from "@/lib/copilot/active-bot";
 import { t } from "@/lib/i18n";
@@ -102,6 +102,17 @@ export function HelpCard({
   const secretFieldId = useId();
 
   const ending = status === "complete" ? endingOf(result) : null;
+  /*
+   * A REFUSAL IS SAID AS WHAT IT WAS. Asking for a value is decided by the gateway now, so its
+   * call can end the way any act's can: a rule of the deployment's refused it, or the person
+   * answered the question about it with a no. Both arrived here as a result that is not ok, and
+   * were chipped "Didn't work" — over a request nobody tried and failed at.
+   */
+  const outcome = status === "complete" ? outcomeOf(result) : null;
+  const refusedAs =
+    outcome?.refused === true
+      ? labelForCode(outcome.code, undefined)
+      : undefined;
 
   const handleDone = async () => {
     if (!botId) return;
@@ -174,7 +185,7 @@ export function HelpCard({
                 : "bg-muted text-muted-foreground",
             )}
           >
-            {ending ? endingLabel(ending) : t("Needs you")}
+            {ending ? (refusedAs ?? endingLabel(ending)) : t("Needs you")}
           </span>
         ) : null}
       </div>

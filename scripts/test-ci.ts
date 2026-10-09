@@ -2301,7 +2301,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * By hand: 2133 and 1 are 2134; 920 and 1 are 921.
  *
  * RAISED 2026-10-10, `server` from 3894 to 3902, `agent-computer` from 488 to 496 and `app` from
- * 2134 to 2135, for a value
+ * 2134 to 2136, for a value
  * asked of a person going through the gate (record §6, piece 2-1a). Seven to `server`. Five in
  * `computer-gateway.test.ts`: asking for a value is an intent of its own — the shipped policy
  * refuses a Bot typing into a password box and lets it ask a person to, with the row every act
@@ -2332,8 +2332,15 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * as the question, with its buttons, until it is answered, and then as the masked box. The
  * gateway's test of a Stop holds more than it did: that ask and no other, on a deadline of its
  * own, not waited for. Eight more mutations each fail one of these.
+ * And for the read that stood in for Codex's third, which its limit refused (the author's own, of
+ * the whole change): one more to `app`, in `help-card-reload.test.tsx` — a request that was
+ * refused, by a rule or by the person's own no, is chipped as which it was and not as "Didn't
+ * work", which is what a request nobody tried and failed at was being called. Nothing new to the
+ * other two, whose tests hold more: the value names the ask it answers — the ref and the snapshot
+ * — and a computer holding another ask takes none of it and keeps its own standing
+ * (`secret-snapshot.test.ts`, `computer-gateway.test.ts`). Two more mutations each fail one.
  * By hand: 5, 1 and 1 are 7, and 1 more is 8, and 3894 and 8 are 3902; 3 and 1 and 4 are 8, and
- * 488 and 8 are 496; 2134 and 1 are 2135.
+ * 488 and 8 are 496; 2134 and 1 and 1 are 2136.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -2364,7 +2371,7 @@ const GROUPS: readonly {
   processes?: number;
 }[] = [
   { name: "server", floor: 3902, roots: ["server"] },
-  { name: "app", floor: 2135, roots: ["app"] },
+  { name: "app", floor: 2136, roots: ["app"] },
   {
     name: "agent-computer",
     floor: 496,

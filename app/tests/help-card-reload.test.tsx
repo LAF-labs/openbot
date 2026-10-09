@@ -307,4 +307,62 @@ describe("a request for a value that a rule asks about first", () => {
     expect(box()).not.toBeNull();
     expect(buttons()).toContain("Skip");
   });
+
+  test("refused — by a rule, or by the person's own no — it says which, and not that it did not work", async () => {
+    const { HelpCard } = await import("../src/components/computer/help-card");
+    const { ActiveBotProvider, useActiveBot } = await import(
+      "../src/lib/copilot/active-bot"
+    );
+    const { ko } = await import("../src/lib/i18n-ko");
+    for (const [code, said] of [
+      ["laf:policy_denied", "A rule refused it"],
+      ["laf:person_declined", "A person declined that"],
+    ] as const) {
+      function Conversation() {
+        useActiveBot("agent-refused");
+        return (
+          <HelpCard
+            kind="secret"
+            result={JSON.stringify({ ok: false, code, refused: true })}
+            said="네이버 비밀번호"
+            status="complete"
+            toolCallId={`call-${code}`}
+          />
+        );
+      }
+      const view = await mount(
+        <ActiveBotProvider>
+          <Conversation />
+        </ActiveBotProvider>,
+      );
+      await view.settle(30);
+      expect([code, view.host.textContent?.includes(said)]).toEqual([
+        code,
+        true,
+      ]);
+      expect(view.host.textContent).not.toContain("Didn't work");
+      expect(said in ko).toBe(true);
+      await unmountAll();
+    }
+    // One that was tried and did not work is still said as that.
+    function Failed() {
+      useActiveBot("agent-refused");
+      return (
+        <HelpCard
+          kind="secret"
+          result={JSON.stringify({ ok: false, code: "laf:stale_refs" })}
+          said="네이버 비밀번호"
+          status="complete"
+          toolCallId="call-failed"
+        />
+      );
+    }
+    const view = await mount(
+      <ActiveBotProvider>
+        <Failed />
+      </ActiveBotProvider>,
+    );
+    await view.settle(30);
+    expect(view.host.textContent).toContain("Didn't work");
+  });
 });

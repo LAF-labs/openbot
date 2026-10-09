@@ -2212,7 +2212,11 @@ describe("what a snapshot carries into this process", () => {
     expect(sent).toEqual([
       [
         "hunter2",
-        { snapshotId: 3, element: { role: "textbox", name: "비밀번호" } },
+        {
+          ref: "e2",
+          snapshotId: 3,
+          element: { role: "textbox", name: "비밀번호" },
+        },
       ],
     ]);
     // Spent with the value: a second one has nothing to be held to.

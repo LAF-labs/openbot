@@ -315,7 +315,10 @@ export function createSecrets(deps: {
     const request = secretRequests.get(computerId);
     if (!request) throw new StaleSnapshotError(NO_SECRET_PENDING);
     const result = await as(botId).supplySecret(text, {
+      // Which ask this answers — the computer takes a value for that one and no other —
+      ref: request.ref,
       snapshotId: request.snapshotId,
+      // — and what the field was judged as, which is what it must still be.
       element: { role: request.role, name: request.name },
     });
     secretTargets.delete(computerId);
