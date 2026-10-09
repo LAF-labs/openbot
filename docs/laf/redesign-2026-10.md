@@ -554,8 +554,12 @@ Hark의 project와 같다.
   - 대상은 이미지 캡챠다. 행동으로 판정하는 캡챠(reCAPTCHA 체크박스, 보이지 않는 캡챠, Turnstile)는
     모델로 풀리지 않는다.
   - 그 모델의 eval이 필요하다.
-- **1MB가 넘는 다운로드도 되게 한다**(지금 `laf:download_too_large`, `agent-computer/src/page-watch.ts`).
-  상한은 VM 디스크로 정하고, 응답에 싣지 않고 파일로 넘기고, 보관 기간을 `data-lifecycle.md`에 적는다.
+- **1MB가 넘는 다운로드도 되게 한다.** 상한은 VM 디스크로 정하고, 응답에 싣지 않고 파일로 넘기고,
+  보관 기간을 `data-lifecycle.md`에 적는다. **받는 쪽이 들어감: 2026-10-09** — 페이지가 건넨 파일은 한 개
+  1GB까지, 받은 뒤에도 디스크에 2GB가 남을 때만 두고, 받는 동안 남은 공간을 재서 모자라면 끊는다
+  (`agent-computer/src/workspace.ts` `saveDownload`, `page-watch.ts` `watchRoom`). **남은 것:** 5MB가 넘는
+  파일을 사람에게 넘기는 길(지금 카드는 5MB까지, `shared/workspace-files.ts` `HANDOFF_MAX_BYTES` — 통째로
+  읽어 응답에 싣기 때문이다. 흘려보내는 경로가 필요하다).
 
 ## 8. 프로필과 effort
 

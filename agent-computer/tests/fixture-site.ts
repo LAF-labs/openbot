@@ -42,7 +42,14 @@ export const FRAME_BUTTON = "프레임 안 버튼";
 export const FRAME_CLICKED = "프레임 버튼 눌림";
 
 export const DOWNLOAD_NAME = "정산내역.csv";
-export const DOWNLOAD_BODY = "날짜,금액\n2026-09-01,12000\n";
+/**
+ * OVER A MEGABYTE, ON PURPOSE: about two. A download used to be held to what a Bot may write in
+ * one call, so the ordinary statement a seller's site hands over was written, measured, deleted
+ * and reported as too large — and this fixture's two lines never showed it. A page's download is
+ * bounded by the disk now (`agent-computer/src/workspace.ts`), and this is the real browser
+ * landing one that the old bound refused.
+ */
+export const DOWNLOAD_BODY = `날짜,금액\n${"2026-09-01,12000\n".repeat(120_000)}`;
 
 const FIXTURES_DIR = join(import.meta.dir, "fixtures");
 

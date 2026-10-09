@@ -29,6 +29,7 @@ import {
   realpath,
   rm,
   stat,
+  statfs,
   writeFile,
 } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
@@ -116,7 +117,35 @@ export type WorkspaceLimits = {
    * server's, of bytes it already holds, and a workbook is routinely over a megabyte.
    */
   putBytes?: number;
+  /**
+   * Most bytes one file a PAGE hands the browser may be (`saveDownload`).
+   *
+   * NOT `writeBytes`. That megabyte bounds what a Bot writes by its own tool, in one call of a
+   * loop; until 2026-10-09 it bounded this too, and a statement or a catalogue a site offers — an
+   * ordinary workbook, a PDF of a few megabytes — was written, measured and deleted, and the person
+   * told to fetch it themselves (owner, 2026-10-08: a download over 1 MB works; the disk decides).
+   * Left out, it is {@link LANDED_MAX_BYTES}.
+   */
+  landedBytes?: number;
+  /**
+   * What must still be free on the folder's volume with a download on it. Left out, it is
+   * {@link SPARE_BYTES}. The disk is the deployment's one disk — the database, the browser's
+   * profile and the images are on it too — so the bound on a download is what it leaves them.
+   */
+  spareBytes?: number;
+  /** What is free on the folder's volume, in bytes. Left out, the volume is asked (`statfs`). */
+  freeBytes?: () => Promise<number>;
 };
+
+/**
+ * The most one downloaded file may be, whatever the disk has: a gigabyte. A ceiling so that one
+ * click cannot take most of a disk that happens to be empty today; the disk's own room
+ * ({@link SPARE_BYTES}) is the bound that is usually met first on a deployment that has been used.
+ */
+export const LANDED_MAX_BYTES = 1_000_000_000;
+
+/** What a download must leave free on the volume: two gigabytes, for everything else that lives there. */
+export const SPARE_BYTES = 2_000_000_000;
 
 /**
  * One thing in the workspace. Folders included so a Bot can see the shape, not just the leaves.
@@ -277,6 +306,14 @@ export function createWorkspace(
   const downloadBytes = limits.downloadBytes ?? HANDOFF_MAX_BYTES;
   const wholeBytes = limits.wholeBytes ?? ATTACHMENT_MAX_BYTES;
   const putBytes = limits.putBytes ?? HANDOFF_MAX_BYTES;
+  const landedBytes = limits.landedBytes ?? LANDED_MAX_BYTES;
+  const spareBytes = limits.spareBytes ?? SPARE_BYTES;
+  const freeBytes =
+    limits.freeBytes ??
+    (async () => {
+      const volume = await statfs(rootPath);
+      return volume.bavail * volume.bsize;
+    });
 
   /**
    * A path that has to be a file: where it really is, and what the disk says about it.
@@ -656,11 +693,14 @@ export function createWorkspace(
      * Chromium's own temporary directory until then, and is deleted when the browser closes, so a
      * download that is not moved here is a download the Bot cannot ever open.
      *
-     * THE SAME LIMIT AS A WRITE. A Bot writing a megabyte of text is refused, and a Bot clicking a
-     * link to a 4GB file must be too, or the bound on what one Bot can put on the volume is decided
-     * by whatever it happened to click. The size is only knowable after the file has landed, so an
-     * oversized one is written and then removed — the refusal is real either way, and the disk holds
-     * it for the moment in between rather than for ever.
+     * BOUNDED BY THE DISK, NOT BY WHAT A BOT MAY WRITE (owner, 2026-10-08). It was the write's
+     * megabyte, which refused an ordinary workbook. Two bounds now, and a download is kept only
+     * inside both: a ceiling on one file (`landedBytes`), and room left on the volume once it is
+     * there (`spareBytes`) — a Bot clicking a link to a 40 GB file must still be refused, or what
+     * one click puts on the deployment's only disk is decided by whatever it happened to click.
+     * The size is only knowable after the file has landed, so an oversized one is written and then
+     * removed — the refusal is real either way. WHILE it is landing, `hasRoom` is what the caller
+     * watches, so a file that would fill the disk is stopped before it has (`page-watch.ts`).
      *
      * A name already taken is suffixed rather than overwritten. Downloading 정산내역.xlsx twice is
      * two months' figures, and the second silently replacing the first is a lost month.
@@ -696,15 +736,37 @@ export function createWorkspace(
           "laf:file_not_found",
         );
       }
-      if (written.size > limits.writeBytes) {
+      if (written.size > landedBytes) {
         await rm(full, { force: true }).catch(() => undefined);
         throw new WorkspaceFileError(
-          `That download is ${written.size} bytes and the limit is ${limits.writeBytes}.`,
+          `That download is ${written.size} bytes and the limit is ${landedBytes}.`,
           "laf:file_too_large",
-          { bytes: written.size, limit: limits.writeBytes },
+          { bytes: written.size, limit: landedBytes },
+        );
+      }
+      // Asked with the file on the disk: what is free now is what it left. A volume that cannot be
+      // asked is not a reason to delete somebody's file — the ceiling above still held.
+      const free = await freeBytes().catch(() => null);
+      if (free !== null && free < spareBytes) {
+        await rm(full, { force: true }).catch(() => undefined);
+        throw new WorkspaceFileError(
+          `That download is ${written.size} bytes and leaves ${free} free; ${spareBytes} must stay free.`,
+          "laf:file_too_large",
+          { bytes: written.size, limit: landedBytes },
         );
       }
       return { path: relativePath, bytes: written.size };
+    },
+
+    /**
+     * Whether the volume still has the room a download must leave. Asked while one is landing
+     * (`page-watch.ts`): its size is not known until it has, and by then a large enough file has
+     * already filled the disk under the database. True where the volume cannot be asked — the
+     * check after landing still runs.
+     */
+    async hasRoom(): Promise<boolean> {
+      const free = await freeBytes().catch(() => null);
+      return free === null || free >= spareBytes;
     },
   };
 }
