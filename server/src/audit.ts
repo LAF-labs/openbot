@@ -469,6 +469,13 @@ export const auditEventTypes = [
   "account.login_saved",
   "account.login_replaced",
   "account.login_removed",
+  /**
+   * A save or a change of one that was NOT made: refused as not a login (an origin that is not
+   * HTTPS, a value missing, the vault full), or not possible (the row's seal does not open under
+   * this deployment's key). The payload is the fact's code and the field it was about. Nothing
+   * that was written — a refused origin is not copied here either.
+   */
+  "account.login_refused",
 
   /*
    * The fleet tool being told that somebody arrived or left, and the times it could not be told.

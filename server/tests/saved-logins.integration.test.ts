@@ -40,7 +40,17 @@ const rows: AuditEventInput[] = [];
 const auditStore: AuditStore = {
   insert: async (event) => void rows.push(event),
 };
-const vault = createLoginVault({ database, auditStore, keyEncryptionKey: KEY });
+/*
+ * The rows a change writes with itself are caught here too, so a test can read them as it reads
+ * the refusals. That they are written ON THE CHANGE'S TRANSACTION when nobody says otherwise —
+ * and what happens when that row cannot be written — has tests of its own at the end.
+ */
+const vault = createLoginVault({
+  database,
+  auditStore,
+  keyEncryptionKey: KEY,
+  trailWithin: () => auditStore,
+});
 
 const owner = `login-owner-${tag}`;
 const other = `login-other-${tag}`;
@@ -354,8 +364,8 @@ describe("a login a person saves", () => {
         "password",
       ],
       [{ ...NAVER, site: "not-a-site" }, "laf:login_site_unknown", "site"],
-      ["not an object", "laf:login_label_required", "label"],
     ] as const) {
+      rows.length = 0;
       const refused = await call("POST", "", body);
       const said = await refused.text();
       expect([refused.status, JSON.parse(said)]).toEqual([
@@ -364,14 +374,79 @@ describe("a login a person saves", () => {
       ]);
       // A refusal does not say back what it refused.
       expect(holdsAValue(said)).toBe(false);
+      /*
+       * AND IT LEAVES A ROW: that a save was refused, as which fact, about which field — and
+       * nothing of what was written, not the origin that was refused either (Codex's read of
+       * this change: a refusal with no row is an attempt the trail cannot say happened).
+       */
+      expect(
+        rows.map((one) => [
+          one.eventType,
+          one.actorUserId,
+          one.targetType,
+          one.targetId,
+          one.payload,
+        ]),
+      ).toEqual([
+        [
+          "account.login_refused",
+          owner,
+          "saved_login",
+          "unsaved",
+          { code, field },
+        ],
+      ]);
     }
+    expect(JSON.stringify(rows)).not.toContain("naver");
     expect(await stored(owner)).toBe(before);
-    // A change is held to the same: a login is not edited into one that is not.
+    // A change is held to the same: a login is not edited into one that is not — and its row
+    // names the login the change was refused for.
     const [mine] = await vault.list(owner);
+    rows.length = 0;
     const edited = await call("PATCH", `/${mine?.id}`, {
       origins: ["http://nid.naver.com"],
     });
     expect(edited.status).toBe(400);
+    expect(await stored(owner)).toBe(before);
+    expect(
+      rows.map((one) => [one.eventType, one.targetId, one.payload]),
+    ).toEqual([
+      [
+        "account.login_refused",
+        mine?.id,
+        { code: "laf:login_origin_refused", field: "origins" },
+      ],
+    ]);
+
+    /*
+     * A BODY THAT CANNOT BE READ IS REFUSED AS THAT, never taken for an empty one: a change of
+     * nothing answers 200 with the row as it stands, and a window that had sent a new password
+     * as bytes this could not read would be told it was saved.
+     */
+    rows.length = 0;
+    for (const [method, path] of [
+      ["POST", ""],
+      ["PATCH", `/${mine?.id}`],
+    ] as const) {
+      for (const body of ['"not an object"', '["label"]', "{not json", ""]) {
+        const unreadable = await app.request(`/api/logins${path}`, {
+          method,
+          headers: { "content-type": "application/json", "x-test-user": owner },
+          body,
+        });
+        expect([
+          method,
+          body,
+          unreadable.status,
+          await unreadable.json(),
+        ]).toEqual([
+          method,
+          body,
+          400,
+          { error: "laf:login_invalid", code: "laf:login_invalid" },
+        ]);
+      }
+    }
     expect(await stored(owner)).toBe(before);
   });
 
@@ -453,25 +528,99 @@ describe("a login a person saves", () => {
     });
   });
 
-  test("is saved, changed and deleted even when the trail cannot be written: the row's loss is not the act's", async () => {
-    const down = createLoginVault({
+  test("is written with its row in the trail or not at all: a trail that cannot be written leaves nothing saved, changed or deleted", async () => {
+    /*
+     * The row about a change used to be written after the change had committed. A trail that
+     * could not be written then answered a save with a failure AFTER the login was in the vault —
+     * and the same request, sent again, saved it twice (Codex's read of this change). The change
+     * and its row are one transaction: both, or neither.
+     */
+    let down = true;
+    const fragile = createLoginVault({
       database,
-      auditStore: {
-        insert: async () => {
-          throw new Error("the audit store is unreachable");
+      auditStore,
+      keyEncryptionKey: KEY,
+      trailWithin: () => ({
+        insert: async (event) => {
+          if (down) throw new Error("the audit store is unreachable");
+          rows.push(event);
         },
-      },
+      }),
+    });
+    const before = await stored(owner);
+    const failed = (act: Promise<unknown>) =>
+      act.then(
+        () => "done",
+        (error: unknown) => (error as Error).message,
+      );
+
+    // A save that cannot be recorded is not made.
+    expect(
+      await failed(fragile.save(owner, { ...NAVER, label: "기록 없이" })),
+    ).toBe("the audit store is unreachable");
+    expect(await stored(owner)).toBe(before);
+    // Nor a change, nor a delete: the login is as it was, and still there.
+    const [mine] = await vault.list(owner);
+    if (!mine) throw new Error("the owner has no saved login");
+    expect(
+      await failed(
+        fragile.replace(owner, mine.id, { password: "never-CANARY" }),
+      ),
+    ).toBe("the audit store is unreachable");
+    expect(await failed(fragile.remove(owner, mine.id))).toBe(
+      "the audit store is unreachable",
+    );
+    expect(await stored(owner)).toBe(before);
+    expect(await vault.open(owner, mine.id)).toMatchObject({
+      password: PASSWORD,
+    });
+
+    // The trail is back: the same save, sent again, is made — once.
+    down = false;
+    rows.length = 0;
+    const saved = await fragile.save(owner, { ...NAVER, label: "기록 없이" });
+    expect(
+      (await vault.list(owner)).filter((one) => one.label === "기록 없이"),
+    ).toHaveLength(1);
+    expect(rows.map((one) => [one.eventType, one.targetId])).toEqual([
+      ["account.login_saved", saved.id],
+    ]);
+    expect(await fragile.remove(owner, saved.id)).toBe(true);
+  });
+
+  test("writes those rows on the change's own transaction when nobody says otherwise: they are in the trail's table, under the person", async () => {
+    // As `main.ts` makes it: no `trailWithin`. The rows go where every row of the trail goes.
+    const person = `login-trail-${tag}`;
+    await database
+      .insert(users)
+      .values({ id: person, email: `${person}@laf.test`, name: person });
+    const asDeployed = createLoginVault({
+      database,
+      auditStore,
       keyEncryptionKey: KEY,
     });
-    const saved = await down.save(owner, { ...NAVER, label: "기록 없이" });
-    expect(await vault.open(owner, saved.id)).toMatchObject({
-      username: USERNAME,
-    });
-    expect(
-      (await down.replace(owner, saved.id, { label: "기록 없이 고침" }))?.label,
-    ).toBe("기록 없이 고침");
-    // A person who deletes a password has deleted it, whatever else is down.
-    expect(await down.remove(owner, saved.id)).toBe(true);
-    expect(await vault.open(owner, saved.id)).toBeNull();
+    const saved = await asDeployed.save(person, NAVER);
+    await asDeployed.replace(person, saved.id, { password: "trail-CANARY" });
+    await asDeployed.remove(person, saved.id);
+
+    const written = (await database.execute(
+      sql`select event_type as type, target_type as target, target_id as id, payload::text as payload from audit_events where actor_user_id = ${person} order by created_at, event_type`,
+    )) as unknown as Array<{
+      type: string;
+      target: string;
+      id: string;
+      payload: string;
+    }>;
+    expect(written.map((row) => [row.type, row.target, row.id]).sort()).toEqual(
+      [
+        ["account.login_removed", "saved_login", saved.id],
+        ["account.login_replaced", "saved_login", saved.id],
+        ["account.login_saved", "saved_login", saved.id],
+      ],
+    );
+    const trail = JSON.stringify(written);
+    expect(holdsAValue(trail)).toBe(false);
+    expect(trail).not.toContain("trail-CANARY");
+    await database.delete(users).where(eq(users.id, person));
   });
 });

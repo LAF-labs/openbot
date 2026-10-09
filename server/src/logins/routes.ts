@@ -15,7 +15,8 @@ import {
  *
  *   GET    /api/logins        what they saved: what each is called and where it may go
  *   POST   /api/logins        save one — {label, site?, origins, username, password}
- *   PATCH  /api/logins/:id    change what is sent; anything left out stays as it is
+ *   PATCH  /api/logins/:id    change what is sent; anything left out stays as it is, and `{}`
+ *                             changes nothing
  *   DELETE /api/logins/:id    gone, now
  *
  * NO DOOR HERE GIVES A VALUE BACK. Not the list, not the row a save or a change answers with, and
@@ -35,6 +36,13 @@ export function createLoginRoutes(
     error: "laf:login_not_found",
     code: "laf:login_not_found",
   };
+  /*
+   * A BODY THAT CANNOT BE READ IS NOT AN EMPTY ONE. Bytes that are not JSON, a list, a string:
+   * read as "nothing was sent", a change answered 200 with the row as it stood — to a window that
+   * had tried to replace a password, that says the new one is saved while the old one still is
+   * (Codex's read of this change). An explicit `{}` is still a change of nothing.
+   */
+  const unreadable = { error: "laf:login_invalid", code: "laf:login_invalid" };
 
   /** A refusal as the form reads it: which fact, and which field where it is one. */
   const refused = (error: LoginRefused) => ({
@@ -64,14 +72,15 @@ export function createLoginRoutes(
   routes.post("/", requireUser, async (context) => {
     context.header("cache-control", "no-store");
     const body = await written(context.req);
+    if (!body) return context.json(unreadable, 400);
     try {
       return context.json(
         await vault.save(context.var.actor.id, {
-          label: body?.label,
-          site: body?.site,
-          origins: body?.origins,
-          username: body?.username,
-          password: body?.password,
+          label: body.label,
+          site: body.site,
+          origins: body.origins,
+          username: body.username,
+          password: body.password,
         }),
         201,
       );
@@ -89,7 +98,8 @@ export function createLoginRoutes(
 
   routes.patch("/:id", requireUser, async (context) => {
     context.header("cache-control", "no-store");
-    const body = (await written(context.req)) ?? {};
+    const body = await written(context.req);
+    if (!body) return context.json(unreadable, 400);
     try {
       const changed = await vault.replace(
         context.var.actor.id,

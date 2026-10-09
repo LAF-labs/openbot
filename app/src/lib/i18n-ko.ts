@@ -1231,6 +1231,7 @@ export const ko: Record<string, string> = {
   "A person saved a login for their Bot": "사람이 봇에게 맡길 로그인을 저장함",
   "A person changed a saved login": "사람이 저장한 로그인을 고침",
   "A person deleted a saved login": "사람이 저장한 로그인을 지움",
+  "A login was not saved": "로그인이 저장되지 않음",
   // 가입·탈퇴가 함대(VM을 만들고 없애는 쪽)에 닿았는지.
   "The fleet was told": "함대에 전달됨",
   "The fleet could not be told": "함대에 전달하지 못함",

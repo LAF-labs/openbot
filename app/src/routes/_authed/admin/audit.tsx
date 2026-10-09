@@ -908,6 +908,7 @@ export const DECISIONS: Record<string, string> = {
   "account.login_saved": "A person saved a login for their Bot",
   "account.login_replaced": "A person changed a saved login",
   "account.login_removed": "A person deleted a saved login",
+  "account.login_refused": "A login was not saved",
 
   // Not a permission and not a refusal either: the machine this deployment runs on is created and
   // destroyed elsewhere, and these two say whether that elsewhere heard about it. The failure is
@@ -1276,6 +1277,7 @@ export const EVENTS: Record<string, string> = {
   "account.login_saved": "A saved login",
   "account.login_replaced": "A saved login",
   "account.login_removed": "A saved login",
+  "account.login_refused": "A saved login",
   "fleet.notified": "The fleet",
   "fleet.notify_failed": "The fleet",
   "support.feedback_sent": "A message to the operator",
