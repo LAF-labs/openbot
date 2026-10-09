@@ -67,6 +67,7 @@
   "app/tests/arrived-below.test.ts",
   "app/tests/attachments.test.ts",
   "app/tests/audit-labels.test.ts",
+  "app/tests/audit-login-rows.test.tsx",
   "app/tests/audit-paging.test.ts",
   "app/tests/audit-rows.test.ts",
   "app/tests/audit-script-rows.test.tsx",

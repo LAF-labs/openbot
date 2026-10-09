@@ -36,6 +36,8 @@ export type SealedLogin = {
 
 /** A seal that did not open: the wrong key, the wrong row, or bytes that are not a seal. */
 export class LoginSealError extends Error {
+  /** The fact, as a code: what a route answers and a row of the trail says. Never a sentence. */
+  readonly code = "laf:login_seal_unreadable";
   constructor() {
     // Never the cause's own words: WebCrypto's are an "OperationError", and a parse error's could
     // quote what it was parsing.

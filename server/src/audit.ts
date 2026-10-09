@@ -637,6 +637,19 @@ export const auditFactCodes = [
   "laf:script_inputs_invalid",
   "laf:made_full",
   "laf:made_not_a_folder",
+
+  /*
+   * WHY A LOGIN WAS NOT SAVED OR CHANGED (`account.login_refused`, `logins/store.ts`). The row's
+   * payload is one of these and the field it was about; nothing of what was written.
+   */
+  "laf:login_invalid",
+  "laf:login_label_required",
+  "laf:login_origin_refused",
+  "laf:login_site_unknown",
+  "laf:login_value_required",
+  "laf:login_value_too_long",
+  "laf:logins_full",
+  "laf:login_seal_unreadable",
 ] as const;
 
 export type AuditFactCode = (typeof auditFactCodes)[number];

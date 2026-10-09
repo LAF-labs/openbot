@@ -2370,7 +2370,8 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * By hand: 4, 1, 1 and 2 are 8, and 3902 and 8 are 3910; 4 and 4 are 8, and 496 and 8 are 504;
  * 2136 and 2 are 2138; 921 and 6 are 927.
  *
- * RAISED 2026-10-10 A THIRD TIME, `server` from 3910 to 3927 and `root` from 927 to 932, for the
+ * RAISED 2026-10-10 A THIRD TIME, `server` from 3910 to 3927, `app` from 2138 to 2140 and
+ * `root` from 927 to 932, for the
  * vault of logins a person saves for their Bot's browser (record §6, piece 2-3). Seventeen to
  * `server`, in three new files. Five in `login-crypto.test.ts`: a seal opens to what was sealed
  * and holds neither value; it is made under a new key every time; it opens only as the row, the
@@ -2391,8 +2392,12 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * by origin, and not by host. `account-lifecycle.integration.test.ts` and the authorization
  * matrix hold more and count the same: a person's saved logins go with them, by name and
  * counted, the other account's stay, and the four doors are pressed by all five people.
- * Twenty-six mutations each fail one of these.
- * By hand: 5, 4 and 8 are 17, and 3910 and 17 are 3927; 927 and 5 are 932.
+ * Two to `app`, in the new `audit-login-rows.test.tsx`, the trail's page mounted with a saved
+ * login's rows: one that was saved, changed or deleted is named by its site and the hosts it
+ * may go to; one that was refused says so in the refusal's colour and says why in words.
+ * (`audit-rows.test.ts` holds more: two rows that differ in a site, an origin or a refusal's
+ * fact are not one row.) Thirty-one mutations each fail one of these.
+ * By hand: 5, 4 and 8 are 17, and 3910 and 17 are 3927; 2138 and 2 are 2140; 927 and 5 are 932.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -2423,7 +2428,7 @@ const GROUPS: readonly {
   processes?: number;
 }[] = [
   { name: "server", floor: 3927, roots: ["server"] },
-  { name: "app", floor: 2138, roots: ["app"] },
+  { name: "app", floor: 2140, roots: ["app"] },
   {
     name: "agent-computer",
     floor: 504,

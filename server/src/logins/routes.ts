@@ -40,9 +40,9 @@ export function createLoginRoutes(
    * A BODY THAT CANNOT BE READ IS NOT AN EMPTY ONE. Bytes that are not JSON, a list, a string:
    * read as "nothing was sent", a change answered 200 with the row as it stood — to a window that
    * had tried to replace a password, that says the new one is saved while the old one still is
-   * (Codex's read of this change). An explicit `{}` is still a change of nothing.
+   * (Codex's read of this change). It is handed to the vault as `null`, which refuses it like any
+   * refusal — with a row. An explicit `{}` is still a change of nothing.
    */
-  const unreadable = { error: "laf:login_invalid", code: "laf:login_invalid" };
 
   /** A refusal as the form reads it: which fact, and which field where it is one. */
   const refused = (error: LoginRefused) => ({
@@ -72,16 +72,18 @@ export function createLoginRoutes(
   routes.post("/", requireUser, async (context) => {
     context.header("cache-control", "no-store");
     const body = await written(context.req);
-    if (!body) return context.json(unreadable, 400);
     try {
       return context.json(
-        await vault.save(context.var.actor.id, {
-          label: body.label,
-          site: body.site,
-          origins: body.origins,
-          username: body.username,
-          password: body.password,
-        }),
+        await vault.save(
+          context.var.actor.id,
+          body && {
+            label: body.label,
+            site: body.site,
+            origins: body.origins,
+            username: body.username,
+            password: body.password,
+          },
+        ),
         201,
       );
     } catch (error) {
@@ -99,13 +101,12 @@ export function createLoginRoutes(
   routes.patch("/:id", requireUser, async (context) => {
     context.header("cache-control", "no-store");
     const body = await written(context.req);
-    if (!body) return context.json(unreadable, 400);
     try {
       const changed = await vault.replace(
         context.var.actor.id,
         context.req.param("id"),
         // Named one by one: nothing a body carries beyond these reaches the vault.
-        {
+        body && {
           ...("label" in body ? { label: body.label } : {}),
           ...("site" in body ? { site: body.site } : {}),
           ...("origins" in body ? { origins: body.origins } : {}),
@@ -125,7 +126,7 @@ export function createLoginRoutes(
        * both is what puts the row right.
        */
       if (error instanceof LoginSealError) {
-        return context.json({ error: error.message, code: error.message }, 409);
+        return context.json({ error: error.code, code: error.code }, 409);
       }
       throw error;
     }

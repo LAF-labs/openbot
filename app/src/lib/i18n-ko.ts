@@ -1231,7 +1231,16 @@ export const ko: Record<string, string> = {
   "A person saved a login for their Bot": "사람이 봇에게 맡길 로그인을 저장함",
   "A person changed a saved login": "사람이 저장한 로그인을 고침",
   "A person deleted a saved login": "사람이 저장한 로그인을 지움",
-  "A login was not saved": "로그인이 저장되지 않음",
+  "Saving or changing a login was refused": "로그인 저장·수정이 거절됨",
+  "What was sent could not be read": "보낸 내용을 읽을 수 없음",
+  "It had no name": "이름이 없음",
+  "An address was not an HTTPS site": "HTTPS 사이트가 아닌 주소가 있음",
+  "The site is not one this deployment knows": "이 배포가 모르는 사이트",
+  "A value was missing": "값이 빠짐",
+  "A value was too long": "값이 너무 김",
+  "There was no room for another": "더 저장할 자리가 없음",
+  "The saved values could not be opened with this deployment's key":
+    "저장한 값을 이 배포의 키로 열 수 없음",
   // 가입·탈퇴가 함대(VM을 만들고 없애는 쪽)에 닿았는지.
   "The fleet was told": "함대에 전달됨",
   "The fleet could not be told": "함대에 전달하지 못함",

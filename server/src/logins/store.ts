@@ -43,6 +43,8 @@ const PASSWORD_MAX = 1024;
 
 /** Why a login was not saved, as a fact a surface has words for. */
 export type LoginRefusal =
+  // What was sent is not something a login can be read from: bytes that are not JSON, a list.
+  | "laf:login_invalid"
   | "laf:login_label_required"
   | "laf:login_origin_refused"
   | "laf:login_site_unknown"
@@ -225,7 +227,7 @@ export function createLoginVault(input: {
         error instanceof LoginRefused
           ? { code: error.code, ...(error.field ? { field: error.field } : {}) }
           : error instanceof LoginSealError
-            ? { code: error.message }
+            ? { code: error.code }
             : null;
       if (refusal) {
         await recordAuditEvent(auditStore, {
@@ -256,8 +258,13 @@ export function createLoginVault(input: {
      * Save one. The values are sealed before anything is written, and are in no row of the trail.
      * The row and the trail's row about it are written together or not at all.
      */
-    async save(userId: string, written: LoginInput): Promise<SavedLogin> {
+    async save(
+      userId: string,
+      /** `null` where what was sent could not be read as a login at all. */
+      written: LoginInput | null,
+    ): Promise<SavedLogin> {
       return orRefused(userId, undefined, async () => {
+        if (!written) throw new LoginRefused("laf:login_invalid");
         const label = labelOf(written.label);
         const site = siteOf(written.site);
         const origins = originsOf(written.origins);
@@ -317,7 +324,8 @@ export function createLoginVault(input: {
     async replace(
       userId: string,
       id: string,
-      written: Partial<LoginInput>,
+      /** `null` where what was sent could not be read as a change at all. */
+      written: Partial<LoginInput> | null,
     ): Promise<SavedLogin | null> {
       const [row] = await database
         .select()
@@ -325,16 +333,24 @@ export function createLoginVault(input: {
         .where(mine(userId, id));
       if (!row) return null;
       // Nothing was sent: nothing is written, and the trail is not told of a change that was not.
-      const sent = [
-        written.label,
-        written.site,
-        written.origins,
-        written.username,
-        written.password,
-      ];
+      const sent = written
+        ? [
+            written.label,
+            written.site,
+            written.origins,
+            written.username,
+            written.password,
+          ]
+        : [null];
       if (sent.every((one) => one === undefined)) return view(row);
 
       return orRefused(userId, row.id, async () => {
+        /*
+         * A BODY THAT COULD NOT BE READ IS A REFUSAL LIKE ANY, WITH ITS ROW. Answered at the door
+         * it wrote none — and "a change somebody sent that this could not read" is exactly the
+         * attempt a trail is asked about afterwards (Codex's second read of this change).
+         */
+        if (!written) throw new LoginRefused("laf:login_invalid");
         const label =
           written.label === undefined ? row.label : labelOf(written.label);
         const site =

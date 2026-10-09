@@ -1,3 +1,4 @@
+import type { ProductsRefusal, RunEnding } from "@shared/workbench/protocol";
 import { IconRefresh } from "@tabler/icons-react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
@@ -17,10 +18,9 @@ import { silenceOf } from "@/lib/audit/silence";
 import { OUTCOME_LABELS } from "@/lib/computer/outcome-labels";
 import { activeLocale, t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
+import { own } from "@/lib/own";
 import { siteById } from "@/lib/sites/catalogue";
 import { useNow } from "@/lib/use-now";
-import { own } from "@/lib/own";
-import type { ProductsRefusal, RunEnding } from "@shared/workbench/protocol";
 
 /**
  * Read surface for policy, computer, component, MCP, and credential audit events.
@@ -247,7 +247,9 @@ function Row({
     event.eventType === "approval.denied" ||
     event.eventType === "component.refused" ||
     event.eventType === "component.function_refused" ||
-    event.eventType === "mcp.call_rejected";
+    event.eventType === "mcp.call_rejected" ||
+    // A login that was not saved or changed: refused, and drawn as one.
+    event.eventType === "account.login_refused";
   // The three rows a question leaves behind carry their rule at the top level rather than under a
   // decision, because no decision was reached: the policy stopped and waited for a person.
   const approval = event.eventType.startsWith("approval.");
@@ -334,6 +336,14 @@ function Row({
         {event.targetType === "site" && event.targetId ? (
           // A site's sign-in rows name the site by its catalogue id; the catalogue has the words.
           <Words id={event.targetId} label={siteById(event.targetId)?.name} />
+        ) : event.targetType === "saved_login" ? (
+          /*
+           * A SAVED LOGIN IS NAMED BY WHERE IT MAY GO. The row holds the site and the origins —
+           * never what the person called it, and never a value (`server/src/logins/store.ts`) —
+           * so those are what say which login this was. A refusal of a save that never became a
+           * login has neither, and says why in the next column instead.
+           */
+          <SavedLoginSubject payload={payload} />
         ) : NAMED_TARGETS.has(event.targetType) && event.targetId ? (
           <span>
             <Id>{event.targetId}</Id>
@@ -420,6 +430,13 @@ function Row({
           {/* The map is data; it is translated where it is drawn, English as the key. */}
           {verdict ? t(verdict) : "-"}
         </span>
+        {/* Why a login was not saved or changed: the fact the server recorded, in this column's words. */}
+        {event.eventType === "account.login_refused" &&
+        typeof payload.code === "string" ? (
+          <div className="mt-0.5 text-xs text-muted-foreground">
+            {fact(payload.code)}
+          </div>
+        ) : null}
         {/* Refusal reasons mirror the conversation-facing reason. */}
         {(event.eventType === "component.refused" ||
           event.eventType === "component.function_refused" ||
@@ -725,6 +742,36 @@ function leftOf(
 }
 
 /**
+ * Which saved login a row is about, as the row can say it: the site, where the deployment knows
+ * it by name, and the hosts it may be put on. Read as what arrived — a row from another build
+ * draws as less, not as "undefined".
+ */
+function SavedLoginSubject({ payload }: { payload: Record<string, unknown> }) {
+  const site = typeof payload.site === "string" ? siteById(payload.site) : null;
+  const hosts = Array.isArray(payload.origins)
+    ? payload.origins
+        .filter((origin): origin is string => typeof origin === "string")
+        .map(hostOf)
+        .filter(Boolean)
+    : [];
+  if (!site && hosts.length === 0) {
+    return <span className="text-muted-foreground">-</span>;
+  }
+  return (
+    <span>
+      {site ? <Words id={site.id} label={site.name} /> : null}
+      {hosts.length > 0 ? (
+        <span
+          className={site ? "mt-0.5 block text-muted-foreground text-xs" : ""}
+        >
+          {hosts.join(", ")}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/**
  * Target types whose id is a name worth putting on screen.
  *
  * Anything else falls through to the element or file subject.
@@ -908,7 +955,7 @@ export const DECISIONS: Record<string, string> = {
   "account.login_saved": "A person saved a login for their Bot",
   "account.login_replaced": "A person changed a saved login",
   "account.login_removed": "A person deleted a saved login",
-  "account.login_refused": "A login was not saved",
+  "account.login_refused": "Saving or changing a login was refused",
 
   // Not a permission and not a refusal either: the machine this deployment runs on is created and
   // destroyed elsewhere, and these two say whether that elsewhere heard about it. The failure is
@@ -1092,6 +1139,18 @@ export const FACTS: Record<string, string> = {
   // and a reader of this column can look for it by that name.
   "laf:made_not_a_folder":
     "Where programs' files are kept there is something else called made, so none of these was kept",
+
+  // Why a login was not saved or changed (`account.login_refused`). What was written is not in
+  // the row, so these say only which rule of a login it did not meet.
+  "laf:login_invalid": "What was sent could not be read",
+  "laf:login_label_required": "It had no name",
+  "laf:login_origin_refused": "An address was not an HTTPS site",
+  "laf:login_site_unknown": "The site is not one this deployment knows",
+  "laf:login_value_required": "A value was missing",
+  "laf:login_value_too_long": "A value was too long",
+  "laf:logins_full": "There was no room for another",
+  "laf:login_seal_unreadable":
+    "The saved values could not be opened with this deployment's key",
 };
 
 /**
