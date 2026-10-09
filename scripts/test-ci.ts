@@ -2130,6 +2130,10 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * the longest first into the shortest list, and an unmeasured file weighed as the middle one. By
  * hand: 3 × 3 is 9, and 3923 plus 9 is 3932; 915 plus 3 is 918.
  *
+ * RAISED AGAIN the same day, `root` from 918 to 920, for the two the review of that change added
+ * to the same file: a skipped test weighs no time at all, and many small files are spread by their
+ * number. The floor missed them; review caught it. By hand: 918 plus 2 is 920.
+ *
  * LOWERED 2026-10-09, `server` from 3932 to 3896 and `agent-computer` from 530 to 529, by exactly
  * the thirty-seven tests that held teaching by demonstration. The owner removed it on 2026-10-08
  * (docs/laf/redesign-2026-10.md §7): a Bot is taught in words, as a skill, and taking the wheel
@@ -2262,7 +2266,7 @@ const GROUPS = [
   { name: "server", floor: 3894, roots: ["server"] },
   { name: "app", floor: 2133, roots: ["app"] },
   { name: "agent-computer", floor: 476, roots: ["agent-computer"] },
-  { name: "root", floor: 918, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 920, roots: ["tests", "agent-bot"] },
 ] as const;
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
