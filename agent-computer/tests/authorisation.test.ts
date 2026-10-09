@@ -75,7 +75,7 @@ describe("what an unauthenticated caller may reach", () => {
   test("health, and nothing else", () => {
     expect(isOpenPath("/health")).toBeTrue();
     for (const path of [
-      "/control/take",
+      "/control/request",
       "/navigate",
       "/snapshot",
       "/files/list",

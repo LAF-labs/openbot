@@ -1264,8 +1264,8 @@ export const ko: Record<string, string> = {
     "밤사이 들어온 주문을 읽고, 영업 상태가 맞는지 확인해요.",
   "Read new reviews and tell you which ones are worth a reply today.":
     "새 리뷰를 읽고 오늘 답글이 필요한 것을 알려 줘요.",
-  "Read what has been issued and what is due, once you have authenticated it yourself.":
-    "직접 인증해 주면, 발행 내역과 다가오는 기한을 봇이 읽어요.",
+  "Read what has been issued and what is due.":
+    "발행 내역과 다가오는 기한을 봇이 읽어요.",
   "Read the reviews and enquiries left on your neighbourhood business page.":
     "동네가게 페이지에 달린 후기와 문의를 봇이 읽어요.",
   "Read today's reservations, in order, and who did not turn up.":
@@ -1376,8 +1376,8 @@ export const ko: Record<string, string> = {
   "The connections could not be loaded.": "연결 목록을 불러오지 못했어요.",
   "Sign in once at the service and your Bot works with your own account.":
     "서비스에 한 번만 로그인하면, 봇이 내 계정으로 일해요.",
-  "You sign in once on a Bot's own browser, hand it back, and it stays signed in.":
-    "봇의 브라우저에서 한 번 로그인하고 '다 했어요'를 누르면, 그대로 로그인 상태가 유지돼요.",
+  "Sites the Bot signs in to in its own browser. Connecting a new one comes back soon, through the password card; one already connected stays signed in.":
+    "봇이 자기 브라우저로 로그인해 쓰는 사이트예요. 새로 연결하는 것은 곧 비밀번호 카드로 돌아오고, 이미 연결한 사이트는 로그인 상태가 유지돼요.",
   "Finish giving permission in the browser that opened.":
     "열린 브라우저에서 동의를 마치는 중…",
   "Type your shop's name, then press Connect.":

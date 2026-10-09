@@ -235,7 +235,7 @@ export const ConnectionsScreen = ({
           </PageSection>
           <PageSection
             description={t(
-              "You sign in once on a Bot's own browser, hand it back, and it stays signed in.",
+              "Sites the Bot signs in to in its own browser. Connecting a new one comes back soon, through the password card; one already connected stays signed in.",
             )}
             title={t("Sites")}
           >
@@ -291,7 +291,7 @@ export const ConnectionsScreen = ({
           {sites.length > 0 ? (
             <PageSection
               description={t(
-                "You sign in once on a Bot's own browser, hand it back, and it stays signed in.",
+                "Sites the Bot signs in to in its own browser. Connecting a new one comes back soon, through the password card; one already connected stays signed in.",
               )}
               title={t("Sites")}
             >

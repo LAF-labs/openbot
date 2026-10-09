@@ -479,24 +479,36 @@ describe.skipIf(!HAS_BROWSER)("the Bot's browser on a Korean page", () => {
   }, 30_000);
 
   /*
-   * BESIDE THE PROFILE, NOT INSIDE IT (2026-09-16). Who has the wheel is one Bot's and the cookie
-   * jar is the deployment's, so `control.json` moved to `bot.state/<bot>/`: five Bots writing it
-   * into one profile directory would each be answering "is a person driving" for all of them.
+   * BESIDE THE PROFILE, NOT INSIDE IT (2026-09-16). An ask is one Bot's and the cookie jar is the
+   * deployment's, so `control.json` moved to `bot.state/<bot>/`: five Bots writing it into one
+   * profile directory would each be answering "is somebody being asked" for all of them. Until
+   * 2026-10-09 this wrote a person's hold on the wheel; nobody can hold it now, and what a restart
+   * has to find is the ask.
    */
-  test("who has the wheel is written down where a restart can find it", async () => {
+  test("the Bot's ask is written down where a restart can find it", async () => {
     const controlFile = join(profilesDir, "bot.state", BOT, "control.json");
-    const taken = await post("/control/take", {});
-    expect(taken.status).toBe(200);
+    const asked = await post("/control/request", {
+      reason: "휴대폰에서 로그인을 승인해 주세요",
+    });
+    expect(asked.status).toBe(200);
     const saved = JSON.parse(await readFile(controlFile, "utf8")) as {
       holder: string;
+      requested: boolean;
+      reason?: string;
     };
-    expect(saved.holder).toBe("human");
+    expect(saved).toMatchObject({
+      holder: "bot",
+      requested: true,
+      reason: "휴대폰에서 로그인을 승인해 주세요",
+    });
 
     await post("/control/release", {});
     const back = JSON.parse(await readFile(controlFile, "utf8")) as {
-      holder: string;
+      requested: boolean;
+      reason?: string;
     };
-    expect(back.holder).toBe("bot");
+    expect(back.requested).toBe(false);
+    expect(back.reason).toBeUndefined();
   }, 30_000);
 
   test("a browser nobody has used closes, and the next call opens it again with its cookies", async () => {

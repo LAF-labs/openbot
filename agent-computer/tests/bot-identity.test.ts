@@ -35,7 +35,7 @@ describe("the Bot a request names", () => {
       "/snapshot",
       "/click",
       "/type",
-      "/control/take",
+      "/control/request",
       "/control/secret",
       "/human/secret",
       "/files/write",
