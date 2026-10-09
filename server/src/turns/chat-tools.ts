@@ -906,17 +906,42 @@ export function createChatTools(deps: ChatToolsDeps) {
           if (!fields || typeof snapshotId !== "number") {
             return invalidArguments();
           }
+          // Which saved login, where the Bot was told this site has several. Never a value.
+          const login =
+            typeof args.login === "string" && args.login.trim()
+              ? args.login.trim()
+              : undefined;
           const asked = await governed(signal, (approvalId) =>
             gateway.requestSecret(
               c,
               botId,
               actor,
-              { fields, snapshotId },
+              { fields, snapshotId, ...(login ? { login } : {}) },
               approvalId,
               signal,
             ),
           );
           if (!asked.ok) return asked;
+          /*
+           * A LOGIN THE PERSON SAVED ANSWERED, AND NOBODY IS WAITED FOR (record §6, piece 2-4).
+           * The boxes are filled, or the site has several saved logins and the Bot is handed
+           * what each is called to choose by — never anything of what one holds.
+           */
+          if (asked.loginFilled) {
+            return {
+              ok: true,
+              code: "laf:login_filled",
+              result: toolResultText("laf:login_filled"),
+            };
+          }
+          if (Array.isArray(asked.loginChoice)) {
+            return {
+              ok: true,
+              code: "laf:login_choice",
+              result: toolResultText("laf:login_choice"),
+              logins: asked.loginChoice,
+            };
+          }
           // Completion is `secretWanted` clearing; the value never returns to the model.
           const { value: outcome, moved } = await awaitPerson(() =>
             waitForPerson(

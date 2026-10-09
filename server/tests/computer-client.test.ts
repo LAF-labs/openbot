@@ -1631,6 +1631,40 @@ describe("a card that asks for values, on the wire", () => {
     ]);
   });
 
+  test("a saved login: where the boxes are is asked by ref, and the values go with what each box was judged as and the origins they were saved for", async () => {
+    const { client, sent } = bodies();
+    await client.whereFields(["e1", "e2"], 3);
+    await client.fillLogin(
+      [
+        {
+          ref: "e1",
+          element: { role: "textbox", name: "아이디" },
+          value: "sajang",
+        },
+        { ref: "e2", element: judged, value: "hunter2" },
+      ],
+      { snapshotId: 3, origins: ["https://nid.naver.com"] },
+    );
+    expect(sent).toEqual([
+      { path: "/login/where", body: { refs: ["e1", "e2"], snapshotId: 3 } },
+      {
+        path: "/login/fill",
+        body: {
+          fields: [
+            {
+              ref: "e1",
+              element: { role: "textbox", name: "아이디" },
+              value: "sajang",
+            },
+            { ref: "e2", element: judged, value: "hunter2" },
+          ],
+          snapshotId: 3,
+          origins: ["https://nid.naver.com"],
+        },
+      },
+    ]);
+  });
+
   test("the end of a run is said to that Bot's computer, on its own route", async () => {
     const { client, sent } = bodies();
     await client.runEnded();

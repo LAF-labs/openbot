@@ -174,6 +174,8 @@ export type AskIntent =
   | "run_script"
   /** A value a person is asked to put into a field themselves (`computer_request_secret`). */
   | "fill_secret"
+  /** A login the person saved, put into a sign-in for them (`gateway/secrets.ts`). */
+  | "fill_login"
   /** A tool on somebody else's server. Read and write are not phrased apart; the guard is. */
   | "call_tool"
   /**

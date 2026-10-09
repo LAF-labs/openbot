@@ -140,6 +140,11 @@ export function createGovern(options: {
        * turn carries one answer.
        */
       alsoRefs?: readonly string[];
+      /**
+       * The saved login this act puts into the page (`FILL_LOGIN_TOOL`), for the row to name.
+       * Decides nothing: a rule about it is written on the intent and the page.
+       */
+      login?: { id: string; site?: string };
       filePath?: string;
       /** Which part of `filePath` a read asked for; counted apart, like a page's query. */
       part?: string;
@@ -750,6 +755,7 @@ export function createGovern(options: {
         filePath,
         script,
         forScript: subject.forScript,
+        login: subject.login,
         pageUrl,
         decision: refusal,
       });
@@ -785,6 +791,7 @@ export function createGovern(options: {
       filePath,
       script,
       forScript: subject.forScript,
+      login: subject.login,
       pageUrl,
       decision: carried,
       ...(approvedBy ? { approvedBy } : {}),
@@ -842,6 +849,7 @@ export function createGovern(options: {
         filePath,
         script,
         forScript: subject.forScript,
+        login: subject.login,
         pageUrl,
         decision: carried,
         ...(approvedBy ? { approvedBy } : {}),

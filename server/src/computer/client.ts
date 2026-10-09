@@ -134,6 +134,8 @@ export const STALE_REFS = "laf:stale_refs";
 export const NO_SECRET_PENDING = "laf:secret_not_pending";
 /** An address the floor will not open, or a hop or a landing that went inside this deployment. */
 export const NAVIGATION_REFUSED = "laf:navigation_refused";
+/** A saved login's box is not in a document of an origin the login was saved for. */
+export const LOGIN_ORIGIN_MISMATCH = "laf:login_origin_mismatch";
 /** The page never finished loading by the computer's deadline. */
 export const PAGE_TIMEOUT = "laf:page_timeout";
 /** A page that did not open for a reason other than the deadline: a name that does not resolve. */
@@ -224,6 +226,18 @@ export class NavigationRefusedError extends Error {
 }
 
 /**
+ * The computer would not put a saved login into a box: the box is not in a document of an origin
+ * the login was saved for (`agent-computer/src/login-routes.ts`). Never, like the floor's own
+ * refusals — looking again does not mend it, and no rule was involved.
+ */
+export class LoginNotForPageError extends Error {
+  constructor(reason: string = LOGIN_ORIGIN_MISMATCH) {
+    super(reason);
+    this.name = "LoginNotForPageError";
+  }
+}
+
+/**
  * The file request itself was refused by the computer: a path outside the workspace, or one it
  * does not read one way (a backslash — `agent-computer/src/workspace.ts`).
  *
@@ -295,6 +309,7 @@ export const COMPUTER_ANSWERS = {
   // Never: the floor, and the workspace's walls.
   "laf:navigation_refused": NavigationRefusedError,
   [OWN_ADDRESS_REFUSED]: NavigationRefusedError,
+  [LOGIN_ORIGIN_MISMATCH]: LoginNotForPageError,
   "laf:file_path_refused": WorkspaceRefusedError,
   // Send something different.
   "laf:file_not_found": WorkspaceRequestError,
@@ -937,6 +952,40 @@ export function createComputerClient(options: ComputerClientOptions) {
       },
 
       /**
+       * Which origin each of these boxes is in: the origin of the box's own document, which in a
+       * frame is not the page the tab is on. Read-only. How the gateway finds which saved login
+       * is this site's before any value is sent (`gateway/secrets.ts`).
+       */
+      async whereFields(
+        refs: string[],
+        snapshotId: number,
+      ): Promise<{ fields: FieldWhere[] }> {
+        return (await post("/login/where", { refs, snapshotId })) as {
+          fields: FieldWhere[];
+        };
+      },
+
+      /**
+       * A saved login's values, each into its box, with the origins the login was saved for. The
+       * computer asks every box again — what it was judged as, and where it is — before any
+       * value goes in. The values pass through this call and are kept nowhere on this side.
+       */
+      async fillLogin(
+        fields: {
+          ref: string;
+          element: { role: string; name: string };
+          value: string;
+        }[],
+        into: { snapshotId: number; origins: readonly string[] },
+      ): Promise<{ filled: boolean; fields: number; url: string }> {
+        return (await post("/login/fill", {
+          fields,
+          snapshotId: into.snapshotId,
+          origins: into.origins,
+        })) as { filled: boolean; fields: number; url: string };
+      },
+
+      /**
        * Say that the run this Bot was on is over. The computer closes the tabs a person's value
        * went into and stops holding it (`agent-computer/src/control-routes.ts`, `runEnded`):
        * `ended` is false when a tab would not close, and everything is as it was.
@@ -960,6 +1009,17 @@ export function createComputerClient(options: ComputerClientOptions) {
 }
 
 export type ComputerClient = ReturnType<typeof createComputerClient>;
+
+/**
+ * Where one box is and what it is for, as the computer reads them off the page: the origin of the
+ * box's own document, and whether its markup makes it a password box, a box a sign-in name is
+ * typed into, or neither (`agent-computer/src/login-routes.ts`, `BoxKind`).
+ */
+export type FieldWhere = {
+  ref: string;
+  origin: string;
+  kind: "password" | "text" | "other";
+};
 
 /** How a navigation is asked for. See `navigate`. */
 export type NavigateOptions = {

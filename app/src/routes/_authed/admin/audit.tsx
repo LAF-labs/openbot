@@ -1227,6 +1227,10 @@ export const COMPUTER_FACTS: Record<string, string> = {
     "The tab the Bot was on went away, and the Bot was moved to another",
   "laf:old_tab_closed":
     "The Bot had too many tabs open, so tabs it was not using were closed",
+  "laf:login_origin_mismatch":
+    "A saved login was not put in: the box was not on the site it was saved for",
+  "laf:login_not_for_this_site":
+    "The Bot named a saved login that was not saved for this site",
   "laf:value_hidden":
     "A value a person had put in was shown on the page, and was hidden from the Bot",
   "laf:value_tab_closed":
@@ -1254,6 +1258,9 @@ export const TOOLS: Record<string, string> = {
   computer_switch_tab: "Switch tab",
   computer_upload_file: "Upload a file",
   computer_request_secret: "Ask for a secret",
+  // Not a tool a Bot is offered: what the server does when a login the person saved answers a
+  // request for a sign-in's values (`server/src/computer/gateway/intent.ts`, `FILL_LOGIN_TOOL`).
+  computer_fill_login: "Fill in a saved login",
   computer_request_help: "Ask for help",
   computer_list_files: "List files",
   computer_read_file: "Read a file",

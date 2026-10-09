@@ -210,6 +210,13 @@ export type PolicyContext = {
      * a value is asked for there".
      */
     | "fill_secret"
+    /*
+     * A login the person SAVED, put into a sign-in by the server (`gateway/secrets.ts`): the Bot's
+     * act, with nobody typing. Apart from `fill_secret` because a rule about one is not a rule
+     * about the other — "ask me before a saved login is used on this host" says nothing about
+     * whether the Bot may ask the person to type one.
+     */
+    | "fill_login"
     // A tool on somebody else's MCP server. Split by effect for the same reason as the browser
     // intents: an operator thinks "nothing may change anything in Jira", not "nothing may call
     // editJiraIssue, transitionJiraIssue, addCommentToJiraIssue and the six others".
@@ -331,6 +338,12 @@ export type FactCode =
   | "laf:key_is_text"
   /** `computer_request_secret` named a ref that is not a field a value can go into. */
   | "laf:secret_target_not_a_field"
+  /**
+   * The Bot named a saved login that is not one saved for the site its boxes are on
+   * (`gateway/secrets.ts`). Refused before any value is opened: a page can tell a Bot which login
+   * to ask for, and which login belongs to which origin is not the Bot's to say.
+   */
+  | "laf:login_not_for_this_site"
   /**
    * A file path the computer does not read one way: a backslash, or white space at the edge of
    * its first or last name (`gateway/addresses.ts`, `hasNoOneReading`). The computer's own fact

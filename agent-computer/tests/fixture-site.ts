@@ -527,6 +527,31 @@ const SIGN_IN_HTML = `<!doctype html>
   </script>
 </body></html>`;
 
+/** What `/not-a-sign-in` calls its boxes: each one secret to a look, and none of them a login's. */
+export const NOT_A_SIGN_IN = {
+  code: "문자로 온 인증번호",
+  newPassword: "새 비밀번호",
+  card: "카드 번호",
+  note: "메모",
+  shown: "비밀번호 보이는 중",
+} as const;
+
+/**
+ * Boxes a look marks as secret that are not where a saved login goes, served at `/not-a-sign-in`:
+ * a one-time code, a new password, a card number — and beside them a text area, and a password
+ * box read-only. What each is for is in its markup, which is all a saved login is matched on.
+ */
+const NOT_A_SIGN_IN_HTML = `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>가입</title></head>
+<body>
+  <h1>가입</h1>
+  <input type="text" autocomplete="one-time-code" aria-label="${NOT_A_SIGN_IN.code}">
+  <input type="password" autocomplete="new-password" aria-label="${NOT_A_SIGN_IN.newPassword}">
+  <input type="tel" autocomplete="cc-number" aria-label="${NOT_A_SIGN_IN.card}">
+  <textarea aria-label="${NOT_A_SIGN_IN.note}"></textarea>
+  <input type="password" readonly aria-label="${NOT_A_SIGN_IN.shown}">
+</body></html>`;
+
 const framedSignIn = (from: string) => `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><title>${SIGN_IN.framing}</title></head>
 <body>
@@ -750,6 +775,9 @@ export function serveFixture(port = 0) {
         return new Response(CARD_HTML, {
           headers: { "content-type": "text/html; charset=utf-8" },
         });
+      }
+      if (path === "/not-a-sign-in") {
+        return new Response(NOT_A_SIGN_IN_HTML, { headers: html });
       }
       if (path === "/saved-sign-in") {
         return new Response(SIGN_IN_HTML, { headers: html });

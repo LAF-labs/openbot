@@ -55,6 +55,46 @@ function originOf(address: string | null): string {
   return origin === "null" ? "" : origin;
 }
 
+/**
+ * What a box is for, as far as a saved login is concerned — read off the box's own markup, never
+ * off what anybody called it.
+ *
+ * `password`: a password input. `text`: an input a sign-in name is typed into. `other`: anything
+ * a saved login has no business in — and that is decided by what the page itself declares, the
+ * way a browser's own password manager reads it: a box for a one-time code, for a NEW password
+ * (signing up, or changing one) or for any part of a card is `other` whatever its type, because a
+ * look marks all of those as secret (`secret-fields.ts`) and "secret" is not "the password".
+ * Measured before this was written: a text box for a code texted to the person reads to the
+ * server as `type: "password"`, and a saved password would have gone into it.
+ */
+export type BoxKind = "password" | "text" | "other";
+
+function kindOf(field: Locator): Promise<BoxKind> {
+  return field
+    .evaluate(
+      (node): BoxKind => {
+        if (!(node instanceof HTMLInputElement)) return "other";
+        const declared = (node.getAttribute("autocomplete") ?? "")
+          .toLowerCase()
+          .split(/\s+/);
+        const notALogin =
+          declared.includes("one-time-code") ||
+          declared.includes("new-password") ||
+          declared.some((token) => token.startsWith("cc-"));
+        if (notALogin || node.readOnly || node.disabled) return "other";
+        if (node.type === "password") return "password";
+        return node.type === "text" ||
+          node.type === "email" ||
+          node.type === "tel"
+          ? "text"
+          : "other";
+      },
+      undefined,
+      { timeout: SECRET_JOIN_TIMEOUT_MS },
+    )
+    .catch((): BoxKind => "other");
+}
+
 /** The refs a call names, or null where it names none, too many, or something that is not one. */
 function refsOf(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
@@ -65,8 +105,8 @@ function refsOf(value: unknown): string[] | null {
 }
 
 /**
- * `POST /login/where`: which origin each of these boxes is in. Read-only — nothing on the page
- * changes, no ask is opened, and nobody is shown anything.
+ * `POST /login/where`: which origin each of these boxes is in, and what each is for. Read-only —
+ * nothing on the page changes, no ask is opened, and nobody is shown anything.
  *
  * A REF OF THE SNAPSHOT THE BOT IS ON, like every call that names one: an origin read off a ref
  * from another look would be the origin of whatever that ref names now.
@@ -87,7 +127,11 @@ export const whereFields: BotRoute = async (
     const fields = [];
     for (const ref of refs) {
       const field = await resolveRef(session, target, ref, undefined);
-      fields.push({ ref, origin: originOf(await documentOf(field)) });
+      fields.push({
+        ref,
+        origin: originOf(await documentOf(field)),
+        kind: await kindOf(field),
+      });
     }
     return json({ fields });
   } catch (error) {

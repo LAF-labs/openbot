@@ -128,6 +128,7 @@ export type AskSubject = {
     | "upload"
     | "run_script"
     | "fill_secret"
+    | "fill_login"
     | "call_tool"
     | "act";
   host?: string;
@@ -213,6 +214,7 @@ const INTENTS = new Set<AskSubject["intent"]>([
   "upload",
   "run_script",
   "fill_secret",
+  "fill_login",
   "call_tool",
   "act",
 ]);
@@ -323,6 +325,33 @@ function actionPhrase(subject: AskSubject): Phrase {
           }
         : {
             key: "It wants to ask you for a value to put into a field on the page it has open.",
+            params: {},
+          };
+    /*
+     * A login YOU SAVED, put into a sign-in for you: nobody types and nobody is shown a value.
+     * Said as that — "a login you saved" — because the card is the one moment a person is asked
+     * whether what they stored may be used here, and "a value" would not tell them it is theirs.
+     */
+    case "fill_login":
+      if (name && host) {
+        return {
+          key: "It wants to put a login you saved into “{name}” on {host}.",
+          params: named,
+        };
+      }
+      if (name) {
+        return {
+          key: "It wants to put a login you saved into “{name}”.",
+          params: named,
+        };
+      }
+      return host
+        ? {
+            key: "It wants to put a login you saved into a field on {host}.",
+            params: { host },
+          }
+        : {
+            key: "It wants to put a login you saved into a field on the page it has open.",
             params: {},
           };
     case "navigate":
@@ -662,6 +691,22 @@ export function actionNounPhrase(subject: AskSubject | undefined): Phrase {
       return host
         ? { key: "asking you for a value on {host}", params: { host } }
         : { key: "asking you for a value on the page", params: {} };
+    case "fill_login":
+      if (name && host) {
+        return {
+          key: "putting a saved login into “{name}” on {host}",
+          params: { name, host },
+        };
+      }
+      if (name) {
+        return { key: "putting a saved login into “{name}”", params: { name } };
+      }
+      return host
+        ? {
+            key: "putting a saved login into a field on {host}",
+            params: { host },
+          }
+        : { key: "putting a saved login into a field on the page", params: {} };
     case "navigate":
       return host
         ? {

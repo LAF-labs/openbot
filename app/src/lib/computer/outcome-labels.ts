@@ -83,6 +83,8 @@ export const OUTCOME_LABELS: Record<string, string> = {
   // Acting on it.
   "laf:stale_refs": "The screen had changed",
   "laf:label_changed": "The control had been renamed",
+  // A saved login, and a box that turned out not to be on the site it was saved for.
+  "laf:login_origin_mismatch": "The saved login is not for that box's site",
   "laf:element_not_actionable": "That element could not be used",
   "laf:tab_missing": "There is no such tab",
   // The workspace.

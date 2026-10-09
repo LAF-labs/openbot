@@ -14,9 +14,12 @@ import { secretFieldsOf } from "../../../../shared/secret-ask";
 import type { AuditStore } from "../../audit";
 import { describeFailure } from "../../failure-text";
 import { log } from "../../log";
+import { LoginSealError } from "../../logins/crypto";
+import type { LoginVault } from "../../logins/store";
 import {
   type ComputerClient,
   ComputerUnavailableError,
+  type FieldWhere,
   NO_SECRET_PENDING,
   STALE_REFS,
   STOPPED,
@@ -25,6 +28,7 @@ import {
 import { isSecretFieldElement } from "../default-policy";
 import type { PolicyDecision } from "../policy";
 import type {
+  ControlState,
   SecretInto,
   SecretRequest,
   SnapshotElement,
@@ -33,6 +37,7 @@ import type {
 import { hostOf, originOf } from "./addresses";
 import { type ActionActor, ActionRefusedError } from "./caller";
 import type { Govern } from "./govern";
+import { FILL_LOGIN_TOOL } from "./intent";
 import type { SnapshotCache } from "./snapshots";
 import { write, writeControlEvent } from "./trail";
 
@@ -56,6 +61,27 @@ type Requested = {
 
 /** A run that named no conversation, or one this server learnt of from the computer. */
 const ANY_RUN = "";
+
+/**
+ * What a request for values came to, when a login the person saved answered it instead of them.
+ *
+ * `loginFilled`: the values went in — which login, by id and site, and into how many boxes;
+ * nothing of the values. `loginChoice`: the site has several saved logins and the Bot named none,
+ * so nothing was put in and nobody was asked: what each is called, for the Bot to choose by.
+ */
+export type SavedLoginAnswer = {
+  loginFilled?: { id: string; site?: string; fields: number };
+  loginChoice?: { id: string; label: string; site?: string }[];
+};
+
+/**
+ * What asking for values answers: the Bot's control state as the computer has it — with where
+ * the open request points, while a person is being asked — and, where a saved login answered
+ * instead, what it came to.
+ */
+export type SecretAsked = ControlState & {
+  secretInto?: SecretInto;
+} & SavedLoginAnswer;
 
 /**
  * How many such fields one computer's snapshots are masked against. Two cards of the most boxes
@@ -109,6 +135,11 @@ export function createSecrets(deps: {
    * this is (`gateway.ts`: it reads `suppliedOn` from here), and called only once both exist.
    */
   govern: Govern;
+  /**
+   * What the deployment's people saved for their Bot's browser. Absent where there is no vault,
+   * and then every value is asked of a person, as it always was.
+   */
+  logins?: Pick<LoginVault, "forOrigin" | "open" | "used">;
 }) {
   const { as, auditStore, snapshots, govern } = deps;
   /**
@@ -255,6 +286,129 @@ export function createSecrets(deps: {
   }
 
   /**
+   * The login a person saved for the site these boxes are on, opened — or what there is instead.
+   *
+   * A LOGIN ANSWERS ONLY A SIGN-IN, AND ONLY ITS OWN SITE'S (2026-10-10, record §6, piece 2-4):
+   *
+   *  - THE BOXES ARE A PASSWORD BOX, WITH OR WITHOUT ONE BOX FOR THE NAME. Read off each box's own
+   *    markup by the computer (`FieldWhere.kind`), never off what the Bot called it or what a look
+   *    marked: a look marks a texted code and a card number as secret too, and a saved password
+   *    goes into neither. Anything else on the card — a third box, a lone text box — and a
+   *    person is asked, as before.
+   *  - THEY ARE ALL IN ONE DOCUMENT, OF AN ORIGIN THE LOGIN WAS SAVED FOR. The document the box is
+   *    in, which in a frame is not the page the tab is on; HTTPS, by the rule that read the origin
+   *    when it was saved (`shared/login-origin.ts`, asked of the vault). The computer holds the
+   *    values to the same origins again when they arrive.
+   *  - ONE LOGIN, OR THE ONE THE BOT NAMED. Several for one site are named back — what each is
+   *    called, never what it holds — and nobody is asked; a name that is not one of this site's
+   *    is refused with a row, because a page can tell a Bot which login to ask for.
+   *
+   * NULL IS "ASK THE PERSON", and it is the answer whenever this cannot be sure: no vault, a
+   * computer from before it could say where a box is, a seal that does not open (said in the log;
+   * the person types it this once and the 계정 screen is where it is mended).
+   */
+  async function savedLoginFor(
+    computerId: string,
+    botId: string,
+    actor: ActionActor,
+    input: SecretRequest,
+    fields: readonly { ref: string }[],
+    pageUrl: string,
+  ): Promise<
+    | { choose: { id: string; label: string; site?: string }[] }
+    | {
+        login: { id: string; site?: string; origins: readonly string[] };
+        /** The value for each box, in the card's order. */
+        values: string[];
+      }
+    | null
+  > {
+    const vault = deps.logins;
+    if (!vault) return null;
+    let where: FieldWhere[];
+    try {
+      ({ fields: where } = await as(botId).whereFields(
+        fields.map((field) => field.ref),
+        input.snapshotId,
+      ));
+    } catch (error) {
+      // The page moved on: the request is stale whoever would have answered it.
+      if (error instanceof StaleSnapshotError) throw error;
+      // A computer that cannot say — an image from before this, for the length of a rollout.
+      return null;
+    }
+    const kinds = fields.map(
+      (field) => where.find((one) => one.ref === field.ref)?.kind ?? "other",
+    );
+    const passwords = kinds.filter((kind) => kind === "password").length;
+    const names = kinds.filter((kind) => kind === "text").length;
+    if (passwords !== 1 || names > 1 || passwords + names !== fields.length) {
+      return null;
+    }
+    const origins = new Set(where.map((one) => one.origin));
+    const [origin] = origins;
+    if (origins.size !== 1 || !origin) return null;
+
+    const candidates = await vault.forOrigin(actor.id, origin);
+    const named =
+      typeof input.login === "string"
+        ? candidates.find((login) => login.id === input.login)
+        : undefined;
+    if (typeof input.login === "string" && !named) {
+      const refusal: PolicyDecision = {
+        allowed: false,
+        matched: null,
+        source: "deny",
+        forward: false,
+        code: "laf:login_not_for_this_site",
+      };
+      await write(auditStore, {
+        toolName: FILL_LOGIN_TOOL,
+        botId,
+        actor,
+        computerId,
+        element: undefined,
+        ref: fields[0]?.ref,
+        filePath: undefined,
+        pageUrl,
+        decision: refusal,
+      });
+      throw new ActionRefusedError(null, "laf:login_not_for_this_site");
+    }
+    const chosen = named ?? (candidates.length === 1 ? candidates[0] : null);
+    if (!chosen) {
+      if (candidates.length === 0) return null;
+      return {
+        choose: candidates.map(({ id, label, site }) => ({
+          id,
+          label,
+          ...(site ? { site } : {}),
+        })),
+      };
+    }
+    let opened: Awaited<ReturnType<typeof vault.open>>;
+    try {
+      opened = await vault.open(actor.id, chosen.id);
+    } catch (error) {
+      if (!(error instanceof LoginSealError)) throw error;
+      log.warn("saved_login_unreadable", { bot: botId, login: chosen.id });
+      return null;
+    }
+    // Removed between the list and now: there is no login, and the person is asked.
+    if (!opened) return null;
+    return {
+      login: {
+        id: chosen.id,
+        ...(chosen.site ? { site: chosen.site } : {}),
+        origins: opened.login.origins,
+      },
+      values: kinds.map((kind) =>
+        kind === "password" ? opened.password : opened.username,
+      ),
+    };
+  }
+
+  /**
    * Asking for a secret, and supplying one.
    *
    * Both are audited, and neither records the value. The row says a secret was asked for, what it
@@ -271,7 +425,7 @@ export function createSecrets(deps: {
     approvalId?: string,
     /** The caller's Stop. */
     signal?: AbortSignal,
-  ) {
+  ): Promise<SecretAsked> {
     /*
      * THE FIELD IS RESOLVED HERE, NEVER TAKEN FROM THE BOT.
      *
@@ -341,6 +495,110 @@ export function createSecrets(deps: {
     const [first, ...rest] = fields;
     if (!first) throw new StaleSnapshotError(STALE_REFS);
     const host = hostOf(cached.url);
+    /*
+     * A LOGIN THE PERSON SAVED FOR THIS SITE ANSWERS BEFORE THEY ARE ASKED (record §6, piece 2-4).
+     *
+     * The Bot asks the same way either way — "these boxes need values I must not know" — and
+     * who holds them is this server's to settle: the vault where the person put a login for this
+     * origin, the person otherwise. No tool was added for it and no model is shown a value; the
+     * Bot is told only that the boxes were filled (`SavedLoginAnswer`).
+     *
+     * THE FILL IS THE BOT'S ACT, JUDGED AS IT HAPPENS, under an intent of its own (`fill_login`):
+     * nobody is asked and a stored credential is used, which is not what `fill_secret` is a rule
+     * about. It leaves the rows every act leaves, with which login beside which boxes on which
+     * site — never the name a person gave it, never a value.
+     *
+     * A RULE THAT REFUSES THE SAVED LOGIN DOES NOT REFUSE THE PERSON. "Never use a saved login on
+     * this host" is a rule about the vault; whether the Bot may ask the person to type is the
+     * other intent's, decided next, with its own row. Without this a refused login would leave
+     * the Bot no way to ask at all — the same call, answered the same way, for ever.
+     */
+    const saved = await savedLoginFor(
+      computerId,
+      botId,
+      actor,
+      input,
+      fields,
+      cached.url,
+    );
+    if (saved && "choose" in saved) {
+      return { ...(await as(botId).control()), loginChoice: saved.choose };
+    }
+    if (saved) {
+      const { login, values } = saved;
+      try {
+        await govern(
+          computerId,
+          FILL_LOGIN_TOOL,
+          botId,
+          actor,
+          {
+            ref: first.ref,
+            ...(rest.length > 0
+              ? { alsoRefs: rest.map((field) => field.ref) }
+              : {}),
+            login: {
+              id: login.id,
+              ...(login.site ? { site: login.site } : {}),
+            },
+            ...(signal ? { signal } : {}),
+            ...(approvalId ? { approvalId } : {}),
+          },
+          async (judgedFirst, _path, judgedRest) => {
+            const judged = [judgedFirst, ...judgedRest];
+            const into = fields.map((field, index) => {
+              const as = judged[index];
+              if (!as) throw new StaleSnapshotError(STALE_REFS);
+              return {
+                ref: field.ref,
+                element: { role: as.role, name: as.name },
+                value: values[index] ?? "",
+              };
+            });
+            // NOTED BEFORE THE VALUES LEAVE, as with a person's: a fill that fails at its second
+            // box has put a name into the page, and the computer is holding it for the run.
+            putInFor(botId, actor.threadId);
+            const filled = await as(botId).fillLogin(into, {
+              snapshotId: input.snapshotId,
+              origins: login.origins,
+            });
+            // What every later look is masked against, exactly as after a person typed.
+            const known = typedInto.get(computerId) ?? [];
+            typedInto.set(
+              computerId,
+              [
+                ...known,
+                ...into.map(({ ref, element }) => ({
+                  ref,
+                  ...element,
+                  origin: originOf(cached.url),
+                })),
+              ].slice(-TYPED_INTO_LIMIT),
+            );
+            // When it was last used is the vault's to know; losing that is not losing the fill.
+            await deps.logins?.used(actor.id, login.id).catch(() => undefined);
+            return filled;
+          },
+        );
+        return {
+          ...(await as(botId).control()),
+          loginFilled: {
+            id: login.id,
+            ...(login.site ? { site: login.site } : {}),
+            fields: fields.length,
+          },
+        };
+      } catch (error) {
+        // Refused BY A RULE, and only that. A question, a stop and a failure are their own
+        // answers — and so is a person's no: somebody who was asked whether their saved login may
+        // be used here, and said it may not, has not asked to be shown a box to type it into.
+        const byARule =
+          error instanceof ActionRefusedError &&
+          (error.code === "laf:policy_denied" ||
+            error.code === "laf:no_rule_allows");
+        if (!byARule) throw error;
+      }
+    }
     /*
      * THROUGH THE GATE, LIKE EVERY OTHER ACT OF THE BOT'S (2026-10-10, record §6).
      *

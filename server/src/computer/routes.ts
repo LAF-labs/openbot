@@ -22,6 +22,8 @@ import {
   FILE_PATH_REFUSED,
   NAVIGATION_FAILED,
   NAVIGATION_REFUSED,
+  LOGIN_ORIGIN_MISMATCH,
+  LoginNotForPageError,
   NavigationRefusedError,
   PAGE_TIMEOUT,
   PageLoadFailedError,
@@ -1014,6 +1016,8 @@ export function statusFor(
   // A refusal by the floor is the rules working, not a fault. Collapsing it into the same 5xx as an
   // unreachable computer would send somebody looking for an outage that is not happening.
   if (error instanceof NavigationRefusedError) return 403;
+  // The computer's own refusal to put a saved login where it was not saved for. Never, and no rule.
+  if (error instanceof LoginNotForPageError) return 403;
   // The computer refused the path itself, which is a different thing from the policy refusing this
   // Bot. Same status, no rule attached, because there is no rule to go and edit.
   if (error instanceof WorkspaceRefusedError) return 403;
@@ -1053,6 +1057,9 @@ export function codeFor(error: unknown): string {
   }
   if (error instanceof NavigationRefusedError) {
     return carriedBy(error) ?? NAVIGATION_REFUSED;
+  }
+  if (error instanceof LoginNotForPageError) {
+    return carriedBy(error) ?? LOGIN_ORIGIN_MISMATCH;
   }
   if (error instanceof WorkspaceRefusedError) {
     return carriedBy(error) ?? FILE_PATH_REFUSED;

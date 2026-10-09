@@ -248,6 +248,53 @@ describe("a login a person saves", () => {
     expect(await stored(other)).toBe("[]");
   });
 
+  /*
+   * WHICH LOGIN IS A SITE'S (2026-10-10, record §6, piece 2-4). The gateway asks the vault, with the
+   * origin of the document a sign-in's boxes are in, and puts a login only where the vault says it
+   * was saved for — so the rule about origins is read in one place, the one that read it when the
+   * login was saved.
+   */
+  test("is found by the origin of the document its boxes are in — any of its origins, however the address is spelled, and no other — and says when it was last put in, in no row of the trail", async () => {
+    const [mine] = await vault.list(owner);
+    if (!mine) throw new Error("the owner has no saved login");
+    for (const address of [
+      "https://nid.naver.com",
+      "https://NID.naver.com:443/nidlogin.login?mode=form",
+      "https://sell.smartstore.naver.com",
+    ]) {
+      expect(
+        (await vault.forOrigin(owner, address)).map((login) => login.id),
+      ).toEqual([mine.id]);
+    }
+    for (const address of [
+      // The same host without TLS, its parent, a look-alike, another port, and no address at all.
+      "http://nid.naver.com",
+      "https://naver.com",
+      "https://nid.naver.com.evil.example",
+      "https://nid.naver.com:8443",
+      "about:blank",
+      "",
+    ]) {
+      expect(await vault.forOrigin(owner, address)).toEqual([]);
+    }
+    // Nobody else's, and nothing of a value in what is handed back.
+    expect(await vault.forOrigin(other, "https://nid.naver.com")).toEqual([]);
+    expect(
+      holdsAValue(
+        JSON.stringify(await vault.forOrigin(owner, "https://nid.naver.com")),
+      ),
+    ).toBe(false);
+
+    expect(mine.lastUsedAt).toBeNull();
+    const written = rows.length;
+    await vault.used(other, mine.id);
+    expect((await vault.list(owner))[0]?.lastUsedAt).toBeNull();
+    await vault.used(owner, mine.id);
+    expect((await vault.list(owner))[0]?.lastUsedAt).not.toBeNull();
+    // The fill writes its own row, at the gate: this writes none.
+    expect(rows.length).toBe(written);
+  });
+
   test("gets a new key when a value changes, and keeps its key when only its name does", async () => {
     const [mine] = await vault.list(owner);
     if (!mine) throw new Error("the owner has no saved login");

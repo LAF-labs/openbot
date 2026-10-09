@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
-import { SIGN_IN, serveFixture } from "./fixture-site";
+import { NOT_A_SIGN_IN, SIGN_IN, serveFixture } from "./fixture-site";
 
 /**
  * A SAVED LOGIN, PUT INTO A REAL PAGE BY THE COMPUTER'S OWN DOOR (2026-10-10, record §6).
@@ -213,8 +213,8 @@ describe.skipIf(!HAS_BROWSER)(
       });
       expect(where.body).toEqual({
         fields: [
-          { ref: id.ref, origin: here() },
-          { ref: password.ref, origin: here() },
+          { ref: id.ref, origin: here(), kind: "text" },
+          { ref: password.ref, origin: here(), kind: "password" },
         ],
       });
 
@@ -240,6 +240,30 @@ describe.skipIf(!HAS_BROWSER)(
       expect(leaks(bot.seen, [WHO, PASSWORD])).toEqual([]);
     }, 90_000);
 
+    /*
+     * "SECRET" IS NOT "THE PASSWORD". A look marks a one-time code, a new password and a card number
+     * as secret exactly as it marks a password, so the server cannot tell them apart from what a
+     * look says. What each box is for is read off its own markup, here, the way a browser's own
+     * password manager reads it — and a saved password goes into none of these.
+     */
+    test("says what each box is for by its own markup: a code, a new password, a card number and a text area are not a login's", async () => {
+      const bot = asBot("box-kinds-bot");
+      await bot.post("/navigate", { url: `${fixture?.url}not-a-sign-in` });
+      const shot = await bot.snapshot();
+      const refs = Object.values(NOT_A_SIGN_IN).map((name) => {
+        const box = shot.elements.find((element) => element.name === name);
+        if (!box) throw new Error(`nothing called ${name}`);
+        return box.ref;
+      });
+      const where = await bot.post("/login/where", {
+        refs,
+        snapshotId: shot.snapshotId,
+      });
+      expect(
+        (where.body.fields as { kind: string }[]).map((field) => field.kind),
+      ).toEqual(["other", "other", "other", "other", "other"]);
+    }, 90_000);
+
     test("is put nowhere on a page of another origin, and nothing of it is held", async () => {
       const bot = asBot("wrong-site-bot");
       await bot.post("/navigate", { url: `${fixture?.url}saved-sign-in` });
@@ -252,7 +276,7 @@ describe.skipIf(!HAS_BROWSER)(
       ]) {
         const refused = await fillWith(bot, origins);
         expect([refused.status, refused.body.code]).toEqual([
-          409,
+          403,
           "laf:login_origin_mismatch",
         ]);
       }
@@ -286,7 +310,7 @@ describe.skipIf(!HAS_BROWSER)(
       // Saved for the page's own origin: the boxes are not that page's, and nothing goes in.
       const refused = await fillWith(bot, [here()]);
       expect([refused.status, refused.body.code]).toEqual([
-        409,
+        403,
         "laf:login_origin_mismatch",
       ]);
       expect((await bot.get("/control")).body.valuesHeld).toBeUndefined();

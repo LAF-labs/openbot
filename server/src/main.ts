@@ -737,9 +737,22 @@ const siteConnections = createSiteConnectionStore(database);
  * by the same policy, written to the same audit trail and held for the same approvals as one
  * somebody watched.
  */
+/**
+ * 로그인 보관함: what a person saved for their Bot's browser, sealed under the deployment's key.
+ * Made here, ahead of the gateway, because two read it: the routes a person saves through
+ * (`createApp`), and the gateway that puts a saved login into the site it was saved for.
+ */
+const loginVault = createLoginVault({
+  database,
+  keyEncryptionKey: config.keyEncryptionKey,
+  // A developer's stack only: a page under test on a loopback address has no certificate.
+  allowLoopbackHttp: config.computer?.allowPrivateHosts ?? false,
+});
+
 const computerGateway = computerClient
   ? createComputerGateway({
       client: computerClient,
+      logins: loginVault,
       /*
        * The trail, with one ear on it.
        *
@@ -1150,13 +1163,7 @@ const app = createApp({
   feed: feedStore,
   // 목표: the goals the person set, and their timelines.
   goals: goalStore,
-  // 로그인 보관함: what a person saved for their Bot's browser. Sealed under the deployment's key.
-  logins: createLoginVault({
-    database,
-    keyEncryptionKey: config.keyEncryptionKey,
-    // A developer's stack only: a page under test on a loopback address has no certificate.
-    allowLoopbackHttp: config.computer?.allowPrivateHosts ?? false,
-  }),
+  logins: loginVault,
 });
 
 /** The live screen, proxied ahead of the app because an upgrade is not a request. See live-screen.ts. */
