@@ -23,6 +23,17 @@ describe("the origin a login is saved for", () => {
         "https://nid.naver.com",
       ]);
     }
+    // An address written as numbers is a site too — both families of them. (One word that is
+    // not numbers is not: see below.)
+    expect(loginOriginOf("https://[2001:db8::1]/login")).toBe(
+      "https://[2001:db8::1]",
+    );
+    expect(loginOriginOf("[2001:db8::1]:8443")).toBe(
+      "https://[2001:db8::1]:8443",
+    );
+    expect(loginOriginOf("https://192.0.2.10/login")).toBe(
+      "https://192.0.2.10",
+    );
     // A port that is not the scheme's own is part of what was saved.
     expect(loginOriginOf("shop.example:8443")).toBe(
       "https://shop.example:8443",

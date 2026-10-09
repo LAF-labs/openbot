@@ -769,6 +769,86 @@ describe("a login a person saves", () => {
     expect(JSON.stringify(rows)).not.toContain(gone);
   });
 
+  test("holds under two requests at the same moment: neither change puts back what the other made, and the hundredth login is saved once", async () => {
+    /*
+     * This file's own pool gives transactions ONE connection, so two of them take turns and a
+     * race cannot be seen. A second client with room for two at once is what these need.
+     */
+    const wide = createDatabase(
+      process.env.DATABASE_URL ??
+        "postgres://openbot:openbot@localhost:5432/openbot",
+      { max: 4 },
+    );
+    const atOnce = createLoginVault({
+      database: wide,
+      keyEncryptionKey: KEY,
+      trailWithin: () => ({ insert: async () => undefined }),
+    });
+    const person = `login-race-${tag}`;
+    await database
+      .insert(users)
+      .values({ id: person, email: `${person}@laf.test`, name: person });
+    const saved = await atOnce.save(person, NAVER);
+
+    /*
+     * A new sign-in name and a new password, sent together as two changes. Each is sealed with
+     * the value the other did not send — read before the other wrote, that was the OLD one, and
+     * whichever landed second put it back: one change lost, both answered as made.
+     */
+    for (let round = 0; round < 8; round += 1) {
+      const name = `sajang-${round}`;
+      const word = `hunter-${round}`;
+      await Promise.all([
+        atOnce.replace(person, saved.id, { username: name }),
+        atOnce.replace(person, saved.id, { password: word }),
+      ]);
+      expect(await atOnce.open(person, saved.id)).toMatchObject({
+        username: name,
+        password: word,
+      });
+      // And a new name for the login beside a new password: the label is not put back.
+      await Promise.all([
+        atOnce.replace(person, saved.id, { label: `가게 ${round}` }),
+        atOnce.replace(person, saved.id, { password: `${word}!` }),
+      ]);
+      const opened = await atOnce.open(person, saved.id);
+      expect([opened?.login.label, opened?.password]).toEqual([
+        `가게 ${round}`,
+        `${word}!`,
+      ]);
+    }
+
+    // Ninety-nine saved, and two saves at once: counted and then written, both saw ninety-nine.
+    await database.insert(lafSavedLogins).values(
+      Array.from({ length: SAVED_LOGINS_MAX - 2 }, (_, n) => ({
+        id: `login-race-${tag}-${n}`,
+        userId: person,
+        label: `자리 ${n}`,
+        origins: ["https://full.example"],
+        wrappedKey: "lv1.AAAA.AAAA",
+        kekId: "0000000000000000",
+        sealedUsername: "lv1.AAAA.AAAA",
+        sealedPassword: "lv1.AAAA.AAAA",
+      })),
+    );
+    const both = await Promise.allSettled([
+      atOnce.save(person, NAVER),
+      atOnce.save(person, NAVER),
+    ]);
+    expect(both.map((one) => one.status).sort()).toEqual([
+      "fulfilled",
+      "rejected",
+    ]);
+    const refused = both.find((one) => one.status === "rejected");
+    expect((refused as PromiseRejectedResult).reason).toMatchObject({
+      code: "laf:logins_full",
+    });
+    expect(await atOnce.list(person)).toHaveLength(SAVED_LOGINS_MAX);
+
+    await database.delete(users).where(eq(users.id, person));
+    await wide.$client.close();
+  });
+
   test("writes those rows on the change's own transaction when nobody says otherwise: they are in the trail's table, under the person", async () => {
     // As `main.ts` makes it: no `trailWithin`. The rows go where every row of the trail goes.
     //
