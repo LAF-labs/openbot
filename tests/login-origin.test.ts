@@ -46,6 +46,16 @@ describe("the origin a login is saved for", () => {
       "shop example",
       "https://",
       "https://shop.example\nhttps://evil.example",
+      // A slip in the scheme: one slash, a backslash, none. Given a scheme of its own each parses
+      // as a host called `https` or `http` — an origin that is nobody's.
+      "https:/shop.example",
+      "https:\\shop.example",
+      "https:shop.example",
+      "http:/shop.example",
+      "shop.example\\login",
+      // One word is not a site's name.
+      "https://intranet",
+      "shop",
     ]) {
       expect([written, loginOriginOf(written)]).toEqual([written, null]);
     }

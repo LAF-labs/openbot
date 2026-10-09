@@ -44,7 +44,8 @@ export function loginOriginOf(
   options: { allowLoopbackHttp?: boolean } = {},
 ): string | null {
   const text = written.trim();
-  if (!text || /\s/.test(text)) return null;
+  // A backslash is not part of an address; a browser reads one as a slash, and so would this.
+  if (!text || /[\s\\]/.test(text)) return null;
   // Longer than an address is: not read at all, however much of a megabyte it fills.
   if (text.length > LOGIN_ADDRESS_MAX) return null;
   // A bare host is the site's HTTPS address: nobody types the scheme, and no other is taken.
@@ -59,6 +60,14 @@ export function loginOriginOf(
   }
   if (url.username || url.password) return null;
   if (!url.hostname) return null;
+  /*
+   * A SITE'S NAME HAS A DOT IN IT. `https:/shop.example` — one slash, a slip — is not seen as
+   * having a scheme, is given one, and parses: as the host `https`. Saved, that login was for an
+   * origin that is nobody's and could never be put where it was meant for, and the save said it
+   * had worked (Codex's sixth read of the change that saves these). A host of one word is this
+   * machine or it is a mistake.
+   */
+  if (!url.hostname.includes(".") && !isLoopback(url.hostname)) return null;
   /*
    * A NAME NO LONGER THAN A NAME CAN BE. The parser takes a host of any length, so one address
    * could be most of a megabyte — saved in the row, written into the trail, which is never

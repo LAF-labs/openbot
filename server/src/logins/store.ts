@@ -139,7 +139,11 @@ export function createLoginVault(input: {
           ).trim()
         : "";
     if (!label) throw new LoginRefused("laf:login_label_required", "label");
-    return cutOnGraphemes(label, LABEL_MAX);
+    // Asked again once it is cut: a name whose first character is longer than a name may be —
+    // a letter under eighty accents — cuts to nothing, and nothing is not a name.
+    const cut = cutOnGraphemes(label, LABEL_MAX);
+    if (!cut) throw new LoginRefused("laf:login_label_required", "label");
+    return cut;
   };
 
   /**
@@ -201,6 +205,16 @@ export function createLoginVault(input: {
     }
     if (written.length > max) {
       throw new LoginRefused("laf:login_value_too_long", field);
+    }
+    /*
+     * TEXT THAT IS NOT TEXT IS REFUSED, NOT MENDED. Half of a character — a lone surrogate, which
+     * JSON can carry — is replaced when the value is turned into bytes to be sealed, so what was
+     * opened later was not what was typed: a save that reported success, and a sign-in that
+     * would fail with a password nobody chose (Codex's sixth read of this change). A name is
+     * tidied; a value is taken exactly or not at all.
+     */
+    if (!written.isWellFormed()) {
+      throw new LoginRefused("laf:login_invalid", field);
     }
     return written;
   };

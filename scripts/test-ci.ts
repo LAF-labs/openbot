@@ -2398,7 +2398,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * login's rows: one that was saved, changed or deleted is named by its site and the hosts it
  * may go to; one that was refused says so in the refusal's colour and says why in words.
  * (`audit-rows.test.ts` holds more: two rows that differ in a site, an origin or a refusal's
- * fact are not one row.) Forty-six mutations each fail one of these.
+ * fact are not one row.) Fifty mutations each fail one of these.
  * By hand: 5, 4 and 10 are 19, and 3910 and 19 are 3929; 2138 and 2 are 2140; 927 and 6 are 933.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them

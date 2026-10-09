@@ -574,6 +574,32 @@ describe("a login a person saves", () => {
         field: "label",
       },
     ]);
+    // A name whose first character is longer than a name may be cuts to nothing: no name.
+    const accents = await call("POST", "", {
+      ...NAVER,
+      label: `a${"\u0301".repeat(90)}`,
+    });
+    expect([
+      accents.status,
+      ((await accents.json()) as { code: string }).code,
+    ]).toEqual([400, "laf:login_label_required"]);
+    /*
+     * A VALUE THAT IS NOT TEXT IS REFUSED, NOT MENDED. Half a character in a password is
+     * replaced when it is turned into bytes: what would be opened later is not what was typed.
+     */
+    const before = await stored(owner);
+    for (const [field, value] of [
+      ["password", "hunter\ud800"],
+      ["username", "\udc00sajang"],
+    ] as const) {
+      const half = await call("POST", "", { ...NAVER, [field]: value });
+      expect([field, half.status, await half.json()]).toEqual([
+        field,
+        400,
+        { error: "laf:login_invalid", code: "laf:login_invalid", field },
+      ]);
+    }
+    expect(await stored(owner)).toBe(before);
     // And a name is cut where a character ends, not through one.
     const long = await call("PATCH", `/${saved.id}`, {
       label: "🏪".repeat(200),
