@@ -370,7 +370,6 @@ async function refNamesNode(
 /** Stop following one field, keeping the digest of what it held. */
 function letGo(session: BotSession, field: SecretField): void {
   session.secretFields = session.secretFields.filter((kept) => kept !== field);
-  if (session.lastTyped === field) session.lastTyped = undefined;
   keepTyped(session, field.digest);
   void field.handle.dispose().catch(() => undefined);
 }
@@ -414,8 +413,6 @@ export function forgetSecretFields(session: BotSession): void {
   for (const field of session.secretFields.splice(0)) {
     void field.handle.dispose().catch(() => undefined);
   }
-  session.lastTyped = undefined;
   session.typedDigests = [];
   session.ownDigests = [];
-  session.typedBlind = new WeakMap();
 }

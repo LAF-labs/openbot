@@ -35,7 +35,6 @@ const SCREEN_FILES = [
   "components/connections/oauth-row.tsx",
   "components/connections/site-rows.tsx",
   "components/partners/partner-connections.tsx",
-  "components/sites/handoff.tsx",
   "lib/connections/queries.ts",
 ];
 
@@ -178,11 +177,15 @@ describe("what the switch starts", () => {
     expect(oauth).not.toContain("takeControl");
     expect(oauth).not.toContain("forgetSite");
 
-    // A site row opens the Bot's browser and takes the wheel; it holds no consent flow at all.
+    /*
+     * A site row only lets go of a site, until the password card brings connecting back (owner,
+     * 2026-10-09): it opened the Bot's browser and took the wheel, and nobody takes it now. It holds
+     * no consent flow at all. What it draws is in `site-rows-render.test.tsx`.
+     */
     const sites = read("components/connections/site-rows.tsx");
-    expect(sites).toContain("openSite");
-    expect(sites).toContain("takeControl");
     expect(sites).toContain("forgetSite");
+    expect(sites).not.toContain("openSite");
+    expect(sites).not.toContain("takeControl");
     expect(sites).not.toContain("beginConnect");
 
     // A partner row registers; there is no consent screen and no browser in it.
@@ -225,43 +228,6 @@ describe("what the switch starts", () => {
       expect(ko[confirmation]).toBeTruthy();
     }
   });
-
-  test("the wheel is verified before the overlay claims the person has it", () => {
-    /*
-     * This is the bug the check exists for. `takeControl` answers null when the server refused, and
-     * the old screen threw that away and opened the overlay anyway under "조종권은 당신에게
-     * 있습니다" — so a refused takeover put somebody in front of a live screen typing a password at
-     * a browser that was not listening to them.
-     */
-    const sites = read("components/connections/site-rows.tsx");
-    expect(sites).toContain('held?.holder !== "human"');
-    expect(sites).toContain("The browser could not be handed over.");
-    // And the overlay keeps watching, because control can end without this window doing anything.
-    expect(read("components/sites/handoff.tsx")).toContain("watchControl");
-  });
-
-  test("a check that could not be read says so, with a way to ask again", () => {
-    // It used to be a silent no-op: the overlay closed, nothing was said, and a row that had just
-    // been logged into kept reading 연결 안 됨 with no way to find out why.
-    const sites = read("components/connections/site-rows.tsx");
-    expect(sites).toContain("The browser's state could not be read.");
-    expect(sites).toContain("handleRetryCheck");
-    expect(ko["The browser's state could not be read."]).toContain("다시 확인");
-  });
-
-  test("a switch that could not reach the browser offers to be pressed again", () => {
-    /*
-     * The 0.5.3 audit (item 15): "봇의 브라우저에 닿지 못했습니다." and nothing else, under a switch
-     * that had already gone back off. Measured 2026-09-24 with the computer stopped and started
-     * again: the row now carries 다시 켜기, and pressing it opened the login page.
-     */
-    const sites = read("components/connections/site-rows.tsx");
-    expect(sites).toContain('opened.kind === "unreachable"');
-    expect(sites).toContain('t("Turn it on again")');
-    expect(ko["Turn it on again"]).toBe("다시 켜기");
-    // Not for an address the Bot may not open: pressing again would only be refused again.
-    expect(sites).not.toMatch(/kind === "refused"\) setRetryable/);
-  });
 });
 
 /**
@@ -273,23 +239,14 @@ describe("what the switch starts", () => {
 describe("the site rows with one Bot", () => {
   const sites = read("components/connections/site-rows.tsx");
 
-  test("draw the Bot picker only for an account that still has several", () => {
-    expect(sites).toMatch(/bots\.length > 1 \?/);
-    expect(sites).toContain('t("Which Bot should open it?")');
-  });
-
   test("say nothing that needs more than one Bot to be true", () => {
     const korean = [...sites.matchAll(/\bt\(\s*"((?:[^"\\]|\\.)*)"/g)].map(
       (match) => ko[match[1] as string] ?? `(no Korean) ${match[1]}`,
     );
     expect(korean.filter((line) => line.startsWith("(no Korean)"))).toEqual([]);
-    // The picker's own question is the one exception, and it is drawn only for several.
-    expect(
-      korean.filter(
-        (line) =>
-          /봇들|모든 봇|여러 봇/.test(line) || line === "어느 봇이 열까요?",
-      ),
-    ).toEqual(["어느 봇이 열까요?", "어느 봇이 열까요?"]);
+    expect(korean.filter((line) => /봇들|모든 봇|여러 봇/.test(line))).toEqual(
+      [],
+    );
     expect(ko["Connected · {name} last looked {date}"]).toBe(
       "연결됨 · {name}{josa} {date}에 확인",
     );

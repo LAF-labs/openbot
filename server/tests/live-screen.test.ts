@@ -53,6 +53,9 @@ const computer = Bun.serve<{ bot: string | null; token: string | null }>({
     message(_ws, message) {
       computerSaw.push({ input: String(message) });
     },
+    close(ws) {
+      computerSaw.push({ closed: ws.data.bot });
+    },
   },
 });
 
@@ -161,8 +164,7 @@ const until = async (check: () => boolean) => {
 };
 
 /**
- * A screen, open end to end: the first frame has come back, so the socket inward is open too. Input
- * sent before that is dropped rather than queued — on purpose, see the proxy's `open`.
+ * A screen, open end to end: the first frame has come back, so the socket inward is open too.
  */
 const openScreen = async (botId: string) => {
   const socket = new WebSocket(
@@ -258,7 +260,7 @@ describe("the refusals, before anything is opened inward", () => {
 });
 
 describe("an opened screen", () => {
-  test("relays frames outward and input inward, to that Bot's computer with the token", async () => {
+  test("relays frames outward from that Bot's computer, asked for with the token", async () => {
     const { socket, frames, pictures } = await openScreen(BOT);
     expect(frames).toEqual(["frame-1"]);
     // Bytes arrive as the same bytes. The relay turned every message into a string, which is what a
@@ -272,12 +274,23 @@ describe("an opened screen", () => {
       { botId: BOT, viewer: { id: OWNER, role: "user" } },
     ]);
 
-    socket.send("not json, forwarded all the same");
-    await until(() => computerSaw.length > 1);
-    expect(computerSaw[1]).toEqual({
-      input: "not json, forwarded all the same",
-    });
     socket.close();
+    await until(() => computerSaw.some((entry) => "closed" in entry));
+  });
+
+  /*
+   * NOTHING INWARD (owner, 2026-10-09). This socket carried a person's clicks and keys into the
+   * Bot's browser while they held the wheel; nobody does now. A window loaded before that may still
+   * send them, and they stop here. Sent before the close on the same socket, so had the proxy
+   * forwarded one, the computer would have seen it before it saw the close.
+   */
+  test("takes nothing inward: what a window still sends is dropped before the computer", async () => {
+    const { socket } = await openScreen(BOT);
+    socket.send(JSON.stringify({ type: "mouse", event: "mousePressed" }));
+    socket.send(JSON.stringify({ type: "text", text: "a password" }));
+    socket.close();
+    await until(() => computerSaw.some((entry) => "closed" in entry));
+    expect(computerSaw.filter((entry) => "input" in entry)).toEqual([]);
   });
 
   test("a socket the app upgraded is handed to the channels, not proxied", async () => {
@@ -366,11 +379,7 @@ describe("the connection check's probe", () => {
     ).toEqual([{ bot: BOT, token: TOKEN }]);
     expect(opened).toHaveLength(1);
     expect(live.openFor(OWNER)).toBe(1);
-    // And it still carries input inward.
-    socket.send("still driving");
-    await until(() =>
-      computerSaw.some((entry) => entry.input === "still driving"),
-    );
     socket.close();
+    await until(() => computerSaw.some((entry) => "closed" in entry));
   });
 });

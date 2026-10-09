@@ -2167,6 +2167,38 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * lines of each against `origin/main`. By hand: 16, 11, 1, 1, 2, 3 and 2 are 36, and 3932 less 36
  * is 3896; 530 less 1 is 529.
  *
+ * LOWERED 2026-10-09 AGAIN, for taking the wheel: `agent-computer` from 529 to 475, `app` from 2187
+ * to 2153, `server` from 3896 to 3892. The owner removed it on every surface the same day — a person
+ * watches the Bot's screen and never drives it, and what they type reaches a page only through the
+ * masked box (docs/laf/redesign-2026-10.md §7). Counted file by file off the two gates' JUnit
+ * reports, before and after:
+ *
+ *  - `agent-computer`, −54. Gone whole: `typed-keys.test.ts` (22), `held-input.test.ts` (12),
+ *    `takeover-secret.test.ts` (4) and `person-typing.test.ts` (3) — what a person's keys, pointer
+ *    and pastes did on the page, and finding the box they landed in. `control.test.ts` 39 → 31:
+ *    taking, holding and handing back the wheel, and a Bot refused while a person held it, went;
+ *    what stays is asks and answers, reworded as such. `live-screen-input.test.ts` 8 → 3: input
+ *    forwarded, or refused for want of the wheel, became input dropped whatever it is.
+ *    `fact-codes.test.ts` 21 → 20: the row for `laf:human_has_control`. `get-form-secret.test.ts`
+ *    0 → 1: the masked box's value blanked from a GET form's address, which the takeover file held.
+ *  - `app`, −34. `live-screen.test.tsx` 35 → 12: the pointer, keys, IME, paste and wheel sent while
+ *    driving, and a drop while driving poking control, went; nothing a person does on the picture
+ *    being sent, and nothing on it taking focus or text, came. `take-the-wheel.test.ts` (7) went.
+ *    `connections-screen.test.ts` 20 → 16, `connect-outcome.test.ts` 6 → 5 and `screen-panel.test.ts`
+ *    14 → 13: the site handoff, the Bot picker and the driving width. `live-view.test.tsx` 6 → 5:
+ *    the sheet, a double mount keeping the wheel and 직접 하기 under an ask, for only the sizes being
+ *    offered and a mount and a close asking the computer for nothing. `site-rows-render.test.tsx`
+ *    0 → 3: no switch on a site not connected, the certificate sentence, a connected site turned
+ *    off after asking with nothing opened.
+ *  - `server`, −4. `computer-routes-codes.test.ts` 62 → 58: a person holding the wheel answered
+ *    409 (four cases) and `laf:take_control_first` passed through went, for the five retired doors
+ *    answering 404. `computer-routes.test.ts` 38 → 37: a person's input not rerouted into the secret
+ *    path and an unknown kind refused, for both doors being gone. `live-screen.test.ts` 9 → 10: the
+ *    proxy relays nothing inward, and fails the test when it forwards.
+ *
+ * By hand: 529 less 54 is 475; 2187 less 34 is 2153; 3896 less 4 is 3892. `root` lost and gained
+ * none.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2195,11 +2227,11 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 3896, roots: ["server"] },
-  { name: "app", floor: 2187, roots: ["app"] },
+  { name: "server", floor: 3892, roots: ["server"] },
+  { name: "app", floor: 2153, roots: ["app"] },
   {
     name: "agent-computer",
-    floor: 529,
+    floor: 475,
     roots: ["agent-computer"],
     processes: 1,
   },

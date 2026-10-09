@@ -231,7 +231,6 @@ export const act: BotRoute = async (
 
   const startedAt = Date.now();
   try {
-    session.control.assertBotMayAct();
     const target = await profiles.page(botId);
     // Never on a tab the Bot was put on and has not looked at — a key and a scroll name no element
     // for a stale ref to refuse them by (`tab-loss.ts`).
@@ -336,7 +335,6 @@ export const upload: BotRoute = async (
     return invalid("path");
   }
   try {
-    session.control.assertBotMayAct();
     const full = await workspace.resolvePath(body.path.trim(), false);
     const target = await profiles.page(botId);
     assertLooked(session);

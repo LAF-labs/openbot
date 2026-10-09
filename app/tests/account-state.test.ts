@@ -25,16 +25,6 @@ const DEVICE_SCOPED = [
   "components/theme-provider.tsx",
   "lib/i18n.ts",
   /*
-   * Which Bot's browser the 사이트 section starts on.
-   *
-   * A DECISION, and the argument is that it decides nothing. It is where a picker's cursor sits
-   * when the screen opens; the picker is on screen saying which Bot it landed on, and every
-   * connected row names the Bot whose browser actually holds that session — read from the server,
-   * not from here. So the worst this can be wrong about is one dropdown, in front of somebody who
-   * is looking at it, and the alternative is re-picking the same Bot every single visit.
-   */
-  "components/connections/site-rows.tsx",
-  /*
    * That this TAB already started the sign-in `/sign?via=` named (`viaToStart`, 2026-09-15).
    *
    * A DECISION, and the argument is that it is not a person's state at all: it is the loop guard on

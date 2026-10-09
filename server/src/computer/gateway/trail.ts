@@ -313,7 +313,6 @@ export async function writeControlEvent(
   auditStore: AuditStore,
   eventType:
     | "computer.help_requested"
-    | "computer.control_taken"
     | "computer.control_released"
     | "computer.secret_requested"
     | "computer.secret_supplied"

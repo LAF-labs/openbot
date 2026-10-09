@@ -1,20 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { ConnectionRow } from "@/components/connections/connection-row";
-import { pokeControl } from "@/components/computer/control-poll";
-import {
-  releaseControl,
-  takeControl,
-} from "@/components/computer/take-the-wheel";
-import { Handoff } from "@/components/sites/handoff";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   connectionKeys,
   forgetSite,
@@ -29,11 +16,6 @@ import {
   sitesInShopOrder,
 } from "@/lib/shop/catalogue";
 import { type BusinessSite, BUSINESS_SITES } from "@/lib/sites/catalogue";
-import {
-  checkSiteConnection,
-  type OpenSiteOutcome,
-  openSite,
-} from "@/lib/sites/queries";
 
 /**
  * 사이트 연결 — signing a Bot's browser into the places a Korean shop actually works in.
@@ -41,61 +23,22 @@ import {
  * THE POINT OF THE WHOLE SECTION. Everything above it on this screen is an account at a vendor that
  * publishes an API and is willing to register this deployment. For 배민, 스마트스토어, 홈택스 and
  * the rest, that is either a fortnight of paperwork per shop or simply not on offer. What IS on
- * offer is the thing the person already knows how to do: open the site and log in. So the Bot's own
- * browser is put in front of them, they sign in, they hand it back, and the session lives in the
- * browser profile from then on.
+ * offer is the thing the person already knows how to do: log in. The session lives in the Bot's
+ * browser profile from then on, and one login covers every Bot, since there is one profile on a
+ * deployment (2026-09-16).
  *
- * AND ONE LOGIN COVERS EVERY BOT (2026-09-16). There is one browser profile on a deployment, so the
- * person authorises 배민 once rather than once per Bot — which is the whole reason the decision was
- * made. The picker at the top chooses who DRIVES the login, not where the session lands; asking on
- * each row would be fifteen copies of one decision, and the choice is remembered so a person does
- * not re-pick it every time they open this screen.
- *
- * AND A PERSON HAS ONE BOT (2026-09-24, "봇은 하나다"), so this screen stopped talking as though
- * there were several (0.5.3 audit, item 9): measured, it asked "어느 봇이 열까요? [수달 ▾]" of a
- * person with one Bot. The picker is drawn only for an account from before that day that still has
- * several, and every sentence is written to be true either way — Korean does not have to say
- * whether 봇 is one or five.
+ * NOT CONNECTED HERE FOR NOW (owner, 2026-10-09). A site used to be connected by putting the Bot's
+ * browser in front of the person to log in on — taking the wheel. Nobody drives the Bot's browser
+ * any more, on any surface, and the way back is the password card: the Bot opens the login page and
+ * the person types the ID and password into a masked box it never sees (docs/laf/redesign-2026-10.md
+ * §6, next to land). Until that lands, a site that is not connected draws no switch — one that could
+ * only fail would be a control that does nothing (CLAUDE.md) — and says when it comes back. A site
+ * already connected keeps working, and can still be turned off.
  */
 
 /** Where a site's row is, before anything the person just did. */
 const stateOf = (site: OverviewSite | undefined) =>
   site?.status ?? "not_connected";
-
-/** What went wrong opening the page, in this screen's own words rather than the server's. */
-const refusalText = (outcome: OpenSiteOutcome): string => {
-  if (outcome.ok) return "";
-  if (outcome.kind === "refused") {
-    return t("This Bot is not allowed to open that address.");
-  }
-  if (outcome.kind === "held") {
-    return t("Somebody is using this browser right now.");
-  }
-  if (outcome.kind === "awaiting") {
-    return t("Somebody has to allow this before the page will open.");
-  }
-  return t("The Bot's browser could not be reached.");
-};
-
-/** Which Bot this person last drove a login with. The browser behind it is every Bot's. */
-const REMEMBERED_BOT = "laf.connections.bot";
-
-const rememberedBot = (): string | null => {
-  try {
-    return window.localStorage.getItem(REMEMBERED_BOT);
-  } catch {
-    // A browser with storage switched off is not a broken screen; it is one that forgets.
-    return null;
-  }
-};
-
-const rememberBot = (botId: string): void => {
-  try {
-    window.localStorage.setItem(REMEMBERED_BOT, botId);
-  } catch {
-    // Nothing to do and nothing worth saying: the picker still works for this visit.
-  }
-};
 
 const asDate = (iso: string | null): string =>
   iso ? new Date(iso).toLocaleDateString(activeLocale) : "";
@@ -114,25 +57,7 @@ export const SiteRows = ({
   only?: readonly string[];
 }) => {
   const queryClient = useQueryClient();
-  const [chosenBotId, setChosenBotId] = useState<string | null>(rememberedBot);
-  /** The site whose login page is being opened. One at a time; a browser has one page. */
-  const [opening, setOpening] = useState<string | null>(null);
-  const [handoff, setHandoff] = useState<BusinessSite | null>(null);
   const [notes, setNotes] = useState<Record<string, string | null>>({});
-  /** The site whose check could not be read, so the retry knows what to ask about again. */
-  const [unread, setUnread] = useState<string | null>(null);
-  /**
-   * The site whose switch did not get as far as the login page, for a reason pressing it again can
-   * fix: the browser did not answer, or the wheel was not handed over.
-   *
-   * The row used to say "봇의 브라우저에 닿지 못했습니다." and stop there, with the switch already
-   * back off — nothing on it said the next thing to do was to press that same switch again. Not
-   * offered for a refused address or one waiting on somebody's permission: pressing again would
-   * only be refused again.
-   */
-  const [retryable, setRetryable] = useState<string | null>(null);
-
-  const bot = bots.find((one) => one.id === chosenBotId) ?? bots[0];
   const byId = new Map(sites.map((site) => [site.id, site]));
   const { data: me } = useQuery(currentUserQueryOptions());
   const shop = me?.shop ?? EMPTY_SHOP;
@@ -167,113 +92,9 @@ export const SiteRows = ({
     setNotes((current) => ({ ...current, [siteId]: note }));
   }, []);
 
-  const handleChoose = useCallback((botId: string | null) => {
-    if (!botId) return;
-    setChosenBotId(botId);
-    rememberBot(botId);
-  }, []);
-
-  const handleOpen = useCallback(
-    async (site: BusinessSite) => {
-      if (!bot) return;
-      say(site.id, null);
-      setUnread(null);
-      setRetryable(null);
-      setOpening(site.id);
-      let opened = await openSite(bot.id, site.loginUrl);
-      /*
-       * The wheel is still in this person's hands from a login overlay closed without 다 했어요.
-       * They are about to take it again for this one, so it is handed back first and the page
-       * asked for once more — the Bot cannot open a page while a person holds its browser.
-       */
-      if (!opened.ok && opened.kind === "held") {
-        await releaseControl(bot.id);
-        opened = await openSite(bot.id, site.loginUrl);
-      }
-      if (!opened.ok) {
-        say(site.id, refusalText(opened));
-        if (opened.kind === "unreachable") setRetryable(site.id);
-        setOpening(null);
-        return;
-      }
-      /*
-       * THE WHEEL IS VERIFIED, NOT ASSUMED. This used to ignore what `takeControl` answered and open
-       * the overlay regardless, under a banner reading "조종권은 당신에게 있습니다" — so a takeover
-       * the server refused put somebody in front of a live screen typing a password at a browser
-       * that was not listening to them.
-       */
-      const held = await takeControl(bot.id);
-      if (held?.holder !== "human") {
-        say(
-          site.id,
-          t("The browser could not be handed over. Please try again."),
-        );
-        setRetryable(site.id);
-        setOpening(null);
-        return;
-      }
-      pokeControl(bot.id);
-      setOpening(null);
-      setHandoff(site);
-    },
-    [bot, say],
-  );
-
-  const handleDone = useCallback(
-    (site: BusinessSite, signedIn: boolean | null) => {
-      setHandoff(null);
-      refresh();
-      if (signedIn === null) {
-        /*
-         * The check itself did not answer — a 503 from a restarting browser, or a deployment with
-         * no such surface. It used to be a silent no-op: the overlay closed, nothing was said, and
-         * a row that had just been logged into kept reading 연결 안 됨 with no way to find out why.
-         */
-        setUnread(site.id);
-        say(site.id, t("The browser's state could not be read."));
-        return;
-      }
-      setUnread(null);
-      say(
-        site.id,
-        signedIn
-          ? null
-          : t(
-              "That page still looks like a login screen, so nothing was recorded. Try again when you are through.",
-            ),
-      );
-    },
-    [refresh, say],
-  );
-
-  const handleRetryCheck = useCallback(
-    async (site: BusinessSite) => {
-      if (!bot) return;
-      const checked = await checkSiteConnection(site.id, bot.id);
-      if (!checked) {
-        say(site.id, t("The browser's state could not be read."));
-        return;
-      }
-      setUnread(null);
-      refresh();
-      say(
-        site.id,
-        checked.signedIn
-          ? null
-          : t(
-              "That page still looks like a login screen, so nothing was recorded. Try again when you are through.",
-            ),
-      );
-    },
-    [bot, refresh, say],
-  );
-
-  const handleToggle = useCallback(
-    (site: BusinessSite, next: boolean) => {
-      if (next) {
-        void handleOpen(site);
-        return;
-      }
+  /** Off is the one way a row's switch goes now: a site already connected, let go of. */
+  const handleTurnOff = useCallback(
+    (site: BusinessSite) => {
       forgetSite(site.id)
         .then(() => {
           say(site.id, null);
@@ -283,18 +104,8 @@ export const SiteRows = ({
           say(site.id, t("That could not be turned off. Please try again.")),
         );
     },
-    [handleOpen, refresh, say],
+    [refresh, say],
   );
-
-  if (bots.length === 0) {
-    /* A site is connected by driving a Bot's browser, so with no Bots there is nobody to drive it.
-       Said as a fact, with the thing to do next, rather than as an error. */
-    return (
-      <p className="mt-4 text-muted-foreground text-sm">
-        {t("Make your Bot first — a site is connected on its browser.")}
-      </p>
-    );
-  }
 
   const nameOf = (id: string | null): string =>
     bots.find((one) => one.id === id)?.name ?? id ?? "";
@@ -303,7 +114,6 @@ export const SiteRows = ({
     site: BusinessSite,
     row: OverviewSite | undefined,
   ): { text: string; tone: "muted" | "good" | "warn" } => {
-    if (opening === site.id) return { text: t("Opening…"), tone: "muted" };
     const state = stateOf(row);
     if (state === "needs_login") {
       return { text: t("Needs signing in again"), tone: "warn" };
@@ -325,100 +135,53 @@ export const SiteRows = ({
       };
     }
     /*
-     * 홈택스, AND ANYTHING ELSE BEHIND A CERTIFICATE. There is no "connect once" to offer here: the
-     * certificate is on the person's own device and is signed by a program the container does not
-     * have (docs/laf/browser-limits.md §1). A row that promised a connection it cannot keep would
-     * be the screen lying, so it says what it actually is — a handoff, every time.
+     * 홈택스, AND ANYTHING ELSE BEHIND A CERTIFICATE. The certificate is on the person's own device
+     * and is signed by a program the container does not have (docs/laf/browser-limits.md §1), and
+     * a person could only lend it by taking the wheel, which nobody does now. So the Bot cannot sign
+     * in here at all, and the row says so rather than promise the password card will do it.
      */
     if (site.handoff === "certificate") {
       return {
-        text: t("You authenticate each time — the Bot cannot keep this one."),
+        text: t(
+          "The Bot cannot sign in here: it needs a certificate on your device.",
+        ),
         tone: "muted",
       };
     }
-    // Nothing: the switch is off and already says so. See `ConnectionRow`'s `status`.
-    return { text: "", tone: "muted" };
+    return {
+      text: t("Connecting comes back soon, through the password card."),
+      tone: "muted",
+    };
   };
 
   return (
     <>
-      {/*
-       * WHICH BOT OPENS IT, NOT WHOSE BROWSER IT IS. The picker still matters to an account with
-       * several — somebody has to drive, and the audit row is keyed on whoever did — but it stopped
-       * being a choice about where the login lands the day the profile became the account's. With
-       * one Bot it is a question with one answer, so it is not asked.
-       */}
-      {bots.length > 1 ? (
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <span className="text-muted-foreground text-sm">
-            {t("Which Bot should open it?")}
-          </span>
-          <Select onValueChange={handleChoose} value={bot?.id ?? ""}>
-            <SelectTrigger
-              aria-label={t("Which Bot should open it?")}
-              className="w-56"
-            >
-              <SelectValue>{bot?.name ?? ""}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {bots.map((one) => (
-                <SelectItem key={one.id} value={one.id}>
-                  {one.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      ) : null}
-
       <div className="mt-4 rounded-lg border border-border bg-card">
         {shown.map((site) => {
           const row = byId.get(site.id);
-          const state = stateOf(row);
+          const isOn = stateOf(row) !== "not_connected";
           const tone = said(site, row);
           return (
             <ConnectionRow
               can={t(site.what)}
-              isBusy={opening === site.id}
-              isOn={state !== "not_connected"}
+              isOn={isOn}
               key={site.id}
               mark={site.mark}
               name={t(site.name)}
               note={notes[site.id] ?? null}
-              onToggle={(next) => handleToggle(site, next)}
               status={tone.text}
               tone={tone.tone}
-              {...(state !== "not_connected"
+              {...(isOn
                 ? {
+                    onToggle: (next: boolean) => {
+                      if (!next) handleTurnOff(site);
+                    },
                     confirmText: t(
                       "Turn this site off? The Bot will stop using it. Its browser stays signed in until you log out on the site itself.",
                     ),
                   }
                 : {})}
-            >
-              {unread === site.id ? (
-                <Button
-                  className="mt-2 self-start"
-                  onClick={() => void handleRetryCheck(site)}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  {t("Check again")}
-                </Button>
-              ) : null}
-              {retryable === site.id && opening !== site.id ? (
-                <Button
-                  className="mt-2 self-start"
-                  onClick={() => void handleOpen(site)}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  {t("Turn it on again")}
-                </Button>
-              ) : null}
-            </ConnectionRow>
+            />
           );
         })}
       </div>
@@ -432,14 +195,6 @@ export const SiteRows = ({
         >
           {t("Show {count} more", { count: folded })}
         </Button>
-      ) : null}
-
-      {handoff && bot ? (
-        <Handoff
-          botId={bot.id}
-          onDone={(signedIn) => handleDone(handoff, signedIn)}
-          site={handoff}
-        />
       ) : null}
     </>
   );

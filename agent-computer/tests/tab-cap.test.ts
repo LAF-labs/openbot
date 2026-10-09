@@ -925,12 +925,10 @@ describe("a Bot's session", () => {
       session.control.secretSupplied();
       expect(held()).toEqual([false, false, false, false]);
 
-      // A hand asked for on a tab, and the person who came keeping the wheel on it.
-      session.wheelTab = handed;
+      // A hand asked for on a tab, held for as long as the ask stands.
+      session.helpTab = handed;
       expect(held()).toEqual([false, false, false, false]);
-      session.control.requestHelp("로그인이 필요합니다");
-      expect(held()).toEqual([false, false, true, false]);
-      session.control.take();
+      session.control.requestHelp("휴대폰에서 승인해 주세요");
       expect(held()).toEqual([false, false, true, false]);
       session.control.release();
       expect(held()).toEqual([false, false, false, false]);
@@ -1295,41 +1293,35 @@ describe.skipIf(!HAS_BROWSER)("a Bot that keeps opening tabs", () => {
     ).toBe(TYPED);
   }, 60_000);
 
-  test("keeps the tab a person was handed the wheel on while they hold it, and not after they give it back", async () => {
-    const bot = "cap-wheel-bot";
+  test("keeps the tab it asked a person for a hand on while the ask stands, and not after it is answered", async () => {
+    const bot = "cap-help-bot";
     await post("/navigate", bot, { url: `${fixture?.url}to-hang` });
     const handed = await tabOf(bot);
     const asked = await post("/control/request", bot, {
-      reason: "로그인이 필요합니다",
+      reason: "휴대폰에서 승인해 주세요",
     });
     expect(asked.body.requested).toBe(true);
-    expect((await post("/control/take", bot)).body.holder).toBe("human");
 
-    // The person presses the link that opens this page in a new tab, on each tab in turn.
-    const box = await handed.locator("#self-tab").boundingBox();
-    if (!box) throw new Error("the /to-hang fixture has no link to a new tab");
-    const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    // While it waits, the Bot opens tab after tab from the one it is on: two more than it may hold.
     const chain: Page[] = [];
     for (let open = 0; open <= TAB_CAP; open += 1) {
-      const from = await tabOf(bot);
-      expect((await post("/human/click", bot, at)).status).toBe(200);
-      expect(await until(async () => (await tabOf(bot)) !== from)).toBe(true);
-      await keptToItsNumber(bot);
-      chain.push(await tabOf(bot));
+      chain.push(await pressForTab(bot, SAME_IN_NEW_TAB));
     }
-    const [second, third, fourth] = chain;
-    if (!second || !third || !fourth) throw new Error("no tabs were opened");
+    const [second, third, ...rest] = chain;
+    if (!second || !third) throw new Error("no tabs were opened");
 
     expect(await until(() => second.isClosed() && third.isClosed())).toBe(true);
     expect(handed.isClosed()).toBe(false);
-    expect(fourth.isClosed()).toBe(false);
+    for (const kept of rest) expect(kept.isClosed()).toBe(false);
     expect(tabsOf(await post("/snapshot", bot))).toHaveLength(TAB_CAP);
 
-    // Handed back: it is the tab used longest ago and nothing more, and goes when the next opens.
-    expect((await post("/control/release", bot)).body.holder).toBe("bot");
+    // Answered: it is the tab used longest ago and nothing more, and goes when the next opens.
+    expect((await post("/control/release", bot)).body.requested).toBe(false);
+    const last = rest.at(-1);
+    if (!last) throw new Error("no tab was kept");
     await pressForTab(bot, SAME_IN_NEW_TAB);
     expect(await until(() => handed.isClosed())).toBe(true);
-    expect(fourth.isClosed()).toBe(false);
+    expect(last.isClosed()).toBe(false);
     expect(tabsOf(await post("/snapshot", bot))).toHaveLength(TAB_CAP);
   }, 60_000);
 });

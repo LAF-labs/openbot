@@ -11,10 +11,7 @@ import {
 } from "@/components/ui/card-surface";
 import { focusRing } from "@/components/ui/focus";
 import { outcomeOf } from "@/lib/computer/browsing";
-import {
-  setScreenOpen,
-  useScreenPanelViewport,
-} from "@/lib/computer/screen-panel";
+import { setScreenOpen } from "@/lib/computer/screen-panel";
 import { useDeclaredBotId } from "@/lib/copilot/active-bot";
 import { t } from "@/lib/i18n";
 import { useServerOwnsTurn } from "@/lib/turns/answers";
@@ -26,21 +23,23 @@ import {
   readControl,
   releaseControl,
   supplySecret,
-  takeControl,
 } from "./take-the-wheel";
 import { useControl } from "./use-control";
 
 /**
  * THE BOT HANDING SOMETHING TO A PERSON, AS A CARD IN THE CONVERSATION — NEVER A POP-UP.
  *
- * A login, a code sent to a phone, a captcha, a password it must not be told: the Bot asks, and the
- * ask sits in the conversation at the point it was made, beside what the Bot was doing when it got
- * stuck. It used to be a line inside the side pane, and the pane opened itself to show it.
+ * Something done outside the Bot's screen — approving on a phone, confirming in an app — or a value
+ * it must not be told: the Bot asks, and the ask sits in the conversation at the point it was made,
+ * beside what the Bot was doing when it got stuck. It used to be a line inside the side pane, and
+ * the pane opened itself to show it.
  *
- * Three answers, and each one reaches the waiting call as a different fact:
- *  - 직접 하기 takes the wheel and opens the live screen, where the person does it themselves.
- *  - 다 했어요 hands the wheel back (`/control/release`), which is what the waiting call reads as done.
+ * Two answers, and each reaches the waiting call as a different fact:
+ *  - 다 했어요 closes the request (`/control/release`), which is what the waiting call reads as done.
  *  - 건너뛰기 tells the call to go on without it (`help-skips.ts`), and clears the request too.
+ *
+ * And 화면 보기, to look at what the Bot is looking at. Never 직접 하기: nobody drives the Bot's
+ * browser, on any surface (owner, 2026-10-09).
  *
  * A secret is asked for with a masked box instead of 다 했어요: the value goes straight into the page
  * and never into the conversation, the model, or anything that outlives this form.
@@ -82,8 +81,8 @@ export function HelpCard({
    * with no result — while the computer still holds the request, and the header, which reads the
    * computer, still said 도움 필요 over a card with no buttons (0.5.4 QA). So an unfinished card
    * reads the computer too, and while its own request is open there it keeps its buttons: 다 했어요
-   * and 건너뛰기 close that request, and 직접 하기 still hands over the browser. Once the request
-   * is closed the card stops saying it needs anybody, and the header agrees.
+   * and 건너뛰기 close that request. Once the request is closed the card stops saying it needs
+   * anybody, and the header agrees.
    */
   const control = useControl(
     status === "complete" ? undefined : botId,
@@ -93,25 +92,14 @@ export function HelpCard({
   const isWaiting =
     status === "executing" ||
     (status === "inProgress" && isOwnRequestOpen(kind, said, control));
-  const { isWide } = useScreenPanelViewport();
   const [isPressing, setIsPressing] = useState(false);
   /** Held only until it is sent. Never lifted into a URL, a log, or anything that outlives this form. */
   const [secret, setSecret] = useState("");
   const [secretProblem, setSecretProblem] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const secretFieldId = useId();
-  const isDriving = control?.holder === "human";
 
   const ending = status === "complete" ? endingOf(result) : null;
-
-  const handleTakeOver = async () => {
-    if (!botId) return;
-    setIsPressing(true);
-    const state = await takeControl(botId).catch(() => null);
-    setIsPressing(false);
-    pokeControl(botId);
-    if (state?.holder === "human") setScreenOpen(true);
-  };
 
   const handleDone = async () => {
     if (!botId) return;
@@ -123,8 +111,8 @@ export function HelpCard({
 
   /*
    * 건너뛰기, TOLD TO THE CALL THAT IS WAITING FOR THE ANSWER. The computer has two answers to a
-   * request: the wheel comes back (`/control/release`), or a person types the secret in. Neither
-   * says "skip this". Handing back is how a skip clears the request on the computer — the next
+   * request: it is closed (`/control/release`), or a person types the secret in. Neither says "skip
+   * this". Closing is how a skip clears the request on the computer — the next
    * request has to find it clear — but the call waiting on it would read that as "done", and tell
    * the model a login it never got had happened. So the skip is sent to the turn first, by the
    * call's id, and its wait reads it before the release that follows (`server/src/turns/people.ts`).
@@ -261,44 +249,29 @@ export function HelpCard({
         </LiveRegion>
       ) : null}
 
-      {/* Mounted with the card, so taking the wheel is heard when it is said (`LiveRegion`). */}
-      <LiveRegion as="p" className="ps-6 text-muted-foreground text-xs">
-        {isWaiting && isDriving
-          ? t("You have the browser. Press I'm done when you are finished.")
-          : null}
-      </LiveRegion>
-
       {isWaiting ? (
         <div className="flex flex-wrap gap-2 ps-6">
-          {/* On a wide screen only: driving a page by touch has not been measured yet. */}
-          {isWide && !isDriving ? (
-            <Button
-              disabled={isPressing || !botId}
-              onClick={() => void handleTakeOver()}
-              size="sm"
-            >
-              {t("Do it myself")}
-            </Button>
-          ) : null}
-          {isDriving ? (
-            <Button
-              onClick={() => setScreenOpen(true)}
-              size="sm"
-              variant="outline"
-            >
-              {t("View screen")}
-            </Button>
-          ) : null}
-          {kind === "help" || isDriving ? (
+          {/*
+           * NO 직접 하기 (owner, 2026-10-09): nobody drives the Bot's browser. A hand is something
+           * done outside its screen — a phone to approve on, an app to confirm in — and then said
+           * done here. The screen is still there to look at.
+           */}
+          {kind === "help" ? (
             <Button
               disabled={isPressing || !botId}
               onClick={() => void handleDone()}
               size="sm"
-              variant={isDriving ? "default" : "secondary"}
             >
               {t("I'm done")}
             </Button>
           ) : null}
+          <Button
+            onClick={() => setScreenOpen(true)}
+            size="sm"
+            variant="outline"
+          >
+            {t("View screen")}
+          </Button>
           <Button
             disabled={isPressing || !botId}
             onClick={() => void handleSkip()}
@@ -320,14 +293,6 @@ export function HelpCard({
  *
  * Matched rather than assumed, so an old card left unfinished by a reload days ago does not grow
  * buttons for somebody else's request.
- *
- * A request the person has taken the wheel for is no longer "requested", but it is still open: the
- * Bot's call waits for the hand-back, and the computer keeps the reason while the person holds the
- * wheel. MEASURED 2026-09-25 (0.5.4 final QA): the window that was driving went away without
- * handing back, and after a reload the card had no buttons, the header said 쉬는 중, and the only
- * way back was the screen icon nobody would think to press — the Bot waited behind it. So a card
- * whose words the person is holding the wheel for keeps 직접 하기 (back into the screen), 다 했어요
- * and 건너뛰기.
  */
 export function isOwnRequestOpen(
   kind: "help" | "secret",
@@ -337,8 +302,7 @@ export function isOwnRequestOpen(
   const asked = said?.trim();
   if (!control || !asked) return false;
   return kind === "help"
-    ? (control.requested || control.holder === "human") &&
-        control.reason === asked
+    ? control.requested && control.reason === asked
     : control.secretWanted === asked;
 }
 

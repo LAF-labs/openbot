@@ -5,7 +5,6 @@ import { json } from "../src/respond";
 import { createSessions } from "../src/sessions";
 import {
   digestOf,
-  digestOfBlock,
   keepOwn,
   keepOwnAddress,
   keepTyped,
@@ -90,14 +89,10 @@ describe("an address carrying what a person typed", () => {
     ).toBe("https://shop.example/l?pin=");
   });
 
-  test("one character is not worth blanking, and a block of fewer than four is not kept", () => {
+  test("one character is not worth blanking", () => {
     const session = sessionWith(["1"]);
     expect(typedValueTest(session)).toBeNull();
     expect(digestOf("12")).toBeDefined();
-    // A finished Korean syllable arrives as a block of one; a pasted code is six.
-    expect(digestOfBlock("한")).toBeUndefined();
-    expect(digestOfBlock("123")).toBeUndefined();
-    expect(digestOfBlock("482913")).toBe(digestOf("482913"));
   });
 
   test("what the Bot itself sent is never blanked, so a guess cannot be checked against a person's value", () => {

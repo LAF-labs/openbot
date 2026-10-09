@@ -292,10 +292,9 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
   /**
    * Where a Bot's control state was kept before the profile was shared.
    *
-   * Read-only, and only as a fallback (`sessions.ts`). A person holding the wheel when the container
-   * was upgraded must not have it handed back to the Bot by the upgrade: `createControl`'s default
-   * holder is the Bot, so a control file this process cannot find is a control file that silently
-   * makes control looser — the one direction `restoredControl` exists to refuse.
+   * Read-only, and only as a fallback (`sessions.ts`), so that what a restart cut short is read
+   * wherever the release before kept it: a value request is said to the Bot as lost, and a person's
+   * hold on the wheel, from when there was one, is the Bot's (`restoredControl`).
    */
   const legacyStateDirectoryFor = (botId: string): string => join(root, botId);
 

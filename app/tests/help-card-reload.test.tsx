@@ -85,7 +85,7 @@ describe("whose request is open", () => {
     expect(
       isOwnRequestOpen("help", REASON, { ...open, reason: "다른 부탁" }),
     ).toBe(false);
-    // Answered: the wheel came back.
+    // Answered.
     expect(
       isOwnRequestOpen("help", REASON, {
         ...open,
@@ -93,15 +93,6 @@ describe("whose request is open", () => {
         reason: REASON,
       }),
     ).toBe(false);
-    // Taken over and not yet handed back: still this card's, and the Bot still waits on it.
-    expect(
-      isOwnRequestOpen("help", REASON, {
-        ...open,
-        holder: "human",
-        requested: false,
-        reason: REASON,
-      }),
-    ).toBe(true);
     expect(
       isOwnRequestOpen("secret", "네이버 비밀번호", {
         ...open,

@@ -537,15 +537,13 @@ describe("which profile an upgrade takes over", () => {
   });
 });
 
-describe("the wheel, across the upgrade that moved where it is written", () => {
+describe("the Bot's asks, across the upgrade that moved where they are written", () => {
   /**
-   * A PERSON HOLDING THE WHEEL MUST NOT HAVE IT TAKEN BY A VERSION BUMP.
-   *
    * `control.json` used to live inside the Bot's profile directory; it had to move out when the
-   * profile became the deployment's, or five Bots would each be answering "is a person driving"
-   * for all of them. The hazard in moving it is one-directional: `createControl`'s default holder
-   * is the Bot, so a control file this process cannot find hands a browser back to a Bot while
-   * somebody is still standing in front of their bank's login form.
+   * profile became the deployment's, or five Bots would each be answering for all of them. A file
+   * left in the old place is still read, so what it says reaches the Bot — and a person's hold on
+   * the wheel in it, from when there was one, is the Bot's (`restoredControl`): read, and marked
+   * as an ask nobody answered, which a fresh session never is.
    */
   test("a control file left in the old place is still read", async () => {
     const root = await mkdtemp(join(tmpdir(), "laf-control-upgrade-"));
@@ -560,20 +558,26 @@ describe("the wheel, across the upgrade that moved where it is written", () => {
         stateDirectoryFor: (botId) => join(root, "bot.state", botId),
         legacyStateDirectoryFor: (botId) => join(root, botId),
       });
-      expect(sessions.sessionFor("old-bot").control.get().holder).toBe("human");
+      expect(sessions.sessionFor("old-bot").control.get()).toMatchObject({
+        holder: "bot",
+        requested: false,
+        unanswered: true,
+      });
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 
-  test("and a Bot with no file anywhere still starts with the Bot driving", async () => {
+  test("and a Bot with no file anywhere starts with nothing asked", async () => {
     const root = await mkdtemp(join(tmpdir(), "laf-control-fresh-"));
     try {
       const sessions = createSessions({
         stateDirectoryFor: (botId) => join(root, "bot.state", botId),
         legacyStateDirectoryFor: (botId) => join(root, botId),
       });
-      expect(sessions.sessionFor("new-bot").control.get().holder).toBe("bot");
+      const fresh = sessions.sessionFor("new-bot").control.get();
+      expect(fresh).toMatchObject({ holder: "bot", requested: false });
+      expect(fresh.unanswered).toBeUndefined();
     } finally {
       await rm(root, { recursive: true, force: true });
     }

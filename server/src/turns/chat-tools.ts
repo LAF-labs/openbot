@@ -11,8 +11,8 @@
  * its call.
  *
  * WHERE A PERSON IS NEEDED, THE SERVER WAITS. A question the boundary raises is held here until
- * somebody answers it from any window (`people.ts`); a request for help waits for the wheel to come
- * back; a decision card waits for its choice. Closing the laptop does not end the wait — the
+ * somebody answers it from any window (`people.ts`); a request for help waits for 다 했어요 or
+ * 건너뛰기; a decision card waits for its choice. Closing the laptop does not end the wait — the
  * question's own ten minutes do.
  *
  * WHICH TOOLS: the ones the window declared when it sent the message, as the window always decided
@@ -168,9 +168,9 @@ export type ChatToolsDeps = {
    * to have brought none: as long as a listing may take (`TIMEOUT_MS.mcpList`) by default.
    */
   listingWaitMs?: number;
-  /** How long a person may take over a help request. The window's own ten minutes by default. */
+  /** How long a person may take to answer a help request. The window's own ten minutes by default. */
   personWaitMs?: number;
-  /** How often a help request looks at whether the wheel came back. */
+  /** How often a help request looks at whether it has been answered. */
   controlPollMs?: number;
 };
 
@@ -645,7 +645,7 @@ export function createChatTools(deps: ChatToolsDeps) {
     };
 
     /**
-     * Hold a call open until the wheel or the secret box is back with the Bot, or it runs out.
+     * Hold a call open until the ask for a hand or for a value is answered, or it runs out.
      *
      * `done` READS AN ASK THAT IS GONE AS AN ASK THAT WAS ANSWERED, so the ask has to outlast this
      * wait. The computer lets go of one nobody answered (`REQUEST_TTL_MS`,
@@ -883,13 +883,9 @@ export function createChatTools(deps: ChatToolsDeps) {
             ),
           );
           if (!asked.ok) return asked;
-          // Resolved when the wheel is back with the Bot and no help request remains outstanding.
+          // Resolved when no help request remains outstanding.
           const { value: outcome, moved } = await awaitPerson(() =>
-            waitForPerson(
-              call.id,
-              signal,
-              (state) => state.holder === "bot" && !state.requested,
-            ),
+            waitForPerson(call.id, signal, (state) => !state.requested),
           );
           const code =
             outcome === "answered"

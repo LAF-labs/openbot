@@ -1,11 +1,16 @@
 /**
- * Computer control API helpers and screenshot-to-page coordinate conversion.
+ * What the Bot has asked a person for, read and answered: the help it asked for, closed with
+ * 다 했어요 or 건너뛰기, and the value it asked for, typed into the masked box.
+ *
+ * The file keeps its old name. It also took the wheel, and converted a click on the picture to a
+ * point on the Bot's page, until nobody could drive the Bot's browser (owner, 2026-10-09).
  */
 import { refusalText, SECRET_REFUSALS } from "@/lib/computer/refusals";
 import { t } from "@/lib/i18n";
 
 export type ControlState = {
-  holder: "bot" | "human";
+  /** Always the Bot: nobody else drives its browser. Still on the wire; see `server/src/computer/schema.ts`. */
+  holder: "bot";
   since: string;
   reason?: string;
   requested: boolean;
@@ -22,13 +27,13 @@ export type ControlState = {
 };
 
 /**
- * WHAT A TAKE OR A RELEASE WAS ANSWERED, TOLD TO EVERY VIEW OF THAT COMPUTER AT ONCE.
+ * WHAT AN ANSWER WAS ANSWERED, TOLD TO EVERY VIEW OF THAT COMPUTER AT ONCE.
  *
- * The views learn who holds the wheel from one shared poll (`control-poll.ts`), which reads once a
- * second at most. So 직접 하기 came back "human" and the screen went on being the pane for up to a
- * second more — measured 2026-09-24 at 803 ms between the press and the sheet, with the button back
- * to reading 직접 하기 in between, which is an invitation to press it again. The answer to the press
- * IS the new state; `useControl` starts from the last one and hears each one as it comes.
+ * The views learn what the Bot is asking for from one shared poll (`control-poll.ts`), which reads
+ * once a second at most, so a card answered in one place went on asking in another for up to a
+ * second more. (Measured 2026-09-24 on the take this file used to make: 803 ms between the press
+ * and the screen agreeing.) The answer to the press IS the new state; `useControl` starts from the
+ * last one and hears each one as it comes.
  */
 const answered = new Map<string, ControlState>();
 const answerListeners = new Map<string, Set<(state: ControlState) => void>>();
@@ -104,14 +109,7 @@ export async function readControl(
   };
 }
 
-/**
- * Take the wheel. What a person does with it is their own business in the Bot's browser, and the
- * trail records it as a period rather than as keystrokes, on purpose.
- */
-export function takeControl(computerId: string) {
-  return callControl(computerId, "/control/take", { method: "POST" });
-}
-
+/** Close what the Bot asked for: 다 했어요, or 건너뛰기 once the waiting turn has been told. */
 export function releaseControl(computerId: string) {
   return callControl(computerId, "/control/release", { method: "POST" });
 }
@@ -149,24 +147,4 @@ export async function supplySecret(
       error: t("The Bot's computer could not be reached."),
     };
   }
-}
-
-/**
- * Convert display coordinates on a scaled screenshot into browser viewport coordinates.
- */
-export function pageCoordinates(
-  image: { naturalWidth: number; naturalHeight: number },
-  rect: { left: number; top: number; width: number; height: number },
-  event: { clientX: number; clientY: number },
-): { x: number; y: number } | null {
-  if (!rect.width || !rect.height) return null;
-  if (!image.naturalWidth || !image.naturalHeight) return null;
-
-  const withinX = event.clientX - rect.left;
-  const withinY = event.clientY - rect.top;
-
-  return {
-    x: Math.round((withinX / rect.width) * image.naturalWidth),
-    y: Math.round((withinY / rect.height) * image.naturalHeight),
-  };
 }

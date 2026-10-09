@@ -23,9 +23,10 @@ const COMPONENTS = join(import.meta.dir, "../src/components");
  * THE BOT'S SCREEN AS A PERSON SEES IT: THE PANE, NOT THE SOCKET UNDER IT.
  *
  * `live-screen.test.tsx` holds the socket. This holds what the pane draws around it — the words over
- * the black frame when there is no picture, the wait that has to end in a reason, and the sheet a
- * person drives on — because that is where the 0.5.3 audit found it failing with every test green
- * (`~/laf/docs/uiux-audit-0.5.3.md` §2, items 4, 14 and 15).
+ * the black frame when there is no picture, and the wait that has to end in a reason — because that
+ * is where the 0.5.3 audit found it failing with every test green (`~/laf/docs/uiux-audit-0.5.3.md`
+ * §2, items 14 and 15). And that nothing on it hands the Bot's browser to anybody (owner,
+ * 2026-10-09).
  */
 
 let sockets: FakeSocket[] = [];
@@ -64,7 +65,7 @@ let control: Record<string, unknown> = {
   requested: false,
 };
 
-/** Every take and release the view asked for, in order. */
+/** Every take and release the view asked for, in order — none, since 2026-10-09. */
 let presses: string[] = [];
 
 let originalFetch: typeof fetch;
@@ -90,15 +91,16 @@ beforeAll(() => {
     }) as unknown as MediaQueryList) as typeof window.matchMedia;
   /*
    * The window `screen-panel.ts` keeps is module state, read once and then only on `resize`: a
-   * file run earlier in this process leaves its own width behind, and a narrow one offers no 직접
-   * 하기. Measured: both driving cases failed in the whole suite and passed alone. Forgotten again
-   * after this file, so this file's PC width is not left behind for the next one either.
+   * file run earlier in this process leaves its own width behind, and a narrow one draws no size
+   * buttons. Measured: cases that needed the wide pane failed in the whole suite and passed alone.
+   * Forgotten again after this file, so this file's PC width is not left behind for the next one
+   * either.
    */
   forgetScreenPanelViewport();
   originalFetch = globalThis.fetch;
   globalThis.fetch = stubFetch(async (url) => {
     const path = String(url);
-    // A press answers with the state it made, as the computer's routes do.
+    // Written down if ever asked: a press on this pane that reached the wheel would be one.
     if (path.endsWith("/control/take")) {
       presses.push("take");
       control = { ...control, holder: "human", requested: false };
@@ -272,109 +274,61 @@ describe("a picture that does not come (0.5.3 audit, item 14)", () => {
 });
 
 /**
- * 직접 하기 GIVES THE PAGE THE WHOLE WINDOW (0.5.3 audit, item 4).
+ * NOBODY DRIVES IT (owner, 2026-10-09).
  *
- * Measured 2026-09-24 in a 1280px window: taking over left the Bot's 1280px page in the side pane at
- * 43% — a login's boxes a few millimetres tall — while the 연결 screen's sign-in drew the same page
- * at 87% in an overlay of its own, and called the same act "제어 돌려주기". Both are one sheet now.
+ * The pane offered 직접 하기, which took the wheel and laid the Bot's page over the whole window for
+ * a person's clicks and keys, and closing it handed the wheel back. Nobody drives the Bot's browser
+ * now, on any surface: what is held here is that the pane draws nothing that would, and asks the
+ * computer for nothing, whether or not the Bot is asking for a hand.
  */
-describe("somebody driving on a wide window", () => {
-  test("is given the whole window the moment the take is answered, and Escape is 다 했어요", async () => {
+describe("nobody drives the Bot's browser from the pane", () => {
+  test("it offers only its sizes, even while the Bot is asking for help", async () => {
+    control = { ...control, requested: true, reason: "캡차를 풀어 주세요" };
     const view = await mountedView();
-    // Watching: the pane, with 직접 하기 in it, and no sheet.
-    expect(view.sheet()).toBeNull();
-    const take = view.button("Take over");
-    expect(take).toBeDefined();
-
-    // Pressed. The answer IS the new state: no waiting for the next read of the shared loop.
+    await view.act(() => sockets[0]?.open());
     await view.act(async () => {
-      take?.click();
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
-    expect(presses).toEqual(["take"]);
-    const sheet = view.sheet();
-    expect(sheet).not.toBeNull();
-    expect(sheet?.getAttribute("aria-modal")).toBe("true");
-    // Outside the pane, over everything: portalled to <body>, and the page is drawn inside it.
-    expect(view.host.contains(sheet)).toBe(false);
-    expect(sheet?.querySelector("canvas")).not.toBeNull();
-    expect(view.host.querySelector("canvas")).toBeNull();
-    expect(sheet?.textContent).toContain(
-      "You have the browser. Press I'm done when you are finished.",
-    );
-    expect(view.button("I'm done")).toBeDefined();
-
-    // Escape is the same press as 다 했어요, and the sheet goes once the wheel is back.
-    await view.act(async () => {
-      window.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "Escape", cancelable: true }),
-      );
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    });
-    expect(presses).toEqual(["take", "release"]);
+    expect(
+      [...document.body.querySelectorAll("button")].map(
+        (button) => button.textContent,
+      ),
+    ).toEqual(["Small", "Medium", "Large"]);
     expect(view.sheet()).toBeNull();
-    // Back in the pane, watching.
-    expect(view.host.querySelector("canvas")).not.toBeNull();
+    expect(presses).toEqual([]);
     await view.unmount();
   });
 
   /*
-   * MEASURED 2026-09-25 (0.5.4 final QA, dev server): 직접 하기 on a help card took the wheel, the
-   * screen mounted already driven, React's development double-mount ran the unmount cleanup, and
-   * the wheel went back 67 ms after it was taken — the Bot carried on past a login nobody did.
+   * MEASURED 2026-09-25 (0.5.4 final QA, dev server): the pane handed the wheel back on unmount, and
+   * React's development double-mount ran that cleanup 67 ms after a take. There is no wheel to hand
+   * back now, and a mount, a remount and a close ask the computer for nothing.
    */
-  test("a screen that only mounts again keeps the wheel; closing it hands the wheel back", async () => {
-    const { rememberControlState } = await import(
-      "../src/components/computer/take-the-wheel"
-    );
-    control = { ...control, holder: "human" };
-    // The card's take was answered before the screen mounted, as 직접 하기 on a help card does.
-    rememberControlState("bot-1", {
-      holder: "human",
-      since: "2026-09-24T00:00:00Z",
-      requested: false,
-    });
+  test("mounting it twice and closing it asks the computer for nothing", async () => {
     const view = await mountedView({ strict: true });
     await view.act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 30));
     });
-    expect(presses).toEqual([]);
-    expect(view.sheet()).not.toBeNull();
-
     await view.unmount();
     await new Promise((resolve) => setTimeout(resolve, 30));
-    expect(presses).toEqual(["release"]);
-  });
-
-  /*
-   * This held that teaching was not offered under a request for help. Teaching went, and the other
-   * half of what it held stays: 직접 하기 is offered while the Bot is asking, not only when it is not.
-   */
-  test("still offers 직접 하기 while the Bot is asking for help", async () => {
-    control = { ...control, requested: true, reason: "캡차를 풀어 주세요" };
-    const asked = await mountedView();
-    await asked.act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    });
-    expect(asked.button("Take over")).toBeDefined();
-    await asked.unmount();
+    expect(presses).toEqual([]);
   });
 });
 
 /**
- * ONE PAIR OF WORDS FOR ONE ACT: 직접 하기, then 다 했어요.
+ * NO "제어" ON THE BOT'S SCREEN.
  *
- * Walked over every sentence the Bot's screen, its sheet, the request for help and the sign-in
- * handoff say — the screen-problem table too, which is read through a variable — so "제어"
- * cannot come back on any of them through a new key.
+ * Walked over every sentence the Bot's screen and the request for help say — the screen-problem table
+ * too, which is read through a variable — so "제어" cannot come back on any of them through a new key.
+ * It was the word for the wheel when a person could take it; nobody can now, and a sentence that
+ * says it promises a control that is not there.
  */
-describe("the words for taking over", () => {
+describe("the words on the Bot's screen", () => {
   test("no sentence on these screens says 제어", () => {
     const keys = [
       "computer/live-view.tsx",
       "computer/live-screen.tsx",
       "computer/help-card.tsx",
-      "sites/handoff.tsx",
     ].flatMap((file) =>
       [
         ...readFileSync(join(COMPONENTS, file), "utf8").matchAll(
@@ -382,14 +336,12 @@ describe("the words for taking over", () => {
         ),
       ].map((match) => match[1] as string),
     );
-    expect(keys.length).toBeGreaterThan(20);
+    expect(keys.length).toBeGreaterThan(10);
     const said = [...keys, ...Object.values(SCREEN_PROBLEM_SAID)].map(
       (key) => `${key} → ${ko[key] ?? "(no Korean)"}`,
     );
     expect(said.filter((line) => line.includes("(no Korean)"))).toEqual([]);
     expect(said.filter((line) => line.includes("제어"))).toEqual([]);
     expect(ko["I'm done"]).toBe("다 했어요");
-    expect(ko["Take over"]).toBe("직접 하기");
-    expect(ko["Do it myself"]).toBe("직접 하기");
   });
 });
