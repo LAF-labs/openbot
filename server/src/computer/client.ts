@@ -827,8 +827,11 @@ export function createComputerClient(options: ComputerClientOptions) {
       },
 
       /** Ask for a secret. Carries the label and the field, never a value. */
-      async requestSecret(input: SecretRequest): Promise<ControlState> {
-        return (await post("/control/secret", input)) as ControlState;
+      async requestSecret(
+        input: SecretRequest,
+        caller?: AbortSignal,
+      ): Promise<ControlState> {
+        return (await post("/control/secret", input, caller)) as ControlState;
       },
 
       /**
