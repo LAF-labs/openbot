@@ -337,6 +337,39 @@ describe.skipIf(!HAS_BROWSER)(
       expect((await control()).secretWanted).toBeUndefined();
     }, 60_000);
 
+    test("a box that turns into another the moment it is focused gets none: it is asked what it is after the click, too", async () => {
+      // It IS the password box when the value arrives. Putting the value in is what changes it.
+      const VALUE = "NOT-FOR-WHAT-FOCUS-MADE-IT-6604";
+      expect(
+        (await post("/navigate", { url: `${fixture?.url}swap` })).status,
+      ).toBe(200);
+      const seen = await snapshot();
+      const box = named(seen.elements, SWAP.onFocus);
+      expect(
+        (
+          await post("/control/secret", {
+            label: "출입 비밀번호",
+            ref: box.ref,
+            snapshotId: seen.snapshotId,
+          })
+        ).status,
+      ).toBe(200);
+
+      const refused = await post("/human/secret", {
+        text: VALUE,
+        element: { role: box.role, name: box.name },
+      });
+      expect([refused.status, refused.body.code]).toEqual([
+        409,
+        "laf:label_changed",
+      ]);
+      expect(refused.text).not.toContain(VALUE);
+      const after = await snapshot();
+      expect(after.text).not.toContain(VALUE);
+      expect(named(after.elements, SWAP.focused).value ?? "").toBe("");
+      expect((await control()).secretWanted).toBeUndefined();
+    }, 60_000);
+
     test("a box that is gone gets none either, said as a page that moved on", async () => {
       const VALUE = "NOWHERE-TO-GO-5519";
       const { seen, judged } = await ask();

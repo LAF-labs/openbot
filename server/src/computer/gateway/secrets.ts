@@ -12,8 +12,10 @@
 import type { AuditStore } from "../../audit";
 import {
   type ComputerClient,
+  ComputerUnavailableError,
   NO_SECRET_PENDING,
   STALE_REFS,
+  STOPPED,
   StaleSnapshotError,
 } from "../client";
 import { isSecretFieldElement } from "../default-policy";
@@ -231,7 +233,30 @@ export function createSecrets(deps: {
         ...(signal ? { signal } : {}),
         ...(approvalId ? { approvalId } : {}),
       },
-      () => as(botId).requestSecret({ ...input, label }),
+      async () => {
+        /*
+         * THE CALLER'S STOP GOES WITH THE CALL, AND A REQUEST MADE FOR A CALLER THAT HAS STOPPED
+         * IS TAKEN BACK. The signal reached the gate and not the computer, so a slow computer
+         * held a stopped turn until the client's own deadline; and where the computer answered
+         * after the Stop — or had made the request before the call to it was cut — a masked box
+         * stood asking for a value nobody was waiting for (Codex's read of this change). The
+         * request is let go on the computer, nothing of it is kept here, and the caller is told
+         * what any stopped act is told. Letting go is best effort: a computer that cannot be
+         * reached lets the ask go by its own clock.
+         */
+        const madeFor = as(botId);
+        try {
+          const made = await madeFor.requestSecret({ ...input, label }, signal);
+          if (!signal?.aborted) return made;
+        } catch (error) {
+          if (signal?.aborted) {
+            await madeFor.releaseControl().catch(() => undefined);
+          }
+          throw error;
+        }
+        await madeFor.releaseControl().catch(() => undefined);
+        throw new ComputerUnavailableError(STOPPED);
+      },
     );
     secretTargets.set(computerId, into);
     secretRequests.set(computerId, {

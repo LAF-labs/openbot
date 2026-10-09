@@ -362,6 +362,10 @@ export const SWAP = {
   swapped: "댓글",
   rename: "바꾸기",
   remove: "지우기",
+  /** A second box, which turns into a comment box the moment it is focused. */
+  onFocus: "출입 비밀번호",
+  /** What that one is called once anything has focused it. */
+  focused: "한마디",
 } as const;
 
 /**
@@ -370,8 +374,9 @@ export const SWAP = {
  * One press and the box a person was asked to type a password into is a comment box — the same
  * node, so a ref from before still finds it — and another press and it is gone. Nothing here is
  * exotic either: a login form that turns into a search box when a tab is switched does the first,
- * and any page that re-renders does the second. What a value a person types is held to, when it
- * arrives after that, is `supplySecret`'s (`control-routes.ts`).
+ * and any page that re-renders does the second. A second box does the first by itself, the moment
+ * anything focuses it — which filling it does. What a value a person types is held to, when it
+ * arrives after any of that, is `supplySecret`'s (`control-routes.ts`).
  */
 const SWAP_HTML = `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><title>로그인</title></head>
@@ -380,6 +385,7 @@ const SWAP_HTML = `<!doctype html>
   <input id="box" type="password" aria-label="${SWAP.box}">
   <button type="button" onclick="const b=document.getElementById('box');b.type='text';b.setAttribute('aria-label','${SWAP.swapped}')">${SWAP.rename}</button>
   <button type="button" onclick="document.getElementById('box').remove()">${SWAP.remove}</button>
+  <input type="password" aria-label="${SWAP.onFocus}" onfocus="this.type='text';this.setAttribute('aria-label','${SWAP.focused}')">
 </body></html>`;
 
 /**

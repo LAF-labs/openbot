@@ -2081,6 +2081,90 @@ describe("what a snapshot carries into this process", () => {
     expect(calls).toEqual(["requestSecret", "requestSecret"]);
   });
 
+  test("the caller's Stop goes to the computer with the request, and a request made for a caller that has stopped is taken back", async () => {
+    /*
+     * The signal reached the gate and not the computer. A slow computer held a stopped turn, and
+     * where it answered after the Stop a masked box stood asking for a value nobody waited for.
+     */
+    const request = { label: "네이버 비밀번호", ref: "e2", snapshotId: 3 };
+    const stoppedBy = async (
+      computer: (stop: AbortController) => Promise<unknown>,
+    ) => {
+      const { client, calls } = scriptedClient(LOGIN);
+      const stop = new AbortController();
+      const handed: unknown[] = [];
+      Object.assign(client, {
+        requestSecret: async (_input: unknown, signal: unknown) => {
+          calls.push("requestSecret");
+          handed.push(signal);
+          return computer(stop);
+        },
+        releaseControl: async () => {
+          calls.push("releaseControl");
+          return { holder: "bot", since: "", requested: false };
+        },
+        // Whatever the computer still says, the gateway holds no request to describe.
+        control: async () => ({ holder: "bot", since: "", requested: false }),
+      });
+      const { store, rows } = fakeAudit();
+      const gateway = createComputerGateway({
+        client,
+        auditStore: store,
+        policy: () => PERMISSIVE,
+      });
+      await gateway.snapshot("default");
+      const outcome = await gateway
+        .requestSecret(
+          "default",
+          "bot-1",
+          ACTOR,
+          request,
+          undefined,
+          stop.signal,
+        )
+        .catch((caught: unknown) => caught);
+      const typed = await gateway
+        .supplySecret("default", "bot-1", ACTOR, "hunter2-NOT-TYPED")
+        .catch((caught: unknown) => caught);
+      return { outcome, typed, calls, handed, stop, rows, gateway };
+    };
+    const asked = {
+      holder: "bot",
+      since: "",
+      requested: false,
+      secretWanted: request.label,
+    };
+
+    // The computer answers after the Stop: the request it made is let go of, and nothing is kept.
+    const late = await stoppedBy(async (stop) => {
+      stop.abort();
+      return asked;
+    });
+    expect(late.handed).toEqual([late.stop.signal]);
+    expect((late.outcome as Error).message).toBe("laf:stopped");
+    expect(late.calls).toEqual(["requestSecret", "releaseControl"]);
+    expect((late.typed as Error).message).toBe("laf:secret_not_pending");
+    expect((await late.gateway.control("default")).secretInto).toBeUndefined();
+    expect(
+      late.rows.filter((row) => row.eventType === "computer.secret_requested"),
+    ).toEqual([]);
+
+    // The call is cut by the Stop: the computer may have made the request all the same.
+    const cut = await stoppedBy(async (stop) => {
+      stop.abort();
+      throw new Error("laf:stopped");
+    });
+    expect(cut.calls).toEqual(["requestSecret", "releaseControl"]);
+    expect((cut.typed as Error).message).toBe("laf:secret_not_pending");
+
+    // And a call that fails with nobody having stopped lets go of nothing: there is nothing to.
+    const failed = await stoppedBy(async () => {
+      throw new StaleSnapshotError("laf:stale_refs");
+    });
+    expect(failed.outcome).toBeInstanceOf(StaleSnapshotError);
+    expect(failed.calls).toEqual(["requestSecret"]);
+  });
+
   test("the value travels with the field the gate judged, and with nothing a caller said of it", async () => {
     /*
      * The computer puts a value into the box it is told was judged, or nowhere

@@ -136,6 +136,11 @@ export const supplySecret: BotRoute = async (
     const field = await resolveRef(session, target, pending.ref, undefined);
     await holdToLabel(field, body?.element);
     await onElement(() => field.click({ timeout: config.actionTimeoutMs }));
+    // ASKED AGAIN, AFTER THE CLICK AND BEFORE THE VALUE. The click is this process's own, and a
+    // page may answer it: a box whose focus handler turns it into something else passed the hold
+    // above as a password box and would have been filled as a comment box (Codex's read of this
+    // change). What a value is held to is what the box is when the value goes in.
+    await holdToLabel(field, body?.element);
     // A failure here must not say what it was filling: Playwright's message for it does.
     await onElement(() =>
       field.fill(text, { timeout: config.actionTimeoutMs }),
