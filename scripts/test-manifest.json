@@ -185,7 +185,7 @@
   "app/tests/person-avatar.test.tsx",
   "app/tests/persona.test.ts",
   "app/tests/phone-bubble.test.tsx",
-  "app/tests/phone-nav.test.tsx",
+  "app/tests/phone-screens.test.tsx",
   "app/tests/plain-answer.test.tsx",
   "app/tests/playground-sandbox.test.ts",
   "app/tests/plugin-catalogue-copy.test.ts",

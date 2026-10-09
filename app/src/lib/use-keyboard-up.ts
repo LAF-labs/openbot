@@ -1,8 +1,10 @@
 import { useSyncExternalStore } from "react";
 
 /**
- * WHETHER A PHONE'S ON-SCREEN KEYBOARD IS UP, for the bottom bar to step out of its way
- * (`phone-tab-bar.tsx`).
+ * WHETHER A PHONE'S ON-SCREEN KEYBOARD IS UP, for the pager to hold still under it
+ * (`phone-pager.tsx`) — a sideways drag over a box being typed in is somebody moving the caret. It
+ * was written for the bar at the bottom to step out of the keyboard's way; the bar went on
+ * 2026-10-09 and the rule below is the same.
  *
  * NOT "THE COMPOSER HAS FOCUS". That was the first rule, and it hid the bar on every visit to the
  * conversation: the composer takes the caret the moment the screen opens (`composer.tsx`, so the

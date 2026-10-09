@@ -74,7 +74,8 @@ const LOOK_ROWS = [
   { to: "/made", icon: IconLayoutGrid, label: "Made", row: "made" },
 ] as const;
 
-const ITEM_CLASS = "gap-2 px-2 py-1.5";
+/** A row of the list: a desktop menu's height under a pointer, a thumb's under a finger. */
+const ITEM_CLASS = "gap-2 px-2 py-1.5 pointer-coarse:min-h-11";
 
 /** A Bot's conversation, or the screen that starts one where nothing has been said yet. */
 function conversationLink(agentId: string, channelId: string | undefined) {

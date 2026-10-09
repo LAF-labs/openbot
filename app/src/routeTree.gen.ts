@@ -28,7 +28,6 @@ import { Route as AuthedAppGoalsRouteImport } from './routes/_authed/_app/goals'
 import { Route as AuthedAppHelpRouteImport } from './routes/_authed/_app/help'
 import { Route as AuthedAppIdeasRouteImport } from './routes/_authed/_app/ideas'
 import { Route as AuthedAppMadeRouteImport } from './routes/_authed/_app/made'
-import { Route as AuthedAppMenuRouteImport } from './routes/_authed/_app/menu'
 import { Route as AuthedAppNotebookRouteImport } from './routes/_authed/_app/notebook'
 import { Route as AuthedAppRoutinesRouteImport } from './routes/_authed/_app/routines'
 import { Route as AuthedAppSkillsRouteImport } from './routes/_authed/_app/skills'
@@ -142,11 +141,6 @@ const AuthedAppIdeasRoute = AuthedAppIdeasRouteImport.update({
 const AuthedAppMadeRoute = AuthedAppMadeRouteImport.update({
   id: '/made',
   path: '/made',
-  getParentRoute: () => AuthedAppRoute,
-} as any)
-const AuthedAppMenuRoute = AuthedAppMenuRouteImport.update({
-  id: '/menu',
-  path: '/menu',
   getParentRoute: () => AuthedAppRoute,
 } as any)
 const AuthedAppNotebookRoute = AuthedAppNotebookRouteImport.update({
@@ -276,7 +270,6 @@ export interface FileRoutesByFullPath {
   '/help': typeof AuthedAppHelpRoute
   '/ideas': typeof AuthedAppIdeasRoute
   '/made': typeof AuthedAppMadeRoute
-  '/menu': typeof AuthedAppMenuRoute
   '/notebook': typeof AuthedAppNotebookRoute
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
@@ -315,7 +308,6 @@ export interface FileRoutesByTo {
   '/help': typeof AuthedAppHelpRoute
   '/ideas': typeof AuthedAppIdeasRoute
   '/made': typeof AuthedAppMadeRoute
-  '/menu': typeof AuthedAppMenuRoute
   '/notebook': typeof AuthedAppNotebookRoute
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
@@ -358,7 +350,6 @@ export interface FileRoutesById {
   '/_authed/_app/help': typeof AuthedAppHelpRoute
   '/_authed/_app/ideas': typeof AuthedAppIdeasRoute
   '/_authed/_app/made': typeof AuthedAppMadeRoute
-  '/_authed/_app/menu': typeof AuthedAppMenuRoute
   '/_authed/_app/notebook': typeof AuthedAppNotebookRoute
   '/_authed/_app/routines': typeof AuthedAppRoutinesRoute
   '/_authed/_app/skills': typeof AuthedAppSkillsRoute
@@ -402,7 +393,6 @@ export interface FileRouteTypes {
     | '/help'
     | '/ideas'
     | '/made'
-    | '/menu'
     | '/notebook'
     | '/routines'
     | '/skills'
@@ -441,7 +431,6 @@ export interface FileRouteTypes {
     | '/help'
     | '/ideas'
     | '/made'
-    | '/menu'
     | '/notebook'
     | '/routines'
     | '/skills'
@@ -483,7 +472,6 @@ export interface FileRouteTypes {
     | '/_authed/_app/help'
     | '/_authed/_app/ideas'
     | '/_authed/_app/made'
-    | '/_authed/_app/menu'
     | '/_authed/_app/notebook'
     | '/_authed/_app/routines'
     | '/_authed/_app/skills'
@@ -652,13 +640,6 @@ declare module '@tanstack/react-router' {
       path: '/made'
       fullPath: '/made'
       preLoaderRoute: typeof AuthedAppMadeRouteImport
-      parentRoute: typeof AuthedAppRoute
-    }
-    '/_authed/_app/menu': {
-      id: '/_authed/_app/menu'
-      path: '/menu'
-      fullPath: '/menu'
-      preLoaderRoute: typeof AuthedAppMenuRouteImport
       parentRoute: typeof AuthedAppRoute
     }
     '/_authed/_app/notebook': {
@@ -863,7 +844,6 @@ interface AuthedAppRouteChildren {
   AuthedAppHelpRoute: typeof AuthedAppHelpRoute
   AuthedAppIdeasRoute: typeof AuthedAppIdeasRoute
   AuthedAppMadeRoute: typeof AuthedAppMadeRoute
-  AuthedAppMenuRoute: typeof AuthedAppMenuRoute
   AuthedAppNotebookRoute: typeof AuthedAppNotebookRoute
   AuthedAppRoutinesRoute: typeof AuthedAppRoutinesRoute
   AuthedAppSkillsRoute: typeof AuthedAppSkillsRoute
@@ -880,7 +860,6 @@ const AuthedAppRouteChildren: AuthedAppRouteChildren = {
   AuthedAppHelpRoute: AuthedAppHelpRoute,
   AuthedAppIdeasRoute: AuthedAppIdeasRoute,
   AuthedAppMadeRoute: AuthedAppMadeRoute,
-  AuthedAppMenuRoute: AuthedAppMenuRoute,
   AuthedAppNotebookRoute: AuthedAppNotebookRoute,
   AuthedAppRoutinesRoute: AuthedAppRoutinesRoute,
   AuthedAppSkillsRoute: AuthedAppSkillsRoute,

@@ -177,7 +177,7 @@
   "app/tests/person-avatar.test.tsx": 0.13,
   "app/tests/persona.test.ts": 0.02,
   "app/tests/phone-bubble.test.tsx": 0.05,
-  "app/tests/phone-nav.test.tsx": 3.09,
+  "app/tests/phone-screens.test.tsx": 1.2,
   "app/tests/plain-answer.test.tsx": 2.09,
   "app/tests/playground-sandbox.test.ts": 0.02,
   "app/tests/plugin-catalogue-copy.test.ts": 0,

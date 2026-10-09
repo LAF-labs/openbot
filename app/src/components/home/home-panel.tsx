@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { CSSProperties, KeyboardEvent, PointerEvent } from "react";
 import { useState } from "react";
 import { BotDay } from "@/components/app-sidebar/bot-day";
+import { PHONE_PAGE_CLASS } from "@/components/layout/phone-pager";
 import { shellLightsInset } from "@/components/layout/shell-titlebar";
 import { Button } from "@/components/ui/button";
 import { focusRing } from "@/components/ui/focus";
@@ -15,7 +16,14 @@ import {
   useHomePanel,
 } from "@/lib/home-panel";
 import { t } from "@/lib/i18n";
+import { useIsSideBySide } from "@/lib/use-wide-viewport";
 import { cn } from "@/lib/utils";
+
+/** The panel's place in the layout's grid on a PC, and in the pager on a phone. */
+export const HOME_PANEL_PLACE = cn(
+  PHONE_PAGE_CLASS,
+  "md:col-start-1 md:row-span-2 md:row-start-1 md:w-home-panel",
+);
 
 /**
  * THE HOME PANEL: A COLUMN OF WIDGETS AT THE LEFT, FOLDED AND OPENED BY THE HOME BUTTON
@@ -30,12 +38,14 @@ import { cn } from "@/lib/utils";
  * for a column this narrow (`bot-day.tsx`). The panels a person asks the Bot to make come later;
  * nothing here offers to make one, because nothing can yet.
  *
- * NOT DRAWN ON A PHONE: there home is a screen of its own, swiped to, and that comes with the
- * phone's three screens.
+ * ON A PHONE IT IS A PAGE, NOT A COLUMN (`phone-pager.tsx`): the screen's whole width, to the left
+ * of the conversation and swiped to. There is nothing beside it to take room from, so it has no
+ * button to fold it and no edge to drag, and it is drawn whatever a wider window last chose.
  */
 export function HomePanel() {
   const panel = useHomePanel();
-  if (!panel.isOpen) return null;
+  const isSideBySide = useIsSideBySide();
+  if (isSideBySide && !panel.isOpen) return null;
 
   /*
    * The chosen width goes down as a custom property, not as a width: the stylesheet holds it
@@ -50,7 +60,10 @@ export function HomePanel() {
   return (
     <aside
       aria-label={t("Home")}
-      className="relative flex h-full w-home-panel shrink-0 select-none flex-col max-md:hidden"
+      className={cn(
+        "relative flex h-full min-h-0 select-none flex-col",
+        HOME_PANEL_PLACE,
+      )}
       data-home-panel
       id="home-panel"
       style={chosen}
@@ -61,17 +74,17 @@ export function HomePanel() {
        */}
       <div
         className={cn(
-          "flex h-titlebar shrink-0 items-center px-3",
+          "flex h-titlebar shrink-0 items-center px-3 max-md:hidden",
           shellLightsInset(),
         )}
         data-tauri-drag-region
       >
         <HomeButton />
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-3 pb-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-3 pb-3 max-md:pt-1">
         <TodayWidget />
       </div>
-      <PanelEdge />
+      {isSideBySide ? <PanelEdge /> : null}
     </aside>
   );
 }

@@ -16,10 +16,11 @@ import { useSyncExternalStore } from "react";
 const WIDE_QUERY = "(min-width: 64rem)";
 
 /**
- * WIDE ENOUGH FOR THE ROW AT THE TOP — Tailwind's `md`, the same way. Below it the row is not drawn
- * (`app-header.tsx`), so a screen that would draw into the row keeps a row of its own there.
+ * WIDE ENOUGH FOR THE HOME PANEL TO STAND BESIDE THE SCREEN — Tailwind's `md`, the same way. Below
+ * it the two are pages a person swipes between (`phone-pager.tsx`), and what belongs to a panel
+ * standing beside something — folding it away, dragging its edge — has nothing to act on.
  */
-const TOP_ROW_QUERY = "(min-width: 48rem)";
+const SIDE_BY_SIDE_QUERY = "(min-width: 48rem)";
 
 function viewportHook(media: string) {
   const matches = () =>
@@ -58,4 +59,4 @@ function viewportHook(media: string) {
 
 export const useIsWideViewport = viewportHook(WIDE_QUERY);
 
-export const useHasTopRow = viewportHook(TOP_ROW_QUERY);
+export const useIsSideBySide = viewportHook(SIDE_BY_SIDE_QUERY);

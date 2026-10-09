@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useRouterState } from "@tanstack/react-router";
 import { HomeButton } from "@/components/home/home-panel";
 import { HeaderSlot } from "@/components/layout/header-slots";
+import { PhonePagerTabs } from "@/components/layout/phone-pager";
 import { BotMark } from "@/components/layout/bot-mark";
 import { ProfileMenu } from "@/components/layout/profile-menu";
 import { ReadNotice } from "@/components/layout/read-states";
@@ -13,6 +14,7 @@ import { useRunEndRefresh } from "@/lib/agents/run-end-refresh";
 import { channelListQueryOptions } from "@/lib/channels/queries";
 import { useHomePanel } from "@/lib/home-panel";
 import { settledOf, useReading } from "@/lib/reading";
+import { useIsSideBySide } from "@/lib/use-wide-viewport";
 import { cn } from "@/lib/utils";
 
 /**
@@ -21,10 +23,15 @@ import { cn } from "@/lib/utils";
  * the home panel is folded away, because while it is open the button is in the panel's own first
  * row, at the same corner of the window.
  *
- * THE MIDDLE IS EMPTY UNTIL THERE ARE PROJECTS. The record puts `[채팅 | 프로젝트]` there, and a
- * switcher with one half that goes somewhere and one that goes to a screen able to do nothing is
- * not drawn (the owner's rule for every control; the user's word on this one, 2026-10-09). It
- * comes with the projects it switches to.
+ * THE MIDDLE IS EMPTY ON A PC UNTIL THERE ARE PROJECTS. The record puts `[채팅 | 프로젝트]` there,
+ * and a switcher with one half that goes somewhere and one that goes to a screen able to do
+ * nothing is not drawn (the owner's rule for every control; the user's word on this one,
+ * 2026-10-09). It comes with the projects it switches to. ON A PHONE the middle is 홈 | 채팅
+ * (`phone-pager.tsx`): there the home panel is not beside the screen but a page before it, and
+ * those two are what a person swipes between.
+ *
+ * THREE COLUMNS, THE OUTER TWO EQUAL, so what is in the middle is in the middle of the window
+ * whatever stands either side of it.
  *
  * WHAT THE SCREEN PUTS IN IT. The conversation draws the Bot's face, name and state into the left
  * of the row and its own buttons into the right (`header-slots.tsx`); it had a row of its own under
@@ -40,14 +47,15 @@ import { cn } from "@/lib/utils";
  * (`titleBarStyle: "Overlay"`), so the row is `h-titlebar`, carries `data-tauri-drag-region` and is
  * the handle; both are inert in a tab.
  *
- * NOT DRAWN ON A PHONE, AND STILL MOUNTED THERE: the bar at the bottom is the phone's way around
- * until its three screens land, and the watch on a run ending (`useRunEndRefresh`) is what puts
- * the unread dot on that bar.
+ * AT EVERY WIDTH SINCE THE PHONE'S BAR WENT (2026-10-09): it is the one thing drawn on every screen
+ * of every surface, which is why the watch on a run ending (`useRunEndRefresh`) lives here — what
+ * it refreshes is the unread dot on this row's own profile button.
  */
 export function AppHeader() {
   const agents = useQuery(agentListQueryOptions());
   const channels = useQuery(channelListQueryOptions());
   const panel = useHomePanel();
+  const isSideBySide = useIsSideBySide();
   const isConversation = useRouterState({
     select: (state) =>
       state.location.pathname === "/" ||
@@ -70,24 +78,30 @@ export function AppHeader() {
 
   return (
     <header
-      className="flex h-titlebar w-full shrink-0 select-none items-center justify-between gap-2 px-2.5 max-md:hidden"
+      className="row-start-1 grid h-titlebar w-full shrink-0 select-none grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 px-2.5 md:col-start-2"
       data-app-header
       data-tauri-drag-region
     >
       <div
         className={cn(
-          "flex min-w-0 items-center gap-2.5",
+          "col-start-1 flex min-w-0 items-center gap-2.5",
           // Only while the button is in this row: open, the panel's own row is under the lights.
           panel.isOpen ? "" : shellLightsInset(),
         )}
         data-tauri-drag-region
       >
-        {panel.isOpen ? null : <HomeButton />}
+        {/* A phone has no panel to fold: 홈 is a page there, and the tabs are the way to it. */}
+        {isSideBySide && !panel.isOpen ? <HomeButton /> : null}
         <HeaderSlot className="flex min-w-0 items-center" name="leading" />
         {isConversation ? null : <BotMark />}
       </div>
+      <PhonePagerTabs />
+      {/*
+       * NAMED COLUMNS. With the tabs not drawn — every PC — an unplaced right zone took the middle
+       * column, and the profile button stood in the middle of the row (measured at 1024: x=674).
+       */}
       <div
-        className="flex min-w-0 items-center justify-end gap-2"
+        className="col-start-3 flex min-w-0 items-center justify-end gap-2"
         data-tauri-drag-region
       >
         <HeaderSlot

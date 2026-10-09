@@ -8,16 +8,14 @@ import {
 } from "@tabler/icons-react";
 
 /**
- * THE PLACES A PERSON GOES TO CHANGE HOW THE BOT WORKS — one list, drawn twice: under the profile
- * button at the top right of a PC's window (`layout/profile-menu.tsx`; it was the sidebar's foot
- * until the sidebar went, 2026-10-09) and on the phone's 메뉴 page (`/menu`). Held here so the two
- * cannot drift; `phone-nav.test.tsx` and `top-row.test.tsx` hold them equal.
+ * THE PLACES A PERSON GOES TO CHANGE HOW THE BOT WORKS — one list, under the profile button at the
+ * top right of every surface (`layout/profile-menu.tsx`). It was drawn twice, at the sidebar's foot
+ * and on a phone's 메뉴 page, and held here so the two could not drift; both went on 2026-10-09 and
+ * the list stayed where it was. `top-row.test.tsx` walks it in Korean.
  *
  * 연결 IS HERE SINCE 2026-09-24. It lived only under Settings, and with the Bot's own screen gone
  * from the roster the places it signs into are the most-used thing a person sets up. 봇 프로필 is
- * left out of the phone's 메뉴 page for an account with one Bot: the Bot at the top of that page is
- * the way to its profile, and the same link twice is a list padding itself out. The PC's menu has
- * no Bot at its top, so it draws the row for everybody.
+ * a row for everybody: the menu has no Bot at its top that could be the way to its profile.
  */
 export const FOOTER_LINKS = [
   { to: "/agents", icon: IconUserCircle, label: "Bot profile" },
@@ -50,10 +48,3 @@ export const FOOTER_LINKS = [
    */
   { to: "/help", icon: IconHelp, label: "Help" },
 ] as const;
-
-export type FooterLink = (typeof FOOTER_LINKS)[number];
-
-/** The links an account draws: 봇 프로필 only with several Bots, for the reason above. */
-export function footerLinksFor(isLegacy: boolean): FooterLink[] {
-  return FOOTER_LINKS.filter((link) => isLegacy || link.to !== "/agents");
-}

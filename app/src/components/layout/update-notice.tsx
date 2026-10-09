@@ -35,11 +35,11 @@ import { cn } from "@/lib/utils";
  * a card that stays covers the top of the conversation under it.
  *
  * IT NEVER INTERRUPTS. No dialog, no card over the conversation, nothing that leaves by itself and
- * nothing that happens by itself: a row at the foot of the column, under the places and over the
- * account's button — where the app keeps what is about the app rather than about the Bot — and on
- * a phone, where there is no column, a row over the bar (`phone-tab-bar.tsx`). In the rail it is
- * the icon alone, with its words a hover away. It is not drawn on Settings or Admin, which have no
- * column: it is waiting where the person comes back to.
+ * nothing that happens by itself: one icon in the row at the top, beside the profile button, with
+ * its words a hover away (`app-header.tsx`) — where the app keeps what is about the app rather
+ * than about the Bot. It was a row at the foot of the sidebar and a row over a phone's bar until
+ * both went (2026-10-09). It is not drawn on Settings or Admin, which have no such row: it is
+ * waiting where the person comes back to.
  *
  * NEVER MID-TURN, AND NEVER LATER BY ITSELF. While the Bot is working, or waiting on the person,
  * the control is drawn and cannot be pressed, and says why. The other way to keep a turn whole —
@@ -52,9 +52,9 @@ import { cn } from "@/lib/utils";
  * still takes the answer off the screen somebody is watching it arrive on. The shell itself
  * refuses a restart it has no update for.
  *
- * NOTHING IS ASKED ABOUT THE BOT UNTIL THERE IS SOMETHING TO HOLD. The column and the bar are both
- * mounted at every width, one of them hidden, so this is mounted twice; whether the Bot is busy is
- * read only by the inner control, which exists only while there is an offer.
+ * NOTHING IS ASKED ABOUT THE BOT UNTIL THERE IS SOMETHING TO HOLD. This is mounted on every screen;
+ * whether the Bot is busy is read only by the inner control, which exists only while there is an
+ * offer.
  */
 export function UpdateNotice({
   className,

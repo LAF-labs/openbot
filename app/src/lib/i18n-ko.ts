@@ -3386,5 +3386,7 @@ export const ko: Record<string, string> = {
   "Close the home panel": "홈 패널 접기",
   "Home panel width": "홈 패널 너비",
   "The home panel": "홈 패널",
+  "Home or chat": "홈 또는 채팅",
+  Chat: "채팅",
   "The row at the top": "맨 윗줄",
 };

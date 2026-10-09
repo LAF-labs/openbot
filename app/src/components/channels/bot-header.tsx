@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import { useHeaderSlots } from "@/components/layout/header-slots";
 import type { Presence } from "@/lib/agents/presence";
 import { t } from "@/lib/i18n";
-import { useHasTopRow } from "@/lib/use-wide-viewport";
 import { cn } from "@/lib/utils";
 import { usePresence } from "./use-presence";
 
@@ -33,10 +32,10 @@ import { usePresence } from "./use-presence";
  * (`saysItsWord`).
  *
  * IN THE ROW AT THE TOP, WHERE THERE IS ONE (2026-10-09). The layout has a row of its own now — the
- * home button, the switcher, the profile button (`app-header.tsx`) — and this one stood directly
- * under it: two rows of chrome over one conversation. So on a window wide enough for that row the
- * name and the dot are drawn at its left and the buttons at its right (`header-slots.tsx`), and no
- * row is drawn here. On a phone, and anywhere this is drawn without the layout around it, it is the
+ * home button, the profile button, a phone's 홈 | 채팅 (`app-header.tsx`) — and this one stood
+ * directly under it: two rows of chrome over one conversation. So inside the layout the name and
+ * the dot are drawn at that row's left and the buttons at its right (`header-slots.tsx`), and no
+ * row is drawn here, at any width. Anywhere this is drawn without the layout around it, it is the
  * row it always was.
  */
 export function BotHeader({
@@ -57,7 +56,6 @@ export function BotHeader({
 }) {
   const presence = usePresence(agentId);
   const slots = useHeaderSlots();
-  const hasTopRow = useHasTopRow();
 
   const identity = (
     <>
@@ -71,7 +69,7 @@ export function BotHeader({
     </>
   );
 
-  if (slots && hasTopRow) {
+  if (slots) {
     return (
       <>
         {slots.leading
