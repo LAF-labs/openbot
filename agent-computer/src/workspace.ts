@@ -325,6 +325,22 @@ export function createWorkspace(
   const copyLanded =
     limits.copyLanded ?? ((from: string, to: string) => copyFile(from, to));
 
+  /*
+   * ONE DOWNLOAD IS PUT IN THE FOLDER AT A TIME. Asking the volume for its room and copying the
+   * file are two steps, and two downloads that finished together each asked before either had
+   * copied: with 3.1 GB free and 2 GB to keep, two files of 600 MB were both let in, and the disk
+   * was left with 1.9 (Codex's second read of this change). So the asking and the copying of one
+   * are finished before the next one asks, and the second is asked of the disk the first left.
+   * In this process, which is the only one that writes this folder (`deployment-model.md`): a
+   * queue, not a lock on the disk. A landing that fails does not stop the ones behind it.
+   */
+  let landing: Promise<unknown> = Promise.resolve();
+  const oneAtATime = <T>(work: () => Promise<T>): Promise<T> => {
+    const mine = landing.then(work, work);
+    landing = mine.catch(() => undefined);
+    return mine;
+  };
+
   /**
    * A path that has to be a file: where it really is, and what the disk says about it.
    *
@@ -384,6 +400,63 @@ export function createWorkspace(
       throw tooLarge(Math.max(grown?.size ?? 0, total));
     }
     return { path: requested, bytes: Buffer.concat(chunks, total) };
+  }
+
+  /** One landed file into `downloads/`: judged, named, copied. `saveDownload` is this, in turn. */
+  async function putLanded(
+    suggested: string,
+    landed: string,
+  ): Promise<{ path: string; bytes: number }> {
+    const source = await stat(landed).catch(() => null);
+    if (!source?.isFile()) {
+      throw new WorkspaceFileError(
+        "The download did not arrive.",
+        "laf:file_not_found",
+      );
+    }
+    if (source.size > landedBytes) {
+      throw new WorkspaceFileError(
+        `That download is ${source.size} bytes and the limit is ${landedBytes}.`,
+        "laf:file_too_large",
+        { bytes: source.size, limit: landedBytes },
+      );
+    }
+    // A volume that cannot be asked is not a reason to refuse somebody's file: the ceiling held.
+    const free = await freeBytes().catch(() => null);
+    if (free !== null && free - source.size < spareBytes) {
+      throw new WorkspaceFileError(
+        `That download is ${source.size} bytes, ${free} are free and ${spareBytes} must stay free.`,
+        "laf:file_too_large",
+        // The most this one could have been and still been kept: the room above the spare.
+        { bytes: source.size, limit: Math.max(0, free - spareBytes) },
+      );
+    }
+
+    const name = safeDownloadName(suggested);
+    const directory = resolve(await realpath(rootPath), DOWNLOADS_DIRECTORY);
+    await mkdir(directory, { recursive: true });
+
+    const dot = name.lastIndexOf(".");
+    const stem = dot > 0 ? name.slice(0, dot) : name;
+    const extension = dot > 0 ? name.slice(dot) : "";
+    let chosen = name;
+    for (let attempt = 2; attempt < 100; attempt += 1) {
+      const taken = await stat(resolve(directory, chosen)).catch(() => null);
+      if (!taken) break;
+      chosen = `${stem} (${attempt})${extension}`;
+    }
+
+    // Through the same confinement as everything else. The name is already safe; this is the layer
+    // that stays true if it ever is not.
+    const relativePath = `${DOWNLOADS_DIRECTORY}/${chosen}`;
+    const full = await resolvePath(relativePath, true);
+    try {
+      await copyLanded(landed, full);
+    } catch (error) {
+      await rm(full, { force: true }).catch(() => undefined);
+      throw error;
+    }
+    return { path: relativePath, bytes: source.size };
   }
 
   return {
@@ -729,59 +802,11 @@ export function createWorkspace(
      * A name already taken is suffixed rather than overwritten. Downloading 정산내역.xlsx twice is
      * two months' figures, and the second silently replacing the first is a lost month.
      */
-    async saveDownload(
+    saveDownload(
       suggested: string,
       landed: string,
     ): Promise<{ path: string; bytes: number }> {
-      const source = await stat(landed).catch(() => null);
-      if (!source?.isFile()) {
-        throw new WorkspaceFileError(
-          "The download did not arrive.",
-          "laf:file_not_found",
-        );
-      }
-      if (source.size > landedBytes) {
-        throw new WorkspaceFileError(
-          `That download is ${source.size} bytes and the limit is ${landedBytes}.`,
-          "laf:file_too_large",
-          { bytes: source.size, limit: landedBytes },
-        );
-      }
-      // A volume that cannot be asked is not a reason to refuse somebody's file: the ceiling held.
-      const free = await freeBytes().catch(() => null);
-      if (free !== null && free - source.size < spareBytes) {
-        throw new WorkspaceFileError(
-          `That download is ${source.size} bytes, ${free} are free and ${spareBytes} must stay free.`,
-          "laf:file_too_large",
-          { bytes: source.size, limit: landedBytes },
-        );
-      }
-
-      const name = safeDownloadName(suggested);
-      const directory = resolve(await realpath(rootPath), DOWNLOADS_DIRECTORY);
-      await mkdir(directory, { recursive: true });
-
-      const dot = name.lastIndexOf(".");
-      const stem = dot > 0 ? name.slice(0, dot) : name;
-      const extension = dot > 0 ? name.slice(dot) : "";
-      let chosen = name;
-      for (let attempt = 2; attempt < 100; attempt += 1) {
-        const taken = await stat(resolve(directory, chosen)).catch(() => null);
-        if (!taken) break;
-        chosen = `${stem} (${attempt})${extension}`;
-      }
-
-      // Through the same confinement as everything else. The name is already safe; this is the layer
-      // that stays true if it ever is not.
-      const relativePath = `${DOWNLOADS_DIRECTORY}/${chosen}`;
-      const full = await resolvePath(relativePath, true);
-      try {
-        await copyLanded(landed, full);
-      } catch (error) {
-        await rm(full, { force: true }).catch(() => undefined);
-        throw error;
-      }
-      return { path: relativePath, bytes: source.size };
+      return oneAtATime(() => putLanded(suggested, landed));
     },
 
     /**
