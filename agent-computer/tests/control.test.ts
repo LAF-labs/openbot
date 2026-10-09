@@ -481,3 +481,76 @@ describe("a value that could not be put in its field", () => {
     expect(askOutcome(control.get())).toBe("answered");
   });
 });
+
+/**
+ * A CALLER THAT STOPPED TAKES BACK ITS OWN ASK FOR A VALUE, AND NOTHING ELSE.
+ *
+ * The server used to let go of the whole state with a person's own door, `release`, which ends a
+ * hand another turn is waiting on as well and marks neither: that turn was told the person had
+ * done it (Codex's second read of the change that began taking asks back, 2026-10-10).
+ */
+describe("a value whose caller stopped before anybody answered", () => {
+  const ASK = { label: "네이버 비밀번호", ref: "e7", snapshotId: 4 };
+
+  test("is taken back as nobody's answer, and a hand somebody else asked for stays asked", () => {
+    const control = createControl();
+    control.requestHelp("네이버 앱에서 로그인 승인을 눌러 주세요.");
+    control.requestSecret(ASK);
+
+    expect(control.withdrawSecret({ ref: "e7", snapshotId: 4 })).toBe(true);
+    const state = control.get();
+    expect(control.pendingSecret()).toBeNull();
+    expect(state.secretWanted).toBeUndefined();
+    // The hand is still asked for, in its own words, and its waiter still waits.
+    expect(state).toMatchObject({
+      requested: true,
+      reason: "네이버 앱에서 로그인 승인을 눌러 주세요.",
+    });
+    // And answered by a person afterwards, it reads as answered — not as given up on.
+    control.release();
+    expect(askOutcome(control.get())).toBe("answered");
+
+    // What the person's own door does, for contrast: both asks, at once.
+    const both = createControl();
+    both.requestHelp("x");
+    both.requestSecret(ASK);
+    both.release();
+    expect(both.get()).toMatchObject({ requested: false });
+    expect(both.pendingSecret()).toBeNull();
+  });
+
+  test("alone, it ends as an ask nobody answered", () => {
+    const control = createControl();
+    control.requestSecret(ASK);
+    expect(control.withdrawSecret({ ref: "e7", snapshotId: 4 })).toBe(true);
+    expect(control.get()).toMatchObject({ requested: false, unanswered: true });
+    expect(askOutcome(control.get())).toBe("gave up");
+  });
+
+  test("only the ask that caller made: another field, another snapshot, an answered one and none at all are left as they are", () => {
+    const control = createControl();
+    expect(control.withdrawSecret({ ref: "e7", snapshotId: 4 })).toBe(false);
+    expect(control.get().unanswered).toBeUndefined();
+
+    control.requestSecret(ASK);
+    const standing = control.get();
+    for (const other of [
+      { ref: "e8", snapshotId: 4 },
+      { ref: "e7", snapshotId: 5 },
+      { ref: "e7" },
+      {},
+    ]) {
+      expect([other, control.withdrawSecret(other)]).toEqual([other, false]);
+      expect(control.get()).toEqual(standing);
+    }
+    // A later ask replaced it: the stopped caller's late word does not take the new one back.
+    control.requestSecret({ ...ASK, ref: "e9", label: "인증번호" });
+    expect(control.withdrawSecret({ ref: "e7", snapshotId: 4 })).toBe(false);
+    expect(control.pendingSecret()).toEqual({ ref: "e9", snapshotId: 4 });
+
+    // And one a person already answered is not turned into one nobody did.
+    control.secretSupplied();
+    expect(control.withdrawSecret({ ref: "e9", snapshotId: 4 })).toBe(false);
+    expect(askOutcome(control.get())).toBe("answered");
+  });
+});

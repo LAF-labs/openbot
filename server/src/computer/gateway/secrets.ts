@@ -30,6 +30,9 @@ import { write, writeControlEvent } from "./trail";
 /** A field a person typed a secret into, as this server can know it: its ref, on an origin. */
 type TypedInto = { ref: string; origin: string; role: string; name: string };
 
+/** How long the computer is given to hear that a stopped caller's ask is taken back. */
+const WITHDRAW_MS = 5_000;
+
 /** A field a value is waiting for: where it was judged, and as what. See `supplySecret`. */
 type Requested = TypedInto & { snapshotId: number };
 
@@ -240,21 +243,34 @@ export function createSecrets(deps: {
          * held a stopped turn until the client's own deadline; and where the computer answered
          * after the Stop — or had made the request before the call to it was cut — a masked box
          * stood asking for a value nobody was waiting for (Codex's read of this change). The
-         * request is let go on the computer, nothing of it is kept here, and the caller is told
-         * what any stopped act is told. Letting go is best effort: a computer that cannot be
-         * reached lets the ask go by its own clock.
+         * request is taken back on the computer, nothing of it is kept here, and the caller is
+         * told what any stopped act is told.
+         *
+         * ONLY THIS REQUEST IS TAKEN BACK, AND NOBODY WAITS FOR THAT. The first version let go of
+         * the computer's whole state with a person's own door (`release`): a hand another turn
+         * was still waiting on went with it, unmarked, and that turn was told the person had done
+         * it. And it awaited the letting-go under the client's own deadline, so a stopped turn
+         * still hung on a slow computer — the thing this is here to end (both, Codex's second
+         * read). The computer is told which ask — the ref and the snapshot it was made with — and
+         * leaves anything else as it is; the telling is given a few seconds of its own and is not
+         * waited for. A computer that cannot be reached lets the ask go by its own clock.
          */
         const madeFor = as(botId);
+        const takeBack = () =>
+          void madeFor
+            .withdrawSecret(
+              { ref: input.ref, snapshotId: input.snapshotId },
+              AbortSignal.timeout(WITHDRAW_MS),
+            )
+            .catch(() => undefined);
         try {
           const made = await madeFor.requestSecret({ ...input, label }, signal);
           if (!signal?.aborted) return made;
         } catch (error) {
-          if (signal?.aborted) {
-            await madeFor.releaseControl().catch(() => undefined);
-          }
+          if (signal?.aborted) takeBack();
           throw error;
         }
-        await madeFor.releaseControl().catch(() => undefined);
+        takeBack();
         throw new ComputerUnavailableError(STOPPED);
       },
     );

@@ -884,6 +884,22 @@ export function createComputerClient(options: ComputerClientOptions) {
       },
 
       /**
+       * Take back a value this server asked for, for a caller that stopped before anybody
+       * answered. Only that one ask — by the ref and the snapshot it was made with — and never a
+       * hand somebody else is waiting on (`gateway/secrets.ts`).
+       */
+      async withdrawSecret(
+        asked: { ref: string; snapshotId: number },
+        caller?: AbortSignal,
+      ): Promise<ControlState> {
+        return (await post(
+          "/control/secret/withdraw",
+          asked,
+          caller,
+        )) as ControlState;
+      },
+
+      /**
        * `into` is the field the gateway judged the request on, for the computer to hold the value
        * to (`gateway/secrets.ts`). The value passes through this call and is kept nowhere.
        */

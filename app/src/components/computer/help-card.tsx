@@ -1,5 +1,6 @@
 import { IconHandStop } from "@tabler/icons-react";
-import { useId, useState } from "react";
+import { useId, useState, useSyncExternalStore } from "react";
+import { ApprovalRequest } from "@/components/channels/approval-request";
 import { LiveRegion } from "@/components/layout/live-region";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,6 +11,7 @@ import {
   chatCardWaiting,
 } from "@/components/ui/card-surface";
 import { focusRing } from "@/components/ui/focus";
+import { questionOn, watchQuestions } from "@/lib/approvals";
 import { outcomeOf } from "@/lib/computer/browsing";
 import { setScreenOpen } from "@/lib/computer/screen-panel";
 import { useDeclaredBotId } from "@/lib/copilot/active-bot";
@@ -285,6 +287,34 @@ export function HelpCard({
       ) : null}
     </div>
   );
+}
+
+/**
+ * THE BOT'S REQUEST FOR A VALUE — AND, WHERE A RULE ASKED ONE, THE QUESTION ABOUT MAKING IT.
+ *
+ * Asking for a value is decided by the gateway like any act of the Bot's (2026-10-10), so a
+ * deployment's rule can put a question in front of it: may the Bot ask you for a value on this
+ * site? Every other act's question is drawn on the line for its call (`computer-tools.tsx`,
+ * `ActionLine`; the browsing card). This call has a card of its own and had no line, so its
+ * question was drawn nowhere — the conversation said it was waiting for an answer and offered no
+ * way to give one (Codex's second read of that change).
+ *
+ * WHILE THE QUESTION IS OPEN IT IS THE ONLY CARD. The masked box is not wanted yet — nothing has
+ * asked the computer for a value — and a second card saying "needs you" beside the question,
+ * with a 건너뛰기 that skips a wait the turn has not reached, would be two things to answer where
+ * there is one. Answered, the question goes and the request's own card takes its place.
+ */
+export function SecretRequestCard(
+  props: Omit<Parameters<typeof HelpCard>[0], "kind">,
+) {
+  const isAsked = useSyncExternalStore(
+    watchQuestions,
+    () => questionOn(props.toolCallId) !== undefined,
+  );
+  if (isAsked && props.status !== "complete") {
+    return <ApprovalRequest toolCallId={props.toolCallId} />;
+  }
+  return <HelpCard kind="secret" {...props} />;
 }
 
 /**

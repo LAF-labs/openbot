@@ -2081,10 +2081,13 @@ describe("what a snapshot carries into this process", () => {
     expect(calls).toEqual(["requestSecret", "requestSecret"]);
   });
 
-  test("the caller's Stop goes to the computer with the request, and a request made for a caller that has stopped is taken back", async () => {
+  test("the caller's Stop goes to the computer with the request, and a request made for a caller that has stopped is taken back — that one, and without being waited for", async () => {
     /*
      * The signal reached the gate and not the computer. A slow computer held a stopped turn, and
      * where it answered after the Stop a masked box stood asking for a value nobody waited for.
+     * Taking it back is the computer's `withdraw`, told which ask it is: the first version used a
+     * person's own door, `release`, which ends a hand another turn is waiting on as well, and it
+     * waited for the answer under the client's own deadline (Codex's second read).
      */
     const request = { label: "네이버 비밀번호", ref: "e2", snapshotId: 3 };
     const stoppedBy = async (
@@ -2093,11 +2096,18 @@ describe("what a snapshot carries into this process", () => {
       const { client, calls } = scriptedClient(LOGIN);
       const stop = new AbortController();
       const handed: unknown[] = [];
+      const withdrawn: unknown[] = [];
       Object.assign(client, {
         requestSecret: async (_input: unknown, signal: unknown) => {
           calls.push("requestSecret");
           handed.push(signal);
           return computer(stop);
+        },
+        // Never answers: a computer too slow to hear it must not hold the stopped caller.
+        withdrawSecret: (asked: unknown, signal: unknown) => {
+          calls.push("withdrawSecret");
+          withdrawn.push([asked, signal instanceof AbortSignal]);
+          return new Promise(() => undefined);
         },
         releaseControl: async () => {
           calls.push("releaseControl");
@@ -2126,7 +2136,7 @@ describe("what a snapshot carries into this process", () => {
       const typed = await gateway
         .supplySecret("default", "bot-1", ACTOR, "hunter2-NOT-TYPED")
         .catch((caught: unknown) => caught);
-      return { outcome, typed, calls, handed, stop, rows, gateway };
+      return { outcome, typed, calls, handed, withdrawn, stop, rows, gateway };
     };
     const asked = {
       holder: "bot",
@@ -2134,15 +2144,19 @@ describe("what a snapshot carries into this process", () => {
       requested: false,
       secretWanted: request.label,
     };
+    const thatAsk = [[{ ref: "e2", snapshotId: 3 }, true]];
 
-    // The computer answers after the Stop: the request it made is let go of, and nothing is kept.
+    // The computer answers after the Stop: the request it made is taken back, and nothing is kept.
     const late = await stoppedBy(async (stop) => {
       stop.abort();
       return asked;
     });
     expect(late.handed).toEqual([late.stop.signal]);
     expect((late.outcome as Error).message).toBe("laf:stopped");
-    expect(late.calls).toEqual(["requestSecret", "releaseControl"]);
+    // That ask, by the ref and the snapshot it was made with, on a deadline of its own — and
+    // never the door that would end somebody else's ask for a hand.
+    expect(late.calls).toEqual(["requestSecret", "withdrawSecret"]);
+    expect(late.withdrawn).toEqual(thatAsk);
     expect((late.typed as Error).message).toBe("laf:secret_not_pending");
     expect((await late.gateway.control("default")).secretInto).toBeUndefined();
     expect(
@@ -2154,10 +2168,11 @@ describe("what a snapshot carries into this process", () => {
       stop.abort();
       throw new Error("laf:stopped");
     });
-    expect(cut.calls).toEqual(["requestSecret", "releaseControl"]);
+    expect(cut.calls).toEqual(["requestSecret", "withdrawSecret"]);
+    expect(cut.withdrawn).toEqual(thatAsk);
     expect((cut.typed as Error).message).toBe("laf:secret_not_pending");
 
-    // And a call that fails with nobody having stopped lets go of nothing: there is nothing to.
+    // And a call that fails with nobody having stopped takes back nothing: there is nothing to.
     const failed = await stoppedBy(async () => {
       throw new StaleSnapshotError("laf:stale_refs");
     });

@@ -216,3 +216,95 @@ describe("a value that did not reach the page", () => {
     expect(view.host.innerHTML).not.toContain("a-value-typed-by-a-person");
   });
 });
+
+/*
+ * A QUESTION ABOUT ASKING FOR A VALUE IS DRAWN WHERE THE REQUEST IS. Asking for a value is decided
+ * by the gateway like any act (2026-10-10), so a rule can put a question in front of it — and this
+ * call has a card of its own and no line, so the question was drawn nowhere: the conversation
+ * said it was waiting for an answer and gave no way to give one.
+ */
+describe("a request for a value that a rule asks about first", () => {
+  test("is the question, with its buttons, until it is answered — and then the masked box", async () => {
+    const NAME = "네이버 비밀번호";
+    const CALL = "call-asked-first";
+    control = {
+      holder: "bot",
+      since: "2026-10-10T00:00:00.000Z",
+      requested: false,
+    };
+    const approvals = await import("../src/lib/approvals");
+    const { QueryClient, QueryClientProvider } = await import(
+      "@tanstack/react-query"
+    );
+    const { SecretRequestCard } = await import(
+      "../src/components/computer/help-card"
+    );
+    const { ActiveBotProvider, useActiveBot } = await import(
+      "../src/lib/copilot/active-bot"
+    );
+    const { act } = await import("react");
+    function Conversation() {
+      useActiveBot("agent-asked");
+      return (
+        <SecretRequestCard
+          result={undefined}
+          said={NAME}
+          status="executing"
+          toolCallId={CALL}
+        />
+      );
+    }
+    await act(async () => {
+      approvals.openQuestion(CALL, {
+        approvalId: "approval-fill",
+        botId: "agent-asked",
+        subject: {
+          kind: "browser",
+          intent: "fill_secret",
+          host: "nid.naver.com",
+          element: { role: "textbox", name: "비밀번호" },
+          reason: "policy_ask",
+        },
+        rule: 'intent == "fill_secret"',
+        expiresAt: new Date(Date.now() + 600_000).toISOString(),
+      });
+    });
+    const view = await mount(
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <ActiveBotProvider>
+          <Conversation />
+        </ActiveBotProvider>
+      </QueryClientProvider>,
+    );
+    await view.settle(60);
+    const buttons = () =>
+      [...view.host.querySelectorAll("button")].map((button) =>
+        button.textContent?.trim(),
+      );
+    const box = () =>
+      view.host.querySelector<HTMLInputElement>('input[type="password"]');
+
+    // The question, in the act's own words, with a way to answer it.
+    expect(view.host.textContent).toContain(
+      "It wants to ask you for a value to put into “비밀번호” on nid.naver.com.",
+    );
+    expect(buttons()).toContain("Allow once");
+    // And nothing of the request's own card yet: no box, and no Skip for a wait not reached.
+    expect(box()).toBeNull();
+    expect(buttons()).not.toContain("Skip");
+
+    // Answered, and the computer is asking for the value: the masked box, and no question.
+    control = { ...control, secretWanted: NAME };
+    await act(async () => {
+      approvals.closeQuestion(CALL);
+    });
+    await view.settle(1_200);
+    expect(buttons()).not.toContain("Allow once");
+    expect(box()).not.toBeNull();
+    expect(buttons()).toContain("Skip");
+  });
+});

@@ -194,3 +194,15 @@ export const supplySecret: BotRoute = async (
  */
 export const releaseControl: BotRoute = ({ session }) =>
   json(session.control.release());
+
+/**
+ * `POST /control/secret/withdraw`: the server taking back a value it asked for, for a caller that
+ * stopped before anybody answered (`control.ts`, `withdrawSecret`). Never a person's door: theirs
+ * is 건너뛰기, which is `release`. Answers the state either way — withdrawing what is not there
+ * is not an error, it is the ask having ended some other way first.
+ */
+export const withdrawSecret: BotRoute = async ({ request, session }) => {
+  const body = await bodyOf<{ ref?: unknown; snapshotId?: unknown }>(request);
+  if (session.control.withdrawSecret(body ?? {})) session.secretTab = undefined;
+  return json(session.control.get());
+};

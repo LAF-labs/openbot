@@ -370,6 +370,45 @@ describe.skipIf(!HAS_BROWSER)(
       expect((await control()).secretWanted).toBeUndefined();
     }, 60_000);
 
+    test("a request the server takes back is over at the door too: a value typed after it goes nowhere", async () => {
+      // A caller that stopped before anybody answered (`control.ts`, `withdrawSecret`).
+      const VALUE = "TYPED-AFTER-THE-TURN-STOPPED-3307";
+      expect(
+        (await post("/navigate", { url: `${fixture?.url}swap` })).status,
+      ).toBe(200);
+      const seen = await snapshot();
+      const box = named(seen.elements, SWAP.box);
+      const ask = { ref: box.ref, snapshotId: seen.snapshotId };
+      expect(
+        (await post("/control/secret", { label: "회사 비밀번호", ...ask }))
+          .status,
+      ).toBe(200);
+      // Somebody else's ask is not taken back by it.
+      const other = await post("/control/secret/withdraw", {
+        ...ask,
+        ref: "e-not-this-one",
+      });
+      expect([other.status, other.body.secretWanted]).toEqual([
+        200,
+        "회사 비밀번호",
+      ]);
+
+      const withdrawn = await post("/control/secret/withdraw", ask);
+      expect(withdrawn.status).toBe(200);
+      expect(withdrawn.body.secretWanted).toBeUndefined();
+      expect(withdrawn.body.unanswered).toBe(true);
+
+      const typed = await post("/human/secret", {
+        text: VALUE,
+        element: { role: box.role, name: box.name },
+      });
+      expect([typed.status, typed.body.code]).toEqual([
+        409,
+        "laf:secret_not_pending",
+      ]);
+      expect((await snapshot()).text).not.toContain(VALUE);
+    }, 60_000);
+
     test("a box that is gone gets none either, said as a page that moved on", async () => {
       const VALUE = "NOWHERE-TO-GO-5519";
       const { seen, judged } = await ask();

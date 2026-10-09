@@ -3,7 +3,7 @@ import { computerTool } from "@shared/tools/computer";
 import { asStandardSchema } from "@shared/tools/standard-schema";
 import { ApprovalRequest } from "@/components/channels/approval-request";
 import { ToolLine } from "@/components/channels/tool-line";
-import { HelpCard } from "@/components/computer/help-card";
+import { HelpCard, SecretRequestCard } from "@/components/computer/help-card";
 import { didNotWork, labelForCode, outcomeOf } from "@/lib/computer/browsing";
 import { t } from "@/lib/i18n";
 
@@ -135,8 +135,7 @@ export function ComputerTools() {
     // not told whose computer: this closure is drawn through a memo and would hand it a stale
     // holder, so the card reads the declared Bot itself (`help-card.tsx`). The same below.
     render: ({ args, result, status, toolCallId }) => (
-      <HelpCard
-        kind="secret"
+      <SecretRequestCard
         result={result}
         said={typeof args?.label === "string" ? args.label : undefined}
         status={status}
