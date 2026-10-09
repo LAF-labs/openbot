@@ -18,7 +18,7 @@ export const AGENT_REFUSALS: Record<string, string> = {
    * more — there is no button for a second Bot — but a second tab left open on the first run can.
    */
   "laf:account_has_bot":
-    "You already have your Bot. Change its name or face on its profile instead.",
+    "You already have your Bot. Change its name on its profile instead.",
   /*
    * The rest are the codes `/profile` and `/memories` answer with. A Bot's own tool is their usual
    * caller, but this app posts to `/profile` too — the effort buttons do — so a person can reach
@@ -64,7 +64,6 @@ export const AGENT_REFUSALS: Record<string, string> = {
    */
   "laf:agent_endpoint_not_taken":
     "Every Bot runs on this deployment. It cannot be pointed at another server here.",
-  "laf:agent_avatar_invalid": "That face cannot be used.",
   "laf:agent_effort_invalid": "Choose how hard this Bot thinks.",
   "laf:agent_auto_review_too_long":
     "That instruction can be up to 1,000 characters.",
@@ -96,8 +95,6 @@ export type AgentInput = {
   endpoint?: string;
   /** Write-only auth value; omitted when the user leaves the key field empty. */
   auth?: { header: string; value: string };
-  /** The face somebody picked. Omitted leaves whatever the Bot already wears. */
-  avatarSeed?: string;
   /**
    * The standing instruction for waving actions through, when a person is changing it.
    *
@@ -117,7 +114,6 @@ export type AgentInput = {
 export type AgentProfilePatch = {
   name?: string;
   roleDescription?: string;
-  avatarSeed?: string;
   effort?: AgentEffort;
 };
 

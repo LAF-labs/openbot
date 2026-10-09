@@ -1,13 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
-  BOT_AVATAR_PALETTES,
-  BOT_AVATAR_SHAPES,
   botAvatarParams,
-  botAvatarSeed,
   DEFAULT_SHAPE_IDS,
   dealColor,
   dealShape,
-  randomBotAvatarSeed,
+  FACE_COLOR_IDS,
   SHAPE_IDS,
 } from "../src/lib/avatar/bot-avatar";
 import {
@@ -31,35 +28,32 @@ import { bodyShape, CENTRE, flattenPath } from "../src/lib/avatar/grok-shapes";
 /**
  * THE FACE, MEASURED.
  *
- * Three layers, three kinds of promise. The seed grammar: every string is a face, a chosen face
- * survives a round trip, an old seed keeps its colour. The bodies: twelve paths that are the size
+ * Three layers, three kinds of promise. The seed grammar: every string is a face, a face chosen
+ * before 2026-10-08 is still the face it named, an old seed keeps its colour. The bodies: twelve paths that are the size
  * they claim, centred, and that know where their own skin is. The engine: a frame loop that a test
  * can step by hand — no waiting on real frames — and that never writes NaN into the DOM.
  */
 
 const inRange = (params: { shape: string; palette: string }) =>
   (SHAPE_IDS as readonly string[]).includes(params.shape) &&
-  BOT_AVATAR_PALETTES.some((colour) => colour.id === params.palette);
+  (FACE_COLOR_IDS as readonly string[]).includes(params.palette);
 
 describe("the seed grammar", () => {
-  test("every body and colour round-trips through a seed", () => {
-    for (const shape of BOT_AVATAR_SHAPES) {
-      for (const colour of BOT_AVATAR_PALETTES) {
-        const seed = botAvatarSeed({ shape: shape.id, palette: colour.id });
-        expect(botAvatarParams(seed)).toEqual({
-          shape: shape.id,
-          palette: colour.id,
+  /**
+   * A FACE THE PICKER WROTE IS THE FACE IT NAMED. Nothing writes a named seed since 2026-10-08,
+   * when the picker went; every Bot it gave one to still has it in its row, spelled as here.
+   */
+  test("every body and colour a named seed can spell is the face it names", () => {
+    for (const shape of SHAPE_IDS) {
+      for (const colour of FACE_COLOR_IDS) {
+        expect(botAvatarParams(`s:${shape}.${colour}`)).toEqual({
+          shape,
+          palette: colour,
         });
       }
     }
-    expect(BOT_AVATAR_SHAPES.length).toBe(12);
-    expect(BOT_AVATAR_PALETTES.length).toBe(10);
-  });
-
-  test("the eight default bodies lead the picker's row", () => {
-    expect(BOT_AVATAR_SHAPES.slice(0, 8).map((shape) => shape.id)).toEqual([
-      ...DEFAULT_SHAPE_IDS,
-    ]);
+    expect(SHAPE_IDS.length).toBe(12);
+    expect(FACE_COLOR_IDS.length).toBe(10);
   });
 
   /**
@@ -98,22 +92,10 @@ describe("the seed grammar", () => {
   test("a hundred names do not all land on the same face", () => {
     const seen = new Set<string>();
     for (let index = 0; index < 100; index += 1) {
-      seen.add(botAvatarSeed(botAvatarParams(`bot-${index}`)));
+      const { shape, palette } = botAvatarParams(`bot-${index}`);
+      seen.add(`${shape}.${palette}`);
     }
     expect(seen.size).toBeGreaterThan(30);
-  });
-
-  test("the shuffle is deterministic under an injected generator and never out of range", () => {
-    const sequence = () => {
-      const values = [0.1, 0.6, 0.3, 0.9];
-      let at = 0;
-      return () => values[at++ % values.length] as number;
-    };
-    expect(randomBotAvatarSeed(sequence())).toBe(
-      randomBotAvatarSeed(sequence()),
-    );
-    expect(inRange(botAvatarParams(randomBotAvatarSeed(() => 1)))).toBe(true);
-    expect(inRange(botAvatarParams(randomBotAvatarSeed(() => 0)))).toBe(true);
   });
 });
 

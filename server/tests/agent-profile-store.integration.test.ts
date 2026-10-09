@@ -326,8 +326,8 @@ describe("agent profile store integration", () => {
       // coworker and losing its conversations. It reaches here already validated by the same check
       // that guards creation.
       endpoint: "https://moved.example.test/ag-ui",
-      // So is the face, for the same reason the name above it is: it is what somebody sees, not a
-      // fact about who owns the Bot. Everything left in this payload is still forged.
+      // Everything left in this payload is forged — the face too, since 2026-10-08: it is given
+      // when the Bot is made and nothing changes it afterwards.
       avatarSeed: "r2c6",
       ownerUserId: "forged-owner",
       packageId: deploymentPackage.id,
@@ -339,7 +339,7 @@ describe("agent profile store integration", () => {
       name: "Renamed Assistant",
       roleDescription: "Updated role description.",
       ownerUserId: owner.id,
-      avatarSeed: "r2c6",
+      avatarSeed: source.avatarSeed,
       systemOwned: false,
       deletedAt: null,
     });
@@ -361,7 +361,7 @@ describe("agent profile store integration", () => {
     expect(profile).toMatchObject({
       ownerUserId: owner.id,
       roleDescription: "Updated role description.",
-      avatarSeed: "r2c6",
+      avatarSeed: source.avatarSeed,
       deletedAt: null,
     });
     expect(canonical?.updatedAt.getTime()).toBeGreaterThan(
@@ -605,6 +605,8 @@ describe("agent profile store integration", () => {
       name: `Created ${randomUUID()}`,
       roleDescription: "Created role description.",
     };
+    // A face a caller still sends is not the face it gets: the Bot's own id is (2026-10-08).
+    Object.assign(input, { avatarSeed: "s:cloud.green" });
 
     const created = await store.create(owner, input);
     createdAgentIds.push(created.id);

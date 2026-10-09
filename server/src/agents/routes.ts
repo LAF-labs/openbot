@@ -48,7 +48,6 @@ export type AgentInputRefusal =
   | "laf:agent_role_too_long"
   | "laf:agent_endpoint_refused"
   | "laf:agent_endpoint_not_taken"
-  | "laf:agent_avatar_invalid"
   | "laf:agent_effort_invalid"
   | "laf:agent_auto_review_too_long"
   | "laf:agent_auth_header_invalid"
@@ -92,7 +91,6 @@ type AgentInputObject = {
   name?: unknown;
   roleDescription?: unknown;
   endpoint?: unknown;
-  avatarSeed?: unknown;
   effort?: unknown;
   autoReview?: unknown;
   auth?: unknown;
@@ -160,22 +158,14 @@ export function parseAgentInput(
     endpoint = verdict.url;
   }
 
-  // Optional, and only ever a name from a set the client already has. Bounded and pattern-checked
-  // rather than trusted, because it is written to a row and read back into every roster; a seed is
-  // not a URL and must not be able to become one.
-  let avatarSeed: string | undefined;
-  if (input.avatarSeed !== undefined) {
-    const supplied =
-      typeof input.avatarSeed === "string" ? input.avatarSeed.trim() : "";
-    if (
-      !supplied ||
-      supplied.length > 64 ||
-      !/^[A-Za-z0-9._:-]+$/.test(supplied)
-    ) {
-      return { ok: false, code: "laf:agent_avatar_invalid" };
-    }
-    avatarSeed = supplied;
-  }
+  /*
+   * NO `avatarSeed` SINCE 2026-10-08 (docs/laf/redesign-2026-10.md §8): the face is not chosen any
+   * more, by a person or by anything else. A Bot is given one when it is made (`profile-store.ts`)
+   * and keeps it. A body that still carries one — a tab opened before the picker went, a script —
+   * is read like any other key this parser does not know, and IGNORED rather than refused: the
+   * first-run screen sent one with every create, and a stale copy of it refused on the press that
+   * makes somebody's Bot would be the worst first minute there is.
+   */
 
   // Optional, and one of exactly three. Checked against the list rather than passed through, because
   // it reaches a Postgres enum: an unknown value is a failed transaction at write time rather than a
@@ -246,7 +236,6 @@ export function parseAgentInput(
       roleDescription,
       endpoint,
       auth,
-      ...(avatarSeed === undefined ? {} : { avatarSeed }),
       ...(effort === undefined ? {} : { effort }),
       // Sent whenever the field was present, empty string included, because clearing it is a thing
       // somebody does on purpose. `optionalBoundedText` answers "" for an absent field too, so the
@@ -304,11 +293,8 @@ export async function editProfile(
       {
         name: name.value ?? current.name,
         roleDescription: roleDescription.value ?? current.roleDescription,
-        ...(patch.avatarSeed === undefined
-          ? {}
-          : { avatarSeed: patch.avatarSeed }),
-        // Absent leaves it alone, like the face. A Bot writing its own description must not reset
-        // how hard it thinks as a side effect of doing so.
+        // Absent leaves it alone. A Bot writing its own description must not reset how hard it
+        // thinks as a side effect of doing so.
         ...(patch.effort === undefined ? {} : { effort: patch.effort }),
         /*
          * `autoReview` IS DELIBERATELY NOT HERE, and this is the security line of the whole
