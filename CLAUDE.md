@@ -114,12 +114,22 @@ reason.
 ## How a change lands
 
 **Nothing is pushed to `main`** (owner, 2026-10-02). A change is a branch
-(`laf/<slug>`), a pull request against `main`, and Codex's review of it. Codex's
-findings are claims, checked one by one: fixed where they are real, answered on
-the thread with the evidence where they are not, never left unanswered. Every
-push is reviewed again. It is done when Codex reacts 👍 or says nothing needs
-changing, with the checks green — then it is merged by rebase, so each commit
-keeps its message, and its branch is deleted. **Only `main` remains.**
+(`laf/<slug>`) and a pull request against `main`. **Codex reviews work, when it
+is ready to merge** (owner, 2026-10-09): a pull request that changes what runs
+is sent to Codex with `@codex review` on its finished head, not reviewed push by
+push along the way. Codex's findings are claims, checked one by one: fixed where
+they are real, answered on the thread with the evidence where they are not,
+never left unanswered. A push that answers them is reviewed again. It is done
+when Codex reacts 👍 or says nothing needs changing, with the checks green — then
+it is merged by rebase, so each commit keeps its message, and its branch is
+deleted. **Only `main` remains.**
+
+A pull request that only records a direction — a decision record under
+`docs/laf/`, a plan — is not sent to Codex. It is the owner's to read, and it
+merges once the owner has seen it. The 2026-10-08 record went through
+twenty-three rounds that hardened the design of things nothing yet runs; that
+review belongs to the pull requests that build them, where it can be checked
+against code.
 
 The gate runs before the pull request is opened, not instead of it, and a
 reviewer reads a diff: its 👍 is not "verified by using it", and it is not a
@@ -129,7 +139,9 @@ the owner's.
 The loop, step by step, is the `codex-pr-review` skill (installed for the owner
 in `~/.claude/skills/`). Codex is set to review the pull requests the owner's
 GitHub account opens here, on every push (chatgpt.com → Codex → 설정 → 코드 검토);
-Dependabot's are not reviewed automatically.
+Dependabot's are not reviewed automatically. That setting predates the rule above.
+Until it is switched off, a review of an unfinished head is read but not looped
+on, and a direction record's reviews are not waited for.
 
 `AGENTS.md` is where Codex looks first in the repository, after the pull
 request's own title and body. It holds no rules of its own: it sends the
