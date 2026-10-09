@@ -3,14 +3,11 @@
  *
  * `docs/laf/data-lifecycle.md` §5 listed two things the system could not account for, and this
  * closes one of them: a person can open the live screen of a Bot — a browser signed into the
- * owner's own sites — and, once a demonstration has been recorded, read back every page it went to
- * and every control it pressed. Until this, nothing recorded that either had been opened.
+ * owner's own sites. Until this, nothing recorded that it had been opened.
  *
  * ONE ROW PER LOOK, NEVER PER FRAME. The live screen is a socket carrying thirty frames a second;
  * the fact is that a screen was watched between an open and a close, so the proxy that terminates
- * the socket (`index.ts`) asks this once, on open. The recording is polled once a second while
- * somebody is still driving; the fact is that a finished recording was read back, so the route asks
- * this on every read and it answers with a row once per recording and viewer.
+ * the socket (`live-screen.ts`) asks this once, on open.
  *
  * THE OWNER IS RECORDED TOO. The first draft left the owner out — "a person driving their own Bot
  * is the product working as drawn" — and the row said `Somebody else watched the screen`. But the
@@ -29,8 +26,12 @@ import { log } from "../log";
 
 export type ScreenViewer = { id: string; role: UserRole };
 
-/** Which of the two ways a screen is looked at. */
-export type ScreenViewSource = "live" | "demonstration";
+/**
+ * Which way a screen was looked at. There is one way now, and the field stays on the row because
+ * the trail is append-only: rows written while teaching by demonstration existed say
+ * `demonstration` (a finished recording read back), and the audit page still tells the two apart.
+ */
+type ScreenViewSource = "live";
 
 /**
  * Who owns a Bot, read straight off its profile row.
@@ -56,22 +57,9 @@ export type ScreenViewAudit = {
    *
    * Never throws: a socket must open whether or not the row lands. `recordAuditEvent` itself does
    * NOT swallow a store failure — the first draft here said it did, and the test that asserts this
-   * promise resolves was the one that noticed — so the catch is in this module, on both doors.
+   * promise resolves was the one that noticed — so the catch is in this module.
    */
   opened: (botId: string, viewer: ScreenViewer) => Promise<void>;
-  /**
-   * Record that `viewer` read back a finished recording of `botId`'s browser.
-   *
-   * Once per recording and viewer: the panel that shows a recording asks for it on every mount and
-   * once a second while it is still being made, and a row for each of those would be the per-frame
-   * mistake in another shape. `startedAt` is the recording's identity — the recorder keeps one per
-   * Bot and stamps it when the wheel is taken.
-   */
-  replayed: (
-    botId: string,
-    viewer: ScreenViewer,
-    recording: { startedAt: number },
-  ) => Promise<void>;
 };
 
 export function createScreenViewAudit(dependencies: {
@@ -79,14 +67,6 @@ export function createScreenViewAudit(dependencies: {
   /** Who owns this Bot, or null for a Bot nobody owns — a package's, or one whose owner has left. */
   ownerOf: (botId: string) => Promise<string | null>;
 }): ScreenViewAudit {
-  /*
-   * The last replay recorded per Bot: `<viewer>:<startedAt>`. One entry per Bot, so it is bounded
-   * by the roster, and a new recording or a different reader replaces it. In memory on purpose —
-   * one API process per VM (docs/laf/deployment-model.md) — and a restart costing one extra row
-   * is the right way round.
-   */
-  const lastReplay = new Map<string, string>();
-
   const write = async (
     botId: string,
     viewer: ScreenViewer,
@@ -129,11 +109,5 @@ export function createScreenViewAudit(dependencies: {
 
   return {
     opened: (botId, viewer) => write(botId, viewer, "live"),
-    replayed: async (botId, viewer, recording) => {
-      const key = `${viewer.id}:${recording.startedAt}`;
-      if (lastReplay.get(botId) === key) return;
-      lastReplay.set(botId, key);
-      await write(botId, viewer, "demonstration");
-    },
   };
 }

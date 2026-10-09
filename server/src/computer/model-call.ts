@@ -1,19 +1,20 @@
 /**
- * One question to a model, answered as JSON, for the two places that need one.
+ * One question to a model, answered as JSON, for the server's calls on its own account.
  *
- * The boundary asks a model twice: once to judge whether an action falls under somebody's standing
- * instruction (`auto-review.ts`), and once to write up what somebody demonstrated
- * (`write-up.ts`). Both send a system prompt and a body, both want JSON back, and both must treat
- * whatever comes back as a suggestion rather than a fact.
+ * The boundary asks one: whether an action falls under somebody's standing instruction
+ * (`auto-review.ts`). The judges' stand-ins (`decision-askers.ts`), the day's summary
+ * (`context/day-close.ts`) and the dream (`agents/dream.ts`) ask through here too. Each sends a
+ * system prompt and a body, wants JSON back, and must treat whatever comes back as a suggestion
+ * rather than a fact.
  *
- * Written by hand against `/v1/chat/completions` rather than through an SDK, because the first of
- * those two decides whether a person is shown an action at all: the prompt, the body, the timeout
- * and the parsing want to be small enough to read in one sitting, with no library behaviour to
- * reason about in between.
+ * Written by hand against `/v1/chat/completions` rather than through an SDK, because the judge
+ * decides whether a person is shown an action at all: the prompt, the body, the timeout and the
+ * parsing want to be small enough to read in one sitting, with no library behaviour to reason
+ * about in between.
  *
  * It returns the raw text. Deciding what an unparseable answer means belongs to the caller, and the
- * two answers are different — a judgement that cannot be read is a refusal, a write-up that cannot
- * be read is nothing to show.
+ * answers are different — a judgement that cannot be read is a refusal, a summary that cannot be
+ * read is no summary.
  */
 
 import { jsonObjectOf } from "../../../shared/json-object";
@@ -81,8 +82,9 @@ export type Ask = {
  * Why there is no answer.
  *
  * They were one outcome — null — on the argument that the callers treat them the same. Measured,
- * they do not: four write-ups in a row gave one answer at twenty-four seconds, one timeout at
- * sixty, and two refusals at under a second, and all four said the same sentence to the person.
+ * they do not: four write-ups of a demonstration in a row (a call since removed) gave one answer
+ * at twenty-four seconds, one timeout at sixty, and two refusals at under a second, and all four
+ * said the same sentence to the person.
  * Somebody watching a button fail instantly, twice, is watching a broken feature; somebody told
  * the provider is busy knows to come back. The kinds also read differently in a log.
  */
@@ -103,7 +105,7 @@ export type Answer =
 /**
  * The model's answer, or why there is not one.
  *
- * Nothing is retried. Both callers have a good answer for "nobody said anything", and the one
+ * Nothing is retried. Every caller has a good answer for "nobody said anything", and the one
  * failure worth retrying least is the one that arrives in a second because a provider is refusing.
  */
 export async function askModel(call: ModelCall, ask: Ask): Promise<Answer> {
@@ -123,7 +125,7 @@ export async function askModel(call: ModelCall, ask: Ask): Promise<Answer> {
         body: JSON.stringify({
           model: call.model,
           // Deterministic. A boundary that answers differently on a retry is one nobody can reason
-          // about, and a write-up that changed every time it was asked would be a lottery.
+          // about.
           temperature: 0,
           ...(ask.maxTokens === undefined ? {} : { max_tokens: ask.maxTokens }),
           ...(ask.reasoningEffort === undefined

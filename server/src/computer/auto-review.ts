@@ -242,8 +242,9 @@ export type ModelReviewerOptions = ModelCall & {
  * The judge, as one model call.
  *
  * The prompt above and the verdict below are the whole of it. Sending it is `askModel`, shared with
- * the write-up, because the two were the same thirty lines of fetch and the first of them decides
- * whether a person is shown an action at all — one copy of that is enough to keep right.
+ * the server's other calls on its own account: this and a demonstration's write-up (since removed)
+ * were once the same thirty lines of fetch, and this one decides whether a person is shown an
+ * action at all — one copy of that is enough to keep right.
  */
 export function createModelAutoReviewer(
   options: ModelReviewerOptions,
@@ -266,7 +267,7 @@ export function createModelAutoReviewer(
        * an empty message is `unreadable`, which is a no. So every "do not ask me about…" instruction
        * anybody wrote was saved, drawn, and never once applied — the person kept being asked, and
        * the only trace was `autoReview: could not be reached` on the row recording the question.
-       * `model-call.ts` had already measured and written this down for the write-up; the same trap
+       * `model-call.ts` had already measured and written this down for another call; the same trap
        * was sitting here the whole time. The timeout is the bound that matters.
        */
       ...(options.supportsEffort ? { reasoningEffort: "low" as const } : {}),

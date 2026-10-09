@@ -21,7 +21,6 @@ import { createCompactor } from "./context/compaction";
 import type { JevAsker } from "./context/vendor/fast-jev-compaction/index";
 import { createDaySummarizer } from "./context/day-close";
 import { log } from "./log";
-import { createWriteUp, type WriteUp } from "./computer/write-up";
 import type { DeploymentConfig } from "./config";
 import {
   type ModelCredentialSecretReader,
@@ -38,11 +37,11 @@ import {
 /**
  * The model calls this server makes on its own account, rather than a Bot's.
  *
- * Three of them, all against the deployment's own endpoint and key: judging an owner's "do not ask
- * me about" instruction against one action, asking once whether this deployment can judge at all,
- * and writing a finished demonstration up as a procedure. They were assembled inline in `main.ts`,
- * twice over — the same base URL default and the same key closure in two places, the second copy
- * waiting to drift from the first.
+ * All against the deployment's own endpoint and key: judging an owner's "do not ask me about"
+ * instruction against one action, asking once whether this deployment can judge at all, and the
+ * judges, the day's summary and the dream below. They were assembled inline in `main.ts`, twice
+ * over — the same base URL default and the same key closure in two places, the second copy waiting
+ * to drift from the first.
  */
 export function createServerModelCalls(input: {
   database: Database;
@@ -72,7 +71,6 @@ export function createServerModelCalls(input: {
     (
       source:
         | "auto-review"
-        | "write-up"
         | "compaction"
         | "day-summary"
         | "memory"
@@ -254,13 +252,6 @@ export function createServerModelCalls(input: {
   /** The nightly dream's writer (`agents/dream.ts`): the server model, like the day's summary. */
   const dreamCall = serverModelCall("dream");
 
-  const writeUp = createWriteUp({
-    baseUrl: endpoint.baseUrl,
-    model: model.defaultModel,
-    apiKey,
-    onUsage: recordModelUsage("write-up"),
-  });
-
   return {
     /**
      * The owner's own sentence about what not to be asked, judged against one action.
@@ -343,24 +334,5 @@ export function createServerModelCalls(input: {
 
     /** The mail's second look at what its rules could not settle. See `plugins/mail-secrets.ts`. */
     mailSecretJudge,
-
-    /**
-     * A finished recording, written up as a procedure.
-     *
-     * The deployment's own model rather than the review one: this runs once, with the person watching
-     * and knowing they asked for it, so a slow careful answer is the right trade — the opposite of the
-     * judgement that sits in front of every action a Bot takes.
-     *
-     * On a free trial's spent day it is REFUSED with the fact a Bot's run ends on
-     * (`laf:daily_budget_reached`), thrown as the refusal `app.ts` answers with — the recording
-     * survives, and pressing again after midnight works. An empty recording is left to the route's
-     * own answer, which comes first and costs nothing.
-     */
-    writeUp: (async (recording) => {
-      if (recording.steps.length > 0 && (await dailyBudget?.reachedToday())) {
-        throw new DailyBudgetReachedError();
-      }
-      return writeUp(recording);
-    }) satisfies WriteUp,
   };
 }

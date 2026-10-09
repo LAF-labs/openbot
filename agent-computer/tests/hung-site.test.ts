@@ -239,12 +239,11 @@ describe.skipIf(!HAS_BROWSER)("a page with a frame that never loads", () => {
 /** Far above the second a look takes, far below the 12–29 s the looks took before. */
 const LOOK_BOUND_MS = 5_000;
 
-/** Every look at the page: the Bot's four, and the person's picture. */
+/** Every look at the page: the Bot's three, and the person's picture. */
 const LOOKS = [
   ["GET", "/read", undefined],
   ["POST", "/snapshot", {}],
   ["POST", "/tabs/switch", { index: 0 }],
-  ["POST", "/describe-point", { x: 20, y: 20 }],
   ["GET", "/screenshot", undefined],
 ] as const;
 
@@ -309,7 +308,6 @@ async function looksWhileArriving(
         expect(tab.title).toBe("");
       }
     }
-    if (path === "/describe-point") expect(body.element).toBeNull();
   }
 }
 

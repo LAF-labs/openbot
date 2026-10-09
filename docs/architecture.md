@@ -214,15 +214,10 @@ While a person controls the browser, Bot actions are refused rather than queued.
 
 Secret entry is separate from chat content. The audit trail records that a secret was requested or supplied and the character count, not the secret value.
 
-## Demonstrations and skills
-
-A person can drive the Bot's browser through a task once and keep it. The demonstration recorder
-(`server/src/computer/demonstration.ts`) watches the session and `write-up.ts` turns it into a
-procedure the person edits, names, and invokes with `/` in the composer.
-
-**The recorder never keeps a value.** Every keystroke in a Bot's browser passes through it, including
-passwords, so what it records is that typing happened and into which field — the same rule as the
-audit fingerprint. A test serialises a whole record and asserts the password is nowhere in it.
+**Nothing keeps what a person typed.** Every click and keystroke a person makes while driving passes
+through the server's live-screen proxy (`server/src/live-screen.ts`) on its way to the page,
+passwords included, and is forwarded without being read. Taking the wheel no longer has a teaching
+door: a Bot is taught a task in words, as a skill (`docs/laf/redesign-2026-10.md` §7).
 
 ## Coworkers and channels
 

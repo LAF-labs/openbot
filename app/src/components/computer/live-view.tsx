@@ -13,7 +13,6 @@ import { SectionBoundary } from "@/components/layout/section-boundary";
 import { useOverlayModal } from "@/components/layout/use-overlay-modal";
 import { Button } from "@/components/ui/button";
 import { markPageGone } from "@/lib/computer/browsing-now";
-import { type Recording, readRecording } from "@/lib/computer/demonstration";
 import {
   type ScreenPanelSize,
   setScreenOpen,
@@ -26,7 +25,6 @@ import { t } from "@/lib/i18n";
 import { pokeControl } from "./control-poll";
 import { LiveScreen } from "./live-screen";
 import { releaseControl, takeControl } from "./take-the-wheel";
-import { TeachATask } from "./teach-a-task";
 import { useControl } from "./use-control";
 
 /**
@@ -77,7 +75,6 @@ const pendingReleases = new Map<string, ReturnType<typeof setTimeout>>();
  * screen leaves the pane for the whole window; see there for why.
  */
 export function LiveView({ botId }: { botId: string }) {
-  const [recording, setRecording] = useState<Recording | null>(null);
   const [isPressing, setIsPressing] = useState(false);
   const [pressFailure, setPressFailure] = useState<string | null>(null);
   /** A click or key that did not land (`Screen`'s `onInputProblem`), cleared by the next press. */
@@ -87,11 +84,6 @@ export function LiveView({ botId }: { botId: string }) {
   const control = useControl(botId, true);
   const isDriving = control?.holder === "human";
   const isFullWindow = isDriving && isWide;
-  /**
-   * The Bot has asked for somebody — a login, a captcha, a code sent to a phone — or somebody took
-   * the wheel to answer it (`reason` is kept while they hold it, dropped when they hand back).
-   */
-  const isHelping = control?.requested === true || Boolean(control?.reason);
 
   /*
    * Stable, and it has to be: the stream's effect depends on it through `Screen`, and a new function
@@ -132,21 +124,6 @@ export function LiveView({ botId }: { botId: string }) {
     };
   }, [botId]);
 
-  const refreshRecording = useCallback(async () => {
-    setRecording(await readRecording(botId));
-  }, [botId]);
-
-  // A recording outlives the page that made it: read on arrival so one is never lost to a reload.
-  useEffect(() => {
-    void refreshRecording();
-  }, [refreshRecording]);
-
-  const teach = useCallback(async () => {
-    await takeControl(botId, true);
-    pokeControl(botId);
-    await refreshRecording();
-  }, [botId, refreshRecording]);
-
   const handleTake = async () => {
     setPressFailure(null);
     setInputProblem(null);
@@ -169,31 +146,12 @@ export function LiveView({ botId }: { botId: string }) {
     const state = await releaseControl(botId).catch(() => null);
     setIsPressing(false);
     pokeControl(botId);
-    // Handing back is what ends a recording, so what was kept is read straight afterwards.
-    await refreshRecording();
     if (!state) {
       setPressFailure(
         t("The browser could not be handed back to the Bot. Try again."),
       );
     }
   };
-
-  /*
-   * Teaching is driving with a recorder on: the same wide-screen rule as 직접 하기. Not offered while
-   * the Bot is asking for help — a captcha or a code sent to a phone is not a task anybody can show
-   * a Bot how to do, and "한 번만 직접 해 보이면, 다음부터는 이 봇이 합니다" under one was a promise
-   * the recording could not keep (0.5.3 audit, item 4). A recording already made is still shown.
-   */
-  const teaching =
-    isWide && (recording || !isHelping) ? (
-      <TeachATask
-        computerId={botId}
-        driving={isDriving}
-        onRefresh={refreshRecording}
-        onStart={teach}
-        recording={recording}
-      />
-    ) : null;
 
   const said =
     pressFailure ?? (inputProblem ? screenProblemText(inputProblem) : null);
@@ -209,9 +167,7 @@ export function LiveView({ botId }: { botId: string }) {
         )}
         isHandingBack={isPressing}
         onDone={() => void handleHandBack()}
-      >
-        {recording && !recording.finished ? teaching : null}
-      </DrivingScreen>
+      />
     );
   }
 
@@ -285,8 +241,6 @@ export function LiveView({ botId }: { botId: string }) {
       <LiveRegion as="p" className="text-destructive text-sm" tone="alert">
         {said}
       </LiveRegion>
-
-      {teaching}
     </div>
   );
 }
@@ -482,7 +436,6 @@ export function DrivingScreen({
   busyLabel,
   failure,
   onDone,
-  children,
 }: {
   botId: string;
   /** What the person is here to do, said above the picture. */
@@ -494,8 +447,6 @@ export function DrivingScreen({
   /** Why the wheel did not go back, when it did not; 다 했어요 then says 다시 시도. */
   failure: string | null;
   onDone: () => void;
-  /** Drawn under the picture: the recording's line while somebody is teaching. */
-  children?: ReactNode;
 }) {
   /** A click or key that did not land; said on the same line as `failure`, which wins. */
   const [inputProblem, setInputProblem] = useState<string | null>(null);
@@ -562,7 +513,6 @@ export function DrivingScreen({
       <LiveRegion as="p" className="text-destructive text-sm" tone="alert">
         {failure ?? (inputProblem ? screenProblemText(inputProblem) : null)}
       </LiveRegion>
-      {children}
     </div>,
     document.body,
   );

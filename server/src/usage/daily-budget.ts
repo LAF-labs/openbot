@@ -3,10 +3,10 @@
  *
  * THE COUNT IS THE ONE THE PRODUCT ALREADY KEEPS. Every model call this deployment makes lands as a
  * `model.usage` row in `audit_events` — a Bot's turn on any path (`copilot.ts`), the auto-review
- * judge and a write-up (`server-model-calls.ts`) — and nothing else sees the provider's counts. So a
- * day is those rows' `totalTokens`, summed, over the Seoul day `now` falls in (self-serve contract
- * §4.6, §10), read through `audit_events_type_created_at_idx`, which migration 0026 already built for
- * exactly this shape of question.
+ * judge and the server's other calls (`server-model-calls.ts`) — and nothing else sees the
+ * provider's counts. So a day is those rows' `totalTokens`, summed, over the Seoul day `now` falls
+ * in (self-serve contract §4.6, §10), read through `audit_events_type_created_at_idx`, which
+ * migration 0026 already built for exactly this shape of question.
  *
  * SEOUL'S DAY, NOT THE HOST'S AND NOT `BOT_TIME_ZONE`'S. The sentence a refused person reads says
  * the allowance opens again "at midnight, Korean time", and the fleet ends a trial at 23:59:59 in
@@ -33,7 +33,7 @@ import { auditEvents } from "../db/schema";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
 
-/** The fact a refused run ends on, and a refused write-up answers with. The surface owns the words. */
+/** The fact a refused run ends on, and a refused server call throws. The surface owns the words. */
 export const DAILY_BUDGET_REACHED = "laf:daily_budget_reached";
 
 /** The zone a trial's day is counted in. Not configurable: the sentence and the fleet both name it. */
@@ -199,8 +199,8 @@ export function withDailyBudget(
  *
  * The shape `httpRefusalOf` reads (`failure-text.ts`): a `laf:` code and a status, so `app.ts`'s
  * error handler answers `{ code, retryLater }` whichever route let it through. 503 because the
- * refusal statuses a route may answer do not include 429, and 503 with `retryLater` is what "not
- * now" already means on the write-up route (`laf:write_up_busy`).
+ * refusal statuses a route may answer do not include 429, and `retryLater` because the day ends at
+ * midnight: this is "not now", not "never".
  */
 export class DailyBudgetReachedError extends Error {
   readonly code = DAILY_BUDGET_REACHED;

@@ -164,8 +164,7 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
    * So the focus target while driving is a real editable element, kept out of sight, and the canvas
    * goes back to being a picture with a mouse over it. It is the same thing noVNC does for the same
    * reason. Nothing is ever read out of it: it is emptied on every keystroke, and what is sent is
-   * the composed word from `compositionend` — one `Input.insertText`, the same door a paste uses,
-   * and the same door the demonstration recorder counts without reading.
+   * the composed word from `compositionend` — one `Input.insertText`, the same door a paste uses.
    */
   const keyboardRef = useRef<HTMLTextAreaElement | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
@@ -759,9 +758,9 @@ export function LiveScreen({ computerId, driving, onProblem, onSite }: Props) {
    * A finished Korean word, sent whole.
    *
    * The same message a paste sends, for the same reason: `Input.insertText` puts text into the page
-   * without pretending to be a keyboard, and a composed syllable is not a keystroke. The recorder
-   * this passes through counts that typing happened and never reads the value (`demonstration.ts`),
-   * exactly as it does for a paste.
+   * without pretending to be a keyboard, and a composed syllable is not a keystroke. The server's
+   * proxy it passes through forwards it and never reads it (`server/src/live-screen.ts`), as it
+   * does a paste.
    */
   const handleCompositionEnd = (
     event: React.CompositionEvent<HTMLTextAreaElement>,

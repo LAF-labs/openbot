@@ -206,8 +206,8 @@ export type DeploymentConfig = {
   /** What the package's `${NAME}` references resolve against: see {@link TENANT_PACKAGE_VARIABLES}. */
   tenantPackageVariables: Readonly<Record<string, string | undefined>>;
   /**
-   * Where this server's own model calls go — the auto-review judge, its probe, a demonstration's
-   * write-up — and the key they fall back to when the vault holds none.
+   * Where this server's own model calls go — the auto-review judge, its probe, the day's summary,
+   * the dream — and the key they fall back to when the vault holds none.
    *
    * `OPENAI_BASE_URL` is where everything in this deployment reaches a model, `agent-bot` included;
    * unset, it is OpenAI. The key is only the fallback: the vault is asked first, per call, so a

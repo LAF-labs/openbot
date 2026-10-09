@@ -385,12 +385,6 @@ describe("the computer's refusals, over HTTP", () => {
         "laf:request_invalid",
       ],
       [
-        "a point without coordinates",
-        post("/describe-point", {}),
-        400,
-        "laf:request_invalid",
-      ],
-      [
         "a secret request without a field",
         post("/control/secret", { label: "비밀번호" }),
         400,

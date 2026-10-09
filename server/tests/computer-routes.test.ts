@@ -5,7 +5,6 @@ import type { AuditEventInput, AuditStore } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";
 import type { ComputerClient } from "../src/computer/client";
 import { createApprovalRegistry } from "../src/computer/approvals";
-import { createDemonstrationRecorder } from "../src/computer/demonstration";
 import { createComputerGateway } from "../src/computer/gateway";
 import type { ActionPolicy } from "../src/computer/policy";
 import {
@@ -182,14 +181,6 @@ function surface(
   });
   const policyStore = createPolicyStore({ deny: [], ask: [], allow: ["true"] });
   /**
-   * A real recorder, not a stub.
-   *
-   * The secret tests serialise it, and a stub that kept nothing would pass them by doing nothing —
-   * which is the failure mode this whole file exists to avoid. This one records for real, so the
-   * assertion is about what the shipped recorder keeps.
-   */
-  const demonstrations = createDemonstrationRecorder();
-  /**
    * The guard as `createRequireUser` ships it: the actor, and beside it whose Bots they may drive.
    * `bot-1` is theirs; every other id is somebody else's, which is what the cross-use sweep at the
    * bottom presses on. The role is not consulted — since 2026-09-16 an administrator has no
@@ -206,15 +197,7 @@ function surface(
   const app = new Hono<{ Variables: AppVariables }>();
   app.route(
     "/",
-    createComputerRoutes(
-      client,
-      gateway,
-      policyStore,
-      requireUser,
-      demonstrations,
-      undefined,
-      auditStore,
-    ),
+    createComputerRoutes(client, gateway, policyStore, requireUser, auditStore),
   );
   /** The page the gateway is allowed to decide about. Without it every rule is undecidable. */
   const seen = async () =>
@@ -226,7 +209,6 @@ function surface(
     rows,
     policyStore,
     sentToComputer,
-    demonstrations,
     seen,
   };
 }
@@ -265,8 +247,6 @@ describe("the Bot an address names", () => {
     for (const id of ESCAPES) {
       const response = await app.request(`/${id}/control/take`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ teaching: true }),
       });
       const body = (await response.json()) as { code?: string };
       expect([id, response.status, body.code]).toEqual([
@@ -276,8 +256,8 @@ describe("the Bot an address names", () => {
       ]);
     }
 
-    // Nothing reached the computer, nothing was recorded, and no recording was started: the refusal
-    // is in front of the handler rather than inside it.
+    // Nothing reached the computer and nothing was recorded: the refusal is in front of the handler
+    // rather than inside it.
     expect(calls).toEqual([]);
     expect(sentToComputer).toEqual([]);
     expect(rows).toEqual([]);
@@ -1151,9 +1131,8 @@ describe("a boundary decided in front of the browser", () => {
  * THE VALUE, AND EVERYTHING THAT OUTLIVES THE REQUEST.
  *
  * A secret has exactly one path: a person's keyboard, through this server, into the page. Every
- * other thing that survives the call — the audit row, the response body, the demonstration being
- * recorded beside it — is a place it must not be, and each of them is written by different code
- * that has no reason to know it is holding one.
+ * other thing that survives the call — the audit row, the response body — is a place it must not
+ * be, and each of them is written by different code that has no reason to know it is holding one.
  *
  * Asserted by serialising each of them whole and looking for the string, rather than by checking
  * the fields somebody thought of. A field added later is exactly the way this breaks.
@@ -1194,14 +1173,10 @@ describe("a secret being asked for and supplied", () => {
   });
 
   test("supplying one records that it happened and how long it was, never what it was", async () => {
-    const { app, rows, demonstrations } = surface(ADMIN);
-    // A demonstration running at the same moment, which is the realistic case: somebody has taken
-    // the wheel in order to type the thing the Bot must not hold.
-    await app.request("/bot-1/control/take", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ teaching: true }),
-    });
+    const { app, rows } = surface(ADMIN);
+    // The realistic case: somebody has taken the wheel in order to type the thing the Bot must not
+    // hold.
+    await app.request("/bot-1/control/take", { method: "POST" });
 
     const response = await app.request("/bot-1/human/secret", {
       method: "POST",
@@ -1223,19 +1198,12 @@ describe("a secret being asked for and supplied", () => {
     });
     // Every row, not only that one: nothing else along the way may have picked it up either.
     expect(carrying(rows)).not.toContain(SECRET);
-    expect(carrying(demonstrations.read("bot-1", ADMIN.id))).not.toContain(
-      SECRET,
-    );
   });
 
-  test("the value is in no row, no reply and no recording, on either of its two routes", async () => {
-    const { app, rows, demonstrations, sentToComputer, seen } = surface(ADMIN);
+  test("the value is in no row and no reply, on either of its two routes", async () => {
+    const { app, rows, sentToComputer, seen } = surface(ADMIN);
     await seen();
-    await app.request("/bot-1/control/take", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ teaching: true }),
-    });
+    await app.request("/bot-1/control/take", { method: "POST" });
 
     const replies: unknown[] = [];
     /*
@@ -1264,17 +1232,10 @@ describe("a secret being asked for and supplied", () => {
       replies.push(await response.json());
     }
 
-    // The reply, the trail and the recording — serialised whole, so a field somebody adds later is
-    // covered without anybody remembering to cover it.
+    // The reply and the trail — serialised whole, so a field somebody adds later is covered without
+    // anybody remembering to cover it.
     expect(carrying(replies)).not.toContain(SECRET);
     expect(carrying(rows)).not.toContain(SECRET);
-    expect(carrying(demonstrations.read("bot-1", ADMIN.id))).not.toContain(
-      SECRET,
-    );
-    // The demonstration is real and recording, so the absence above is an absence and not an
-    // unstarted recorder: handing back closes it, and what it kept is still readable.
-    await app.request("/bot-1/control/release", { method: "POST" });
-    expect(demonstrations.read("bot-1", ADMIN.id)).not.toBeNull();
 
     // And the one place it is allowed to be: on its way through to the browser.
     expect(carrying(sentToComputer)).toContain(SECRET);
@@ -1301,11 +1262,8 @@ describe("the whole surface", () => {
     ["GET", "/"],
     ["POST", "/bot-1/computers/stop"],
     ["POST", "/bot-1/computers/reset"],
-    ["POST", "/bot-1/control/take", { teaching: true }],
+    ["POST", "/bot-1/control/take"],
     ["POST", "/bot-1/control/release"],
-    ["GET", "/bot-1/demonstration"],
-    ["POST", "/bot-1/demonstration/write-up"],
-    ["DELETE", "/bot-1/demonstration"],
     [
       "POST",
       "/bot-1/control/secret",
@@ -1407,13 +1365,9 @@ describe("the whole surface", () => {
 
     expect(statuses).toHaveLength(ROUTES.length);
     for (const [route, status] of statuses) {
-      /*
-       * 409 is the write-up route with an empty recording, which is what this run leaves it: the
-       * wheel was taken and handed back with nothing typed. Everything else either did the thing or
-       * was refused for a reason the route itself decided; never a 500, which is what a route
-       * reading an actor that was never set produces.
-       */
-      const expected = ADMIN_ONLY.has(route) ? [403] : [200, 204, 409];
+      // Every one did the thing; never a 500, which is what a route reading an actor that was never
+      // set produces.
+      const expected = ADMIN_ONLY.has(route) ? [403] : [200];
       expect([route, expected.includes(status), status]).toEqual([
         route,
         true,
@@ -1458,39 +1412,5 @@ describe("the whole surface", () => {
         200,
       ]);
     }
-  });
-});
-
-/**
- * The routes pass the asker through: a recording somebody else started is not read, not written up
- * and not thrown away through them. See the note at the top of `demonstration.ts`.
- */
-describe("somebody else's demonstration", () => {
-  test("is not readable, not writable-up, and survives a stranger's delete", async () => {
-    const { app, demonstrations, sentToComputer } = surface(ADMIN);
-    // Started by another person on the same deployment, as the take-control route would have.
-    demonstrations.start("bot-1", "the-owner");
-    demonstrations.observe("bot-1", {
-      type: "key",
-      event: "down",
-      key: "Enter",
-    });
-
-    const read = await app.request("/bot-1/demonstration");
-    expect(read.status).toBe(200);
-    expect(await read.json()).toEqual({ demonstration: null });
-
-    const writeUp = await app.request("/bot-1/demonstration/write-up", {
-      method: "POST",
-    });
-    expect(writeUp.status).toBe(409);
-    // No model call was spent on a recording the caller may not look at.
-    expect(sentToComputer).toEqual([]);
-
-    const gone = await app.request("/bot-1/demonstration", {
-      method: "DELETE",
-    });
-    expect(gone.status).toBe(204);
-    expect(demonstrations.read("bot-1", "the-owner")?.steps).toHaveLength(1);
   });
 });

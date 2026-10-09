@@ -13,10 +13,10 @@ import { TEST_POOL } from "./support/database";
 /**
  * WHAT A CONVERSATION KEEPS AFTER A SECRET HAS BEEN ENTERED.
  *
- * The audit trail and the demonstration recorder both refuse to write a value, and both are tested
- * for it. The transcript is the third place a value could end up and the only one that had no such
- * test (§3.5): a run hands back its whole history as its input, that history is written to
- * `laf_thread_messages` verbatim, and every tool call a Bot made — with its arguments — is in it.
+ * The audit trail refuses to write a value, and is tested for it. The transcript is another place
+ * a value could end up, and had no such test (§3.5): a run hands back its whole history as its
+ * input, that history is written to `laf_thread_messages` verbatim, and every tool call a Bot
+ * made — with its arguments — is in it.
  *
  * `computer_request_secret` exists precisely so the model never holds the value: it names a field
  * and a label, a person types into that field themselves, and the value travels on a route the

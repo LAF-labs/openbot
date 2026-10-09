@@ -26,8 +26,8 @@ import type { WriteFileInput, WriteFileResult } from "./schema";
  *
  * NOTHING TYPED REACHES THIS. A tool result is what the computer said back — a page's text, a
  * listing, an approval — and the results of typing carry no value by construction (`TypeInput`
- * is fingerprinted, `WriteFileResult` echoes no contents). The same rule as the audit trail and
- * the demonstration recorder: record that a thing happened and where, never what somebody typed.
+ * is fingerprinted, `WriteFileResult` echoes no contents). The same rule as the audit trail's
+ * fingerprint: record that a thing happened and where, never what somebody typed.
  *
  * The write is in the background because AG-UI middleware answers synchronously with an
  * observable; it lands in milliseconds, long before a model has read the preview and asked for the
