@@ -276,9 +276,16 @@ export const BotRow = memo(function BotRow({
    * words on hover too.
    */
   const compactLabel = announced ? `${name} · ${announced}` : name;
+  /*
+   * THE TILE'S ONE MARK MEANS "LOOK HERE", for a question as much as for something unread. In the
+   * rail the words are gone; a Bot waiting on the person's answer was said by its face's eyes until
+   * the face went (2026-10-09), and after that by the label and the tooltip only — so once the
+   * question had been read, a tile with somebody waiting behind it looked like an idle one until
+   * it was hovered (Codex's read of that change).
+   */
   const tile = (
     <RailNameTile name={name}>
-      {unread ? <RosterUnreadDot /> : null}
+      {unread || blocked ? <RosterUnreadDot /> : null}
     </RailNameTile>
   );
 

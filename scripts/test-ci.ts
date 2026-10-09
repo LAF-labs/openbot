@@ -2290,6 +2290,16 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * On this branch the three land on its own floors: 3893 and 1 are 3894; 2132 and 1 are 2133; 475 and
  * 1 are 476.
  *
+ * RAISED 2026-10-09, by one each, `app` from 2133 to 2134 and `root` from 920 to 921, for Codex's
+ * read of the face and the effort going. `app`: in `sidebar-rail.test.tsx`, a Bot waiting on an
+ * answer is marked on its rail tile, read or not — its face had said so, and after the face went
+ * only the label did. `root`: in `eval-lib.test.ts`, the effort an eval sends is what production
+ * would send for the deployment it is run for (`BOT_MODEL_EFFORT`), unless `EVAL_EFFORT` names
+ * another. `server` keeps its count: two tests in `agent-routes.test.ts` hold more than they did —
+ * a patch of only the retired fields (a face, an effort, from a window opened before they went) is
+ * told it changed nothing, where it was answered 200 over a row nobody had touched.
+ * By hand: 2133 and 1 are 2134; 920 and 1 are 921.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2319,14 +2329,14 @@ const GROUPS: readonly {
   processes?: number;
 }[] = [
   { name: "server", floor: 3894, roots: ["server"] },
-  { name: "app", floor: 2133, roots: ["app"] },
+  { name: "app", floor: 2134, roots: ["app"] },
   {
     name: "agent-computer",
     floor: 488,
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 920, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 921, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

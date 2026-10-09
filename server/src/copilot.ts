@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { AbstractAgent, HttpAgent } from "@ag-ui/client";
 import { CopilotRuntime } from "@copilotkit/runtime/v2";
 import { createCopilotHonoHandler } from "@copilotkit/runtime/v2/hono";
+import { FIXED_EFFORT } from "../../shared/fixed-effort";
 import { textOf } from "../../shared/message-content";
 import {
   type ComposePromptInput,
@@ -309,7 +310,6 @@ export type RuntimeModel = {
  * request it did, and its conversations keep their epoch. A Bot whose row says otherwise is sent
  * this all the same: the column is kept, and read by nothing that decides a run.
  */
-const FIXED_EFFORT = "balanced";
 
 type RuntimeAgentRow = {
   id: string;

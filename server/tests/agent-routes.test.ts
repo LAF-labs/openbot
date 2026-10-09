@@ -636,7 +636,7 @@ describe("agent route composition", () => {
  * before may still. A value the parser used to refuse goes through too — it is not looked at.
  */
 describe("how hard a Bot thinks", () => {
-  test("is taken at no door: create, the edit form's save and /profile go through, and none hands it to the store", async () => {
+  test("is taken at no door: create and the edit form's save go through without it, and a patch of nothing else is told it changed nothing", async () => {
     const store = fakeStore();
     const app = appFor(store);
     const send = (path: string, method: string, body: object) =>
@@ -762,7 +762,7 @@ describe("the auto-review instruction", () => {
  * the parser used to refuse goes through now, because it is no longer looked at at all.
  */
 describe("the face", () => {
-  test("is taken at no door: create, the edit form's save and /profile go through, and none hands it to the store", async () => {
+  test("is taken at no door: create and the edit form's save go through without it, and a patch of nothing else is told it changed nothing", async () => {
     const store = fakeStore();
     const app = appFor(store);
     const send = (path: string, method: string, body: object) =>
@@ -779,8 +779,18 @@ describe("the face", () => {
     expect(
       (await send("/agent-1", "PATCH", { ...validInput, ...face })).status,
     ).toBe(200);
-    // What the picker sent through the merging door: the face and nothing else.
-    expect((await send("/agent-1/profile", "POST", face)).status).toBe(200);
+    // What the picker sent through the merging door: the face and nothing else. It used to be
+    // answered 200 over a row nobody had touched, and the old picker said the face was saved.
+    const alone = await send("/agent-1/profile", "POST", face);
+    expect([alone.status, await alone.json()]).toEqual([
+      400,
+      { error: "laf:profile_no_fields", code: "laf:profile_no_fields" },
+    ]);
+    // With something real beside it, the patch is taken and the face ignored.
+    expect(
+      (await send("/agent-1/profile", "POST", { ...face, name: "새 이름" }))
+        .status,
+    ).toBe(200);
     expect(
       (
         await send("/agent-1", "PATCH", {
@@ -889,13 +899,24 @@ describe("what a Bot writes into its own profile", () => {
   });
 
   /*
-   * The profile's effort buttons sent exactly this until 2026-10-08. A window opened before then
-   * still may, and is answered rather than refused as text — with nothing of it stored.
+   * The profile's effort buttons sent exactly this until 2026-10-08, and a window opened before
+   * then still may. It is not judged as text, nothing of it is stored — and it is not answered as
+   * though it had been: a patch of nothing this door takes changed nothing, and is told so.
    */
-  test("a change that carries no text is not judged as text, and an effort in it reaches nothing", async () => {
+  test("an effort alone is not judged as text, reaches nothing, and is told it changed nothing; beside a real field it is ignored", async () => {
     const store = fakeStore();
-    const response = await post(store, { effort: "thorough" });
-    expect(response.status).toBe(200);
+    const alone = await post(store, { effort: "thorough" });
+    expect(alone.status).toBe(400);
+    expect(((await alone.json()) as { code: string }).code).toBe(
+      "laf:profile_no_fields",
+    );
+    expect(store.calls.find(([method]) => method === "update")).toBeUndefined();
+
+    const beside = await post(store, {
+      effort: "thorough",
+      roleDescription: "견적을 본다",
+    });
+    expect(beside.status).toBe(200);
     const update = store.calls.find(([method]) => method === "update");
     expect(update?.[3]).not.toHaveProperty("effort");
   });

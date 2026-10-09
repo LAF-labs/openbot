@@ -252,6 +252,9 @@ export type SelfEditRefusal = {
  * `update_profile` when the server carries out its turn (`turns/chat-tools.ts`). One function so
  * the two doors cannot come to accept different things.
  */
+/** Fields a profile patch once carried alone, and that nothing takes now. See `editProfile`. */
+const RETIRED_FIELDS: ReadonlySet<string> = new Set(["avatarSeed", "effort"]);
+
 export async function editProfile(
   store: AgentProfileStore,
   actor: AgentActor,
@@ -262,7 +265,17 @@ export async function editProfile(
   if (!patch || typeof patch !== "object") {
     return { ok: false, code: "laf:profile_invalid", status: 400 };
   }
-  if (Object.keys(patch).length === 0) {
+  /*
+   * NOTHING, OR NOTHING THIS DOOR TAKES ANY MORE. The profile's face picker and its effort buttons
+   * each sent one field here and nothing else, until those fields went (2026-10-08, §8). A window
+   * opened before then still does, and a patch of only such fields used to be merged into the
+   * record unchanged and answered 200 — the old picker then said the face was saved, over a row
+   * nobody had touched (Codex's read of that change). It changes nothing, so it is told so: the
+   * same refusal as an empty patch, which that window already has words for ("Nothing was
+   * changed."). A patch that also names something real is taken, and its retired fields ignored.
+   */
+  const named = Object.keys(patch).filter((key) => !RETIRED_FIELDS.has(key));
+  if (named.length === 0) {
     return { ok: false, code: "laf:profile_no_fields", status: 400 };
   }
   try {

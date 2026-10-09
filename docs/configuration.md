@@ -244,7 +244,7 @@ model:
   provider: openai
   credential_secret_ref: openai-api-key
   default_model: ${BOT_MODEL:-gpt-4.1}
-  supports_effort: ${BOT_MODEL_EFFORT:-true}
+  supports_effort: ${BOT_MODEL_EFFORT:-false}
   review_model: ${REVIEW_MODEL:-}
 ```
 
@@ -253,7 +253,7 @@ model:
 | Field / variable                    | Default   | What it decides                                                                                                     |
 | ----------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------- |
 | `default_model` / `BOT_MODEL`       | `gpt-4.1` | The model the deployment serves. Note `agent-bot`'s own default differs (`gpt-5.5`); set `BOT_MODEL` and both follow it. |
-| `supports_effort` / `BOT_MODEL_EFFORT` | `true` | Whether this model reasons, and therefore takes an effort setting. **An assertion, not a description** — the provider otherwise guesses from the model's name, and a model served under a name only we choose can never be recognised by a heuristic. Set it `false` on a model that does not reason: nothing is sent, and the control disappears from the Bot's profile rather than sitting there doing nothing. |
+| `supports_effort` / `BOT_MODEL_EFFORT` | `false` | Whether the main conversation is sent an effort at all. Since 2026-10-08 how hard a Bot thinks is nobody's setting — not the person's, not the Bot's — and there is no control for it anywhere. `false` (the default) sends nothing, and the model answers at its own default (medium on Muse Spark). `true` sends the same one word on every run, `balanced`, in the model's own spelling; set it only for a model that takes an effort AND whose own default is not its middle. **An assertion, not a description** — the provider otherwise guesses from the model's name, and a model served under a name only we choose can never be recognised by a heuristic. The evals send what this says (`evals/lib.ts` `evalEffort`); `EVAL_EFFORT` overrides it for a comparison. |
 | `review_model` / `REVIEW_MODEL`     | the same model | Which model judges a Bot owner's "do not ask me about" instruction. Point it at something small and fast: that judgement runs in front of an action, and on the flagship model a yes/no took ten to thirty seconds — longer than a person often takes to press the button themselves. |
 
 Both variables reach the substitution and not the server, so a deployment that sets them in the

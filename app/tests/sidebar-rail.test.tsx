@@ -439,6 +439,46 @@ describe("the roster collapses to a rail", () => {
       expect(classes(row)).toContain("justify-center");
     }
   });
+  test("a Bot waiting on an answer is marked on its tile, read or not — the mark an unread one has", async () => {
+    // Its face said so until the Bot had none; then only the label did, and a tile with a
+    // question behind it that had been read looked like an idle one until it was hovered.
+    const view = await roster({ wide: false });
+    const marks = () =>
+      view
+        .rows()
+        .map(
+          (row) =>
+            row.querySelectorAll('span[aria-hidden="true"].absolute').length,
+        );
+    expect(marks()).toEqual([1, 0, 0]);
+
+    const { closeQuestion, openQuestion } = await import(
+      "../src/lib/approvals"
+    );
+    const { act } = await import("react");
+    await act(async () => {
+      openQuestion("call-rail", {
+        approvalId: "approval-rail",
+        botId: "bot-2",
+        subject: undefined,
+        rule: null,
+        expiresAt: "",
+      });
+    });
+    try {
+      await view.settle();
+      expect(marks()).toEqual([1, 1, 0]);
+      expect(view.rows()[1]?.getAttribute("aria-label")).toBe(
+        "두리 · Waiting for your answer",
+      );
+    } finally {
+      await act(async () => {
+        closeQuestion("call-rail");
+      });
+    }
+    await view.settle();
+    expect(marks()).toEqual([1, 0, 0]);
+  });
 });
 
 describe("one row layout", () => {
