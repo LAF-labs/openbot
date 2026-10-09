@@ -14,7 +14,7 @@ import type { StoredMessage } from "../src/runner/thread-store";
  * typing, the refusal is correct and complete, and the value the model should never have had stays
  * in the history and is replayed into the context window on every following turn. Nothing about
  * that is visible from a passing suite, so this file drives the rule directly and asserts on the
- * serialised result — the same discipline the demonstration recorder's test uses.
+ * serialised result — the same discipline the audit trail's secret tests use.
  *
  * `SECRET_FIELD_RULE` is imported rather than pasted. It is the expression the boundary actually
  * refuses with, and a wave that rewrites it should break this test rather than quietly leave the

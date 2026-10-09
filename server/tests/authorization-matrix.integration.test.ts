@@ -71,12 +71,10 @@ import { createSandboxedStore } from "../src/components/sandboxed";
 import { createComponentStore } from "../src/components/store";
 import { createApprovalRegistry } from "../src/computer/approvals";
 import type { ComputerClient } from "../src/computer/client";
-import { createDemonstrationRecorder } from "../src/computer/demonstration";
 import { createComputerGateway } from "../src/computer/gateway";
 import type { ActionPolicy } from "../src/computer/policy";
 import { createPolicyStore, revisionOf } from "../src/computer/policy-store";
 import type { SnapshotResult } from "../src/computer/schema";
-import { createScreenViewAudit } from "../src/computer/screen-view";
 import { createSiteConnectionStore } from "../src/computer/site-connections";
 import { createStandingApprovalStore } from "../src/computer/standing-approvals";
 import { loadConfig } from "../src/config";
@@ -333,7 +331,6 @@ function deployment() {
     readWorking: createWorkingReader(database),
     standingApprovals: standing,
     deploymentEffort: true,
-    demonstrations: createDemonstrationRecorder(),
     agentMemoryStore: createAgentMemoryStore(database),
     accountService: {
       exporter: createAccountExport(database),
@@ -349,10 +346,6 @@ function deployment() {
     partners,
     routineSuggestionDismissals: createSuggestionDismissalStore(database),
     consent: createConsentStore(database),
-    screenViews: createScreenViewAudit({
-      auditStore,
-      ownerOf: async (botId) => (await lookupBotOwner(database, botId)) ?? null,
-    }),
     support: {
       feedback: createFeedbackStore(database),
       auditStore,
@@ -846,7 +839,6 @@ const B_ALLOWED = [
 const A_ALLOWED = [
   ...B_ALLOWED,
   "DELETE /api/agents/:agentId",
-  "DELETE /api/computers/:botId/demonstration",
   "DELETE /api/routines/:id",
   // The routine's notepad: read and cleared by its person, never written over HTTP.
   "DELETE /api/routines/:id/notepad",
@@ -859,7 +851,6 @@ const A_ALLOWED = [
   "GET /api/approvals/:botId",
   "GET /api/components/for-agent/:agentId",
   "GET /api/computers/:botId/control",
-  "GET /api/computers/:botId/demonstration",
   // Their Bot's folder (phase 8): what is in it, one file's facts, and the file itself.
   "GET /api/computers/:botId/files",
   "GET /api/computers/:botId/files/download",
@@ -943,9 +934,7 @@ const NAMES_SOMEBODY_ELSES_BOT = [
   "POST /api/routines/:id/run",
   "POST /api/routines/resume",
   // Its browser: what it is looking at, and every way of pressing something in it.
-  "DELETE /api/computers/:botId/demonstration",
   "GET /api/computers/:botId/control",
-  "GET /api/computers/:botId/demonstration",
   // Its folder: what the Bot wrote for A, listed and taken out. An administrator is not A.
   "GET /api/computers/:botId/files",
   "GET /api/computers/:botId/files/download",

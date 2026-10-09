@@ -62,7 +62,6 @@ import { createSandboxedStore } from "./components/sandboxed";
 import { createComponentStore } from "./components/store";
 import { createApprovalRegistry } from "./computer/approvals";
 import { createComputerClient } from "./computer/client";
-import { createDemonstrationRecorder } from "./computer/demonstration";
 import { createComputerGateway } from "./computer/gateway";
 import {
   createPolicyStore,
@@ -101,11 +100,7 @@ import {
 import { createDatabase } from "./db/client";
 import { createFleetNotifier } from "./fleet/notify";
 import { deploymentHealthProbes } from "./health";
-import {
-  createLiveScreen,
-  describePointOn,
-  type SocketData,
-} from "./live-screen";
+import { createLiveScreen, type SocketData } from "./live-screen";
 import { log, recentLines } from "./log";
 import { readApprovalMetrics } from "./notifications/approval-metrics";
 import { createDeploymentOutbox } from "./notifications/doors";
@@ -628,18 +623,7 @@ const repeatDetector = createRepeatDetector(
     : {},
 );
 
-/**
- * What somebody did while showing a Bot how a task is done.
- *
- * In this process because that is where the socket is: a demonstration belongs to one person
- * driving one browser, and both ends of that live here. It names each press by asking the computer
- * what is at the point. See `demonstration.ts` and `live-screen.ts`.
- */
-const demonstrations = createDemonstrationRecorder({
-  namePoint: describePointOn(config.computer),
-});
-
-/** The auto-review judge, its probe and a demonstration's write-up. See server-model-calls.ts. */
+/** The model calls this server makes on its own account. See server-model-calls.ts. */
 const modelCalls = createServerModelCalls({
   database,
   auditStore: bootAuditStore,
@@ -979,9 +963,8 @@ const copilotEndpoint = mountCopilotRuntime(
 );
 
 /**
- * The row a looked-at screen leaves, from the same trail every other computer row lands in. Built
- * once and handed to both doors: the live-screen proxy below, and the demonstration read inside
- * the computer routes.
+ * The row a looked-at screen leaves, from the same trail every other computer row lands in, for the
+ * live-screen proxy below.
  */
 const screenViews = createScreenViewAudit({
   auditStore: bootAuditStore,
@@ -1031,8 +1014,6 @@ const app = createApp({
   ),
   standingApprovals,
   deploymentEffort: tenantPackage.model.supportsEffort,
-  demonstrations,
-  writeUp: modelCalls.writeUp,
   agentMemoryStore,
   // The OAuth connect flow: where vendors send people back, and who still has access. See the module.
   pluginConnect: connectConfigFor({
@@ -1116,7 +1097,6 @@ const app = createApp({
   publicData: deploymentKeyRuntime,
   // Who agreed to which terms, and when. See account/consent.ts for why it is its own call.
   consent: createConsentStore(database),
-  screenViews,
   // The 문의·의견 box: the row, the trail, and the outbox whose support door reaches the operator —
   // and what its diagnostic details are read from: this process's log tail and the run ledger. And
   // 좋아요·아쉬워요 under an answer, which leaves by the same door when somebody writes why.
@@ -1175,7 +1155,6 @@ const liveScreen = createLiveScreen({
   actorOf: actors.resolveOrNull,
   botOwner: roleRepository.botOwner,
   screenViews,
-  demonstrations,
   ...(sessionRevocation ? { sessions: sessionRevocation } : {}),
 });
 

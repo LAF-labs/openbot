@@ -44,7 +44,7 @@ import { TEST_POOL } from "./support/database";
  *
  * THE LAST TEST IS THE ONE THAT MATTERS MOST. Everything a connect touches — the row, the trail, the
  * status a screen draws, the answer a Bot reads — is serialised whole and searched for the phone
- * number and the 인증번호. The same rule the demonstration recorder and the audit fingerprint keep:
+ * number and the 인증번호. The same rule the audit fingerprint keeps:
  * record that something happened, never the value somebody typed.
  */
 

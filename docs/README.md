@@ -5,7 +5,7 @@ Start with the root [README](../README.md).
 ## How the thing is built
 
 - [Architecture](architecture.md): one VM per person, services and ports, the gateway that decides
-  and records every action, computers, demonstrations, components, MCP, and security boundaries.
+  and records every action, computers, components, MCP, and security boundaries.
 - [Configuration](configuration.md): every environment variable the code actually reads — API
   server, `agent-computer`, `agent-bot` — and the tenant package YAML.
 - [Development](development.md): local setup, running one service by hand, migrations, the gate, the

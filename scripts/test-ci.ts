@@ -2134,14 +2134,47 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * to the same file: a skipped test weighs no time at all, and many small files are spread by their
  * number. The floor missed them; review caught it. By hand: 918 plus 2 is 920.
  *
+ * LOWERED 2026-10-09, `server` from 3932 to 3896 and `agent-computer` from 530 to 529, by exactly
+ * the thirty-seven tests that held teaching by demonstration. The owner removed it on 2026-10-08
+ * (docs/laf/redesign-2026-10.md §7): a Bot is taught in words, as a skill, and taking the wheel
+ * stays without its teaching door. Gone with the recorder (`computer/demonstration.ts`), the
+ * write-up (`computer/write-up.ts`), their three routes, the live screen's watching for them and
+ * the computer's `/describe-point`: the sixteen of `demonstration.test.ts` (what a recording kept —
+ * nothing typed, no screen text, a label and never the value beside it, typing once per run, the
+ * named keys, an unnamed press, a namer that threw, the press and not the release; what it refused
+ * — input when nobody taught, more than it held, input after the hand-back, surviving a discard,
+ * one Bot's into another's; and whose it was — its author's to read, a stranger's discard, the
+ * hand-back unscoped) and the eleven of `write-up.test.ts` (the three fields, no half draft, prose,
+ * fenced JSON, a missing summary, an empty recording never sent; what the model was told — data
+ * and its end, no pages, no typed value; a refusal and a missing key both busy). One in
+ * `computer-routes.test.ts` (somebody else's recording not read, written up or thrown away through
+ * the routes), one in `computer-routes-codes.test.ts` (the write-up's four outcomes as codes), two
+ * in `live-screen.test.ts` (a press recorded while teaching and named by the computer; no name
+ * asked for without a computer), three in `screen-view.test.ts` (a recording read back: one row per
+ * recording and reader however often, a new one for a new recording or reader, and per Bot) and
+ * two in `daily-budget-server-calls.test.ts` (a write-up refused on a spent day, and written on a
+ * day with room). For `agent-computer`, one in `crashed-tab.test.ts`: a page that throws the words
+ * for a crash keeps its tab, pressed through `/describe-point`, the one route that asked its
+ * question in the page's own world — `profiles.deadTab` still confirms a death before believing
+ * it, and a route that asks in the page's world again should bring that test back with it.
+ * Nothing that stays was weakened: the secret tests in `computer-routes.test.ts` still serialise
+ * every reply and the whole trail (the recording they also searched is gone); the route sweep there
+ * now expects 200 from every route a member of staff may press, where it allowed 204 and 409 for
+ * the recording's delete and empty write-up; and `live-view.test.tsx` still holds that 직접 하기 is
+ * offered while the Bot asks for help, which its test of not offering teaching there had held
+ * beside it. `app` and `root` lost no test: nothing tested the teaching panel's own file. Counted
+ * twice, and the two agree: `bun test` on every touched file before and after, and the `test(`
+ * lines of each against `origin/main`. By hand: 16, 11, 1, 1, 2, 3 and 2 are 36, and 3932 less 36
+ * is 3896; 530 less 1 is 529.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3932, roots: ["server"] },
+  { name: "server", floor: 3896, roots: ["server"] },
   { name: "app", floor: 2187, roots: ["app"] },
-  { name: "agent-computer", floor: 530, roots: ["agent-computer"] },
+  { name: "agent-computer", floor: 529, roots: ["agent-computer"] },
   { name: "root", floor: 920, roots: ["tests", "agent-bot"] },
 ] as const;
 

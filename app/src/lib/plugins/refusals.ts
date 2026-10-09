@@ -4,10 +4,11 @@
  * The routes answered English until 2026-09-14 — "A slug is lower-case letters, numbers and
  * hyphens.", "`/standup` is somebody else's skill.", "Give a hostname rather than an IP address." —
  * and four screens printed it as it came: the skill form, a skill's Bot list, the skills page and a
- * teaching session's 스킬로 저장, and the admin Plugins page. The routes send `laf:` codes and no
- * prose now (`server/src/plugins/routes.ts`, `servers.ts`, `catalogue.ts`); these tables own the
- * sentences, read through `refusalText`, and `plugin-refusals.test.ts` walks them against the
- * server's own source — the coverage walk only sees a literal `t()`.
+ * teaching session's 스킬로 저장 (gone with teaching by demonstration), and the admin Plugins page.
+ * The routes send `laf:` codes and no prose now (`server/src/plugins/routes.ts`, `servers.ts`,
+ * `catalogue.ts`); these tables own the sentences, read through `refusalText`, and
+ * `plugin-refusals.test.ts` walks them against the server's own source — the coverage walk only
+ * sees a literal `t()`.
  *
  * The connect button's refusals are not here: `components/plugins/connections.tsx` has read those by
  * code since before this, and the Bot's own tool call is told in the model's words

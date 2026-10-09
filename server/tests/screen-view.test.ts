@@ -7,9 +7,8 @@ import { createScreenViewAudit } from "../src/computer/screen-view";
  *
  * `docs/laf/data-lifecycle.md` §5 said, in so many words, that an administrator could watch a Bot's
  * live browser and nothing recorded it. This is the record: who looked at whose Bot's screen, with
- * what role, by which of the two doors — the live socket, or a finished recording read back — and
- * whether it was their own Bot. The owner is recorded too; the payload is what tells the reader
- * which rows are somebody looking at somebody else's logins.
+ * what role, through the live socket, and whether it was their own Bot. The owner is recorded too;
+ * the payload is what tells the reader which rows are somebody looking at somebody else's logins.
  */
 
 function trail() {
@@ -104,72 +103,5 @@ describe("a live screen being watched", () => {
     await expect(
       audit.opened("bot-1", { id: "manager", role: "admin" }),
     ).resolves.toBeUndefined();
-  });
-});
-
-describe("a recording being read back", () => {
-  test("one row per recording and reader, however often the panel asks", async () => {
-    // The panel reads the recording on every mount and once a second while it is being made; the
-    // fact is that one finished recording was looked at, so the second and tenth read add nothing.
-    const { rows, auditStore } = trail();
-    const audit = createScreenViewAudit({
-      auditStore,
-      ownerOf: async () => OWNER,
-    });
-    const viewer = { id: OWNER, role: "user" as const };
-
-    await audit.replayed("bot-1", viewer, { startedAt: 1_000 });
-    await audit.replayed("bot-1", viewer, { startedAt: 1_000 });
-    await audit.replayed("bot-1", viewer, { startedAt: 1_000 });
-
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.payload).toMatchObject({
-      source: "demonstration",
-      own: true,
-    });
-  });
-
-  test("a new recording, or a different reader, is a new row", async () => {
-    const { rows, auditStore } = trail();
-    const audit = createScreenViewAudit({
-      auditStore,
-      ownerOf: async () => OWNER,
-    });
-
-    await audit.replayed(
-      "bot-1",
-      { id: OWNER, role: "user" },
-      { startedAt: 1 },
-    );
-    await audit.replayed(
-      "bot-1",
-      { id: OWNER, role: "user" },
-      { startedAt: 2 },
-    );
-    await audit.replayed(
-      "bot-1",
-      { id: "manager", role: "admin" },
-      { startedAt: 2 },
-    );
-
-    expect(rows.map((row) => [row.actorUserId, row.payload.own])).toEqual([
-      [OWNER, true],
-      [OWNER, true],
-      ["manager", false],
-    ]);
-  });
-
-  test("the once is per Bot: two Bots' recordings are two rows", async () => {
-    const { rows, auditStore } = trail();
-    const audit = createScreenViewAudit({
-      auditStore,
-      ownerOf: async () => OWNER,
-    });
-    const viewer = { id: OWNER, role: "user" as const };
-
-    await audit.replayed("bot-1", viewer, { startedAt: 5 });
-    await audit.replayed("bot-2", viewer, { startedAt: 5 });
-
-    expect(rows.map((row) => row.targetId)).toEqual(["bot-1", "bot-2"]);
   });
 });

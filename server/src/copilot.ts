@@ -785,8 +785,8 @@ class UnavailableAgent extends AbstractAgent {
  *
  * It was only ever needed by the built-in branch, which held the key itself and called the provider
  * from this process. Every Bot is an AG-UI endpoint now and the key lives where the call is made —
- * `agent-bot`'s own environment, and `askModel` for auto-review and write-ups, which still resolve
- * it from the vault.
+ * `agent-bot`'s own environment, and `askModel` for the server's own calls (auto-review among
+ * them), which still resolve it from the vault.
  */
 export async function resolveRuntimeAgents(
   loadAgents: () => Promise<RegisteredAgent[]>,

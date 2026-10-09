@@ -1,11 +1,9 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import type { UserRole } from "../src/auth/roles";
 import type { websocket as channelSocket } from "../src/channels/socket";
-import { createDemonstrationRecorder } from "../src/computer/demonstration";
 import type { ScreenViewer } from "../src/computer/screen-view";
 import {
   createLiveScreen,
-  describePointOn,
   type LiveScreen,
   SCREEN_PROBE_FRAME,
   type SocketData,
@@ -32,7 +30,7 @@ let computerSaw: Array<Record<string, unknown>> = [];
 const computer = Bun.serve<{ bot: string | null; token: string | null }>({
   port: 0,
   hostname: "127.0.0.1",
-  async fetch(request, server) {
+  fetch(request, server) {
     const url = new URL(request.url);
     if (url.pathname === "/stream") {
       const data = {
@@ -42,14 +40,6 @@ const computer = Bun.serve<{ bot: string | null; token: string | null }>({
       return server.upgrade(request, { data })
         ? undefined
         : new Response("no", { status: 400 });
-    }
-    if (url.pathname === "/describe-point") {
-      computerSaw.push({
-        describePoint: await request.json(),
-        bot: request.headers.get("x-openbot-bot-id"),
-        authorization: request.headers.get("authorization"),
-      });
-      return Response.json({ element: { role: "button", name: "결제하기" } });
     }
     return new Response("nf", { status: 404 });
   },
@@ -84,10 +74,6 @@ const fakeChannels = {
   close: () => channelCalls.push("close"),
 } as unknown as typeof channelSocket;
 
-const demonstrations = createDemonstrationRecorder({
-  namePoint: describePointOn(computerConfig),
-});
-
 /** Who is asking, from a header, so each test says it outright. */
 const actorOf = async (request: Request) => {
   const id = request.headers.get("x-test-actor");
@@ -105,9 +91,7 @@ const liveScreenWith = (computerSetting: typeof computerConfig | undefined) =>
       opened: async (botId, viewer) => {
         opened.push({ botId, viewer });
       },
-      replayed: async () => {},
     },
-    demonstrations,
   });
 
 /** The process's own `fetch`, as `main.ts` writes it, with a Hono-style socket on `/channel`. */
@@ -296,38 +280,6 @@ describe("an opened screen", () => {
     socket.close();
   });
 
-  test("while somebody is teaching, a press is recorded and named by the Bot's computer", async () => {
-    demonstrations.start(BOT, OWNER);
-    const { socket } = await openScreen(BOT);
-    const press = JSON.stringify({
-      type: "mouse",
-      event: "pressed",
-      x: 12,
-      y: 34,
-    });
-    socket.send(press);
-    // The name arrives after the step does: the lookup is fired and not awaited.
-    await until(() => {
-      const step = demonstrations.read(BOT, OWNER)?.steps[0];
-      return step?.kind === "pressed" && step.element !== null;
-    });
-
-    // Forwarded, not swallowed: the recorder is told and the press still reaches the browser.
-    expect(computerSaw).toContainEqual({ input: press });
-    // Asked by HEADER, with the token — a query would silently be nobody's blank page.
-    expect(computerSaw).toContainEqual({
-      describePoint: { x: 12, y: 34 },
-      bot: BOT,
-      authorization: `Bearer ${TOKEN}`,
-    });
-    expect(demonstrations.read(BOT, OWNER)?.steps[0]).toMatchObject({
-      kind: "pressed",
-      element: { role: "button", name: "결제하기" },
-    });
-    socket.close();
-    demonstrations.discard(BOT, OWNER);
-  });
-
   test("a socket the app upgraded is handed to the channels, not proxied", async () => {
     const socket = new WebSocket(`ws://127.0.0.1:${server.port}/channel`);
     await new Promise<void>((resolve) => {
@@ -420,11 +372,5 @@ describe("the connection check's probe", () => {
       computerSaw.some((entry) => entry.input === "still driving"),
     );
     socket.close();
-  });
-});
-
-describe("naming a point", () => {
-  test("says nothing, and asks nobody, when there is no computer", async () => {
-    expect(await describePointOn(undefined)(BOT, { x: 1, y: 1 })).toBeNull();
   });
 });

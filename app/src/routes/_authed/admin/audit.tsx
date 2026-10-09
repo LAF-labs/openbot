@@ -599,6 +599,10 @@ function Row({
                   role: t(payload.viewerRole === "admin" ? "admin" : "user"),
                 })}
             {" · "}
+            {/*
+             * Nothing writes `demonstration` any more — reading a recording back went with teaching
+             * by demonstration — but the trail is append-only and rows from before still say it.
+             */}
             {payload.source === "demonstration"
               ? t("a recording, read back")
               : t("the live screen")}

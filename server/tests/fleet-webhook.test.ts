@@ -109,7 +109,7 @@ describe("the notice the fleet acts on", () => {
     /*
      * The whole frame, serialised, searched for the shape of an address. The fleet identifies a
      * customer by origin and this is the one wire on which a person who has just asked to be
-     * forgotten could be named — the same test the demonstration recorder gets for passwords.
+     * forgotten could be named — the same test the audit trail gets for passwords.
      */
     const frame = JSON.stringify({
       body: sent[0]?.body,

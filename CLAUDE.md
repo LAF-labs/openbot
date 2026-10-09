@@ -274,10 +274,11 @@ may reach `autoReview`.
 
 ### Never record what somebody typed
 
-Every keystroke in a Bot's browser passes through the demonstration recorder,
-including passwords. Record that typing happened and where, never a value —
-the same rule as the audit fingerprint. Test it by serialising the whole record
-and asserting the password is nowhere in it.
+Every keystroke a person makes in a Bot's browser passes through the server's
+live-screen proxy, including passwords, and is forwarded, never kept. Wherever
+typing is recorded, record that it happened and where, never a value — the
+audit fingerprint's rule. Test it by serialising the whole record and asserting
+the password is nowhere in it.
 
 ### Model calls
 

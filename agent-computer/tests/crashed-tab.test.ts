@@ -604,7 +604,6 @@ describe.skipIf(!HAS_BROWSER)("a tab whose renderer crashed", () => {
       ["POST", "/snapshot", {}],
       ["GET", "/read", undefined],
       ["POST", "/tabs/switch", { index: 0 }],
-      ["POST", "/describe-point", { x: 20, y: 20 }],
       ["GET", "/screenshot", undefined],
     ] as const) {
       const look = await timed(call(method, path, bot, payload));
@@ -621,12 +620,10 @@ describe.skipIf(!HAS_BROWSER)("a tab whose renderer crashed", () => {
       });
       // An empty tab, said as one: the page it was on went with its renderer, and nothing of it is
       // answered as though it were still there.
-      if (path !== "/describe-point") {
-        expect({ path, url: look.result.body.url }).toEqual({
-          path,
-          url: "about:blank",
-        });
-      }
+      expect({ path, url: look.result.body.url }).toEqual({
+        path,
+        url: "about:blank",
+      });
       if (path === "/snapshot") {
         expect(look.result.body.elements).toEqual([]);
         expect(tabsOf(look.result)).toEqual([
@@ -1238,43 +1235,13 @@ describe.skipIf(!HAS_BROWSER)("a tab whose renderer crashed", () => {
     });
 
     /*
-     * THE WORDS FOR A CRASH CAN BE A PAGE'S. A call that fails with them lets go of its tab, and
-     * one route asks its question in the page's own world, where the page's functions answer:
-     * `throw "Target crashed"` from `document.elementFromPoint` comes back spelled as Playwright
-     * spells a dead renderer. On `a2824212` that closed the page's own tab — and would have ended
-     * whatever the Bot had asked a person for on it.
+     * THE WORDS FOR A CRASH CAN BE A PAGE'S (`profiles.deadTab`): "Target crashed" thrown by a
+     * page's own function comes back spelled as Playwright spells a dead renderer, so the browser
+     * confirms a death before a tab is let go of. Its test pressed the one route that asked its
+     * question in the page's own world, `/describe-point`, and went with it (teaching by
+     * demonstration, removed). The confirmation stays; a route that asks in the page's world again
+     * should bring that test back with it.
      */
-    test("a page that throws the words for a crash keeps its tab", async () => {
-      const bot = "forged-crash-bot";
-      await post("/navigate", bot, { url: fixture?.url });
-      const tab = await tabOf(bot);
-      await tab.evaluate(() => {
-        document.elementFromPoint = () => {
-          throw "Target crashed";
-        };
-      });
-      warned = spyOn(console, "warn").mockImplementation(() => undefined);
-
-      const asked = await post("/describe-point", bot, { x: 20, y: 20 });
-      expect([asked.status, asked.body.code]).toEqual([
-        502,
-        "laf:browser_failed",
-      ]);
-      await Bun.sleep(200);
-
-      expect(tab.isClosed()).toBe(false);
-      expect(await tabOf(bot)).toBe(tab);
-      expect(
-        warned.mock.calls.filter(([line]) =>
-          String(line).includes("tab_crashed"),
-        ),
-      ).toEqual([]);
-      // Still the Bot's page, and still acted on: nothing was lost, so nothing has to be looked at.
-      const read = await call("GET", "/read", bot);
-      expect(String(read.body.text)).toContain(VISIBLE_TEXT);
-      expect(read.body.notes).toBeUndefined();
-      expect((await post("/scroll", bot, { deltaY: 50 })).status).toBe(200);
-    }, 60_000);
 
     /*
      * THE TAB THE CALL WAS ON, NOT THE TAB THE BOT IS ON. A call that fails on a dead tab lets go

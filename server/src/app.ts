@@ -49,15 +49,12 @@ import { createAllowanceRoutes } from "./computer/allowance-routes";
 import { createApprovalRoutes } from "./computer/approval-routes";
 import type { ApprovalRegistry } from "./computer/approvals";
 import type { ComputerClient } from "./computer/client";
-import type { DemonstrationRecorder } from "./computer/demonstration";
 import type { ComputerGateway } from "./computer/gateway";
 import type { PolicyStore } from "./computer/policy-store";
 import { createComputerRoutes } from "./computer/routes";
-import type { ScreenViewAudit } from "./computer/screen-view";
 import type { SiteConnectionStore } from "./computer/site-connections";
 import { createSiteRoutes } from "./computer/site-routes";
 import type { StandingApprovalStore } from "./computer/standing-approvals";
-import type { WriteUp } from "./computer/write-up";
 import { botEndpointsTaken, type DeploymentConfig } from "./config";
 import {
   type CredentialAdminService,
@@ -261,14 +258,6 @@ export type CreateAppOptions = {
    */
   deploymentEffort?: boolean;
   /**
-   * Where a demonstration is recorded while somebody teaches a Bot.
-   *
-   * Absent leaves taking the wheel exactly as it was — see the `teaching` note on `control/take`.
-   */
-  demonstrations?: DemonstrationRecorder;
-  /** Turns a finished recording into a procedure. Absent leaves it readable and nothing more. */
-  writeUp?: WriteUp;
-  /**
    * What each Bot has learned about each person.
    *
    * Absent leaves the three memory endpoints unmounted, so a deployment without the store answers
@@ -362,11 +351,6 @@ export type CreateAppOptions = {
    * stand a screen in front of people demanding one.
    */
   consent?: ConsentStore;
-  /**
-   * The row a looked-at screen leaves. The live socket is terminated in `index.ts` and writes its
-   * own; this one is for the demonstration read below, which is the other way a screen is seen.
-   */
-  screenViews?: ScreenViewAudit;
   /**
    * The 문의·의견 box's other end.
    *
@@ -485,8 +469,6 @@ export function createApp({
   readWorking,
   standingApprovals,
   deploymentEffort,
-  demonstrations,
-  writeUp,
   agentMemoryStore,
   pluginConnect,
   autoReviewCapable,
@@ -498,7 +480,6 @@ export function createApp({
   routineSuggestionDismissals,
   publicData,
   consent,
-  screenViews,
   support,
   sessionAdmission,
   dailyBudget,
@@ -990,11 +971,8 @@ export function createApp({
         computerGateway,
         computerPolicy,
         requireUser,
-        demonstrations,
-        writeUp,
         // So a change to the boundary itself lands in the same trail as the actions it governs.
         auditStore,
-        screenViews,
       ),
     );
 
