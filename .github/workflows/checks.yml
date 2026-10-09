@@ -78,6 +78,23 @@ jobs:
         with:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
+      # ROOM FOR FOUR TEST PROCESSES. The gate runs its files in four processes at once since
+      # 2026-10-09 (scripts/test-ci.ts), each on a database of its own in this one server, and a
+      # server's files open pools they do not all close: what one process held alone, four hold
+      # together. Measured that day: 2 of 14 runs ended in `sorry, too many clients already`
+      # (53300) in whichever integration file came next, against the image's default of 100.
+      # A service container takes no command, so the setting is written and the server restarted.
+      - name: Give Postgres room for four test processes
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$POSTGRES_CONTAINER" psql -U openbot -d openbot -c "alter system set max_connections = 400"
+          docker restart "$POSTGRES_CONTAINER"
+          for attempt in $(seq 1 30); do
+            if docker exec "$POSTGRES_CONTAINER" pg_isready -U openbot -d openbot; then break; fi
+            sleep 1
+          done
+          test "$(docker exec "$POSTGRES_CONTAINER" psql -U openbot -d openbot -tAc 'show max_connections')" = "400"
       # Not the db:migrate script: that one loads ../.env, which does not exist in CI. DATABASE_URL
       # comes from the job env instead, which drizzle.config.ts already reads.
       - run: bunx drizzle-kit migrate --config=drizzle.config.ts
