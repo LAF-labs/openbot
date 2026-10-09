@@ -905,7 +905,11 @@ export function createComputerClient(options: ComputerClientOptions) {
        */
       async supplySecret(
         text: string,
-        into?: { snapshotId: number; element: { role: string; name: string } },
+        into?: {
+          ref: string;
+          snapshotId: number;
+          element: { role: string; name: string };
+        },
       ): Promise<SecretResult> {
         return (await post("/human/secret", {
           text,

@@ -295,11 +295,34 @@ describe.skipIf(!HAS_BROWSER)(
         unanswered?: boolean;
       };
 
-    test("a value goes into the box the gate judged while it is still that box", async () => {
+    test("a value goes into the box the gate judged while it is still that box — and only as the answer to the ask it names", async () => {
       const VALUE = "HELD-TO-ITS-FIELD-2210";
-      const { judged } = await ask();
+      const { seen, judged } = await ask();
+      const box = named(seen.elements, SWAP.box);
+      // A value that names another ask — another field, or another moment — is not this one's
+      // answer: it goes nowhere, and the ask it did not answer still stands.
+      for (const another of [
+        { ref: "e-not-this-one", snapshotId: seen.snapshotId },
+        { ref: box.ref, snapshotId: seen.snapshotId + 1 },
+      ]) {
+        const refused = await post("/human/secret", {
+          text: VALUE,
+          ...another,
+          element: judged,
+        });
+        expect([refused.status, refused.body.code]).toEqual([
+          409,
+          "laf:secret_not_pending",
+        ]);
+        expect((await control()).secretWanted).toBe("회사 비밀번호");
+      }
+      expect((await snapshot()).text).not.toContain(VALUE);
+      // (A look since the ask is not a new ask: the value below is still taken.)
+
       const supplied = await post("/human/secret", {
         text: VALUE,
+        ref: box.ref,
+        snapshotId: seen.snapshotId,
         element: judged,
       });
       expect([supplied.status, supplied.body.characters]).toEqual([

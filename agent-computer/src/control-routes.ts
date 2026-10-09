@@ -98,7 +98,25 @@ export const supplySecret: BotRoute = async (
 ) => {
   const pending = session.control.pendingSecret();
   if (!pending) return fact(NO_SECRET_PENDING);
-  const body = await bodyOf<{ text?: unknown; element?: unknown }>(request);
+  const body = await bodyOf<{
+    text?: unknown;
+    ref?: unknown;
+    snapshotId?: unknown;
+    element?: unknown;
+  }>(request);
+  /*
+   * THE VALUE SAYS WHICH ASK IT ANSWERS, AND IS TAKEN ONLY FOR THAT ONE. The server names the ask
+   * it judged — the ref and the snapshot it was made with — and an ask standing here that is not
+   * that one (taken back a moment too late and made again, or made by a server that has since
+   * forgotten it) is not answered by somebody else's value, and is not ended by it either. The
+   * snapshot is the ASK's, compared with the ask's own; the Bot is still free to have looked
+   * again since (below). An older server names neither and is held to neither.
+   */
+  const namesAnother =
+    (typeof body?.ref === "string" && body.ref !== pending.ref) ||
+    (typeof body?.snapshotId === "number" &&
+      body.snapshotId !== pending.snapshotId);
+  if (namesAnother) return fact(NO_SECRET_PENDING);
   const text = body?.text;
   if (typeof text !== "string" || !text) return invalid("text");
   try {
