@@ -16,8 +16,8 @@
 
 Give your Bot a name, tell it what you want, and it writes down what it is for.
 Watch it work on its own screen, take the wheel when it reaches something it
-should not do alone, then hand it back — or show it how the task is done once,
-and keep that as something you can ask for by name.
+should not do alone, then hand it back — and teach it a task in words, kept as
+something you can ask for by name.
 
 Korean first, for people who do not write software: students, office workers,
 people who run a small business, and anyone else.
@@ -155,7 +155,7 @@ A Bot is an endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui), 
 | `/goals`                      | 목표 — what you are working towards, and how it is going.                                 |
 | `/made`                       | 만든 것 — every file, chart and card the Bot has handed you.                              |
 | `/notebook`                   | 수첩 — what the Bot remembers about you, to read, correct and forget.                    |
-| `/skills`                     | Skills — including the ones recorded by showing the Bot how a task is done.             |
+| `/skills`                     | Skills — a task written down in words, to ask for by name.                              |
 | `/routines`                   | An instruction and a clock. Create, enable, run now, and read what happened.            |
 | `/approve/:id`                | One question from the Bot, answered from a notification.                                |
 | `/settings`                   | Your preferences, your account, your data (download it, delete it).                     |
