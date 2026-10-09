@@ -69,6 +69,23 @@ const READ_IN_ORDER = {
   default: 3,
 } as const satisfies Record<PolicyDecision["source"], number>;
 
+/**
+ * The order the answers about a CARD's boxes are weighed in (`alsoRefs`): the strictest stands.
+ *
+ * NOT THE ORDER ABOVE, AND THE DIFFERENCE IS A HOLE. A folder's two names are one thing, so an
+ * allow under either name is an allow. A card's boxes are several things, and every one of them
+ * has to be allowed: "no rule allows this" about one box is a refusal of the card, and it weighs
+ * more than a question or an allow about another. Read in the folder's order — the first version
+ * of this — a deployment that allows asking for a login id and nothing else let through a card
+ * that asked for the id AND the password, on the id's allow (the author's own read of the change).
+ */
+const STRICTEST_OF_A_CARD = {
+  deny: 0,
+  default: 1,
+  ask: 2,
+  allow: 3,
+} as const satisfies Record<PolicyDecision["source"], number>;
+
 export function createGovern(options: {
   auditStore: AuditStore;
   /** Absent denies everything. See evaluateActionPolicy. */
@@ -118,9 +135,9 @@ export function createGovern(options: {
        * ONE ACT ABOUT SEVERAL ELEMENTS, DECIDED ONCE. A card is one thing a person is shown and
        * answers once, so it is one question when a rule asks, one count when it comes round
        * again, and one row — and a rule about any of its boxes is a rule about the card: every
-       * box is put to the policy and the strictest answer stands (the same reading a folder gets
-       * under its two names, below). Judged box by box as calls of their own, a rule that asks
-       * would have asked once per box, and a turn carries one answer.
+       * box is put to the policy and the strictest answer stands (`STRICTEST_OF_A_CARD`). Judged
+       * box by box as calls of their own, a rule that asks would have asked once per box, and a
+       * turn carries one answer.
        */
       alsoRefs?: readonly string[];
       filePath?: string;
@@ -489,7 +506,10 @@ export function createGovern(options: {
             type: other.element?.type ?? "",
           },
         });
-        if (READ_IN_ORDER[asOther.source] < READ_IN_ORDER[strictest.source]) {
+        if (
+          STRICTEST_OF_A_CARD[asOther.source] <
+          STRICTEST_OF_A_CARD[strictest.source]
+        ) {
           strictest = asOther;
           decidedOn = other;
         }

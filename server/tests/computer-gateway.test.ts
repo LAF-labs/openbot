@@ -2471,6 +2471,51 @@ describe("what a snapshot carries into this process", () => {
     expect(wider.calls).toEqual([]);
   });
 
+  test("every box of a card has to be allowed: an allow for one box does not carry a box no rule allows, and neither does a yes", async () => {
+    /*
+     * A deployment that lists what may be asked for — a login id, and nothing else. No rule
+     * forbids the password; none allows it either, which is a refusal. Weighed in the order a
+     * policy's lists are read in, the id's allow stood for the whole card.
+     */
+    const others = 'intent != "fill_secret"';
+    const theId = 'intent == "fill_secret" && element.name == "아이디"';
+    const listed = scripted(
+      { deny: [], ask: [], allow: [others, theId] },
+      LOGIN,
+    );
+    await listed.gateway.snapshot("default");
+    const refused = await listed.gateway
+      .requestSecret("default", "bot-1", ACTOR, SIGN_IN)
+      .catch((caught: unknown) => caught);
+    expect(refused).toBeInstanceOf(ActionRefusedError);
+    expect(listed.calls).toEqual([]);
+    // Refused beside the box nothing allows — not the first, which a rule does.
+    expect(
+      listed.rows.map((row) => [
+        row.eventType,
+        (row.payload.element as { name?: string }).name,
+      ]),
+    ).toEqual([["computer.action_refused", "비밀번호"]]);
+    // The box that is listed, alone, is asked for.
+    await listed.gateway.requestSecret("default", "bot-1", ACTOR, {
+      fields: [SIGN_IN.fields[0] ?? { ref: "e1", label: "아이디" }],
+      snapshotId: 3,
+    });
+    expect(listed.calls).toEqual(["requestSecret"]);
+
+    // And a rule that ASKS about the id does not turn the card into a question a yes would
+    // answer for the password as well: nobody is asked, because the answer is already no.
+    const asking = scripted({ deny: [], ask: [theId], allow: [others] }, LOGIN);
+    await asking.gateway.snapshot("default");
+    const stillRefused = await asking.gateway
+      .requestSecret("default", "bot-1", ACTOR, SIGN_IN)
+      .catch((caught: unknown) => caught);
+    expect(stillRefused).toBeInstanceOf(ActionRefusedError);
+    expect(stillRefused).not.toBeInstanceOf(ActionNeedsApprovalError);
+    expect(asking.calls).toEqual([]);
+    expect(await asking.approvals.pending("bot-1")).toEqual([]);
+  });
+
   test("a card that names something that is not a field, one box twice, more than a card holds, or none asks nobody", async () => {
     const [id] = SIGN_IN.fields;
     if (!id) throw new Error("the card has a first box");
