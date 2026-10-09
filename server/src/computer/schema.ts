@@ -358,20 +358,19 @@ export type WriteFileResult = {
 };
 
 /**
- * Who is driving the computer.
+ * What the Bot has asked a person for, as the computer says it.
  *
- * The expand overlay is where control lands. One browser, two possible drivers, never at once: while a person holds the wheel every acting call from the Bot
- * is refused rather than queued, because a queued click arrives after the person has moved on.
+ * `holder` is always the Bot: nobody drives its browser but the Bot (owner, 2026-10-09). The field
+ * stays on the wire because the container still sends it, and a reader written against it is not
+ * thereby wrong.
  */
-export type ControlHolder = "bot" | "human";
-
 export type ControlState = {
-  holder: ControlHolder;
-  /** ISO timestamp of the last handover, so the surface can say how long this has been going on. */
+  holder: "bot";
+  /** ISO timestamp of the last change, so the surface can say how long this has been going on. */
   since: string;
-  /** Why the Bot asked for help, in its own words. Shown to the person being handed the wheel. */
+  /** Why the Bot asked for a hand, in its own words. Shown on the card that asks. */
   reason?: string;
-  /** The Bot has asked and nobody has taken over yet. */
+  /** The Bot has asked and nobody has answered yet. */
   requested: boolean;
   /** What the Bot asked a person to type, in the Bot's own words. Present while a request is open. */
   secretWanted?: string;
@@ -432,28 +431,6 @@ export type ComputerProfile = {
 export type SecretResult = {
   supplied: boolean;
   characters: number;
-  url: string;
-};
-
-/** What a person did with their mouse or keyboard. Coordinates are viewport pixels. */
-export type HumanInput =
-  | { kind: "click"; x: number; y: number }
-  | { kind: "type"; text: string }
-  | { kind: "key"; key: string }
-  | { kind: "scroll"; deltaY?: number };
-
-/**
- * What a person's input reports back.
- *
- * Never the text. A takeover exists so a person can type the thing the Bot must not have, a password,
- * a one-time code. That value goes from their keyboard to the browser and stops; it is not returned
- * here, not written to the audit trail, and not on any path the model can read.
- */
-export type HumanInputResult = {
-  action: "human_click" | "human_type" | "human_key" | "human_scroll";
-  characters?: number;
-  key?: string;
-  deltaY?: number;
   url: string;
 };
 

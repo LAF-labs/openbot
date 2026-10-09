@@ -12,7 +12,6 @@ import {
   resolvedNavigationTarget,
 } from "../../shared/net/navigation-target";
 import type { BotRoute } from "./computer";
-import { ControlError, HUMAN_HAS_CONTROL } from "./control";
 import { deploymentEgress } from "./egress";
 import { log } from "./log";
 import {
@@ -337,7 +336,6 @@ export const navigate: BotRoute = async (
   /** Whether a failure belongs to the address (the `goto`) or to the browser around it. */
   let opening = false;
   try {
-    session.control.assertBotMayAct();
     target = await profiles.page(botId);
     const seen = session.tabsLost;
     const commits: string[] = [];
@@ -447,10 +445,6 @@ export const navigate: BotRoute = async (
     }
     return await stoppedNavigation(session, target, navigating, startedAt);
   } catch (error) {
-    // A person holding the wheel is not a failed navigation; the Bot should wait.
-    if (error instanceof ControlError) {
-      return fact(HUMAN_HAS_CONTROL, { humanHasControl: true });
-    }
     /*
      * A hop the guard stopped. Playwright's words for it are `net::ERR_BLOCKED_BY_CLIENT`, which
      * are true and name nothing; the call recorded which address, and whether it was refused or

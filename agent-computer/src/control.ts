@@ -1,14 +1,15 @@
 /**
- * Who has the wheel.
+ * What the Bot has asked a person for, and the one value a person may put into its page.
  *
- * One browser has at most one driver. When a Bot meets a login wall it can ask for
- * help; a person takes control, does the part only they can do, and hands back. While a person holds
- * control every acting call from the Bot is refused, because two drivers on one page is how a Bot
- * clicks "Confirm" on a form a human was still filling in.
+ * NOBODY DRIVES THIS BROWSER BUT THE BOT (owner, 2026-10-09). A person used to be able to take the
+ * wheel — click and type on the Bot's page from the live screen — and this was the state machine
+ * that said whose hands were on it. That is gone on every surface: a person watches the screen, and
+ * the only way their typing reaches the page is the masked box a `computer_request_secret` opens.
+ * What is left is the Bot's asks: for a hand with something outside its screen (approving on a
+ * phone, confirming in an app), and for a value it must not be told.
  *
- * State lives in this process rather than in the server because this process owns the browser, and a
- * takeover that the browser does not know about is not a takeover. The server records it and decides
- * who may ask for it; this decides whether the next action happens.
+ * State lives in this process rather than in the server because this process owns the browser and
+ * the box a value goes into. The server records the asks and decides who may answer them.
  *
  * This module has no Playwright import, so state-machine tests do not need a browser. Browser work
  * stays in `index.ts`.
@@ -16,17 +17,22 @@
 import { PERSON_WAIT_MS } from "../../shared/person-wait";
 
 export type ControlState = {
-  holder: "bot" | "human";
+  /**
+   * Always the Bot. Kept on the wire because it is what every reader of this state was written
+   * against — the server's wait, the surface's card — and what a file saved by an earlier release
+   * says, which {@link restoredControl} reads as the Bot's whatever it held.
+   */
+  holder: "bot";
   since: string;
   /** Why the Bot asked, so the person knows what they are being handed. Set when the Bot requests. */
   reason?: string;
-  /** True once the Bot has asked for help and no person has taken the wheel yet. */
+  /** True once the Bot has asked for help and nobody has answered yet. */
   requested: boolean;
   /**
    * A secret the Bot is waiting for, described by its label only.
    *
-   * Secret entry is scoped rather than a full takeover. The Bot names the field, says what it needs,
-   * and the person types into a masked box that goes straight to the page.
+   * The one way a person's typing reaches the Bot's page. The Bot names the field, says what it
+   * needs, and the person types into a masked box that goes straight to the page.
    *
    * The label is all that is ever stored. The value passes through one request and is not kept here,
    * not returned, and not on any path the model reads.
@@ -44,21 +50,13 @@ export type ControlState = {
    * from under the Bot ({@link Control.tabLost}).
    *
    * SAID, BECAUSE AN ASK THAT IS GONE IS OTHERWISE READ AS AN ASK THAT WAS ANSWERED. The call
-   * that asked is still waiting, and it reads "nothing asked, and the Bot holds the wheel" as the
-   * person having come and gone (`shared/person-wait.ts`). An ask that ran out is let go of only
+   * that asked is still waiting, and it reads "nothing asked" as the person having come and gone
+   * (`shared/person-wait.ts`). An ask that ran out is let go of only
    * after that wait is over ({@link REQUEST_TTL_MS}); this one is let go of in the middle of it, so
-   * the state has to say which it was. There until the next ask or handover.
+   * the state has to say which it was. There until the next ask or answer.
    */
   unanswered?: true;
 };
-
-/** Refusal because a person is driving. Distinct from a failure, so the Bot can be told to wait. */
-export class ControlError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ControlError";
-  }
-}
 
 /** What a caller must say to ask for a secret. Rejected as a request error, not thrown. */
 export class ControlRequestError extends Error {
@@ -68,37 +66,21 @@ export class ControlRequestError extends Error {
   }
 }
 
-/** A person's value arrived and nothing had asked for one. A code, for the reason below. */
+/** A person's value arrived and nothing had asked for one. */
 export const NO_SECRET_PENDING = "laf:secret_not_pending";
-/**
- * A FACT CODE, NOT A SENTENCE.
- *
- * This was an English paragraph addressed to a model — it forbids the retry
- * loop by name, because "wait before acting" alone left retrying the same
- * click a legal reading and the eval pack measured a reasoning model taking
- * it, one refused click in six, the day glm-5.3-flash was judged. The wording
- * still exists and still says exactly that; it lives in
- * `shared/prompt/tool-results.ko.ts`, in Korean, with the rest of the words a
- * model reads. This container ships a code, so the sentence a Korean Bot reads
- * is not decided by an English service that has never heard of a locale.
- */
-export const HUMAN_HAS_CONTROL = "laf:human_has_control";
-/** A person's own input, before they took the wheel. The live-screen pane has words for it. */
-export const TAKE_CONTROL_FIRST = "laf:take_control_first";
 
 /**
- * How long an ask nobody answered stands — for the wheel, or for a value — before it is let go of.
+ * How long an ask nobody answered stands — for a hand, or for a value — before it is let go of.
  *
- * AN ASK USED TO STAND FOR EVER. The wheel belongs to the computer and not to a conversation, so
+ * AN ASK USED TO STAND FOR EVER. An ask belongs to the computer and not to a conversation, so
  * when the Bot's wait gave up or its turn was stopped, nothing took the ask back: measured, both
  * kinds still stood with the clock moved on eleven minutes. The surface draws 도움 필요, and the
  * reason, from this state alone, in whichever conversation is open; and the masked box's door
  * takes a value for as long as one is wanted. Upstream OpenBot #145 and #457.
  *
  * LONGER THAN THE BOT'S OWN WAIT, WHERE UPSTREAM'S IS THE SAME TEN MINUTES. Here the call that
- * asked is still waiting, and it reads "nothing asked, and the Bot holds the wheel" as the person
- * having handed the wheel back (`server/src/turns/chat-tools.ts`, and a window's own wait in the
- * app). That wait begins only once the answer to the ask has travelled back, and its last look
+ * asked is still waiting, and it reads "nothing asked" as the person having answered
+ * (`server/src/turns/chat-tools.ts`). That wait begins only once the answer to the ask has travelled back, and its last look
  * can still be on its way when its time is up — so an ask let go of at ten minutes is read by
  * that look as "they came, and it is done" when nobody came. Measured with this a minute short of
  * the wait: the Bot was told `laf:control_returned`, and `laf:secret_entered`. Two minutes over,
@@ -114,13 +96,15 @@ export const TAKE_CONTROL_FIRST = "laf:take_control_first";
 export const REQUEST_TTL_MS = PERSON_WAIT_MS + 2 * 60_000;
 
 /**
- * Who was driving when the process died, as far as the next process may believe it.
+ * What the last life of this process left behind, as far as the next one may believe it.
  *
- * THE FAIL-SAFE ONLY EVER MAKES CONTROL STICKIER. A restart in the middle of a takeover used to hand
- * the wheel back to the Bot in silence — the person was still in front of a login form, and the Bot
- * was free to click on it. So a saved `human` is restored, and a saved `bot` is not "restored" at
- * all, it is simply the default: there is no path here by which reading a file can take control away
- * from a person.
+ * A SAVED HUMAN HOLD IS THE BOT'S. Until 2026-10-09 a person could hold the wheel, and a restart in
+ * the middle of that was restored as theirs, so the Bot could not click on a form they were still
+ * filling in. Nobody can hold it now, and a file saved by an earlier release mid-takeover would
+ * otherwise leave a Bot refused every action for ever by a hold no screen can hand back. So it is
+ * not restored. It is marked as an ask nobody answered ({@link ControlState.unanswered}): the person
+ * did not say they were done, the upgrade ended it, and a wait still reading this state must not
+ * hear that they came and did it.
  *
  * A PENDING SECRET REQUEST IS DROPPED. It named a ref from a snapshot of a page in a browser that no
  * longer exists, so the masked box would be pointed at nothing; and a person typing their password
@@ -128,37 +112,31 @@ export const REQUEST_TTL_MS = PERSON_WAIT_MS + 2 * 60_000;
  * `laf:secret_request_lost`, so it asks again against a fresh snapshot instead of waiting for an
  * answer nobody can give.
  *
- * Anything unreadable is treated as nothing, and nothing is the Bot holding the wheel.
+ * An ask for a hand is dropped too, and needs no word: the call that made it went with the process
+ * that ran it. Anything unreadable is treated as nothing, and nothing is the Bot's fresh state.
  */
 export function restoredControl(saved: unknown): {
   state?: ControlState;
   secretLost: boolean;
 } {
   if (!saved || typeof saved !== "object") return { secretLost: false };
-  const held = saved as Partial<ControlState>;
+  const held = saved as { holder?: unknown; secretWanted?: unknown };
   const secretLost =
     typeof held.secretWanted === "string" && !!held.secretWanted;
   if (held.holder !== "human") return { secretLost };
   return {
     state: {
-      holder: "human",
-      since:
-        typeof held.since === "string" && held.since
-          ? held.since
-          : new Date().toISOString(),
-      // What they were asked to do survives with them: they are still standing in front of it.
-      ...(typeof held.reason === "string" && held.reason
-        ? { reason: held.reason }
-        : {}),
-      // Somebody holding the wheel is not somebody waiting to be given it.
+      holder: "bot",
+      since: new Date().toISOString(),
       requested: false,
+      unanswered: true,
     },
     secretLost,
   };
 }
 
 /**
- * The wheel, as a state machine.
+ * The asks, as a state machine.
  *
  * A factory rather than a module-level `let` so a test can have its own, and so two of these cannot
  * accidentally share state. `now` is injected for the same reason: `since` is part of the published
@@ -205,14 +183,10 @@ export function createControl(
    * Let go of an ask that has stood its time.
    *
    * ON A LOOK, NOT ON A TIMER: there is nothing to wake. The wait that asked is over, and the only
-   * ones who care are whoever looks next — the surface's poll, a value arriving for the masked box,
-   * a person taking the wheel.
+   * ones who care are whoever looks next — the surface's poll, or a value arriving for the masked
+   * box.
    *
-   * ONLY EVER AN ASK. A person holding the wheel is never timed out from under their hands: they
-   * may be half-way through typing a code, and taking the browser back mid-sign-in is worse than
-   * any stale line. (Taking the wheel answers the ask, so there is none to let go of by then.)
-   *
-   * The reason goes with the ask for the wheel — it is what 도움 필요 was drawn with — and the field
+   * The reason goes with the ask for a hand — it is what 도움 필요 was drawn with — and the field
    * with the label, since half an ask is nothing anybody downstream can read. And the keeper is
    * told, so the file does not go on saying what `get` has stopped saying: a restart would report
    * a value request "lost" (`restoredControl`) that had only run out.
@@ -223,7 +197,7 @@ export function createControl(
     let lapsed = false;
     if (helpAskedAt !== undefined && at - helpAskedAt > REQUEST_TTL_MS) {
       helpAskedAt = undefined;
-      if (state.holder === "bot" && state.requested) {
+      if (state.requested) {
         state = { ...state, requested: false, reason: undefined };
         lapsed = true;
       }
@@ -251,10 +225,8 @@ export function createControl(
     },
 
     /**
-     * The Bot asking for help.
-     *
-     * It does not take control: it says it is stuck and why, and a person decides. A Bot that could
-     * hand itself to a human could also hand a human a page they never asked to see.
+     * The Bot asking for a hand with something outside its screen — a phone to approve on, an app
+     * to confirm in. It says what and why, and a person answers: done, or skip.
      */
     requestHelp(reason: unknown): ControlState {
       // Stamped on every ask, not only the first: a Bot that asks again is waiting again, and an
@@ -360,14 +332,11 @@ export function createControl(
      * asked for on a sign-in popup, typed after the popup's renderer died, went into the page
      * behind it. So both asks end here, marked as nobody's answer ({@link ControlState.unanswered}).
      *
-     * ONLY EVER AN ASK. A person holding the wheel keeps it: they are looking at the screen, and
-     * taking the browser from their hands is worse than any page that went away under them.
-     *
      * Says whether there was an ask to end.
      */
     tabLost(): boolean {
       lapse();
-      const helpAsked = state.holder === "bot" && state.requested;
+      const helpAsked = state.requested;
       const secretAsked = Boolean(state.secretWanted);
       if (!helpAsked && !secretAsked) return false;
       // Neither is timed any more: there is nothing left to run out.
@@ -390,35 +359,12 @@ export function createControl(
     },
 
     /**
-     * A person taking the wheel.
+     * A person answering: 다 했어요, or 건너뛰기 once the skip has been told to the turn that waits.
      *
-     * `reason` survives, because it is the thing they were just asked to do. Any pending secret is
-     * cleared: a person with full browser control can type the password into the page, and a masked
-     * box left open behind them no longer corresponds to an active request.
-     *
-     * An ask that had already run out is let go of first, so its reason is not what this person is
-     * told they were handed. Taking the wheel answers whatever ask is left: neither is timed again.
-     */
-    take(): ControlState {
-      lapse();
-      helpAskedAt = undefined;
-      secretAskedAt = undefined;
-      state = {
-        holder: "human",
-        since: now(),
-        reason: state.reason,
-        requested: false,
-      };
-      return changed();
-    },
-
-    /**
-     * A person handing back.
-     *
-     * `reason` is dropped: it described the thing the person was asked to do, and once they have done
-     * it, leaving it set would have the surface still showing the old request. Any pending secret goes
-     * with it, a person who took the whole wheel and handed it back has dealt with the login, and a
-     * secret box left open afterwards is asking for a password nothing is waiting for.
+     * `reason` is dropped: it described the thing the person was asked to do, and once they have
+     * answered, leaving it set would have the surface still showing the old request. Any pending
+     * secret goes with it, since 건너뛰기 on the masked box comes here too, and a box left open
+     * afterwards is asking for a password nothing is waiting for.
      */
     release(): ControlState {
       helpAskedAt = undefined;
@@ -429,21 +375,6 @@ export function createControl(
         requested: false,
       };
       return changed();
-    },
-
-    /**
-     * The Bot may not act while a person holds the wheel.
-     *
-     * Refused rather than queued. A queued click lands after the person has moved on and is worse than
-     * a refusal, which the Bot can explain and wait out.
-     */
-    assertBotMayAct(): void {
-      if (state.holder === "human") throw new ControlError(HUMAN_HAS_CONTROL);
-    },
-
-    /** Whether a person's input should be applied. The socket being open is not permission. */
-    humanMayDrive(): boolean {
-      return state.holder === "human";
     },
   };
 }

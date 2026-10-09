@@ -120,8 +120,6 @@ describe("the person knows every code, where they meet it", () => {
   const PERSON_TABLES: Record<string, Record<string, string> | null> = {
     // The masked box (`lib/computer/refusals.ts`).
     "laf:secret_not_pending": SECRET_REFUSALS,
-    // The live screen's own input; over the socket it is the pane's.
-    "laf:take_control_first": SCREEN_PROBLEM_SAID,
     // Answered only to the server's inward socket (`server/src/live-screen.ts`). A person meets a
     // refused upgrade as the socket not opening — `laf:screen_unreachable`, which the pane owns.
     "laf:stream_upgrade_required": null,

@@ -17,7 +17,7 @@
  *
  * The status is decided here and nowhere else: `fact` in respond.ts takes a code and looks it up, so
  * one fact cannot leave two routes with two statuses. What each status tells the caller to do next:
- * 409 look again or wait, 403 never, 400 send something different, 504 and 502 the site did not, 500
+ * 409 look again, 403 never, 400 send something different, 504 and 502 the site did not, 500
  * and 502 the browser or the disk did not, 401 and 404 this computer and its caller disagree.
  */
 
@@ -90,8 +90,6 @@ export const COMPUTER_CODES = {
 
   /* ── Acting on a page ─────────────────────────────────────────────────────────────────── */
 
-  // A person holds the wheel. Nothing is broken; the Bot waits.
-  "laf:human_has_control": { status: 409, caller: "bot" },
   // The ref is from an older snapshot, or names nothing on the page.
   "laf:stale_refs": { status: 409, caller: "bot" },
   // The control is still there and is not called what the server judged it as (label-hold.ts).
@@ -130,11 +128,8 @@ export const COMPUTER_CODES = {
 
   // A value arrived for a secret request that is no longer open.
   "laf:secret_not_pending": { status: 409, caller: "person" },
-  // A person's input before they took the wheel — over HTTP, and down the live screen's socket.
-  "laf:take_control_first": { status: 409, caller: "person", screen: true },
-  // The live picture could not be started, or a press on it did not reach the page.
+  // The live picture could not be started.
   "laf:screen_not_started": { screen: true },
-  "laf:input_not_applied": { screen: true },
 
   /* ── What the browser noticed that nobody asked about ─────────────────────────────────── */
 

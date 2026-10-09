@@ -1,10 +1,10 @@
 /**
- * The live screen, pushed by Chrome rather than polled, and a person's input back over the same
- * socket.
+ * The live screen, pushed by Chrome rather than polled. Frames out, and nothing in.
  *
  * Upgraded rather than served as HTTP because the whole point is that frames arrive when the page
- * changes and input goes back over the same connection. See screencast.ts for why polling was not
- * good enough once a person had to type into this.
+ * changes. A person's clicks and keys came back over the same socket until 2026-10-09, while they
+ * held the wheel; nobody drives the Bot's browser now (owner, 2026-10-09), and whatever arrives on
+ * this socket is dropped unread — see `message` below.
  *
  * `/live` stays absent. A page served by this process can only be opened by putting the secret in a
  * URL, where it lands in history and logs. The React app is the guarded way to watch a Bot.
@@ -13,16 +13,10 @@ import type { ServerWebSocket, WebSocketHandler } from "bun";
 import type { Page } from "playwright";
 import type { ScreenCode } from "./codes";
 import type { Computer } from "./computer";
-import { TAKE_CONTROL_FIRST } from "./control";
 import { EGRESS_UNGUARDED, EgressUnguardedError } from "./egress-guard";
 import { log } from "./log";
-import { followTyping, inTurn, settleTyping } from "./person-typing";
 import { encodeScreenFrame } from "../../shared/screen-frame";
-import {
-  type CastFrame,
-  type InputMessage,
-  startScreencast,
-} from "./screencast";
+import { type CastFrame, startScreencast } from "./screencast";
 import type { BotSession } from "./sessions";
 
 /** What a live-screen socket carries: the Bot whose screen it is showing. */
@@ -40,78 +34,6 @@ function screenError(code: ScreenCode): string {
   return JSON.stringify({ type: "error", code, error: code });
 }
 
-const finite = (value: unknown): value is number =>
-  typeof value === "number" && Number.isFinite(value);
-const written = (value: unknown): value is string => typeof value === "string";
-/** A field the surface may leave out, and must get right when it does not. */
-const maybe = (value: unknown, fits: (value: unknown) => boolean): boolean =>
-  value === undefined || fits(value);
-
-const MOUSE_EVENTS = new Set<unknown>(["pressed", "released", "moved"]);
-const MOUSE_BUTTONS = new Set<unknown>(["left", "right", "middle", "none"]);
-const KEY_EVENTS = new Set<unknown>(["down", "up"]);
-
-/**
- * One frame off the socket, as the input it is — or null for anything that is not one.
- *
- * THE DOOR, BECAUSE A CAST IS NOT A CHECK. This was `JSON.parse(raw) as InputMessage`, and the
- * server relays a person's frames byte for byte, so whatever parsed went on to Chrome. Measured
- * 2026-10-02 (`tests/live-screen-input.test.ts`), after reading upstream OpenBot's #488:
- *
- *  - `null` threw in `applyInput`, and again in the `catch` that logs a failed input by its
- *    `type`, so the socket's handler rejected. Bun ends the process on a rejection nobody handles —
- *    1.3.11 exited 1 from a websocket `message` handler, past the crash listener in `log.ts` — and
- *    this process is every Bot's browser.
- *  - Chromium took what no person did: a mouse message with no `event` as a move with a button
- *    held, a key message with no key as a `keydown` of nothing, and a key message whose `event`
- *    was neither `down` nor `up` as a typed letter — without the box it landed in being followed,
- *    which is what keeps that letter from the Bot (`person-typing.ts`).
- *  - The rest Chromium refused as invalid parameters, a protocol round trip later.
- *
- * So only the four shapes `InputMessage` names go on, with every number finite (`1e999` parses to
- * Infinity) and every optional field either absent or right. The frame is handed back as it came:
- * what it means is `screencast.ts`'s to say.
- */
-export function inputMessageOf(frame: unknown): InputMessage | null {
-  if (typeof frame !== "object" || frame === null) return null;
-  const said = frame as Record<string, unknown>;
-  const fits = (() => {
-    switch (said.type) {
-      case "mouse":
-        return (
-          MOUSE_EVENTS.has(said.event) &&
-          finite(said.x) &&
-          finite(said.y) &&
-          maybe(said.button, (button) => MOUSE_BUTTONS.has(button)) &&
-          maybe(said.clickCount, finite) &&
-          maybe(said.modifiers, finite)
-        );
-      case "wheel":
-        return (
-          finite(said.x) &&
-          finite(said.y) &&
-          finite(said.deltaX) &&
-          finite(said.deltaY) &&
-          maybe(said.modifiers, finite)
-        );
-      case "key":
-        return (
-          KEY_EVENTS.has(said.event) &&
-          written(said.key) &&
-          written(said.code) &&
-          maybe(said.text, written) &&
-          maybe(said.windowsVirtualKeyCode, finite) &&
-          maybe(said.modifiers, finite)
-        );
-      case "text":
-        return written(said.text);
-      default:
-        return false;
-    }
-  })();
-  return fits ? (frame as InputMessage) : null;
-}
-
 /** How often the cast checks that it is still showing the page the Bot is on. */
 const FOLLOW_INTERVAL_MS = 1_000;
 
@@ -120,7 +42,7 @@ const FOLLOW_INTERVAL_MS = 1_000;
  * watching two different Bots do not fight over one cast.
  *
  * A second cast on the same page would have Chrome encoding every frame twice and both sockets acking
- * independently, which stalls both. One person drives; one cast.
+ * independently, which stalls both. One picture; one cast.
  */
 export async function stopViewer(session: BotSession): Promise<void> {
   const current = session.viewer;
@@ -130,66 +52,21 @@ export async function stopViewer(session: BotSession): Promise<void> {
 }
 
 /**
- * One piece of a person's input, applied to the tab being cast — after the pieces before it.
- *
- * IN TURN, BECAUSE OF THE QUESTION BEFORE A KEYSTROKE. The box a keystroke lands in is asked of the
- * page before the keystroke is sent (`person-typing.ts`), and two pieces whose questions came back
- * out of order would reach the page out of order — 한 and 글, sent a syllable at a time, landing as
- * 글한. Until 2026-09-16 each message went straight to Chrome as it arrived, which kept the order and
- * followed no box.
- */
-async function applyInput(
-  ws: ServerWebSocket<StreamData>,
-  session: BotSession,
-  message: InputMessage,
-): Promise<void> {
-  const viewer = session.viewer;
-  if (!viewer) return;
-  // Asked again, in turn: the wheel can be handed back while this waits behind the input before it.
-  if (!session.control.humanMayDrive()) {
-    ws.send(screenError(TAKE_CONTROL_FIRST));
-    return;
-  }
-  try {
-    if (message.type === "text") {
-      await followTyping(session, viewer.page, message.text);
-    } else if (message.type === "key" && message.event === "down") {
-      await followTyping(session, viewer.page);
-    } else if (message.type === "mouse" && message.event === "pressed") {
-      // A press can send the form the last box is in: what that box holds is read before it goes.
-      await settleTyping(session);
-    }
-    await viewer.cast.send(message);
-  } catch (error) {
-    // Reported rather than swallowed. A dispatch that fails means the person's input did nothing,
-    // and they must not be left believing it landed.
-    // The input's TYPE (a click, a key) and never its content: a keystroke on the live screen
-    // is what somebody typed into a browser holding their logins.
-    log.error("screencast_input_failed", {
-      input: message.type,
-      reason: error,
-    });
-    ws.send(screenError("laf:input_not_applied"));
-  }
-}
-
-/**
  * EVERY SOCKET WATCHING A BOT'S SCREEN, OLDEST FIRST — AND THE CAST GOES TO THE LAST ONE STILL OPEN.
  *
  * Opening is slow (a page to find, a cast to start) and two opens can overlap: React mounts the live
  * view twice in development, and a person who closes the view and opens it again does the same by
  * hand. Whichever finished starting last used to become the viewer, and any socket's close stopped
  * whichever viewer was current — so the socket on its way out took the cast with it, and the one that
- * stayed showed a frozen picture and dropped every click and key without a word (measured
- * 2026-09-24, taking the wheel from the live view: the page never saw a keystroke).
+ * stayed showed a frozen picture (measured 2026-09-24).
  *
  * Now the newest open socket is the viewer however the starts interleave, a socket only ever stops
  * its own cast, and when the viewer closes, the socket opened before it takes the picture back.
  */
 /**
  * The shortest time between two frames sent: at most ten a second. A person watching a Bot read a
- * page, or clicking through a sign-in, is not helped by thirty; the bytes are what the VM's one core
- * and the person's connection pay for (the audit's target is ~1 MB/s while a page animates).
+ * page is not helped by thirty; the bytes are what the VM's one core and the person's connection
+ * pay for (the audit's target is ~1 MB/s while a page animates).
  */
 const FRAME_INTERVAL_MS = 100;
 
@@ -349,35 +226,15 @@ export function liveScreen({
       }
     },
 
-    async message(ws, raw) {
-      const session = sessions.sessionFor(ws.data.botId);
-      // Only the socket being cast to drives. One that another viewer displaced is looking at a
-      // picture that stopped; its clicks would land on a page it no longer sees.
-      if (session.viewer?.socket !== ws) return;
-      let frame: unknown;
-      try {
-        frame = JSON.parse(String(raw));
-      } catch {
-        return;
-      }
-      // A person's input is accepted only while they hold the wheel. The socket being open is not permission:
-      // without this check, anything that could reach this port could drive the browser while a Bot
-      // was working, which is the one thing the control state exists to prevent.
-      //
-      // Refuse with an error so the surface can explain why input is ignored.
-      if (!session.control.humanMayDrive()) {
-        ws.send(screenError(TAKE_CONTROL_FIRST));
-        return;
-      }
-      // Not an input this build knows (`inputMessageOf`). Said, as a dispatch Chrome refused is: a
-      // press that did nothing must not be left looking as though it landed.
-      const message = inputMessageOf(frame);
-      if (!message) {
-        ws.send(screenError("laf:input_not_applied"));
-        return;
-      }
-      await inTurn(session, () => applyInput(ws, session, message));
-    },
+    /*
+     * NOTHING A SOCKET SAYS IS READ. This took a person's clicks and keys while they held the wheel,
+     * and refused them with `laf:take_control_first` while they did not. Nobody holds it now
+     * (owner, 2026-10-09), the surface sends nothing, and the server's proxy forwards nothing
+     * (`server/src/live-screen.ts`) — so whatever still arrives, from a window loaded before that
+     * or from anything else holding the token, is dropped without a word: there is no input to
+     * explain the refusal of, and no answer worth a frame.
+     */
+    message() {},
 
     drain(ws) {
       const acks = draining.get(ws);

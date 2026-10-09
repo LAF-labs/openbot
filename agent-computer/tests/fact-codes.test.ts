@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
 import { type AnswerCode, statusOf } from "../src/codes";
-import { ControlError, HUMAN_HAS_CONTROL } from "../src/control";
 import { actionFailure, fileFailure } from "../src/failures";
 import { LabelChangedError } from "../src/label-hold";
 import {
@@ -120,12 +119,6 @@ describe("what each failure of an action is answered with", () => {
       new LabelChangedError(),
       409,
       { code: "laf:label_changed", stale: true },
-    ],
-    [
-      "a person at the wheel",
-      new ControlError(HUMAN_HAS_CONTROL),
-      409,
-      { code: HUMAN_HAS_CONTROL, humanHasControl: true },
     ],
     [
       "a path outside the workspace",
@@ -395,12 +388,6 @@ describe("the computer's refusals, over HTTP", () => {
         post("/human/secret", { text: "UNASKED-SECRET-3141" }),
         409,
         "laf:secret_not_pending",
-      ],
-      [
-        "a person's click before taking the wheel",
-        post("/human/click", { x: 1, y: 1 }),
-        409,
-        "laf:take_control_first",
       ],
       [
         "a file outside the workspace",

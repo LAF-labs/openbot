@@ -23,8 +23,6 @@ import type {
   ComputerStatus,
   ControlState,
   FileFacts,
-  HumanInput,
-  HumanInputResult,
   KeyInput,
   ListFilesInput,
   ListFilesResult,
@@ -132,8 +130,6 @@ export const CLIENT_FACTS = [
  */
 /** The refs a call carried are not the page's any more. A fresh snapshot is the whole fix. */
 export const STALE_REFS = "laf:stale_refs";
-/** A person holds the wheel. */
-export const HUMAN_HAS_CONTROL = "laf:human_has_control";
 /** An address the floor will not open, or a hop or a landing that went inside this deployment. */
 export const NAVIGATION_REFUSED = "laf:navigation_refused";
 /** The page never finished loading by the computer's deadline. */
@@ -271,18 +267,6 @@ export class StaleSnapshotError extends Error {
 }
 
 /**
- * A person holds the wheel, or drove before taking it. Nothing is broken, and nothing to look again
- * at: the Bot waits. A 409 like a stale ref, and its own type because routes.ts used to find it by
- * matching `control` in the message.
- */
-export class ControlHeldError extends Error {
-  constructor(reason: string = HUMAN_HAS_CONTROL) {
-    super(reason);
-    this.name = "ControlHeldError";
-  }
-}
-
-/**
  * WHAT THIS SERVER MAKES OF EACH FACT THE COMPUTER ANSWERS WITH. THE ONE TABLE, READ BY `code`.
  *
  * The container decides what happened and says so in `code` (`agent-computer/src/codes.ts`); the code
@@ -303,9 +287,6 @@ export const COMPUTER_ANSWERS = {
   "laf:label_changed": StaleSnapshotError,
   "laf:secret_not_pending": StaleSnapshotError,
   "laf:element_not_actionable": ElementNotFoundError,
-  // Wait: a person has the wheel, or has not taken it.
-  "laf:human_has_control": ControlHeldError,
-  "laf:take_control_first": ControlHeldError,
   // The site, not the computer.
   "laf:page_timeout": PageLoadTimeoutError,
   "laf:navigation_failed": PageLoadFailedError,
@@ -830,7 +811,7 @@ export function createComputerClient(options: ComputerClientOptions) {
         })) as FileFacts;
       },
 
-      /** Who has the wheel, and whether the Bot is waiting for a person. */
+      /** Whether the Bot is waiting for a person: for a hand, or for a value. */
       async control(): Promise<ControlState> {
         return (await call("/control")) as ControlState;
       },
@@ -839,22 +820,10 @@ export function createComputerClient(options: ComputerClientOptions) {
         return (await post("/control/request", { reason })) as ControlState;
       },
 
-      async takeControl(): Promise<ControlState> {
-        return (await post("/control/take", {})) as ControlState;
-      },
-
       async releaseControl(): Promise<ControlState> {
         return (await post("/control/release", {})) as ControlState;
       },
 
-      /**
-       * A person's own mouse and keyboard, straight through.
-       *
-       * Deliberately NOT governed by the policy gateway. The policy exists to constrain what a BOT may
-       * do; a person taking the wheel is the escape hatch that makes a governed Bot usable at all, and
-       * a rule that could lock somebody out of their own browser mid-login would be a worse failure
-       * than anything it prevented. The takeover itself is audited as an event; the keystrokes are not.
-       */
       /** Ask for a secret. Carries the label and the field, never a value. */
       async requestSecret(input: SecretRequest): Promise<ControlState> {
         return (await post("/control/secret", input)) as ControlState;
@@ -911,11 +880,6 @@ export function createComputerClient(options: ComputerClientOptions) {
 
       async supplySecret(text: string): Promise<SecretResult> {
         return (await post("/human/secret", { text })) as SecretResult;
-      },
-
-      async humanInput(input: HumanInput): Promise<HumanInputResult> {
-        const { kind, ...rest } = input;
-        return (await post(`/human/${kind}`, rest)) as HumanInputResult;
       },
 
       /** The same computer, addressed as a particular Bot. */

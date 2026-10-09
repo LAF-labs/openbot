@@ -19,7 +19,6 @@ import {
   COMPUTER_UNREACHABLE,
   type ComputerClient,
   ComputerUnavailableError,
-  ControlHeldError,
   createComputerClient,
   ElementNotFoundError,
   NavigationRefusedError,
@@ -150,12 +149,6 @@ const FAILURES: Array<[string, Error, number, string]> = [
     new ComputerUnavailableError("The assistant's computer is not running."),
     503,
     "laf:computer_failed",
-  ],
-  [
-    "a person holds the wheel",
-    new ControlHeldError("laf:human_has_control"),
-    409,
-    "laf:human_has_control",
   ],
   [
     "the page never loaded",
@@ -421,14 +414,6 @@ describe("an acting route that the computer refused", () => {
       "laf:label_changed",
     ],
     [
-      // A 409 like a stale ref, and a different next move: the class alone cannot say which.
-      "/bot-1/click",
-      { ref: "e9", snapshotId: 7 },
-      new ControlHeldError("laf:human_has_control"),
-      409,
-      "laf:human_has_control",
-    ],
-    [
       "/bot-1/navigate",
       { url: "not a web address" },
       new NavigationRefusedError(URL_INVALID),
@@ -483,10 +468,25 @@ describe("a person's own doors", () => {
         code: "laf:secret_value_required",
       },
     });
-    expect(await send(app, "/bot-1/human/secretly", { x: 1 })).toEqual({
-      status: 400,
-      body: { error: "laf:input_unknown", code: "laf:input_unknown" },
-    });
+  });
+
+  test("the doors a person's own clicks and keys came in by are gone", async () => {
+    // Nobody drives the Bot's browser (owner, 2026-10-09). A window from before then still posts.
+    const app = acting();
+    for (const path of [
+      "/bot-1/human/click",
+      "/bot-1/human/type",
+      "/bot-1/human/key",
+      "/bot-1/human/scroll",
+      "/bot-1/control/take",
+    ]) {
+      const answer = await app.request(path, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ x: 1, y: 2, text: "a password" }),
+      });
+      expect({ path, status: answer.status }).toEqual({ path, status: 404 });
+    }
   });
 
   test("the boundary refused as a code, naming the list, and a save that failed as what is still true", async () => {
@@ -557,8 +557,6 @@ describe("what a Bot is told when its computer says no", () => {
   const PERSON_ONLY = new Set([
     // The masked box (`app/src/lib/computer/refusals.ts`).
     "laf:secret_value_required",
-    // The live screen's own input, fired and not read back.
-    "laf:input_unknown",
     // The Boundaries page.
     "laf:policy_not_saved",
     "laf:policy_changed",

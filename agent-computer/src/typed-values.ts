@@ -30,15 +30,6 @@ const KEY = randomBytes(32);
  */
 const SHORTEST_VALUE = 2;
 
-/**
- * How long a block of typed text has to be before it is kept on its own.
- *
- * A block is a paste, or a finished Korean word — which the live screen sends one syllable at a time
- * (`handleCompositionEnd`), so a shorter floor would fill the list below with syllables. A pasted
- * one-time code is six.
- */
-const SHORTEST_BLOCK = 4;
-
 /** How many digests a session keeps of each kind. Newest kept; a box's own is on the box. */
 const DIGEST_LIMIT = 32;
 
@@ -49,13 +40,6 @@ export function digestOf(value: string): string | undefined {
   return createHmac("sha256", KEY).update(comparable).digest("base64url");
 }
 
-/** The digest of a block of text a person sent at once, when it is long enough to be one. */
-export function digestOfBlock(text: string): string | undefined {
-  return comparableValue(text).length >= SHORTEST_BLOCK
-    ? digestOf(text)
-    : undefined;
-}
-
 function kept(list: string[], digest: string | undefined): string[] {
   if (!digest) return list;
   return [...list.filter((each) => each !== digest), digest].slice(
@@ -63,7 +47,7 @@ function kept(list: string[], digest: string | undefined): string[] {
   );
 }
 
-/** Keep the digest of something a person typed whose box is gone, or that came as one block. */
+/** Keep the digest of something a person typed whose box is gone. */
 export function keepTyped(session: BotSession, digest: string | undefined) {
   session.typedDigests = kept(session.typedDigests, digest);
 }

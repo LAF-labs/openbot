@@ -274,11 +274,13 @@ may reach `autoReview`.
 
 ### Never record what somebody typed
 
-Every keystroke a person makes in a Bot's browser passes through the server's
-live-screen proxy, including passwords, and is forwarded, never kept. Wherever
-typing is recorded, record that it happened and where, never a value — the
-audit fingerprint's rule. Test it by serialising the whole record and asserting
-the password is nowhere in it.
+Nobody drives a Bot's browser but the Bot (owner, 2026-10-09): a person watches
+its screen, on every surface, and the live-screen socket carries nothing inward.
+What a person types reaches the page through one door, the masked box a
+`computer_request_secret` opens, and passes through it — passwords included —
+forwarded and never kept. Wherever typing is recorded, record that it happened
+and where, never a value — the audit fingerprint's rule. Test it by serialising
+the whole record and asserting the password is nowhere in it.
 
 ### Model calls
 

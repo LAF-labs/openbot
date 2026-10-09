@@ -53,28 +53,27 @@ const OLD_TAB_CLOSED: NoteCode = "laf:old_tab_closed";
 /**
  * Whether this session is holding a tab open, whatever its place in the order (`ProfileOptions.holdsTab`).
  *
- *  - THE TAB BEING CAST. It is the picture a person is watching, and the tab their clicks and keys
- *    go to once they have the wheel (`live-screen.ts`). The cast follows the Bot's tab a second
- *    behind, so for that second it is not the tab the Bot is on.
+ *  - THE TAB BEING CAST. It is the picture a person is watching (`live-screen.ts`). The cast
+ *    follows the Bot's tab a second behind, so for that second it is not the tab the Bot is on.
  *  - THE TAB A VALUE WAS ASKED FOR ON, while it is wanted: a person's value goes into that tab or
  *    into none (`control-routes.ts`).
- *  - THE TAB A HAND WAS ASKED FOR ON, OR THE WHEEL TAKEN ON, while the ask stands or the person
- *    holds the wheel: it is the page they were handed, and where the Bot goes on from.
+ *  - THE TAB A HAND WAS ASKED FOR ON, while the ask stands: it is where the Bot goes on from once
+ *    the person has done their part.
  *
  * HELD EVEN AT THE CEILING. Past `TAB_CEILING` a tab goes whatever window reports to it, and these
- * still do not: they are a person's hands and a person's answer. They are three tabs at most, so
- * the ceiling always has something else to close.
+ * still do not: they are what a person is looking at and a person's answer. They are three tabs at
+ * most, so the ceiling always has something else to close.
  *
  * A session this process has not made holds nothing.
  */
 export function holdsTab(session: BotSession | undefined, page: Page): boolean {
   if (!session) return false;
   if (session.viewer?.page === page) return true;
-  if (session.secretTab !== page && session.wheelTab !== page) return false;
+  if (session.secretTab !== page && session.helpTab !== page) return false;
   const state = session.control.get();
   return (
     (session.secretTab === page && Boolean(state.secretWanted)) ||
-    (session.wheelTab === page && (state.requested || state.holder === "human"))
+    (session.helpTab === page && state.requested)
   );
 }
 

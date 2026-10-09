@@ -81,7 +81,12 @@ export const ConnectionRow = ({
    * which is only right for a row that is not yet connected to anything.
    */
   confirmText?: string;
-  onToggle: (next: boolean) => void;
+  /**
+   * What the switch does. ABSENT, THERE IS NO SWITCH: a row that cannot be turned on from here says
+   * why in `status` instead of drawing a control that could only fail (a site, while the password
+   * card is not in yet — `site-rows.tsx`).
+   */
+  onToggle?: (next: boolean) => void;
   /** What just went wrong with this row. Cleared by the caller on the next attempt. */
   note?: string | null;
   /** The inline form or extra actions this row opens under itself. */
@@ -97,7 +102,7 @@ export const ConnectionRow = ({
         return;
       }
       setAsking(false);
-      onToggle(next);
+      onToggle?.(next);
     },
     [confirmText, onToggle],
   );
@@ -125,7 +130,7 @@ export const ConnectionRow = ({
               <Button
                 onClick={() => {
                   setAsking(false);
-                  onToggle(false);
+                  onToggle?.(false);
                 }}
                 size="sm"
                 type="button"
@@ -160,12 +165,14 @@ export const ConnectionRow = ({
             className="size-4 animate-spin text-muted-foreground"
           />
         ) : null}
-        <Switch
-          aria-labelledby={labelId}
-          checked={isOn}
-          disabled={isBusy}
-          onCheckedChange={handleChange}
-        />
+        {onToggle ? (
+          <Switch
+            aria-labelledby={labelId}
+            checked={isOn}
+            disabled={isBusy}
+            onCheckedChange={handleChange}
+          />
+        ) : null}
       </ItemActions>
     </Item>
   );

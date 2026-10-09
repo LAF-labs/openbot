@@ -40,11 +40,11 @@ describe("the prompt of the other arm", () => {
       ).toEqual([SEVERAL_STEPS_KO]);
       // …inside the base, not after the context, where it was first measured…
       expect(at).toBeLessThan(BASE_KO.split("\n\n").length);
-      // …in front of the base's two paragraphs about the computer, which still follow in order.
-      expect(with_[at + 1]).toStartWith(
-        "사람이 컴퓨터를 잡고 있다는 결과가 오면",
-      );
-      expect(with_[at + 2]).toStartWith("이 배포의 정책이 막은 행동도");
+      /*
+       * …in front of the base's paragraph about reading what the computer answers. There were two
+       * until 2026-10-09; the one about a person holding the computer went with the wheel.
+       */
+      expect(with_[at + 1]).toStartWith("이 배포의 정책이 막은 행동은");
       // And the other arm is that prompt without it: nothing else moved.
       expect(without).toEqual([...with_.slice(0, at), ...with_.slice(at + 1)]);
       expect(without).not.toContain(SEVERAL_STEPS_KO);

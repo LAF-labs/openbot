@@ -1,13 +1,15 @@
 /**
- * Who has the wheel, over HTTP — and the one value a person types that the Bot must never see.
+ * What the Bot has asked a person for, over HTTP — and the one value a person types that the Bot
+ * must never see.
  *
  * The state machine is in `control.ts`, which has no Playwright in it so it can be tested without a
- * browser. These are the doors onto it, and the one place a secret enters the page.
+ * browser. These are the doors onto it, and the one place a person's typing enters the page: there
+ * is no door here, or anywhere in this process, by which a person clicks or types on the Bot's page
+ * themselves (owner, 2026-10-09).
  */
 import type { BotRoute } from "./computer";
 import { ControlRequestError, NO_SECRET_PENDING } from "./control";
 import { actionFailure } from "./failures";
-import { inTurn, settleTyping } from "./person-typing";
 import { locateRef, onElement, STALE_REFS, StaleSnapshotError } from "./refs";
 import { bodyOf, fact, invalid, json } from "./respond";
 import { rememberSecretField, SECRET_JOIN_TIMEOUT_MS } from "./secret-fields";
@@ -15,24 +17,23 @@ import { assertLooked } from "./tab-loss";
 import { digestOf } from "./typed-values";
 import { within } from "./within";
 
-// Who has the wheel. Polled by the surface alongside the screen, so the person sees the Bot ask
-// for help without having to reload anything.
+// What the Bot is asking for. Polled by the surface alongside the screen, so the person sees the
+// Bot ask for help without having to reload anything.
 export const controlState: BotRoute = ({ session }) =>
   json(session.control.get());
 
-// The Bot asking for help. It does not take control: it says it is stuck and why, and a person
-// decides. A Bot that could hand itself to a human could also hand a human a page they never
-// asked to see.
+// The Bot asking for a hand with something outside its screen. It says what and why, and a person
+// answers: done, or skip.
 //
-// Which tab it asked on is kept: that page is what the person is being handed, and it is not the
-// tab closed to keep the Bot's tabs to their number while the ask stands (`tab-cap.ts`). Asked of
-// the books, not of the browser — asking for a hand must not be what starts one.
+// Which tab it asked on is kept: that page is where the Bot goes on from once they have, and it is
+// not the tab closed to keep the Bot's tabs to their number while the ask stands (`tab-cap.ts`).
+// Asked of the books, not of the browser — asking for a hand must not be what starts one.
 export const requestHelp: BotRoute = async (
   { request, botId, session },
   { profiles },
 ) => {
   const body = await bodyOf<{ reason?: unknown }>(request);
-  session.wheelTab = profiles.tabOf(botId);
+  session.helpTab = profiles.tabOf(botId);
   return json(session.control.requestHelp(body?.reason));
 };
 
@@ -79,9 +80,9 @@ export const requestSecret: BotRoute = async (
 /**
  * A person supplying that value.
  *
- * Scoped by the pending request rather than by a control handover: it is usable only while the Bot
- * has actually asked for a secret, and the request is cleared the moment it is answered, so this
- * cannot be used as a general back door to type into the page.
+ * Scoped by the pending request: it is usable only while the Bot has actually asked for a secret,
+ * and the request is cleared the moment it is answered, so this cannot be used as a general back
+ * door to type into the page.
  *
  * The value is typed and forgotten. Not stored on `control`, not returned in the response, not
  * logged. The response says how many characters arrived, which is enough for the surface to
@@ -172,30 +173,10 @@ export const supplySecret: BotRoute = async (
   }
 };
 
-// A person taking the wheel. The tab they take it on is kept as the one a hand was asked for on
-// is — and is that one, when the Bot had asked: it is the page they were handed.
-export const takeControl: BotRoute = ({ botId, session }, { profiles }) => {
-  if (!session.control.get().requested) {
-    session.wheelTab = profiles.tabOf(botId);
-  }
-  return json(session.control.take());
-};
-
 /*
- * `reason` is dropped on release: it described the thing the person was asked to do, and once
- * they have done it, leaving it set would have the surface still showing the old request.
- *
- * Every box the person typed into is read once more first, in turn behind their last keystroke: the
- * Bot acts next, and the Bot's Enter is what sends a form carrying the last thing they typed.
- *
- * And whatever they were still holding is let go of, in the same turn: once the wheel is back this
- * service refuses their input, their own release included, and a button or a Shift left down on
- * the page would be down under everything the Bot does next (`Screencast.letGo`).
+ * A person answering an ask: 다 했어요 on a request for help, or 건너뛰기 on either kind, which the
+ * surface tells the waiting turn about first (`server/src/turns/people.ts`) and then sends here so
+ * the next ask finds none standing. `reason` and any pending secret are dropped with it.
  */
-export const releaseControl: BotRoute = async ({ session }) => {
-  await inTurn(session, async () => {
-    await settleTyping(session, { every: true });
-    await session.viewer?.cast.letGo().catch(() => undefined);
-  });
-  return json(session.control.release());
-};
+export const releaseControl: BotRoute = ({ session }) =>
+  json(session.control.release());

@@ -12,7 +12,6 @@ import {
 } from "@/components/channels/composer/prefill";
 import { PresenceDrawer } from "@/components/channels/presence-drawer";
 import { LiveView } from "@/components/computer/live-view";
-import { useControl } from "@/components/computer/use-control";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { SectionBoundary } from "@/components/layout/section-boundary";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -134,9 +133,7 @@ function RouteComponent() {
   )?.lastMessageAt;
   const panel = useScreenPanel();
   const isWatching = panel.isOpen && agentId !== undefined;
-  // Only while the screen is open: that is the one place a person can be holding the wheel from.
-  const control = useControl(isWatching ? agentId : undefined, true);
-  const screenWidth = useScreenPanelWidth(control?.holder === "human");
+  const screenWidth = useScreenPanelWidth();
   const isComputerInUse = isInUse(useBrowsingNow(), agentId);
 
   // Settings and the screen share one pane: asking for the screen puts the profile away.

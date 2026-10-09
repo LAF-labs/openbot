@@ -27,7 +27,6 @@ import {
 } from "./page-arrival";
 import { namesFromThePage, PAGE_NAMES_MS } from "./page-names";
 import { settleIfLoading, titleOf } from "./page-text";
-import { typedIntoBlind } from "./person-typing";
 import {
   SECRET_JOIN_TIMEOUT_MS,
   type SecretMarks,
@@ -266,11 +265,7 @@ export async function snapshotPage(
     const arrival = arrivalOf(target);
     if (arrival) return stillArriving(session, target, tabs, arrival);
   }
-  /*
-   * The same answer for a document a person typed into while it would not say where
-   * (`person-typing.ts`): the box is somewhere on it, unfollowed, until the document is gone.
-   */
-  const unverified = !typedInto.complete || typedIntoBlind(session, target);
+  const unverified = !typedInto.complete;
   const read = readAriaSnapshot(
     yaml,
     {

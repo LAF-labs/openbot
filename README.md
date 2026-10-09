@@ -15,9 +15,9 @@
 <div align="center">
 
 Give your Bot a name, tell it what you want, and it writes down what it is for.
-Watch it work on its own screen, take the wheel when it reaches something it
-should not do alone, then hand it back — and teach it a task in words, kept as
-something you can ask for by name.
+Watch it work on its own screen, type a password into a masked box it never
+sees when it asks for one, and teach it a task in words — kept as something you
+can ask for by name.
 
 Korean first, for people who do not write software: students, office workers,
 people who run a small business, and anyone else.
@@ -149,7 +149,7 @@ A Bot is an endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui), 
 | Route                         | Purpose                                                                                |
 | ----------------------------- | ---------------------------------------------------------------------------------------- |
 | `/welcome`                    | First run: who you are, and one Bot of your own.                                        |
-| `/`, `/channel/:id`           | The conversation: talk to the Bot, watch its screen, take the wheel, answer what it asks. |
+| `/`, `/channel/:id`           | The conversation: talk to the Bot, watch its screen, answer what it asks.                |
 | `/feed`                       | 소식 — what the Bot's routines found worth telling you.                                  |
 | `/ideas`                      | 아이디어 — jobs to start from.                                                            |
 | `/goals`                      | 목표 — what you are working towards, and how it is going.                                 |
@@ -177,7 +177,7 @@ A Bot is an endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui), 
 - **One computer per account**: the Bot works on your computer — its files, its logins, its browser sessions. On an older account with several Bots they all share it; Bots are not a security boundary, the gateway in front of the computer is.
 - **The gateway is the only way in**: it resolves the target from a server-held snapshot, evaluates the policy, writes the audit row, and only then calls the computer. There is no path that acts without the record existing first.
 - **CEL policy, fail closed**: rules can inspect `tool.name`, `intent`, `bot.id`, `actor.id`, `page.url`, `page.host`, `element.*`, `key`, `submit`, `file.*`, `mcp.*` and `repeat.count`. Deny is evaluated before allow, a missing policy permits nothing, and a broken rule refuses rather than opens.
-- **Take the wheel**: a Bot that hits a login wall or a 2FA prompt asks for help. Control is handed over in the same panel and recorded as `computer.help_requested`, `computer.control_taken` and `computer.control_released`. While a person is driving, Bot actions are refused rather than queued.
+- **Nobody drives the Bot's browser**: a person watches its screen, on every surface, and never clicks or types on it. A value the page needs — an ID, a password, a one-time code — goes into a masked box the Bot opens and from there straight into the field (`computer.secret_requested`, `computer.secret_supplied`). Something only a person can do away from that screen, such as approving a sign-in on a phone, is asked for in the conversation and answered with 다 했어요 (`computer.help_requested`, `computer.control_released`).
 - **Secrets never enter the transcript**: the trail records that a secret was requested and how long it was, not what it said.
 - **Bring your own agent, on a developer's stack**: any AG-UI endpoint is a Bot, on a framework or hand written. Endpoints are validated with the same target checks used for browser navigation, and an auth header is stored write-only. A hosted deployment takes none.
 - **Components instead of prose**: compiled React components live in `app/src/components/gallery/`, sandboxed ones are authored in `/admin/playground` and published with no deployment. Every call asks the server whether the component exists, is published, and is not withheld from that Bot. Data functions are granted per component.

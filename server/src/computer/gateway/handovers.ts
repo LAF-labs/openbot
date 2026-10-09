@@ -1,5 +1,10 @@
 /**
- * A person and the Bot's browser: taking the wheel, handing it back, stopping it, wiping it.
+ * A person and the Bot's browser: answering what it asked, stopping it, wiping it.
+ *
+ * NOT TAKING THE WHEEL. A person could take over the Bot's browser until 2026-10-09; the owner ended
+ * that on every surface, so nobody clicks or types on its page but the Bot, and a value a page needs
+ * reaches it only through the masked box (`secrets.ts`). Rows from before still say
+ * `computer.control_taken`, and the trail keeps them.
  *
  * Apart from the acting calls because none of these goes through `govern`, and that is a decision
  * rather than an omission (see `requestHelp`). A reader checking that every Bot action is judged
@@ -22,13 +27,12 @@ export function createHandovers(deps: {
 
   return {
     /**
-     * Handovers, recorded but not policy-gated.
+     * The Bot asking a person for a hand, recorded but not policy-gated.
      *
-     * The policy constrains what a Bot may do. A person taking the wheel is the escape hatch that
-     * makes a governed Bot usable at all, and a rule able to lock somebody out of their own browser
-     * halfway through a login would be a worse failure than anything it prevented. So these write the
-     * row and do not ask. What IS recorded is the period: who, when, and why the Bot asked, the fact
-     * an investigator wants is that a human drove this browser between two times.
+     * The policy constrains what a Bot may do; asking a person is not doing anything, and a rule able
+     * to stop a Bot from saying it is stuck would hide the very moments a person most needs to know
+     * about. So this writes the row and does not ask. What a hand is, now that nobody takes the
+     * wheel: something done outside the Bot's screen — a phone to approve on, an app to confirm in.
      */
     async requestHelp(
       computerId: string,
@@ -46,19 +50,11 @@ export function createHandovers(deps: {
       return state;
     },
 
-    async takeControl(computerId: string, botId: string, actor: ActionActor) {
-      const state = await as(botId).takeControl();
-      await writeControlEvent(auditStore, "computer.control_taken", {
-        botId,
-        actor,
-        computerId,
-        // Carried onto the row so the trail says what the person was handed, not merely that they
-        // took over.
-        reason: state.reason,
-      });
-      return state;
-    },
-
+    /**
+     * A person answering the ask: 다 했어요, or 건너뛰기 (which the surface tells the waiting turn
+     * first). The row keeps its old name, `computer.control_released`, because the trail is
+     * append-only and readers of it already know that name; it now records an answer, not a hand-back.
+     */
     async releaseControl(
       computerId: string,
       botId: string,
@@ -135,13 +131,6 @@ export function createHandovers(deps: {
           "every saved login on this account's one computer was deleted, for all of its Bots",
       });
       return result;
-    },
-
-    humanInput(
-      botId: string,
-      input: Parameters<ComputerClient["humanInput"]>[0],
-    ) {
-      return as(botId).humanInput(input);
     },
   };
 }
