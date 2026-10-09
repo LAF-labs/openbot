@@ -416,10 +416,62 @@ describe("a login a person saves", () => {
     const mine = await call("POST", "", NAVER);
     expect(mine.status).toBe(201);
     // A row that is not this vault's seal does not open, and does not say what it holds.
+    const sealedElsewhere = `login-full-${tag}-0`;
     expect(
-      await vault
-        .open(other, `login-full-${tag}-0`)
-        .catch((error: unknown) => error),
+      await vault.open(other, sealedElsewhere).catch((error: unknown) => error),
     ).toBeInstanceOf(LoginSealError);
+
+    /*
+     * AND IT CAN BE PUT RIGHT. A deployment whose key was changed holds rows it cannot open. One
+     * value alone cannot be saved onto such a row — the other is the one that does not open — and
+     * that is said as a fact. Both, typed again, are sealed under the key there is now, and the
+     * old seal is never opened to do it.
+     */
+    const half = await call(
+      "PATCH",
+      `/${sealedElsewhere}`,
+      { password: "half-CANARY" },
+      other,
+    );
+    expect([half.status, await half.json()]).toEqual([
+      409,
+      {
+        error: "laf:login_seal_unreadable",
+        code: "laf:login_seal_unreadable",
+      },
+    ]);
+    const both = await call(
+      "PATCH",
+      `/${sealedElsewhere}`,
+      { username: USERNAME, password: PASSWORD },
+      other,
+    );
+    expect(both.status).toBe(200);
+    expect(await vault.open(other, sealedElsewhere)).toMatchObject({
+      username: USERNAME,
+      password: PASSWORD,
+    });
+  });
+
+  test("is saved, changed and deleted even when the trail cannot be written: the row's loss is not the act's", async () => {
+    const down = createLoginVault({
+      database,
+      auditStore: {
+        insert: async () => {
+          throw new Error("the audit store is unreachable");
+        },
+      },
+      keyEncryptionKey: KEY,
+    });
+    const saved = await down.save(owner, { ...NAVER, label: "기록 없이" });
+    expect(await vault.open(owner, saved.id)).toMatchObject({
+      username: USERNAME,
+    });
+    expect(
+      (await down.replace(owner, saved.id, { label: "기록 없이 고침" }))?.label,
+    ).toBe("기록 없이 고침");
+    // A person who deletes a password has deleted it, whatever else is down.
+    expect(await down.remove(owner, saved.id)).toBe(true);
+    expect(await vault.open(owner, saved.id)).toBeNull();
   });
 });

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, count, eq } from "drizzle-orm";
 import { loginOriginOf } from "../../../shared/login-origin";
 import { siteById } from "../../../shared/sites/catalogue";
-import { type AuditStore, recordAuditEvent } from "../audit";
+import { type AuditStore, auditRowLost, recordAuditEvent } from "../audit";
 import type { Database } from "../db/client";
 import { lafSavedLogins } from "../db/schema";
 import { openLogin, type SealedFor, sealLogin } from "./crypto";
@@ -228,7 +228,7 @@ export function createLoginVault(input: {
         targetId: saved.id,
         actorUserId: userId,
         payload: onTrail(saved),
-      });
+      }).catch(auditRowLost("account.login_saved"));
       return saved;
     },
 
@@ -238,6 +238,8 @@ export function createLoginVault(input: {
      * sealed with the name the row already holds, under a NEW key.
      *
      * `null` where the row is not this person's, which is also what a row that does not exist is.
+     * Throws `LoginSealError` where one value was sent and the other, which the row holds, does
+     * not open.
      */
     async replace(
       userId: string,
@@ -276,14 +278,23 @@ export function createLoginVault(input: {
           : typedValue(written.password, "password", PASSWORD_MAX);
 
       const belongs: SealedFor = { id: row.id, userId };
+      /*
+       * The value that was not sent is the one the row holds, so the row is opened for it — and
+       * ONLY for it. With both sent there is nothing to keep, and the old seal is not opened at
+       * all: that is how a row this deployment can no longer open (its key was changed) is put
+       * right by the person typing both again, rather than being a row nothing can fix.
+       */
       const resealed =
         newUsername === undefined && newPassword === undefined
           ? {}
           : await (async () => {
-              const held = await openLogin(keyEncryptionKey, belongs, row);
+              const held =
+                newUsername !== undefined && newPassword !== undefined
+                  ? undefined
+                  : await openLogin(keyEncryptionKey, belongs, row);
               return sealLogin(keyEncryptionKey, belongs, {
-                username: newUsername ?? held.username,
-                password: newPassword ?? held.password,
+                username: newUsername ?? held?.username ?? "",
+                password: newPassword ?? held?.password ?? "",
               });
             })();
       const [changed] = await database
@@ -303,7 +314,7 @@ export function createLoginVault(input: {
           // Whether the values changed, which is what somebody reading the trail asks. Not which.
           values: "sealedPassword" in resealed ? "replaced" : "kept",
         },
-      });
+      }).catch(auditRowLost("account.login_replaced"));
       return saved;
     },
 
@@ -320,7 +331,7 @@ export function createLoginVault(input: {
         targetId: gone.id,
         actorUserId: userId,
         payload: onTrail(view(gone)),
-      });
+      }).catch(auditRowLost("account.login_removed"));
       return true;
     },
 

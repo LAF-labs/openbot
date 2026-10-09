@@ -2370,25 +2370,27 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * By hand: 4, 1, 1 and 2 are 8, and 3902 and 8 are 3910; 4 and 4 are 8, and 496 and 8 are 504;
  * 2136 and 2 are 2138; 921 and 6 are 927.
  *
- * RAISED 2026-10-10 A THIRD TIME, `server` from 3910 to 3925 and `root` from 927 to 932, for the
- * vault of logins a person saves for their Bot's browser (record §6, piece 2-3). Fifteen to
+ * RAISED 2026-10-10 A THIRD TIME, `server` from 3910 to 3926 and `root` from 927 to 932, for the
+ * vault of logins a person saves for their Bot's browser (record §6, piece 2-3). Sixteen to
  * `server`, in three new files. Five in `login-crypto.test.ts`: a seal opens to what was sealed
  * and holds neither value; it is made under a new key every time; it opens only as the row, the
  * owner and the field it was sealed for, under the key that sealed it; it says nothing of what
  * it could not open; the deployment key is named by a fingerprint that is not the key. Four in
  * `login-routes.test.ts`, the doors without a database: whose rows are asked for; the five
  * things a login is made of and nothing else a body carries; nothing answered is kept on the
- * way; a refusal is the fact and the field. Six in `saved-logins.integration.test.ts`, against
+ * way; a refusal is the fact and the field. Seven in `saved-logins.integration.test.ts`, against
  * the real table: planted values are in no row, no answer, no trail and no export; a row is its
  * owner's and nobody else's; a new value is a new key and a new name is not; what is not a login
- * is not saved at all; a deleted one is gone at once; and full is said as full. Five to `root`,
+ * is not saved at all; a deleted one is gone at once; full is said as full, and a row this
+ * deployment's key no longer opens is put right by typing both values again; and a trail that
+ * cannot be written does not stop a save, a change or a delete. Five to `root`,
  * in `tests/login-origin.test.ts`: the origin a login is saved for, read one way; never plain
  * HTTP; a developer's loopback only when asked by name; a frame is where a login was saved for
  * by origin, and not by host. `account-lifecycle.integration.test.ts` and the authorization
  * matrix hold more and count the same: a person's saved logins go with them, by name and
  * counted, the other account's stay, and the four doors are pressed by all five people.
- * Nineteen mutations each fail one of these.
- * By hand: 5, 4 and 6 are 15, and 3910 and 15 are 3925; 927 and 5 are 932.
+ * Twenty-three mutations each fail one of these.
+ * By hand: 5, 4 and 7 are 16, and 3910 and 16 are 3926; 927 and 5 are 932.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -2418,7 +2420,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 3925, roots: ["server"] },
+  { name: "server", floor: 3926, roots: ["server"] },
   { name: "app", floor: 2138, roots: ["app"] },
   {
     name: "agent-computer",
