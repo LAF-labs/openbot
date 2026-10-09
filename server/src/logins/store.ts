@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, count, eq } from "drizzle-orm";
+import { and, asc, count, eq, sql } from "drizzle-orm";
 import { loginOriginOf } from "../../../shared/login-origin";
 import { siteById } from "../../../shared/sites/catalogue";
 import { cutOnGraphemes, soundText } from "../../../shared/sound-text";
@@ -268,12 +268,15 @@ export function createLoginVault(input: {
      * STANDS, never as the change would have had it — so a reader of the trail can tell which
      * login a refusal was about. Absent for a save, which made no login to name.
      */
-    about: SavedLogin | undefined,
+    aboutWhich: SavedLogin | undefined | (() => SavedLogin | undefined),
     act: () => Promise<T>,
   ): Promise<T> => {
     try {
       return await act();
     } catch (error) {
+      // Read when the act has ended: a change finds its login inside its own transaction.
+      const about =
+        typeof aboutWhich === "function" ? aboutWhich() : aboutWhich;
       const refusal =
         error instanceof LoginRefused
           ? { code: error.code, ...(error.field ? { field: error.field } : {}) }
@@ -351,6 +354,15 @@ export function createLoginVault(input: {
         });
         const at = now();
         return database.transaction(async (transaction) => {
+          /*
+           * ONE SAVE AT A TIME FOR A PERSON. Counted and then written, two saves at the same
+           * moment both counted ninety-nine and both wrote (Codex's seventh read of this change).
+           * A lock on the person's NAME, not on their row: it is held by nothing else, so it can
+           * wait on nothing a leaving account holds, and is let go with the transaction.
+           */
+          await transaction.execute(
+            sql`select pg_advisory_xact_lock(hashtext(${`laf_saved_logins:${userId}`}))`,
+          );
           const [held] = await transaction
             .select({ saved: count() })
             .from(lafSavedLogins)
@@ -400,10 +412,6 @@ export function createLoginVault(input: {
       /** `null` where what was sent could not be read as a change at all. */
       written: Partial<LoginInput> | null,
     ): Promise<SavedLogin | null> {
-      const [row] = await database
-        .select()
-        .from(lafSavedLogins)
-        .where(mine(userId, id));
       /*
        * WHAT COULD NOT BE READ IS REFUSED BEFORE ANYTHING IS LOOKED FOR. Sent for a login that is
        * not this person's — or is nobody's — it was answered "not found" first: a 404, and no
@@ -411,90 +419,106 @@ export function createLoginVault(input: {
        * fifth read of this change). The row says which login only where there is one of theirs.
        */
       if (!written) {
+        const [row] = await database
+          .select()
+          .from(lafSavedLogins)
+          .where(mine(userId, id));
         return orRefused(userId, row ? view(row) : undefined, async () => {
           throw new LoginRefused("laf:login_invalid");
         });
       }
-      if (!row) return null;
-      // Nothing was sent: nothing is written, and the trail is not told of a change that was not.
-      const sent = written
-        ? [
-            written.label,
-            written.site,
-            written.origins,
-            written.username,
-            written.password,
-          ]
-        : [null];
-      if (sent.every((one) => one === undefined)) return view(row);
 
-      return orRefused(userId, view(row), async () => {
-        /*
-         * A BODY THAT COULD NOT BE READ IS A REFUSAL LIKE ANY, WITH ITS ROW. Answered at the door
-         * it wrote none — and "a change somebody sent that this could not read" is exactly the
-         * attempt a trail is asked about afterwards (Codex's second read of this change).
-         */
-        if (!written) throw new LoginRefused("laf:login_invalid");
-        const label =
-          written.label === undefined ? row.label : labelOf(written.label);
-        const site =
-          written.site === undefined ? row.site : siteOf(written.site);
-        const origins =
-          written.origins === undefined
-            ? row.origins
-            : originsOf(written.origins);
-        const newUsername =
-          written.username === undefined
-            ? undefined
-            : typedValue(written.username, "username", USERNAME_MAX);
-        const newPassword =
-          written.password === undefined
-            ? undefined
-            : typedValue(written.password, "password", PASSWORD_MAX);
+      /*
+       * READ AND WRITTEN IN ONE TRANSACTION, WITH THE ROW HELD. What was not sent is taken from
+       * the row, so the row a change reads has to be the row it writes over: read first and
+       * written later, a new name and a new password sent at the same moment each put back what
+       * the other had just changed — and of a new sign-in name and a new password, each sealed
+       * with the other's OLD value, one was silently lost while both were answered as made
+       * (Codex's seventh read of this change).
+       */
+      let about: SavedLogin | undefined;
+      return orRefused(
+        userId,
+        () => about,
+        () =>
+          database.transaction(async (transaction) => {
+            const [row] = await transaction
+              .select()
+              .from(lafSavedLogins)
+              .where(mine(userId, id))
+              .for("update");
+            if (!row) return null;
+            about = view(row);
+            // Nothing was sent: nothing is written, and the trail is not told of a change that
+            // was not.
+            const sent = [
+              written.label,
+              written.site,
+              written.origins,
+              written.username,
+              written.password,
+            ];
+            if (sent.every((one) => one === undefined)) return about;
 
-        const belongs: SealedFor = { id: row.id, userId };
-        /*
-         * The value that was not sent is the one the row holds, so the row is opened for it — and
-         * ONLY for it. With both sent there is nothing to keep, and the old seal is not opened at
-         * all: that is how a row this deployment can no longer open (its key was changed) is put
-         * right by the person typing both again, rather than being a row nothing can fix.
-         */
-        const resealed =
-          newUsername === undefined && newPassword === undefined
-            ? {}
-            : await (async () => {
-                const held =
-                  newUsername !== undefined && newPassword !== undefined
-                    ? undefined
-                    : await openLogin(keyEncryptionKey, belongs, row);
-                return sealLogin(keyEncryptionKey, belongs, {
-                  username: newUsername ?? held?.username ?? "",
-                  password: newPassword ?? held?.password ?? "",
-                });
-              })();
-        return database.transaction(async (transaction) => {
-          const [changed] = await transaction
-            .update(lafSavedLogins)
-            .set({ label, site, origins, ...resealed, updatedAt: now() })
-            .where(mine(userId, id))
-            .returning();
-          // Deleted between the read and the write: nothing to change, and nothing to tell.
-          if (!changed) return null;
-          const saved = view(changed);
-          await recordAuditEvent(trailWithin(transaction), {
-            eventType: "account.login_replaced",
-            targetType: "saved_login",
-            targetId: saved.id,
-            actorUserId: userId,
-            payload: {
-              ...onTrail(saved),
-              // Whether the values changed, which is what somebody reading the trail asks. Not which.
-              values: "sealedPassword" in resealed ? "replaced" : "kept",
-            },
-          });
-          return saved;
-        });
-      });
+            const label =
+              written.label === undefined ? row.label : labelOf(written.label);
+            const site =
+              written.site === undefined ? row.site : siteOf(written.site);
+            const origins =
+              written.origins === undefined
+                ? row.origins
+                : originsOf(written.origins);
+            const newUsername =
+              written.username === undefined
+                ? undefined
+                : typedValue(written.username, "username", USERNAME_MAX);
+            const newPassword =
+              written.password === undefined
+                ? undefined
+                : typedValue(written.password, "password", PASSWORD_MAX);
+
+            const belongs: SealedFor = { id: row.id, userId };
+            /*
+             * The value that was not sent is the one the row holds, so the row is opened for it
+             * — and ONLY for it. With both sent there is nothing to keep, and the old seal is
+             * not opened at all: that is how a row this deployment can no longer open (its key
+             * was changed) is put right by the person typing both again, rather than being a
+             * row nothing can fix.
+             */
+            const resealed =
+              newUsername === undefined && newPassword === undefined
+                ? {}
+                : await (async () => {
+                    const held =
+                      newUsername !== undefined && newPassword !== undefined
+                        ? undefined
+                        : await openLogin(keyEncryptionKey, belongs, row);
+                    return sealLogin(keyEncryptionKey, belongs, {
+                      username: newUsername ?? held?.username ?? "",
+                      password: newPassword ?? held?.password ?? "",
+                    });
+                  })();
+            const [changed] = await transaction
+              .update(lafSavedLogins)
+              .set({ label, site, origins, ...resealed, updatedAt: now() })
+              .where(mine(userId, id))
+              .returning();
+            if (!changed) return null;
+            const saved = view(changed);
+            await recordAuditEvent(trailWithin(transaction), {
+              eventType: "account.login_replaced",
+              targetType: "saved_login",
+              targetId: saved.id,
+              actorUserId: userId,
+              payload: {
+                ...onTrail(saved),
+                // Whether the values changed, which is what somebody reading the trail asks. Not which.
+                values: "sealedPassword" in resealed ? "replaced" : "kept",
+              },
+            });
+            return saved;
+          }),
+      );
     },
 
     /** Delete one, now. Says whether there was one of this person's to delete. */

@@ -67,7 +67,12 @@ export function loginOriginOf(
    * had worked (Codex's sixth read of the change that saves these). A host of one word is this
    * machine or it is a mistake.
    */
-  if (!url.hostname.includes(".") && !isLoopback(url.hostname)) return null;
+  // (An address written as numbers is not a name: `[2001:db8::1]` has no dot either, and is a
+  // site as much as `192.0.2.1` is.)
+  const isNumbers = url.hostname.startsWith("[");
+  if (!isNumbers && !url.hostname.includes(".") && !isLoopback(url.hostname)) {
+    return null;
+  }
   /*
    * A NAME NO LONGER THAN A NAME CAN BE. The parser takes a host of any length, so one address
    * could be most of a megabyte — saved in the row, written into the trail, which is never
