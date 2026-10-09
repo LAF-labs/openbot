@@ -275,7 +275,7 @@ const SITE_SPECS: readonly SiteSpec[] = [
     category: "paperwork",
     loginUrl: "https://hometax.go.kr",
     hosts: ["hometax.go.kr", "www.hometax.go.kr", "teht.hometax.go.kr"],
-    what: "Read what has been issued and what is due, once you have authenticated it yourself.",
+    what: "Read what has been issued and what is due.",
     handoff: "certificate",
     prompts: [
       "Sort out the tax invoices issued this month.",
