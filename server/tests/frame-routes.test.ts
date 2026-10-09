@@ -62,6 +62,35 @@ function routes(overrides: Partial<ChannelStore> = {}) {
   return { app: createChannelRoutes(store, requireUser), kept };
 }
 
+/** The same routes, on a deployment whose computer may be holding a person's value for a Bot. */
+function routesWhere(holding: (botId: string) => boolean) {
+  const { kept } = routes();
+  const keeps: string[] = [];
+  const store: ChannelStore = {
+    create: async () => channel("c"),
+    get: async (_actor, id) => (id === "mine" ? channel(id) : null),
+    list: async () => [],
+    setLastRead: async (_actor, _id, at) => ({ previous: null, at }),
+    recordActivity: async () => {},
+    keepFrame: async (threadId, toolCallId, frame) => {
+      keeps.push(toolCallId);
+      kept.set(`${threadId}/${toolCallId}`, frame);
+      return true;
+    },
+  };
+  return {
+    app: createChannelRoutes(
+      store,
+      requireUser,
+      undefined,
+      undefined,
+      [],
+      holding,
+    ),
+    keeps,
+  };
+}
+
 const put = (body: unknown) => ({
   method: "PUT",
   headers: { "content-type": "application/json" },
@@ -95,6 +124,39 @@ describe("keeping and reading it", () => {
     expect(read.headers.get("cache-control")).toContain("private");
     const bytes = new Uint8Array(await read.arrayBuffer());
     expect([...bytes.slice(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
+  });
+
+  /*
+   * A VALUE PUT INTO THE BOT'S BROWSER FOR A PERSON (2026-10-10, record §6). For the rest of that
+   * run the computer takes it out of every word it answers, and a picture is not words. The window
+   * does not offer one; this is the rule where the row is written, for a window that did.
+   */
+  test("no picture is kept of a browser a person's value is being held in, and one is again once it is not", async () => {
+    let held = true;
+    const asked: string[] = [];
+    const { app, keeps } = routesWhere((botId) => {
+      asked.push(botId);
+      return held;
+    });
+    const refused = await app.request(
+      "/mine/frames/call-held",
+      put({ jpeg: JPEG }),
+    );
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toEqual({
+      error: "laf:frame_withheld",
+      code: "laf:frame_withheld",
+    });
+    // Asked of the conversation's own Bot, and nothing was written.
+    expect(asked).toEqual(["agent-1"]);
+    expect(keeps).toEqual([]);
+
+    held = false;
+    expect(
+      (await app.request("/mine/frames/call-after", put({ jpeg: JPEG })))
+        .status,
+    ).toBe(204);
+    expect(keeps).toEqual(["call-after"]);
   });
 
   test("a picture that is not one is refused before anything is looked up", async () => {

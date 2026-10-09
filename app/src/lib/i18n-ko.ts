@@ -2365,6 +2365,10 @@ export const ko: Record<string, string> = {
     "봇이 보던 탭이 사라져서 봇을 다른 탭으로 옮김",
   "The Bot had too many tabs open, so tabs it was not using were closed":
     "봇이 탭을 너무 많이 열어서, 쓰지 않던 탭을 닫음",
+  "A value a person had put in was shown on the page, and was hidden from the Bot":
+    "직접 넣은 값이 페이지에 다시 보여서 봇에게는 가림",
+  "The tab a person had put a value into was closed when that task ended":
+    "값을 직접 넣은 탭을 그 일이 끝날 때 닫음",
   "The Bots now share one browser, which took over the profile last used":
     "봇들이 브라우저 하나를 함께 쓰게 되면서, 가장 최근에 쓰던 프로파일을 이어받음",
   // 문의·의견 — 진단 정보 같이 보내기: 서버가 모은 것을 보여 주고, 보여 준 그대로 보낸다.

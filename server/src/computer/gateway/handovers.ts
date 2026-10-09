@@ -21,7 +21,10 @@ export function createHandovers(deps: {
   /** The computer, addressed as the Bot that is asking. See `createComputerGateway`. */
   as: (botId: string) => ComputerClient;
   auditStore: AuditStore;
-  secrets: Pick<Secrets, "forgetTypedInto" | "targetOf">;
+  secrets: Pick<
+    Secrets,
+    "forgetTypedInto" | "targetOf" | "valuesSeen" | "valuesLetGo"
+  >;
 }) {
   const { client, as, auditStore, secrets } = deps;
 
@@ -71,6 +74,8 @@ export function createHandovers(deps: {
 
     async control(botId: string) {
       const state = await as(botId).control();
+      // What this server may have forgotten by starting again (`secrets.ts`, `valueRuns`).
+      if (state.valuesHeld) secrets.valuesSeen(botId);
       // The open request's target, resolved when it was made. Attached only while the request is
       // open, so a stale entry cannot describe a box that is no longer asking.
       const into = secrets.targetOf(botId);
@@ -102,6 +107,7 @@ export function createHandovers(deps: {
       const result = await as(botId).stopComputer();
       // The pages those refs named are gone, and a restarted browser counts its refs from `e1` again.
       secrets.forgetTypedInto(computerId);
+      secrets.valuesLetGo(botId);
       await writeControlEvent(auditStore, "computer.stopped", {
         botId,
         actor,
@@ -123,6 +129,7 @@ export function createHandovers(deps: {
     async resetComputer(computerId: string, botId: string, actor: ActionActor) {
       const result = await as(botId).resetComputer();
       secrets.forgetTypedInto(computerId);
+      secrets.valuesLetGo(botId);
       await writeControlEvent(auditStore, "computer.reset", {
         botId,
         actor,

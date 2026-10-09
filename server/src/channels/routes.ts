@@ -48,7 +48,8 @@ export type ChannelRefusal =
   | "laf:activity_time_invalid"
   | "laf:read_flag_invalid"
   | "laf:frame_invalid"
-  | "laf:frame_not_found";
+  | "laf:frame_not_found"
+  | "laf:frame_withheld";
 
 export function createChannelRoutes(
   store: ChannelStore,
@@ -71,6 +72,12 @@ export function createChannelRoutes(
    * on these routes keeps working; only the live feed goes quiet.
    */
   trustedOrigins: readonly string[] = [],
+  /**
+   * Whether a picture of this Bot's browser may not be kept just now: a value was put into it for
+   * a person, in a run that has not ended (`computer/gateway/secrets.ts`). Absent where there is
+   * no computer, and then no picture is refused for it.
+   */
+  framesWithheld?: (botId: string) => boolean,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -89,7 +96,13 @@ export function createChannelRoutes(
   routes.route("/", createRosterRoutes(store, requireUser, readMessageTimes));
   routes.route(
     "/",
-    createTranscriptRoutes(store, requireUser, readMessageTimes, events),
+    createTranscriptRoutes(
+      store,
+      requireUser,
+      readMessageTimes,
+      events,
+      framesWithheld,
+    ),
   );
   routes.route("/", createConversationRoutes(store, requireUser));
 

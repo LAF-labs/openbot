@@ -439,6 +439,59 @@ const CARD_HTML = `<!doctype html>
   </script>
 </body></html>`;
 
+/** What `/shown-back` calls its two boxes and its two buttons, and what it says once signed in. */
+export const SHOWN_BACK = {
+  id: "아이디",
+  password: "비밀번호",
+  /** Signs in: the page takes its boxes away and writes both values where a page writes things. */
+  signIn: "로그인",
+  /** Opens a second tab that says the same. */
+  receipt: "확인서 새 창",
+  said: "로그인했습니다",
+} as const;
+
+/**
+ * A sign-in that shows back what it was given, served at `/shown-back` (2026-10-10, record §6).
+ *
+ * WHAT A LOOK'S OWN BLANKING CANNOT REACH. A box a person's value went into reads as empty because
+ * the box is remembered, and an address is blanked by what a form writes into its query. This page
+ * leaves neither to find: on 로그인 it removes both boxes, then writes the values into its text, its
+ * title and the PATH of its address. 확인서 새 창 opens a second tab that takes them from the first
+ * and says them again — a tab no value was ever put into.
+ */
+const SHOWN_BACK_HTML = `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>로그인</title></head>
+<body>
+  <h1>로그인</h1>
+  <input id="id" type="text" aria-label="${SHOWN_BACK.id}">
+  <input id="pw" type="password" aria-label="${SHOWN_BACK.password}">
+  <button type="button" onclick="signIn()">${SHOWN_BACK.signIn}</button>
+  <button type="button" onclick="window.open('/shown-back-receipt')">${SHOWN_BACK.receipt}</button>
+  <p id="said"></p>
+  <script>
+    var who = '', pass = '';
+    const box = (id) => document.getElementById(id);
+    function signIn() {
+      who = box('id').value; pass = box('pw').value;
+      box('id').remove(); box('pw').remove();
+      document.title = who + ' 님';
+      box('said').textContent = '${SHOWN_BACK.said}: ' + who + ' / ' + pass;
+      history.replaceState(null, '', '/shown-back/' + encodeURIComponent(who));
+    }
+  </script>
+</body></html>`;
+
+const SHOWN_BACK_RECEIPT_HTML = `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>확인서</title></head>
+<body>
+  <h1>확인서</h1>
+  <p id="said"></p>
+  <script>
+    document.title = opener.who + ' 확인서';
+    document.getElementById('said').textContent = '${SHOWN_BACK.said}: ' + opener.who + ' / ' + opener.pass;
+  </script>
+</body></html>`;
+
 /**
  * The box on `/get-form` (`fixtures/get-form.html`), by the name the tree gives it.
  *
@@ -655,6 +708,13 @@ export function serveFixture(port = 0) {
         return new Response(CARD_HTML, {
           headers: { "content-type": "text/html; charset=utf-8" },
         });
+      }
+      if (path === "/shown-back-receipt") {
+        return new Response(SHOWN_BACK_RECEIPT_HTML, { headers: html });
+      }
+      // The page renames its own address to `/shown-back/<the sign-in name>` once signed in.
+      if (path === "/shown-back" || path.startsWith("/shown-back/")) {
+        return new Response(SHOWN_BACK_HTML, { headers: html });
       }
       // Files rather than strings, like the job pages, but not on that list: nobody's job opens them.
       if (path === "/get-form" || path === "/landed") {

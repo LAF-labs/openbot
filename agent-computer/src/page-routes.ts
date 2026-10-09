@@ -9,6 +9,7 @@
 import type { Page } from "playwright";
 import type { BotRoute } from "./computer";
 import { actionFailure } from "./failures";
+import { holdsFilled } from "./filled-values";
 import { arrivalNote, arrivalOf, pictureOf } from "./page-arrival";
 import { PAGE_TEXT_PLAIN, readSettledPageText, titleOf } from "./page-text";
 import { STALE_REFS, StaleSnapshotError } from "./refs";
@@ -155,7 +156,10 @@ export function thumbnailOptions(
   };
 }
 
-export const screenshot: BotRoute = async ({ botId, url }, { profiles }) => {
+export const screenshot: BotRoute = async (
+  { botId, url, session },
+  { profiles },
+) => {
   try {
     const target = await profiles.page(botId);
     const size = target.viewportSize() ?? { width: 1280, height: 800 };
@@ -176,6 +180,15 @@ export const screenshot: BotRoute = async ({ botId, url }, { profiles }) => {
       // from a real page to anything looking only at the bytes. The transcript needs to tell
       // those apart to avoid presenting a blank browser as though it were a loaded page.
       url: target.url(),
+      /*
+       * WHETHER THIS IS A PICTURE NOBODY MAY KEEP. A value put into a page for a person is kept
+       * out of every word that leaves, and a picture is not words: the page that shows a sign-in
+       * name back shows it here. Said on the picture itself, at the instant it was taken, so that
+       * whoever would file it away (`app/src/lib/computer/last-frame.ts`) is not deciding on a
+       * state it read a moment earlier. A person watching their own Bot's screen is shown it all
+       * the same — that is their value, on their screen, kept nowhere.
+       */
+      ...(holdsFilled(session) ? { valuesHeld: true } : {}),
     });
   } catch (error) {
     return browserFailed(error);

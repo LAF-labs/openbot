@@ -216,6 +216,8 @@ function engineWith(
     store?: typeof database;
     /** What the turn's listing counted and could not list (`ChatToolkit.withheld`). */
     withheld?: NonNullable<ChatToolkit["withheld"]>;
+    /** Who is told the turn's run is over (`TurnEngineOptions.runEnded`). */
+    runEnded?: (run: { botId: string; threadId: string }) => Promise<void>;
   } = {},
 ) {
   const hub = createTurnHub({ keepEndedMs: 50 });
@@ -257,6 +259,7 @@ function engineWith(
     ...(firstMove ? { firstMove } : {}),
     ...(options.now ? { now: options.now } : {}),
     ...(options.admits ? { admits: options.admits } : {}),
+    ...(options.runEnded ? { runEnded: options.runEnded } : {}),
     announce: async ({ text }) => {
       announced.push(text);
     },
@@ -460,6 +463,77 @@ describe("a turn the server owns", () => {
     });
     expect(second).toEqual({ ok: false, code: "laf:turn_in_progress" });
     release();
+    await until(async () => (await statusOf(sent.turnId)) === "done");
+  });
+
+  /*
+   * WHAT THE BOT'S COMPUTER HELD FOR THE RUN IS LET GO OF AT ITS END (2026-10-10, record §6): a
+   * value put into the browser for a person is hidden, and its tab kept, until the computer is
+   * told the run is over. Told once the next turn had begun, it would close the tab that turn was
+   * working in — so the turn is not over, for anybody, until it has been told.
+   */
+  test("its run is said to be over once, with its Bot and its conversation, before the conversation takes another turn", async () => {
+    const { threadId, channelId } = await aConversation();
+    const bot = scriptedBot();
+    const ends: { botId: string; threadId: string }[] = [];
+    let release = () => {};
+    const told = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { engine } = engineWith(
+      bot,
+      async () => ({ ok: true, title: "Example" }),
+      {
+        runEnded: async (run) => {
+          ends.push(run);
+          await told;
+        },
+      },
+    );
+    const send = () =>
+      engine.send({
+        threadId,
+        channelId,
+        owner: { id: OWNER, role: "user" },
+        botId: BOT,
+        messages: [asked("예시 페이지 확인해줘")],
+        tools: null,
+      });
+    const sent = await send();
+    expect(sent.ok).toBe(true);
+    if (!sent.ok) return;
+    await until(async () => ends.length === 1);
+    expect(ends).toEqual([{ botId: BOT, threadId }]);
+    // While the computer is being told, the turn is still going: nothing is started beside it.
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(await send()).toEqual({ ok: false, code: "laf:turn_in_progress" });
+    expect(await statusOf(sent.turnId)).not.toBe("done");
+    release();
+    await until(async () => (await statusOf(sent.turnId)) === "done");
+    expect(ends).toHaveLength(1);
+  });
+
+  test("a turn whose end could not be told still ends", async () => {
+    const { threadId, channelId } = await aConversation();
+    const { engine } = engineWith(
+      scriptedBot(),
+      async () => ({ ok: true, title: "Example" }),
+      {
+        runEnded: async () => {
+          throw new Error("the computer did not answer");
+        },
+      },
+    );
+    const sent = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("예시 페이지 확인해줘")],
+      tools: null,
+    });
+    expect(sent.ok).toBe(true);
+    if (!sent.ok) return;
     await until(async () => (await statusOf(sent.turnId)) === "done");
   });
 

@@ -2718,6 +2718,177 @@ describe("a field a person typed a secret into", () => {
   });
 });
 
+/*
+ * A VALUE PUT INTO THE BOT'S BROWSER FOR A PERSON IS HELD FOR THE RUN (2026-10-10, record §6). The
+ * computer keeps it out of everything it answers until it is told the run is over, and then closes
+ * the tabs it went into. What is pinned here is who tells it, and when: the run that had the value
+ * put in, at its own end — not a routine that happened to finish while the person's conversation
+ * was half-way through the site it had just signed in to.
+ */
+describe("a run a person's value was put in for", () => {
+  const LOGIN: SnapshotResult = {
+    snapshotId: 3,
+    url: "https://example.com/login",
+    title: "Login",
+    truncated: false,
+    elements: [
+      { ref: "e1", role: "textbox", name: "아이디" },
+      { ref: "e2", role: "textbox", name: "비밀번호", type: "password" },
+      { ref: "e4", role: "button", name: "로그인" },
+    ],
+  };
+
+  /** A gateway whose computer counts the ends it is told of, and answers them as scripted. */
+  function held(answer: () => Promise<{ ended: boolean; closed: number }>) {
+    const { client, calls } = scriptedClient(LOGIN);
+    const stub = client as unknown as {
+      runEnded: () => Promise<{ ended: boolean; closed: number }>;
+      control: () => Promise<Record<string, unknown>>;
+    };
+    stub.runEnded = async () => {
+      calls.push("runEnded");
+      return answer();
+    };
+    const { store } = fakeAudit();
+    const gateway = createComputerGateway({
+      client,
+      auditStore: store,
+      policy: () => PERMISSIVE,
+    });
+    const supplyIn = async (threadId: string | undefined) => {
+      await gateway.snapshot("bot-1");
+      await gateway.requestSecret(
+        "bot-1",
+        "bot-1",
+        threadId ? { ...ACTOR, threadId } : ACTOR,
+        { label: "네이버 비밀번호", ref: "e2", snapshotId: 3 },
+      );
+      await gateway.supplySecret("bot-1", "bot-1", ACTOR, ["hunter2"]);
+    };
+    const ends = () => calls.filter((call) => call === "runEnded").length;
+    return { gateway, stub, calls, supplyIn, ends };
+  }
+  const closes = async () => ({ ended: true, closed: 1 });
+
+  test("is ended by that run and by no other, and only once", async () => {
+    const { gateway, supplyIn, ends } = held(closes);
+    // Nothing was put in: no run's end is anything to the computer.
+    await gateway.runEnded("bot-1", "thread-a");
+    expect([gateway.holdsValues("bot-1"), ends()]).toEqual([false, 0]);
+
+    await supplyIn("thread-a");
+    expect(gateway.holdsValues("bot-1")).toBe(true);
+    // Another conversation's run, and another Bot's, end without the computer hearing of it.
+    await gateway.runEnded("bot-1", "thread-b");
+    await gateway.runEnded("bot-2", "thread-a");
+    expect([gateway.holdsValues("bot-1"), ends()]).toEqual([true, 0]);
+
+    await gateway.runEnded("bot-1", "thread-a");
+    expect([gateway.holdsValues("bot-1"), ends()]).toEqual([false, 1]);
+    await gateway.runEnded("bot-1", "thread-a");
+    expect(ends()).toBe(1);
+  });
+
+  test("an ask that named no conversation is ended by whichever run of that Bot's ends next", async () => {
+    const { gateway, supplyIn, ends } = held(closes);
+    await supplyIn(undefined);
+    await gateway.runEnded("bot-1", "thread-b");
+    expect([gateway.holdsValues("bot-1"), ends()]).toEqual([false, 1]);
+  });
+
+  test("is noted before the values leave, so a supply that failed half-way is still a run to end", async () => {
+    const { gateway, stub, ends } = held(closes);
+    (stub as unknown as { supplySecret: () => Promise<never> }).supplySecret =
+      async () => {
+        throw new ElementNotFoundError("laf:element_not_actionable");
+      };
+    await gateway.snapshot("bot-1");
+    await gateway.requestSecret(
+      "bot-1",
+      "bot-1",
+      { ...ACTOR, threadId: "thread-a" },
+      { label: "네이버 비밀번호", ref: "e2", snapshotId: 3 },
+    );
+    await gateway
+      .supplySecret("bot-1", "bot-1", ACTOR, ["hunter2"])
+      .catch(() => undefined);
+    expect(gateway.holdsValues("bot-1")).toBe(true);
+    await gateway.runEnded("bot-1", "thread-a");
+    expect(ends()).toBe(1);
+  });
+
+  test("a computer that could not close its tabs, or could not be told, is still holding — and is told again at the next end", async () => {
+    let answer: () => Promise<{ ended: boolean; closed: number }> =
+      async () => ({
+        ended: false,
+        closed: 0,
+      });
+    const { gateway, supplyIn, ends } = held(() => answer());
+    await supplyIn("thread-a");
+    await gateway.runEnded("bot-1", "thread-a");
+    expect([gateway.holdsValues("bot-1"), ends()]).toEqual([true, 1]);
+
+    answer = async () => {
+      throw new Error("the computer did not answer");
+    };
+    // Never thrown: this is called as a turn is let go of.
+    await gateway.runEnded("bot-1", "thread-a");
+    expect([gateway.holdsValues("bot-1"), ends()]).toEqual([true, 2]);
+
+    answer = closes;
+    await gateway.runEnded("bot-1", "thread-a");
+    expect([gateway.holdsValues("bot-1"), ends()]).toEqual([false, 3]);
+  });
+
+  test("a value put in for another run while the end is on its way keeps that run's note", async () => {
+    let release = () => {};
+    const told = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { gateway, supplyIn, ends } = held(async () => {
+      await told;
+      return { ended: true, closed: 1 };
+    });
+    await supplyIn("thread-a");
+    const ending = gateway.runEnded("bot-1", "thread-a");
+    // Another conversation's card is answered before the computer has answered the end.
+    await supplyIn("thread-b");
+    release();
+    await ending;
+    expect([gateway.holdsValues("bot-1"), ends()]).toEqual([true, 1]);
+    // Its own end is still passed on, and the first run's is not passed on twice.
+    await gateway.runEnded("bot-1", "thread-a");
+    expect(ends()).toBe(1);
+    await gateway.runEnded("bot-1", "thread-b");
+    expect([gateway.holdsValues("bot-1"), ends()]).toEqual([false, 2]);
+  });
+
+  test("a server that started again relearns it from the computer's own word, and the next run to end ends it", async () => {
+    const { gateway, stub, ends } = held(closes);
+    expect(gateway.holdsValues("bot-1")).toBe(false);
+    stub.control = async () => ({
+      holder: "bot",
+      since: "2026-10-10T00:00:00.000Z",
+      requested: false,
+      valuesHeld: true,
+    });
+    // Anybody asking for the control state: a window's poll does, once a second.
+    await gateway.control("bot-1");
+    expect(gateway.holdsValues("bot-1")).toBe(true);
+    await gateway.runEnded("bot-1", "thread-z");
+    expect([gateway.holdsValues("bot-1"), ends()]).toEqual([false, 1]);
+  });
+
+  test("a browser that was stopped has let go of it already", async () => {
+    const { gateway, supplyIn, ends } = held(closes);
+    await supplyIn("thread-a");
+    await gateway.stopComputer("bot-1", "bot-1", ACTOR);
+    expect(gateway.holdsValues("bot-1")).toBe(false);
+    await gateway.runEnded("bot-1", "thread-a");
+    expect(ends()).toBe(0);
+  });
+});
+
 describe("an answer bound to the control it was given for", () => {
   /*
    * A ref is an ordinal Playwright mints per snapshot, and a page that re-renders in place keeps

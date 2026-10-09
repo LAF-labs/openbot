@@ -509,6 +509,36 @@ describe("a step that moved the page ends the round, and a look at the page stil
     expect(said).not.toHaveProperty("noteCodes");
   });
 
+  /*
+   * THE TAB A PERSON'S VALUE WENT INTO, CLOSED WHEN THE LAST RUN ENDED (2026-10-10, record §6).
+   * The Bot is on another tab than the one it last read, exactly as when a tab is lost, and is told
+   * on its first look: a step asked for in the same reply was aimed at a page that is not there.
+   */
+  test("a snapshot that says the tab a person's value went into was closed: the key after it in the same reply is not reached", async () => {
+    const { gateway, acted } = looking({
+      code: "laf:value_tab_closed",
+      origin: "https://nid.naver.com",
+    });
+    const toolkit = await chatToolsOver(gateway);
+    const outcome = await run(
+      [
+        reply(
+          { id: "s1", name: "computer_snapshot" },
+          { id: "k2", name: "computer_key", args: { key: "Enter" } },
+        ),
+        reply(),
+      ],
+      toolkit.execute,
+    );
+    expect(outcome.executed).toEqual(["s1"]);
+    expect(outcome.filed.get("k2")).toEqual(NOT_REACHED);
+    expect(acted).toEqual([]);
+    const said = outcome.filed.get("s1") as Record<string, unknown>;
+    expect(said.notes).toEqual([
+      `${toolResultText("laf:value_tab_closed")} (https://nid.naver.com)`,
+    ]);
+  });
+
   test("a routine's read that says its tab went from under it: the Enter and the tab switch after it in the same reply are not reached", async () => {
     const { gateway, acted } = looking({
       code: "laf:tab_replaced",

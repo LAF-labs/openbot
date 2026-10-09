@@ -27,6 +27,7 @@ import {
   releaseControl,
   requestHelp,
   requestSecret,
+  runEnded,
   supplySecret,
   withdrawSecret,
 } from "./control-routes";
@@ -39,6 +40,7 @@ import {
   statFile,
   writeFile,
 } from "./file-routes";
+import { withoutFilledValues } from "./filled-values";
 import type { StreamData } from "./live-screen";
 import type { Profiles } from "./profiles";
 import { navigate } from "./navigation";
@@ -55,6 +57,7 @@ const BOT_ROUTES = new Map<string, BotRoute>([
   ["POST /human/secret", supplySecret],
   ["POST /control/release", releaseControl],
   ["POST /control/secret/withdraw", withdrawSecret],
+  ["POST /run/ended", runEnded],
   ["POST /computers/stop", stopComputer],
   ["POST /computers/reset", resetComputer],
   ["POST /navigate", navigate],
@@ -209,7 +212,18 @@ export function computerFetch(computer: Computer) {
        * current — a healthy popup closed, with its site's name in the crash line.
        */
       if (on && answeredADeadTab(answer)) await computer.profiles.deadTab(on);
-      return withoutTypedAddresses(session, answer);
+      const sent = await withoutTypedAddresses(session, answer);
+      /*
+       * AND NO TEXT LEAVES CARRYING WHAT WAS PUT INTO A PAGE FOR A PERSON, for as long as the run
+       * that put it there lasts — a page may show a value back anywhere, and here is the one place
+       * all of it passes (`filled-values.ts`).
+       *
+       * NOT A FILE'S. A file in the Bot's folder is the person's own, read to be changed and
+       * written back: a list of their customers with the mark where their own sign-in name stood
+       * would be saved that way. What a page says is the browser's; what a file says is not.
+       */
+      if (url.pathname.startsWith("/files/")) return sent;
+      return withoutFilledValues(session, sent);
     }
 
     return fact("laf:computer_route_unknown");

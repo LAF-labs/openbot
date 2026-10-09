@@ -12,6 +12,8 @@
 
 import { secretFieldsOf } from "../../../../shared/secret-ask";
 import type { AuditStore } from "../../audit";
+import { describeFailure } from "../../failure-text";
+import { log } from "../../log";
 import {
   type ComputerClient,
   ComputerUnavailableError,
@@ -48,7 +50,12 @@ type Requested = {
   snapshotId: number;
   origin: string;
   fields: { ref: string; role: string; name: string }[];
+  /** The conversation whose run asked, where it said. Whose run the values are put in for. */
+  threadId?: string;
 };
+
+/** A run that named no conversation, or one this server learnt of from the computer. */
+const ANY_RUN = "";
 
 /**
  * How many such fields one computer's snapshots are masked against. Two cards of the most boxes
@@ -129,6 +136,75 @@ export function createSecrets(deps: {
    */
   const secretRequests = new Map<string, Requested>();
   const typedInto = new Map<string, TypedInto[]>();
+  /**
+   * The Bots a value was put into the browser for, and the runs it was put in for — until the
+   * computer has been told each run is over (`runEnded`).
+   *
+   * WHOSE RUN, BECAUSE A BOT MAY BE ON TWO. A routine's run ends while the person's conversation
+   * is half-way through the site it just signed in to; told of that end, the computer would close
+   * the tab the conversation is working in. So an end is passed on only for a run that put a value
+   * in — by its conversation, which is what both the ask and the end of a turn name.
+   *
+   * IN THIS PROCESS, LIKE THE REST HERE, AND RELEARNT WHEN IT IS LOST. The computer says for itself
+   * that it is holding a value (`ControlState.valuesHeld`), and a server that started again
+   * mid-run reads that the next time anybody asks for the control state (`valuesSeen`). Whose run
+   * it was is not something the computer knows, so the next run of that Bot's to end ends it.
+   */
+  const valueRuns = new Map<string, Set<string>>();
+  const putInFor = (botId: string, threadId: string | undefined): void => {
+    const runs = valueRuns.get(botId) ?? new Set<string>();
+    runs.add(threadId ?? ANY_RUN);
+    valueRuns.set(botId, runs);
+  };
+
+  /** Whether a value is being held in this Bot's browser, as far as this server knows. */
+  function holdsValues(botId: string): boolean {
+    return valueRuns.has(botId);
+  }
+
+  /** This Bot's browser was stopped or reset: its tabs are closed, and what was held went with them. */
+  function valuesLetGo(botId: string): void {
+    valueRuns.delete(botId);
+  }
+
+  /** The computer said it holds a value this server has no note of: one from before a restart. */
+  function valuesSeen(botId: string): void {
+    if (!valueRuns.has(botId)) putInFor(botId, undefined);
+  }
+
+  /**
+   * A run of this Bot's is over. If it is one a value was put in for, the computer is told, and
+   * closes the tabs the value went into before it stops hiding it.
+   *
+   * Never throws: this is called as a turn is let go of, where there is nobody to answer an error
+   * to. A computer that could not be told, or could not close a tab, is still holding the value —
+   * and is still noted here as holding it, so the next run to end tells it again.
+   */
+  async function runEnded(botId: string, threadId?: string): Promise<void> {
+    const runs = valueRuns.get(botId);
+    if (!runs) return;
+    if (!runs.has(threadId ?? ANY_RUN) && !runs.has(ANY_RUN)) return;
+    // ONLY THE RUNS NOTED BEFORE THE COMPUTER WAS TOLD. A value put in for another run while this
+    // is on its way may reach the computer after it has let go of everything, and that run's note
+    // has to outlive this answer: it is what tells the computer at that run's own end.
+    const ending = [...runs];
+    try {
+      const { ended } = await as(botId).runEnded();
+      if (!ended) {
+        log.warn("computer_values_still_held", { bot: botId });
+        return;
+      }
+      for (const run of ending) runs.delete(run);
+      if (runs.size === 0 && valueRuns.get(botId) === runs) {
+        valueRuns.delete(botId);
+      }
+    } catch (error) {
+      log.warn("computer_run_end_not_told", {
+        bot: botId,
+        reason: describeFailure(error),
+      });
+    }
+  }
 
   function forgetTypedInto(computerId: string): void {
     typedInto.delete(computerId);
@@ -364,6 +440,7 @@ export function createSecrets(deps: {
       snapshotId: input.snapshotId,
       origin: originOf(cached.url),
       fields: fields.map(({ ref, role, name }) => ({ ref, role, name })),
+      ...(actor.threadId ? { threadId: actor.threadId } : {}),
     });
     // ONE ROW FOR ONE CARD — it is also what tells a person a Bot is waiting on them
     // (`notifications/from-audit.ts`), and a card of three boxes is one thing to come back to.
@@ -417,6 +494,9 @@ export function createSecrets(deps: {
     ) {
       throw new SecretValuesError();
     }
+    // NOTED BEFORE THE VALUES LEAVE, not after they land: a supply that fails at its third box
+    // has put two values into the page, and the computer is holding those.
+    putInFor(botId, request.threadId);
     const result = await as(botId).supplySecret([...values], {
       // Which ask this answers — the computer takes values for that one and no other —
       snapshotId: request.snapshotId,
@@ -456,6 +536,10 @@ export function createSecrets(deps: {
     suppliedOn,
     requestSecret,
     supplySecret,
+    holdsValues,
+    valuesSeen,
+    valuesLetGo,
+    runEnded,
   };
 }
 

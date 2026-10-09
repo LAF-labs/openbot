@@ -56,6 +56,8 @@ describe("the codes the computer ships", () => {
     expect(codes).toContain("laf:stale_refs");
     expect(codes).toContain("laf:tab_replaced");
     expect(codes).toContain("laf:old_tab_closed");
+    expect(codes).toContain("laf:value_hidden");
+    expect(codes).toContain("laf:value_tab_closed");
   });
 
   /**
@@ -165,6 +167,26 @@ describe("putting a fact into words", () => {
         },
       ]),
     ).toEqual([`${toolResultText("laf:tab_replaced")} (https://a.example)`]);
+  });
+
+  test("a tab closed for what a person had put into it says so, with its site, and is not said as a tab that was lost", () => {
+    const said = noteTexts([
+      { code: "laf:value_tab_closed", origin: "https://nid.naver.com" },
+    ]);
+    expect(said).toEqual([
+      `${toolResultText("laf:value_tab_closed")} (https://nid.naver.com)`,
+    ]);
+    // Closed on purpose, for one reason: not "it may have closed itself, or the browser stopped it".
+    expect(said?.[0]).toContain("고장이 아니다");
+    expect(toolResultText("laf:value_tab_closed")).not.toBe(
+      toolResultText("laf:tab_replaced"),
+    );
+  });
+
+  test("a hidden value's mark is said to be this computer's, and nothing rides beside it", () => {
+    const said = noteTexts([{ code: "laf:value_hidden" }]);
+    expect(said).toEqual([toolResultText("laf:value_hidden")]);
+    expect(said?.[0]).toContain("[•••]");
   });
 
   test("a code with nothing to add is just its sentence", () => {

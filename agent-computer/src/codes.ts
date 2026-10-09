@@ -160,6 +160,13 @@ export const COMPUTER_CODES = {
   // takes its index from. How many were `closed` and the `origins` they showed ride beside it. On
   // the Bot's next snapshot, with the list, once (tab-cap.ts).
   "laf:old_tab_closed": { note: true },
+  // Something a person had put into a page was found in this answer's text and taken out; the mark
+  // `[•••]` stands where it was (filled-values.ts). On the answer it was hidden in, every time.
+  "laf:value_hidden": { note: true },
+  // The run in which a person's value was put into a page has ended, and the tabs it went into
+  // were closed with it; the `origin` of the one the Bot was on, or of the first closed, rides
+  // beside it. On the Bot's first look after it, once, like a tab that was lost (tab-loss.ts).
+  "laf:value_tab_closed": { note: true },
 } as const satisfies Record<`laf:${string}`, Answer | Told>;
 
 export type ComputerCode = keyof typeof COMPUTER_CODES;

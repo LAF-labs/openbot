@@ -1227,6 +1227,10 @@ export const COMPUTER_FACTS: Record<string, string> = {
     "The tab the Bot was on went away, and the Bot was moved to another",
   "laf:old_tab_closed":
     "The Bot had too many tabs open, so tabs it was not using were closed",
+  "laf:value_hidden":
+    "A value a person had put in was shown on the page, and was hidden from the Bot",
+  "laf:value_tab_closed":
+    "The tab a person had put a value into was closed when that task ended",
   "laf:profile_adopted":
     "The Bots now share one browser, which took over the profile last used",
 };

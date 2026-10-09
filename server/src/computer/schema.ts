@@ -398,6 +398,13 @@ export type ControlState = {
    */
   unfilled?: true;
   /**
+   * A value was put into this Bot's browser for a person, in a run the computer has not been told
+   * is over. For that long it keeps the value out of everything it answers, and no picture of the
+   * browser is kept (`agent-computer/src/filled-values.ts`). The computer's own word for it —
+   * which is what makes it true after this server has started again and forgotten.
+   */
+  valuesHeld?: true;
+  /**
    * Where that field is, as THIS SERVER resolved it — never as the Bot described it.
    *
    * `secretWanted` is a label the model wrote, and a model steered by a page can write "네이버

@@ -248,6 +248,7 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
     touch,
     use,
     closeTabsOf,
+    closeFor,
     closeStrays,
     adoptOpened,
     tabs,
@@ -494,6 +495,9 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
     /** What became of the Bot's list since it last read it: tabs closed for the cap. See tabs.ts. */
     cappedOf,
     listRead,
+
+    /** Close the tabs a person's value went into, when the run that put it there ends. See tabs.ts. */
+    closeFor,
 
     /** Whether this tab's renderer died, which ended its time as a Bot's tab. See tabs.ts. */
     hasCrashed,
