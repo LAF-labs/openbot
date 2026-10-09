@@ -373,6 +373,18 @@ describe("a login a person saves", () => {
         "laf:login_origins_too_many",
         "origins",
       ],
+      // A host name longer than one can be, and an address that is most of a megabyte: saved,
+      // either would be in the row, in the trail for good, and in every list sent back.
+      [
+        { ...NAVER, origins: [`${"a.".repeat(127)}example`] },
+        "laf:login_origin_refused",
+        "origins",
+      ],
+      [
+        { ...NAVER, origins: [`https://${"a".repeat(900_000)}.example`] },
+        "laf:login_origin_refused",
+        "origins",
+      ],
       [{ ...NAVER, label: "   " }, "laf:login_label_required", "label"],
       [{ ...NAVER, username: "" }, "laf:login_value_required", "username"],
       [
@@ -505,6 +517,73 @@ describe("a login a person saves", () => {
         },
       ]),
     ]);
+  });
+
+  test("a change that cannot be read is refused before its login is looked for, and a name is saved as one the database can hold", async () => {
+    /*
+     * Sent for a login that is nobody's, bytes that could not be read were answered "not found"
+     * — a 404 and no row, for what is a refusal with a row when the login is theirs.
+     */
+    rows.length = 0;
+    for (const body of ["{not json", '{"passwrod":"x"}']) {
+      const unreadable = await app.request("/api/logins/login_nobodys", {
+        method: "PATCH",
+        headers: { "content-type": "application/json", "x-test-user": owner },
+        body,
+      });
+      expect([unreadable.status, await unreadable.json()]).toEqual([
+        400,
+        { error: "laf:login_invalid", code: "laf:login_invalid" },
+      ]);
+    }
+    // No login of theirs to name: the row is about a change that was about nothing.
+    expect(
+      rows.map((one) => [one.eventType, one.targetId, one.payload]),
+    ).toEqual(
+      Array.from({ length: 2 }, () => [
+        "account.login_refused",
+        "unsaved",
+        { code: "laf:login_invalid" },
+      ]),
+    );
+    // A change that CAN be read, for a login that is nobody's, is still not found — and is
+    // nothing the trail is told of.
+    rows.length = 0;
+    const missing = await call("PATCH", "/login_nobodys", { label: "가게" });
+    expect(missing.status).toBe(404);
+    expect(rows).toEqual([]);
+
+    /*
+     * A NAME WITH A ZERO BYTE IN IT is text Postgres cannot store: the save died inside the
+     * database, as a 500 with no refusal and no row. Control characters are read as the spaces
+     * they would be drawn as; a name made of nothing else is no name.
+     */
+    const named = await call("POST", "", {
+      ...NAVER,
+      label: "가게\u0000스마트\u0007스토어\u009f ",
+    });
+    expect(named.status).toBe(201);
+    const saved = (await named.json()) as { id: string; label: string };
+    expect(saved.label).toBe("가게 스마트 스토어");
+    const unnamed = await call("POST", "", { ...NAVER, label: "\u0000\u0001" });
+    expect([unnamed.status, await unnamed.json()]).toEqual([
+      400,
+      {
+        error: "laf:login_label_required",
+        code: "laf:login_label_required",
+        field: "label",
+      },
+    ]);
+    // And a name is cut where a character ends, not through one.
+    const long = await call("PATCH", `/${saved.id}`, {
+      label: "🏪".repeat(200),
+    });
+    const cut = ((await long.json()) as { label: string }).label;
+    expect(cut.isWellFormed()).toBe(true);
+    expect([...cut].every((character) => character === "🏪")).toBe(true);
+    // Eighty as a person counts them — which for these is twice that many code units.
+    expect([...cut]).toHaveLength(80);
+    expect(await vault.remove(owner, saved.id)).toBe(true);
   });
 
   test("is gone the moment it is deleted, and the trail says which one went", async () => {

@@ -16,6 +16,10 @@
  * on a loopback address without a certificate; it is asked for by name and is never the default.
  */
 
+/** The longest a host name can be (RFC 1035), and the longest thing a person can type for one. */
+const HOST_NAME_MAX = 253;
+const LOGIN_ADDRESS_MAX = 2048;
+
 /** A host that is this machine and nothing else. */
 function isLoopback(hostname: string): boolean {
   return (
@@ -41,6 +45,8 @@ export function loginOriginOf(
 ): string | null {
   const text = written.trim();
   if (!text || /\s/.test(text)) return null;
+  // Longer than an address is: not read at all, however much of a megabyte it fills.
+  if (text.length > LOGIN_ADDRESS_MAX) return null;
   // A bare host is the site's HTTPS address: nobody types the scheme, and no other is taken.
   const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(text)
     ? text
@@ -53,6 +59,13 @@ export function loginOriginOf(
   }
   if (url.username || url.password) return null;
   if (!url.hostname) return null;
+  /*
+   * A NAME NO LONGER THAN A NAME CAN BE. The parser takes a host of any length, so one address
+   * could be most of a megabyte — saved in the row, written into the trail, which is never
+   * deleted, and sent back in every list (Codex's fifth read of the change that saves these). A
+   * host name is at most 253 characters; what is longer is not one.
+   */
+  if (url.hostname.length > HOST_NAME_MAX) return null;
   if (url.protocol === "https:") return url.origin;
   if (
     url.protocol === "http:" &&

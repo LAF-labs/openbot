@@ -51,6 +51,23 @@ describe("the origin a login is saved for", () => {
     }
   });
 
+  test("is no longer than an address is: a host name past 253 characters, or anything past a couple of thousand, is not read as one", () => {
+    // The parser takes a host of any length; a name cannot be longer than this.
+    const longest = `${"a.".repeat(124)}abcde`;
+    expect(longest).toHaveLength(253);
+    expect(loginOriginOf(longest)).toBe(`https://${longest}`);
+    expect(loginOriginOf(`a${longest}`)).toBeNull();
+    // Most of a megabyte, with a path or as a host: not parsed, not saved.
+    expect(
+      loginOriginOf(`https://shop.example/${"a".repeat(900_000)}`),
+    ).toBeNull();
+    expect(loginOriginOf(`${"a".repeat(900_000)}.example`)).toBeNull();
+    // An ordinary address with an ordinary path is still its origin.
+    expect(loginOriginOf(`https://shop.example/${"a".repeat(1_000)}`)).toBe(
+      "https://shop.example",
+    );
+  });
+
   test("lets a developer's own machine through without a certificate only when asked by name, and nothing else with it", () => {
     const dev = { allowLoopbackHttp: true };
     expect(loginOriginOf("http://127.0.0.1:4395/card")).toBeNull();

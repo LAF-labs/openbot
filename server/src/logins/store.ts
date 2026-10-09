@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, count, eq } from "drizzle-orm";
 import { loginOriginOf } from "../../../shared/login-origin";
 import { siteById } from "../../../shared/sites/catalogue";
+import { cutOnGraphemes, soundText } from "../../../shared/sound-text";
 import { pseudonymFor } from "../account/pseudonym";
 import {
   type AuditEventInput,
@@ -122,11 +123,23 @@ export function createLoginVault(input: {
   const now = input.now ?? (() => new Date());
   const originOptions = { allowLoopbackHttp: input.allowLoopbackHttp === true };
 
+  /**
+   * What the person calls it, as one line the database can hold. The name is the one thing here
+   * that is written as it was typed: a zero byte in it is text Postgres cannot store, and the
+   * save failed inside the database with no refusal and no row (Codex's fifth read of this
+   * change). Control characters are read as the spaces they would be drawn as, and what is left
+   * is cut where a character ends — half of one is not a name either (`shared/sound-text.ts`).
+   */
   const labelOf = (written: unknown): string => {
     const label =
-      typeof written === "string" ? written.replace(/\s+/g, " ").trim() : "";
+      typeof written === "string"
+        ? soundText(
+            // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what this removes
+            written.replace(/[\u0000-\u001f\u007f-\u009f\s]+/g, " "),
+          ).trim()
+        : "";
     if (!label) throw new LoginRefused("laf:login_label_required", "label");
-    return label.slice(0, LABEL_MAX);
+    return cutOnGraphemes(label, LABEL_MAX);
   };
 
   /**
@@ -377,6 +390,17 @@ export function createLoginVault(input: {
         .select()
         .from(lafSavedLogins)
         .where(mine(userId, id));
+      /*
+       * WHAT COULD NOT BE READ IS REFUSED BEFORE ANYTHING IS LOOKED FOR. Sent for a login that is
+       * not this person's — or is nobody's — it was answered "not found" first: a 404, and no
+       * row, for the same bytes that are a refusal with a row when the login is theirs (Codex's
+       * fifth read of this change). The row says which login only where there is one of theirs.
+       */
+      if (!written) {
+        return orRefused(userId, row ? view(row) : undefined, async () => {
+          throw new LoginRefused("laf:login_invalid");
+        });
+      }
       if (!row) return null;
       // Nothing was sent: nothing is written, and the trail is not told of a change that was not.
       const sent = written
