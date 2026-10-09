@@ -10,12 +10,8 @@ import {
   withName,
 } from "./account/whereabouts";
 import { createDayRoutes, type DayReader } from "./agents/day";
-import { createMadeRoutes, type MadeReader } from "./agents/made";
-import { createFeedRoutes } from "./feed/routes";
-import { createGoalRoutes } from "./goals/routes";
-import type { GoalStore } from "./goals/store";
-import type { FeedStore } from "./feed/store";
 import { createFirstTaskRoutes } from "./agents/first-task";
+import { createMadeRoutes, type MadeReader } from "./agents/made";
 import type { AgentMemoryStore } from "./agents/memory-store";
 import type { AgentProfileStore } from "./agents/profile-store";
 import { createAgentRoutes } from "./agents/routes";
@@ -71,6 +67,10 @@ import {
   NOT_FOUND,
   refusalBody,
 } from "./failure-text";
+import { createFeedRoutes } from "./feed/routes";
+import type { FeedStore } from "./feed/store";
+import { createGoalRoutes } from "./goals/routes";
+import type { GoalStore } from "./goals/store";
 import {
   createHealthRoute,
   type HealthProbes,
@@ -79,12 +79,15 @@ import {
 import { createIdeaRoutes } from "./ideas/routes";
 import { createIdeaService } from "./ideas/service";
 import { log } from "./log";
+import { createLoginRoutes } from "./logins/routes";
+import type { LoginVault } from "./logins/store";
 import { createSecurityMiddleware, RATE_LIMITED } from "./middleware/security";
 import type { ApprovalMetrics } from "./notifications/approval-metrics";
 import type { NotificationOutbox } from "./notifications/outbox";
 import { createNotificationRoutes } from "./notifications/routes";
 import type { BuiltInSkillsRuntime } from "./plugins/built-in-skill-sync";
 import { createConnectedPageRoute } from "./plugins/connected-page";
+import type { DeploymentKeyRuntime } from "./plugins/deployment-key-runtime";
 import {
   type ConnectionsOverviewSources,
   connectionSourcesFrom,
@@ -93,7 +96,6 @@ import {
 } from "./plugins/overview-routes";
 import { createPartnerRoutes } from "./plugins/partner-routes";
 import type { PartnerRuntime } from "./plugins/partners";
-import type { DeploymentKeyRuntime } from "./plugins/deployment-key-runtime";
 import { type ConnectConfig, createPluginRoutes } from "./plugins/routes";
 import type { PluginStore } from "./plugins/store";
 import { createRoutineRoutes } from "./routines/routes";
@@ -433,6 +435,11 @@ export type CreateAppOptions = {
    * unmounted — the page then says it could not read them.
    */
   goals?: GoalStore;
+  /**
+   * 로그인 보관함: the logins a person saved for their Bot's browser (logins/). Absent leaves
+   * `/api/logins` unmounted.
+   */
+  logins?: LoginVault;
 };
 
 export function createApp({
@@ -484,6 +491,7 @@ export function createApp({
   readMade,
   feed,
   goals,
+  logins,
 }: CreateAppOptions) {
   const app = new Hono<{ Variables: AppVariables }>();
   app.use("*", createSecurityMiddleware());
@@ -1044,6 +1052,10 @@ export function createApp({
 
   if (goals) {
     app.route("/api/goals", createGoalRoutes(goals, requireUser));
+  }
+
+  if (logins) {
+    app.route("/api/logins", createLoginRoutes(logins, requireUser));
   }
 
   if (feed) {

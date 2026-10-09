@@ -1069,3 +1069,54 @@ export const lafAttachments = pgTable(
   },
   (table) => [index("laf_attachments_user_id_idx").on(table.userId)],
 );
+
+/**
+ * 로그인 보관함: A LOGIN A PERSON SAVED, FOR THEIR BOT'S BROWSER TO SIGN IN WITH
+ * (`docs/laf/redesign-2026-10.md` §6, piece 2-3).
+ *
+ * THE PERSON'S, ROW BY ROW. Every row names its owner, goes when they delete it from the account
+ * menu — at once, not at a retention cutoff — and goes with their account, removed by name before
+ * the `users` row is (`account/deletion.ts`). The vault that was already here (`credentials`) has
+ * no owner column: it holds what a DEPLOYMENT holds, keyed by what the secret is for, and is
+ * revoked rather than deleted. A person's passwords are neither.
+ *
+ * NOTHING HERE IS A VALUE ANYBODY CAN READ. The name and the password are sealed under a key of
+ * the row's own, and that key is wrapped under the deployment's key, which is not in this database
+ * (`logins/crypto.ts`). What is readable is what a person needs to recognise the row and what the
+ * server needs to decide where it may go: what they called it, which site, and the origins.
+ *
+ * `origins` IS WHERE IT MAY BE PUT, AND NOWHERE ELSE: each `https://host[:port]`, normalised when
+ * saved (`shared/login-origin.ts`). A site whose sign-in box lives on another origin — Naver's is
+ * on `nid.naver.com` — has both.
+ */
+export const lafSavedLogins = pgTable(
+  "laf_saved_logins",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** What the person calls it — "네이버", "가게 스마트스토어". What a Bot is told to pick it by. */
+    label: text("label").notNull(),
+    /** A site this deployment knows by name (`shared/sites/catalogue.ts`), where it is one. */
+    site: text("site"),
+    origins: text("origins").array().notNull(),
+    /** The row's own key, wrapped under the deployment's. Never the key. */
+    wrappedKey: text("wrapped_key").notNull(),
+    /** Which deployment key wrapped it: a fingerprint, so a second key can be told from the first. */
+    kekId: text("kek_id").notNull(),
+    /** The sign-in name, sealed under the row's key. */
+    sealedUsername: text("sealed_username").notNull(),
+    /** The password, sealed under the row's key. */
+    sealedPassword: text("sealed_password").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    /** When the Bot's browser last signed in with it. Null until it has. */
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  },
+  (table) => [index("laf_saved_logins_user_idx").on(table.userId)],
+);

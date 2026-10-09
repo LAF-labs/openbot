@@ -10,12 +10,10 @@ import {
   createWhereaboutsStore,
 } from "./account/whereabouts";
 import { createDayReader } from "./agents/day";
-import { createMadeReader } from "./agents/made";
-import { createFeedStore } from "./feed/store";
-import { createGoalStore } from "./goals/store";
-import { withGrantedSkills } from "./agents/granted-skills";
 import { createDream } from "./agents/dream";
+import { withGrantedSkills } from "./agents/granted-skills";
 import { createGuidanceStore } from "./agents/guidance-store";
+import { createMadeReader } from "./agents/made";
 import {
   createMemoryCurator,
   evidenceFromConversations,
@@ -32,6 +30,11 @@ import {
 } from "./agents/runtime-agents";
 import { withShopProfile } from "./agents/shop-context";
 import { createApp } from "./app";
+import {
+  converterSettingFor,
+  createConverter,
+} from "./attachments/converter-client";
+import { createAttachmentService } from "./attachments/service";
 import { createAuditReader, createAuditStore } from "./audit";
 import { createAuth } from "./auth";
 import { createDeploymentAdmission } from "./auth/admission";
@@ -50,6 +53,7 @@ import {
 import { startBackgroundWork } from "./boot/background";
 import { keepServingThroughUnhandledRejections } from "./boot/process";
 import { reconcileBeforeServing } from "./boot/reconcile";
+import { recordActivity } from "./channels/activity";
 import {
   type ChannelActivityEvent,
   createChannelEventHub,
@@ -63,6 +67,7 @@ import { createComponentStore } from "./components/store";
 import { createApprovalRegistry } from "./computer/approvals";
 import { createComputerClient } from "./computer/client";
 import { createComputerGateway } from "./computer/gateway";
+import { createHighRiskCheck } from "./computer/high-risk";
 import {
   createPolicyStore,
   DEFAULT_ACTION_POLICY,
@@ -76,57 +81,52 @@ import {
   createDatabaseStandingApprovalStore,
   ownerTaskTextIn,
 } from "./computer/standing-approvals";
-import { createHighRiskCheck } from "./computer/high-risk";
 import { botEndpointsTaken, loadConfig } from "./config";
 import type { Compactor } from "./context/compaction";
-import { createSummaryScrubber } from "./context/forget-scrub";
 import {
   botBusyReader,
   conversationPersistence,
   createConversationStore,
 } from "./context/conversations";
-import {
-  converterSettingFor,
-  createConverter,
-} from "./attachments/converter-client";
-import { createAttachmentService } from "./attachments/service";
-import { messagesFor } from "./runner/thread-store";
-import { recordActivity } from "./channels/activity";
+import { createSummaryScrubber } from "./context/forget-scrub";
 import { mountCopilotRuntime, resolveRuntimeAgents } from "./copilot";
 import {
   createCredentialAdminService,
   createCredentialStore,
 } from "./credentials";
 import { createDatabase } from "./db/client";
+import { createFeedStore } from "./feed/store";
 import { createFleetNotifier } from "./fleet/notify";
+import { createGoalStore } from "./goals/store";
 import { deploymentHealthProbes } from "./health";
 import { createLiveScreen, type SocketData } from "./live-screen";
 import { log, recentLines } from "./log";
+import { createLoginVault } from "./logins/store";
 import { readApprovalMetrics } from "./notifications/approval-metrics";
 import { createDeploymentOutbox } from "./notifications/doors";
 import { withOutboxWatch } from "./notifications/from-audit";
 import { createFinishedNotice } from "./notifications/in-app";
 import { withApprovalNotifications } from "./notifications/notify";
+import {
+  createBuiltInSkills,
+  offeredTools,
+} from "./plugins/built-in-skill-sync";
 import { connectConfigFor } from "./plugins/connect-config";
+import { createDeploymentKeyRuntime } from "./plugins/deployment-key-runtime";
+import { DEPLOYMENT_KEY_SERVICES } from "./plugins/deployment-key-services";
+import { KMA_WEATHER_KEY } from "./plugins/kma-weather-rest";
 import { redirectUriFor } from "./plugins/oauth";
-import { createPartnerRuntime } from "./plugins/partners";
 import {
   connectionSourcesFrom,
   readAccountStates,
   readConnectionSwitches,
 } from "./plugins/overview-routes";
-import { createDeploymentKeyRuntime } from "./plugins/deployment-key-runtime";
-import { DEPLOYMENT_KEY_SERVICES } from "./plugins/deployment-key-services";
-import { KMA_WEATHER_KEY } from "./plugins/kma-weather-rest";
+import { createPartnerRuntime } from "./plugins/partners";
 import { PUBLIC_DATA_KEY } from "./plugins/public-data-rest";
-import { WEB_SEARCH_KEY } from "./plugins/web-search-rest";
 import { lookupOver } from "./plugins/shared-clients";
-import {
-  createBuiltInSkills,
-  offeredTools,
-} from "./plugins/built-in-skill-sync";
 import { allLiveBots } from "./plugins/skills-and-grants";
 import { createPluginStore } from "./plugins/store";
+import { WEB_SEARCH_KEY } from "./plugins/web-search-rest";
 import {
   createRoutineDelivery,
   createRoutineFailureDelivery,
@@ -139,7 +139,14 @@ import { LafPostgresRunner, reportInterruptedRuns } from "./runner/laf-runner";
 import { createMessageTimeReader } from "./runner/message-times";
 import { createRunLedger } from "./runner/run-ledger";
 import { createStopAll } from "./runner/stop-all";
+import { messagesFor } from "./runner/thread-store";
 import { createUnattendedTools } from "./runner/unattended";
+import { createWorkingReader } from "./runner/working";
+import { createServerModelCalls } from "./server-model-calls";
+import { createAnswerRatingStore } from "./support/answer-ratings";
+import { createDiagnosticsSource } from "./support/diagnostics";
+import { createFeedbackStore } from "./support/feedback";
+import { createPackageStatusReader, loadTenantPackage } from "./tenant-package";
 import { createChatTools } from "./turns/chat-tools";
 import { createTurnEngine } from "./turns/engine";
 import {
@@ -150,12 +157,6 @@ import {
 import { createTurnHub } from "./turns/hub";
 import { createPersonAnswers } from "./turns/people";
 import { createTurnRoutes } from "./turns/routes";
-import { createWorkingReader } from "./runner/working";
-import { createServerModelCalls } from "./server-model-calls";
-import { createAnswerRatingStore } from "./support/answer-ratings";
-import { createDiagnosticsSource } from "./support/diagnostics";
-import { createFeedbackStore } from "./support/feedback";
-import { createPackageStatusReader, loadTenantPackage } from "./tenant-package";
 import { dailyBudgetFor } from "./usage/daily-budget";
 
 /*
@@ -1142,6 +1143,14 @@ const app = createApp({
   feed: feedStore,
   // 목표: the goals the person set, and their timelines.
   goals: goalStore,
+  // 로그인 보관함: what a person saved for their Bot's browser. Sealed under the deployment's key.
+  logins: createLoginVault({
+    database,
+    auditStore: bootAuditStore,
+    keyEncryptionKey: config.keyEncryptionKey,
+    // A developer's stack only: a page under test on a loopback address has no certificate.
+    allowLoopbackHttp: config.computer?.allowPrivateHosts ?? false,
+  }),
 });
 
 /** The live screen, proxied ahead of the app because an upgrade is not a request. See live-screen.ts. */

@@ -27,6 +27,7 @@ import {
   lafRoutineNotepads,
   lafRoutineRuns,
   lafRoutines,
+  lafSavedLogins,
   lafThreadMessages,
   lafThreadRuns,
   skills,
@@ -216,6 +217,18 @@ async function makePerson(label: string): Promise<Person> {
     status: "done",
     origin: "chat",
     startedAt: new Date(),
+  });
+  // A login they saved for their Bot's browser (2026-10-10). Sealed, so what the row holds here
+  // does not matter; whose it is does.
+  await database.insert(lafSavedLogins).values({
+    id: `${id}-login`,
+    userId: id,
+    label: `${label}의 네이버`,
+    origins: ["https://nid.naver.com"],
+    wrappedKey: "lv1.AAAA.AAAA",
+    kekId: "0000000000000000",
+    sealedUsername: "lv1.AAAA.AAAA",
+    sealedPassword: "lv1.AAAA.AAAA",
   });
   await database.insert(skills).values({
     id: skillId,
@@ -429,6 +442,11 @@ describe("the export", () => {
     expect(
       (document.skills as Array<{ id: string }>).map((row) => row.id),
     ).toEqual([leaver.skillId]);
+    // The logins they saved: WHICH, and nobody else's — and not a value, sealed or otherwise.
+    expect(
+      (document.savedLogins as Array<{ id: string }>).map((row) => row.id),
+    ).toEqual([`${leaver.id}-login`]);
+    expect(JSON.stringify(document.savedLogins)).not.toContain("lv1.");
     expect(document.standingApprovals).toHaveLength(1);
     expect(
       (document.auditEvents as Array<{ actorUserId: string }>).every(
@@ -562,6 +580,8 @@ describe("deletion", () => {
       botPreferences: 1,
       bots: 1,
       vaultTokens: 1,
+      // The login they saved, removed by name and counted — not left to the foreign key.
+      savedLogins: 1,
       user: 1,
     });
 
@@ -680,10 +700,26 @@ describe("deletion", () => {
         ),
     );
 
+    // The leaver's saved login is gone with them: a password does not outlive its person.
+    expect(
+      await database
+        .select()
+        .from(lafSavedLogins)
+        .where(eq(lafSavedLogins.userId, leaver.id)),
+    ).toEqual([]);
+
     // THE OTHER ACCOUNT, ROW FOR ROW. This is the assertion the second person exists for.
     expect(
       await database.select().from(users).where(eq(users.id, stayer.id)),
     ).toHaveLength(1);
+    expect(
+      (
+        await database
+          .select({ id: lafSavedLogins.id })
+          .from(lafSavedLogins)
+          .where(eq(lafSavedLogins.userId, stayer.id))
+      ).map((row) => row.id),
+    ).toEqual([`${stayer.id}-login`]);
     expect(
       await database.select().from(agents).where(eq(agents.id, stayer.botId)),
     ).toHaveLength(1);
