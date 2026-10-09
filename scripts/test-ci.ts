@@ -2243,14 +2243,25 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * and after the change: app 183 to 164 (the deleted file run before), server 118 to 119.
  * By hand: 18 and 9 are 27, less 7 and 1 is 19, and 2151 less 19 is 2132; 3892 and 1 are 3893.
  *
+ * RAISED 2026-10-09, by one each, for three review findings on the same branch. Each comes with a
+ * test that fails without its fix:
+ *  - `agent-computer` 475 → 476: `korean-browser.test.ts`, an ask for a hand that a restart cut
+ *    short reads as nobody's answer;
+ *  - `server` 3892 → 3893: `connections-overview.test.ts`, a site is a switch a card may draw only
+ *    once it is on;
+ *  - `app` 2153 → 2154: `connection-choices.test.tsx`, the card offers a site only once it is on.
+ *
+ * On this branch the three land on its own floors: 3893 and 1 are 3894; 2132 and 1 are 2133; 475 and
+ * 1 are 476.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3893, roots: ["server"] },
-  { name: "app", floor: 2132, roots: ["app"] },
-  { name: "agent-computer", floor: 475, roots: ["agent-computer"] },
+  { name: "server", floor: 3894, roots: ["server"] },
+  { name: "app", floor: 2133, roots: ["app"] },
+  { name: "agent-computer", floor: 476, roots: ["agent-computer"] },
   { name: "root", floor: 918, roots: ["tests", "agent-bot"] },
 ] as const;
 

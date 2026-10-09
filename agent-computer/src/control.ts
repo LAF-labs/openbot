@@ -112,18 +112,30 @@ export const REQUEST_TTL_MS = PERSON_WAIT_MS + 2 * 60_000;
  * `laf:secret_request_lost`, so it asks again against a fresh snapshot instead of waiting for an
  * answer nobody can give.
  *
- * An ask for a hand is dropped too, and needs no word: the call that made it went with the process
- * that ran it. Anything unreadable is treated as nothing, and nothing is the Bot's fresh state.
+ * AN ASK A RESTART CUT SHORT IS NOBODY'S ANSWER — an ask for a hand as much as an ask for a value.
+ * The call waiting on it is the server's, not this process's, and it outlives the restart: it reads
+ * this state every few seconds, and an ask that is simply gone reads to it as one answered
+ * (`shared/person-wait.ts`). Restored as nothing, the Bot was told the person had approved on their
+ * phone, or had typed the value, when the restart had only taken the ask away (review, 2026-10-09).
+ * So every ask that was standing comes back as one nobody answered, the same as a hold above.
+ *
+ * Anything unreadable is treated as nothing, and nothing is the Bot's fresh state.
  */
 export function restoredControl(saved: unknown): {
   state?: ControlState;
   secretLost: boolean;
 } {
   if (!saved || typeof saved !== "object") return { secretLost: false };
-  const held = saved as { holder?: unknown; secretWanted?: unknown };
+  const held = saved as {
+    holder?: unknown;
+    requested?: unknown;
+    secretWanted?: unknown;
+  };
   const secretLost =
     typeof held.secretWanted === "string" && !!held.secretWanted;
-  if (held.holder !== "human") return { secretLost };
+  const wasAsked =
+    held.holder === "human" || held.requested === true || secretLost;
+  if (!wasAsked) return { secretLost };
   return {
     state: {
       holder: "bot",

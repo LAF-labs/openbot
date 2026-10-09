@@ -406,6 +406,42 @@ describe("a person's accounts as a turn reads them", () => {
     ]);
   });
 
+  /*
+   * Since 2026-10-09 nothing on a connect card can sign a site in. Offered anyway, a site that is
+   * off held the Bot's turn ten minutes on a switch that is not there (review, 2026-10-09).
+   */
+  test("a site is a switch a card may draw only once it is on", async () => {
+    const sources = {
+      ...sourcesWith([]),
+      sites: {
+        list: async () => [
+          {
+            siteId: "naver-smartstore",
+            botId: "bot-1",
+            connectedAt: "2026-08-20T01:00:00.000Z",
+            lastSeenAt: "2026-09-04T01:00:00.000Z",
+            needsLogin: false,
+          },
+          {
+            siteId: "baemin-ceo",
+            botId: "bot-1",
+            connectedAt: "2026-08-20T01:00:00.000Z",
+            lastSeenAt: "2026-09-04T01:00:00.000Z",
+            needsLogin: true,
+          },
+        ],
+      },
+    } as unknown as ConnectionsOverviewSources;
+    const switches = await readConnectionSwitches(sources, OWNER.id);
+    const sites = switches.filter(
+      (row) => row.id !== "google-sheets" && row.id !== "cafe24",
+    );
+    // On: drawn, and on. A lapsed login and a site nobody signed in to: not offered at all.
+    expect(sites).toEqual([{ id: "naver-smartstore", connected: true }]);
+    // The accounts are every one of them, on or off, as before.
+    expect(switches.map((row) => row.id)).toContain("cafe24");
+  });
+
   test("an account that needs reconnecting is not on — the screen's word, and this one's", async () => {
     const sources = sourcesWith([
       held({
