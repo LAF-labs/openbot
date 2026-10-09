@@ -11,19 +11,20 @@ orders suggestions, sets defaults and decides how the Bot addresses the person.
 It never hides or shows a tab, screen, setting or feature, because a 사장님 will
 use what a student uses too. Never write copy that assumes everyone has a 가게.
 A deployment belongs to one person, who has
-**one Bot**: its profile is a name and a face, changed any time, and everything
+**one Bot**: its profile is a name, changed any time, and everything
 else — what it is for included — is settled by talking to it (2026-09-24,
 `docs/laf/deployment-model.md` "봇은 하나다"). Rooms and Bots asking each other
-were removed that day and live in git history.
+were removed that day and live in git history. Its face is given, drawn from
+`avatar_seed`, and nobody picks it; how hard it thinks is the deployment's, fixed,
+shown nowhere and set by nobody, the Bot included (2026-10-08, landed 2026-10-09).
 
 **Decided 2026-10-08, not yet built** (`docs/laf/redesign-2026-10.md`): a home
 panel of widgets replaces the sidebar; projects sit beside the one main
 conversation; the main conversation is an orchestrator on a fixed model and
-effort that hands browsing and background work to sub-agents; the profile is a
-name only, and effort is not shown; an 계정 menu keeps logins on the server and
-cards only on the person's device, never on ours. Still one Bot. Until a piece
-lands, the code and the rules below describe what runs — build toward that
-record, and move a rule here when its piece lands.
+effort that hands browsing and background work to sub-agents; an 계정 menu
+keeps logins on the server and cards only on the person's device, never on
+ours. Still one Bot. Until a piece lands, the code and the rules below describe
+what runs — build toward that record, and move a rule here when its piece lands.
 
 The product is a **cloud engine plus an installed app shell**. The engine runs
 on a VM; `desktop/` is a Tauri window onto the deployed origin and holds no

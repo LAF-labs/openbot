@@ -303,7 +303,10 @@ async function requestOnce(input: {
         context: [],
         state: {},
         forwardedProps: {
-          effort: process.env.EVAL_EFFORT ?? "balanced",
+          // What production sends: no effort by default (see `evals/run.ts`).
+          ...(process.env.EVAL_EFFORT
+            ? { effort: process.env.EVAL_EFFORT }
+            : {}),
           botId: EVAL_BOT.id,
           timeZone: EVAL_TIME_ZONE,
         },
@@ -619,7 +622,7 @@ async function measureBrowsing(tools: WireTool[]): Promise<ArmMeasure> {
       key: {
         harness: HARNESS_VERSION,
         model: MODEL,
-        effort: "balanced",
+        effort: process.env.EVAL_EFFORT ?? "none",
         tools: nonce,
       },
       facts,
@@ -704,7 +707,7 @@ async function measureArm(
             key: {
               harness: HARNESS_VERSION,
               model: MODEL,
-              effort: "balanced",
+              effort: process.env.EVAL_EFFORT ?? "none",
               tools: nonce,
             },
             facts,

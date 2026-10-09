@@ -227,16 +227,19 @@ async function runOnce(
         context: [],
         state: {},
         /*
-         * THE PRODUCT'S SHAPE, NOT AN EMPTY ONE. Every Bot a person creates carries an effort and
-         * its default is `balanced` (coworker schema), which agent-bot turns into a reasoning
-         * setting on the wire. An eval that sent nothing was certifying a run no customer has:
-         * caught the day glm-5.3-flash was judged, when the Korean-arithmetic scenarios failed on
-         * the empty shape — a verdict about a run that does not exist in the product. Until the eval
-         * sends what production sends, "the model cannot do the work" and "the eval was not running
-         * the product" are indistinguishable. EVAL_EFFORT overrides for comparisons.
+         * THE PRODUCT'S SHAPE, NOT ANOTHER ONE. Until the eval sends what production sends, "the
+         * model cannot do the work" and "the eval was not running the product" are
+         * indistinguishable — caught the day glm-5.3-flash was judged, when the Korean-arithmetic
+         * scenarios failed on a shape no customer's run had. Since the owner fixed the main
+         * conversation's effort (2026-10-08), production sends NONE by default
+         * (`tenant/laf/model.yaml` `supports_effort`, false unless BOT_MODEL_EFFORT says so), and
+         * the model answers at its own default. So nothing is sent here either; EVAL_EFFORT sends
+         * one, for comparisons and for a deployment that opts back in (it then sends `balanced`).
          */
         forwardedProps: {
-          effort: process.env.EVAL_EFFORT ?? "balanced",
+          ...(process.env.EVAL_EFFORT
+            ? { effort: process.env.EVAL_EFFORT }
+            : {}),
           /*
            * The person's zone, resolved, as the server's middleware forwards it — what the `now`
            * tool reads the clock in. Without it a Dubai owner's "지금 몇 시야" would read Seoul.
