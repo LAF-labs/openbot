@@ -37,7 +37,9 @@ import { own } from "@/lib/own";
  * a connection's tools from lists this browser caches.
  *
  * An id this deployment does not offer is left out, and with none left nothing is drawn: a card
- * promising a switch that is not there would be the boundary lying.
+ * promising a switch that is not there would be the boundary lying. A site that is not on is left
+ * out for the same reason: nothing here can sign one in until the password card, and the turn
+ * waiting on it would wait for nothing (`readConnectionSwitches`, which the server reads).
  */
 /** What the switches on screen are, said to whoever put them there. */
 export type SwitchesState = {
@@ -97,7 +99,8 @@ export function ConnectionChoices({
     (id) =>
       data?.accounts.some(
         (account) => account.kind === "oauth" && account.id === id,
-      ) || data?.sites.some((site) => site.id === id),
+      ) ||
+      data?.sites.some((site) => site.id === id && site.status === "connected"),
   );
   const shown = limit === undefined ? offered : offered.slice(0, limit);
   const accounts = shown

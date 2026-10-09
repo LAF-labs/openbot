@@ -51,7 +51,13 @@ const overview = (canva: string, gmail: string) => ({
 
 const SCOPE = "channel_connection-choices-test";
 
-async function mount() {
+async function mount(
+  options: {
+    ids?: string[];
+    sites?: unknown[];
+    onSwitches?: (state: { offered: string[]; connected: string[] }) => void;
+  } = {},
+) {
   const { act } = await import("react");
   const { createRoot } = await import("react-dom/client");
   const { QueryClient, QueryClientProvider } = await import(
@@ -71,10 +77,10 @@ async function mount() {
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
   // Gmail was on before the card was drawn; Canva was not.
-  client.setQueryData(
-    connectionKeys.overview(),
-    overview("not_connected", "connected"),
-  );
+  client.setQueryData(connectionKeys.overview(), {
+    ...overview("not_connected", "connected"),
+    sites: options.sites ?? [],
+  });
   const rootRoute = createRootRoute({
     /*
      * Inside a conversation of its own, as the Bot's card is: an offer to the compose screen would be
@@ -84,7 +90,10 @@ async function mount() {
       createElement(
         DraftScope.Provider,
         { value: SCOPE },
-        createElement(ConnectionChoices, { ids: ["canva", "gmail"] }),
+        createElement(ConnectionChoices, {
+          ids: options.ids ?? ["canva", "gmail"],
+          ...(options.onSwitches ? { onSwitches: options.onSwitches } : {}),
+        }),
       ),
   });
   const router = createRouter({
@@ -171,5 +180,37 @@ describe("a switch turned on in the conversation", () => {
         (url) => url.includes("/turns") || url.includes("/messages"),
       ),
     ).toEqual([]);
+  });
+});
+
+/*
+ * Since 2026-10-09 nothing on a card can sign a site in: the switch that did went with the handoff.
+ * Offered anyway, a site that is off held the Bot's turn ten minutes on a switch that is not there
+ * (review, 2026-10-09); the server leaves it out the same way (`readConnectionSwitches`).
+ */
+describe("a site on a card", () => {
+  test("is offered only once it is on: one that is off or lapsed is neither drawn nor told", async () => {
+    const site = (id: string, status: string) => ({
+      id,
+      status,
+      botId: status === "not_connected" ? null : "bot-1",
+      lastSeenAt: null,
+      connectedAt: null,
+    });
+    const told: { offered: string[]; connected: string[] }[] = [];
+    const view = await mount({
+      ids: ["naver-smartstore", "baemin-ceo", "coupang-wing"],
+      sites: [
+        site("naver-smartstore", "not_connected"),
+        site("baemin-ceo", "needs_login"),
+        site("coupang-wing", "connected"),
+      ],
+      onSwitches: (state) => told.push(state),
+    });
+    expect(told.at(-1)).toEqual({
+      offered: ["coupang-wing"],
+      connected: ["coupang-wing"],
+    });
+    expect(view.host.querySelectorAll('[role="switch"]')).toHaveLength(1);
   });
 });
