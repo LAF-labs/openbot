@@ -2,10 +2,18 @@ import { randomUUID } from "node:crypto";
 import { and, asc, count, eq } from "drizzle-orm";
 import { loginOriginOf } from "../../../shared/login-origin";
 import { siteById } from "../../../shared/sites/catalogue";
-import { type AuditStore, auditRowLost, recordAuditEvent } from "../audit";
+import {
+  type AuditEventInput,
+  type AuditStore,
+  auditRowLost,
+  recordAuditEvent,
+} from "../audit";
 import type { Database } from "../db/client";
-import { lafSavedLogins } from "../db/schema";
-import { openLogin, type SealedFor, sealLogin } from "./crypto";
+import { auditEvents, lafSavedLogins } from "../db/schema";
+import { LoginSealError, openLogin, type SealedFor, sealLogin } from "./crypto";
+
+/** A transaction of this database: what a change and the trail's row about it are written on. */
+type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 /**
  * 로그인 보관함 (`docs/laf/redesign-2026-10.md` §6, piece 2-3): the logins a person saved for their
@@ -98,6 +106,11 @@ export function createLoginVault(input: {
    */
   allowLoopbackHttp?: boolean;
   now?: () => Date;
+  /**
+   * Where a change's own row is written, given the change's transaction. For a test that needs
+   * the trail to fail; a deployment leaves it out and the row goes on the transaction itself.
+   */
+  trailWithin?: (transaction: Transaction) => AuditStore;
 }) {
   const { database, auditStore, keyEncryptionKey } = input;
   const now = input.now ?? (() => new Date());
@@ -174,6 +187,60 @@ export function createLoginVault(input: {
   const mine = (userId: string, id: string) =>
     and(eq(lafSavedLogins.userId, userId), eq(lafSavedLogins.id, id));
 
+  /**
+   * THE ROW ABOUT A CHANGE IS WRITTEN WITH THE CHANGE, OR NEITHER IS. On the transaction, and not
+   * through the pooled audit store: a row written on the pool lands outside the transaction, so
+   * a save could be in the vault with no row saying so — or, the other way, a request could be
+   * answered with a failure after what it asked for had been done, and done again when it was
+   * sent again (Codex's read of this change). The way a person's leaving is written
+   * (`account/deletion.ts`).
+   */
+  const trailWithin = (transaction: Transaction): AuditStore => ({
+    insert: async (event) => {
+      await (
+        input.trailWithin?.(transaction) ?? {
+          insert: (written: AuditEventInput) =>
+            transaction.insert(auditEvents).values(written),
+        }
+      ).insert(event);
+    },
+  });
+
+  /**
+   * A SAVE OR A CHANGE THAT WAS NOT MADE LEAVES A ROW TOO: that it was refused, as which fact,
+   * and about which field — and nothing of what was written. A login somebody tried to save for
+   * an origin that is not HTTPS is something the trail should be able to say happened; so is a
+   * row whose seal no longer opens. This row has nothing to be written together with, so it goes
+   * through the audit store, and its loss is logged rather than made the refusal's.
+   */
+  const orRefused = async <T>(
+    userId: string,
+    loginId: string | undefined,
+    act: () => Promise<T>,
+  ): Promise<T> => {
+    try {
+      return await act();
+    } catch (error) {
+      const refusal =
+        error instanceof LoginRefused
+          ? { code: error.code, ...(error.field ? { field: error.field } : {}) }
+          : error instanceof LoginSealError
+            ? { code: error.message }
+            : null;
+      if (refusal) {
+        await recordAuditEvent(auditStore, {
+          eventType: "account.login_refused",
+          targetType: "saved_login",
+          // A save that was refused made no login to name.
+          targetId: loginId ?? "unsaved",
+          actorUserId: userId,
+          payload: refusal,
+        }).catch(auditRowLost("account.login_refused"));
+      }
+      throw error;
+    }
+  };
+
   return {
     /** Every login a person saved, oldest first. What each is called and where it may go. */
     async list(userId: string): Promise<SavedLogin[]> {
@@ -185,51 +252,57 @@ export function createLoginVault(input: {
       return rows.map(view);
     },
 
-    /** Save one. The values are sealed before anything is written, and are in no row of the trail. */
+    /**
+     * Save one. The values are sealed before anything is written, and are in no row of the trail.
+     * The row and the trail's row about it are written together or not at all.
+     */
     async save(userId: string, written: LoginInput): Promise<SavedLogin> {
-      const label = labelOf(written.label);
-      const site = siteOf(written.site);
-      const origins = originsOf(written.origins);
-      const username = typedValue(written.username, "username", USERNAME_MAX);
-      const password = typedValue(written.password, "password", PASSWORD_MAX);
+      return orRefused(userId, undefined, async () => {
+        const label = labelOf(written.label);
+        const site = siteOf(written.site);
+        const origins = originsOf(written.origins);
+        const username = typedValue(written.username, "username", USERNAME_MAX);
+        const password = typedValue(written.password, "password", PASSWORD_MAX);
 
-      const [held] = await database
-        .select({ saved: count() })
-        .from(lafSavedLogins)
-        .where(eq(lafSavedLogins.userId, userId));
-      if ((held?.saved ?? 0) >= SAVED_LOGINS_MAX) {
-        throw new LoginRefused("laf:logins_full");
-      }
-
-      const belongs: SealedFor = { id: `login_${randomUUID()}`, userId };
-      const sealed = await sealLogin(keyEncryptionKey, belongs, {
-        username,
-        password,
+        const belongs: SealedFor = { id: `login_${randomUUID()}`, userId };
+        const sealed = await sealLogin(keyEncryptionKey, belongs, {
+          username,
+          password,
+        });
+        const at = now();
+        return database.transaction(async (transaction) => {
+          const [held] = await transaction
+            .select({ saved: count() })
+            .from(lafSavedLogins)
+            .where(eq(lafSavedLogins.userId, userId));
+          if ((held?.saved ?? 0) >= SAVED_LOGINS_MAX) {
+            throw new LoginRefused("laf:logins_full");
+          }
+          const [row] = await transaction
+            .insert(lafSavedLogins)
+            .values({
+              id: belongs.id,
+              userId,
+              label,
+              site,
+              origins,
+              ...sealed,
+              createdAt: at,
+              updatedAt: at,
+            })
+            .returning();
+          if (!row) throw new Error("the saved login was not written");
+          const saved = view(row);
+          await recordAuditEvent(trailWithin(transaction), {
+            eventType: "account.login_saved",
+            targetType: "saved_login",
+            targetId: saved.id,
+            actorUserId: userId,
+            payload: onTrail(saved),
+          });
+          return saved;
+        });
       });
-      const at = now();
-      const [row] = await database
-        .insert(lafSavedLogins)
-        .values({
-          id: belongs.id,
-          userId,
-          label,
-          site,
-          origins,
-          ...sealed,
-          createdAt: at,
-          updatedAt: at,
-        })
-        .returning();
-      if (!row) throw new Error("the saved login was not written");
-      const saved = view(row);
-      await recordAuditEvent(auditStore, {
-        eventType: "account.login_saved",
-        targetType: "saved_login",
-        targetId: saved.id,
-        actorUserId: userId,
-        payload: onTrail(saved),
-      }).catch(auditRowLost("account.login_saved"));
-      return saved;
     },
 
     /**
@@ -261,78 +334,86 @@ export function createLoginVault(input: {
       ];
       if (sent.every((one) => one === undefined)) return view(row);
 
-      const label =
-        written.label === undefined ? row.label : labelOf(written.label);
-      const site = written.site === undefined ? row.site : siteOf(written.site);
-      const origins =
-        written.origins === undefined
-          ? row.origins
-          : originsOf(written.origins);
-      const newUsername =
-        written.username === undefined
-          ? undefined
-          : typedValue(written.username, "username", USERNAME_MAX);
-      const newPassword =
-        written.password === undefined
-          ? undefined
-          : typedValue(written.password, "password", PASSWORD_MAX);
+      return orRefused(userId, row.id, async () => {
+        const label =
+          written.label === undefined ? row.label : labelOf(written.label);
+        const site =
+          written.site === undefined ? row.site : siteOf(written.site);
+        const origins =
+          written.origins === undefined
+            ? row.origins
+            : originsOf(written.origins);
+        const newUsername =
+          written.username === undefined
+            ? undefined
+            : typedValue(written.username, "username", USERNAME_MAX);
+        const newPassword =
+          written.password === undefined
+            ? undefined
+            : typedValue(written.password, "password", PASSWORD_MAX);
 
-      const belongs: SealedFor = { id: row.id, userId };
-      /*
-       * The value that was not sent is the one the row holds, so the row is opened for it — and
-       * ONLY for it. With both sent there is nothing to keep, and the old seal is not opened at
-       * all: that is how a row this deployment can no longer open (its key was changed) is put
-       * right by the person typing both again, rather than being a row nothing can fix.
-       */
-      const resealed =
-        newUsername === undefined && newPassword === undefined
-          ? {}
-          : await (async () => {
-              const held =
-                newUsername !== undefined && newPassword !== undefined
-                  ? undefined
-                  : await openLogin(keyEncryptionKey, belongs, row);
-              return sealLogin(keyEncryptionKey, belongs, {
-                username: newUsername ?? held?.username ?? "",
-                password: newPassword ?? held?.password ?? "",
-              });
-            })();
-      const [changed] = await database
-        .update(lafSavedLogins)
-        .set({ label, site, origins, ...resealed, updatedAt: now() })
-        .where(mine(userId, id))
-        .returning();
-      if (!changed) return null;
-      const saved = view(changed);
-      await recordAuditEvent(auditStore, {
-        eventType: "account.login_replaced",
-        targetType: "saved_login",
-        targetId: saved.id,
-        actorUserId: userId,
-        payload: {
-          ...onTrail(saved),
-          // Whether the values changed, which is what somebody reading the trail asks. Not which.
-          values: "sealedPassword" in resealed ? "replaced" : "kept",
-        },
-      }).catch(auditRowLost("account.login_replaced"));
-      return saved;
+        const belongs: SealedFor = { id: row.id, userId };
+        /*
+         * The value that was not sent is the one the row holds, so the row is opened for it — and
+         * ONLY for it. With both sent there is nothing to keep, and the old seal is not opened at
+         * all: that is how a row this deployment can no longer open (its key was changed) is put
+         * right by the person typing both again, rather than being a row nothing can fix.
+         */
+        const resealed =
+          newUsername === undefined && newPassword === undefined
+            ? {}
+            : await (async () => {
+                const held =
+                  newUsername !== undefined && newPassword !== undefined
+                    ? undefined
+                    : await openLogin(keyEncryptionKey, belongs, row);
+                return sealLogin(keyEncryptionKey, belongs, {
+                  username: newUsername ?? held?.username ?? "",
+                  password: newPassword ?? held?.password ?? "",
+                });
+              })();
+        return database.transaction(async (transaction) => {
+          const [changed] = await transaction
+            .update(lafSavedLogins)
+            .set({ label, site, origins, ...resealed, updatedAt: now() })
+            .where(mine(userId, id))
+            .returning();
+          // Deleted between the read and the write: nothing to change, and nothing to tell.
+          if (!changed) return null;
+          const saved = view(changed);
+          await recordAuditEvent(trailWithin(transaction), {
+            eventType: "account.login_replaced",
+            targetType: "saved_login",
+            targetId: saved.id,
+            actorUserId: userId,
+            payload: {
+              ...onTrail(saved),
+              // Whether the values changed, which is what somebody reading the trail asks. Not which.
+              values: "sealedPassword" in resealed ? "replaced" : "kept",
+            },
+          });
+          return saved;
+        });
+      });
     },
 
     /** Delete one, now. Says whether there was one of this person's to delete. */
     async remove(userId: string, id: string): Promise<boolean> {
-      const [gone] = await database
-        .delete(lafSavedLogins)
-        .where(mine(userId, id))
-        .returning();
-      if (!gone) return false;
-      await recordAuditEvent(auditStore, {
-        eventType: "account.login_removed",
-        targetType: "saved_login",
-        targetId: gone.id,
-        actorUserId: userId,
-        payload: onTrail(view(gone)),
-      }).catch(auditRowLost("account.login_removed"));
-      return true;
+      return database.transaction(async (transaction) => {
+        const [gone] = await transaction
+          .delete(lafSavedLogins)
+          .where(mine(userId, id))
+          .returning();
+        if (!gone) return false;
+        await recordAuditEvent(trailWithin(transaction), {
+          eventType: "account.login_removed",
+          targetType: "saved_login",
+          targetId: gone.id,
+          actorUserId: userId,
+          payload: onTrail(view(gone)),
+        });
+        return true;
+      });
     },
 
     /**

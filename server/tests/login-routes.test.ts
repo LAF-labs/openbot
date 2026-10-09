@@ -224,20 +224,29 @@ describe("the saved logins' doors", () => {
       },
     ]);
 
-    // A list, a string, or bytes that are not JSON: a login made of nothing, for the vault to
-    // refuse the way it refuses any — never a list's own properties read as a login's.
+    /*
+     * A list, a string, or bytes that are not JSON: refused as a body that cannot be read, and
+     * the vault is not asked — never taken for an empty body, which on a change answers 200 with
+     * the row as it stood (Codex's read of this change). `{}` is still a change of nothing, and
+     * is the vault's to answer.
+     */
     calls.length = 0;
     for (const body of ['["label"]', '"label"', "{not json", ""]) {
-      await post(body);
+      for (const sent of [
+        await post(body),
+        await routes.request("/login_1", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body,
+        }),
+      ]) {
+        expect([body, sent.status, await sent.json()]).toEqual([
+          body,
+          400,
+          { error: "laf:login_invalid", code: "laf:login_invalid" },
+        ]);
+      }
     }
-    expect(calls).toEqual(
-      Array.from({ length: 4 }, () => ({
-        label: undefined,
-        site: undefined,
-        origins: undefined,
-        username: undefined,
-        password: undefined,
-      })),
-    );
+    expect(calls).toEqual([]);
   });
 });
