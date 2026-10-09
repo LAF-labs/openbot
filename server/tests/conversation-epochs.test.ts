@@ -72,6 +72,8 @@ async function run(
   options: {
     profile?: AgentStandingProfile;
     model?: string;
+    /** Whether the deployment says its model takes an effort. Yes unless a case says otherwise. */
+    supportsEffort?: boolean;
     forwardedProps?: Record<string, unknown>;
     threadId?: string;
     tools?: typeof TOOLS;
@@ -93,13 +95,12 @@ async function run(
         type: "remote_ag_ui",
         endpoint: "http://agent-bot.internal/ag-ui",
         profile,
-        effort: "balanced",
       },
     ],
     {
       provider: "openai",
       defaultModel: options.model ?? "z-ai/glm-5.3-flash",
-      supportsEffort: true,
+      supportsEffort: options.supportsEffort ?? true,
     },
     {
       watch: () =>
@@ -188,6 +189,24 @@ describe("inside one epoch, the front of every request is the same bytes", () =>
     // No minute anywhere in the prompt: that is the `now` tool's.
     expect(system(first.request)).not.toMatch(/\d{2}:\d{2}/);
     expect(system(first.request)).toContain("오늘은 2026-09-24 (목)");
+  });
+
+  /*
+   * The effort is part of what an epoch is frozen against, so it has to be one value for the life
+   * of the conversation (2026-10-08, docs/laf/redesign-2026-10.md §4): the deployment's fixed one,
+   * or `none` where nothing is sent — never a Bot's own, which a press could move mid-conversation.
+   */
+  test("the epoch is keyed on the one fixed effort, or on none where none is sent", async () => {
+    for (const [supportsEffort, effort] of [
+      [true, "balanced"],
+      [false, "none"],
+    ] as const) {
+      const store = createConversationStore();
+      const prepare = spyOn(store, "prepare");
+      await run(store, conversation("안녕"), { supportsEffort });
+      expect(prepare).toHaveBeenCalledTimes(1);
+      expect(prepare.mock.calls[0]?.[0].key.effort).toBe(effort);
+    }
   });
 
   test("tools in one sorted order, `now` among them, whatever order the surface mounted", async () => {

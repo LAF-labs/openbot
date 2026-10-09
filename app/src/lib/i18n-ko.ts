@@ -715,7 +715,6 @@ export const ko: Record<string, string> = {
   // anybody, and 배포 is an operator's word.
   "Every Bot runs on this deployment. It cannot be pointed at another server here.":
     "모든 봇은 이 서버에서 실행돼요. 여기서는 다른 서버로 연결할 수 없어요.",
-  "Choose how hard this Bot thinks.": "봇이 얼마나 깊이 생각할지 골라 주세요.",
   "That instruction can be up to 1,000 characters.":
     "그 지침은 1,000자까지 쓸 수 있어요.",
   "That header name cannot be used.": "그 헤더 이름은 쓸 수 없어요.",
@@ -1146,12 +1145,6 @@ export const ko: Record<string, string> = {
   "A person stopped being asked about this": "사람이 이후로 묻지 않도록 함",
   "A person asked to be asked again": "사람이 다시 묻도록 되돌림",
   "A person took back their no": "내가 거부를 거둠",
-  "How hard it thinks": "얼마나 깊이 생각할지",
-  "Thinking longer costs time. It is worth it on the hard ones.":
-    "오래 생각하면 그만큼 시간이 걸려요. 어려운 일에는 그럴 값어치가 있어요.",
-  Quick: "빠르게",
-  Balanced: "보통",
-  Thorough: "꼼꼼하게",
   "Ask every time": "매번 묻기",
   "Suspended — it asks about these again": "중지됨 — 이 항목들은 다시 물어요",
   "Do not ask me about": "이건 묻지 마세요",

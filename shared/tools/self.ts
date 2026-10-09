@@ -41,18 +41,16 @@ const PROFILE_FIELDS = {
   },
 };
 
+/*
+ * 이름과 직무뿐이다. `effort`가 있었다(얼마나 깊이 생각할지) — 2026-10-08 주인의 결정으로 메인 대화의
+ * 노력은 고정이고 보이지 않으며, 사람도 봇도 바꾸지 못한다(docs/laf/redesign-2026-10.md §8). 칸만 남기면
+ * 봇이 아무 데도 닿지 않는 설정을 계속 바꾸고 "꼼꼼하게로 바꿨어요"라고 말한다. 그 칸이 없던 변형
+ * (`UPDATE_PROFILE_WITHOUT_EFFORT`, 노력을 받지 않는 모델의 배포용)이 이제 이 툴 그 자체다.
+ */
 export const UPDATE_PROFILE: SelfTool = {
   name: "update_profile",
-  description: `네가 **무엇인지**를 바꾼다: 네 이름, 무엇을 하는 봇인지, 얼마나 깊이 생각하는지. ${PROFILE_DUTY}`,
-  parameters: object({
-    ...PROFILE_FIELDS,
-    effort: {
-      type: "string",
-      enum: ["quick", "balanced", "thorough"],
-      description:
-        "답하기 전에 얼마나 깊이 생각할지. 일이 꼼꼼해야 하면 올리고, 깊이보다 속도가 중요하면 내린다",
-    },
-  }),
+  description: `네가 **무엇인지**를 바꾼다: 네 이름, 무엇을 하는 봇인지. ${PROFILE_DUTY}`,
+  parameters: object(PROFILE_FIELDS),
 };
 
 /*
@@ -164,18 +162,6 @@ export const REMEMBER: SelfTool = {
         "이 사람이 가게나 주로 지내는 곳의 위치를 말했을 때만, 시·구까지(예: 서울 강남구). 번지·도로명은 빼고, 이것을 줄 때는 fact를 비운다",
     },
   }),
-};
-
-/*
- * 배포의 모델이 노력 설정을 받지 않을 때(`deployment.effort` false — MiMo-V2.6은 생각을 켜고 끌
- * 뿐이다)의 같은 툴. 화면이 노력 카드를 그리지 않는 곳에서 봇이 "꼼꼼하게로 바꿨어요"라고 말할 수
- * 있으면, 저장만 하고 아무것도 하지 않는 설정이 대화 쪽에 남는다. 배포마다 고정이라 대화 중에
- * 툴 목록이 바뀌지 않는다.
- */
-export const UPDATE_PROFILE_WITHOUT_EFFORT: SelfTool = {
-  name: UPDATE_PROFILE.name,
-  description: `네가 **무엇인지**를 바꾼다: 네 이름, 무엇을 하는 봇인지. ${PROFILE_DUTY}`,
-  parameters: object(PROFILE_FIELDS),
 };
 
 export const SELF_TOOLS: readonly SelfTool[] = [

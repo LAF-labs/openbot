@@ -75,7 +75,6 @@ describe("a routine fired on a day the trial has spent", () => {
           type: "remote_ag_ui",
           endpoint: "http://agent-bot.internal/ag-ui",
           profile: { id: BOT, name: "아침 봇", roleDescription: "" },
-          effort: "balanced",
         },
       ],
       { provider: "openai", defaultModel: "laf-1", supportsEffort: false },

@@ -110,8 +110,8 @@ describe("what /api/me says about a trial", () => {
     const { budget, asked } = judge(true);
     const said = await deployment(surface({}, budget));
     expect(said).not.toHaveProperty("trial");
-    // The capabilities are untouched beside it.
-    expect(said).toMatchObject({ effort: true, autoReview: true });
+    // The capabilities are untouched beside it (`effort` is false everywhere since 2026-10-08).
+    expect(said).toMatchObject({ effort: false, autoReview: true });
     expect(asked.count).toBe(0);
     expect(asked.counted).toBe(0);
   });

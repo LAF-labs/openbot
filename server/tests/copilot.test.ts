@@ -51,8 +51,6 @@ describe("registered Copilot agents", () => {
         name: "Risk",
         roleDescription: "Investigate policies and controls.",
       },
-      // A remote Bot carries it too, and that is the whole point: every Bot anybody creates is one.
-      effort: "balanced",
     });
   });
 
@@ -618,7 +616,6 @@ function remoteAgent(
   overrides: {
     name?: string;
     roleDescription?: string;
-    effort?: "quick" | "balanced" | "thorough";
   } = {},
 ) {
   return {
@@ -631,7 +628,6 @@ function remoteAgent(
       name: overrides.name ?? "Expense Manager",
       roleDescription: overrides.roleDescription ?? "Review receipts.",
     },
-    effort: overrides.effort ?? ("balanced" as const),
   };
 }
 
@@ -756,10 +752,7 @@ describe("the 호칭 on every run", () => {
 });
 
 describe("a remote Bot's run", () => {
-  const risk = remoteAgent("http://risk.internal/ag-ui", {
-    name: "Risk",
-    effort: "thorough",
-  });
+  const risk = remoteAgent("http://risk.internal/ag-ui", { name: "Risk" });
 
   /** Run one turn against a fetch that records, and hand back the body the endpoint would receive. */
   async function bodySentBy(
@@ -796,7 +789,7 @@ describe("a remote Bot's run", () => {
     try {
       await (agents.agent_expense as HttpAgent)
         .runAgent({
-          // Not the Bot's own effort: what a caller forwarded, which must survive.
+          // What a caller forwarded, which must survive — all but an `effort`.
           forwardedProps: props,
           messages: [{ id: "m1", role: "user", content: "안녕" }],
           ...(tools ? { tools } : {}),
@@ -808,20 +801,35 @@ describe("a remote Bot's run", () => {
     return sent;
   }
 
-  test("carries the effort, in the product's own words", async () => {
-    // `thorough`, not `high`: the server and agent-bot speak different APIs and each translates
+  /*
+   * ONE EFFORT, THE DEPLOYMENT'S (2026-10-08, docs/laf/redesign-2026-10.md §4 and §8). It was the
+   * Bot's own setting and travelled as such; the main conversation's is fixed now, so there is no
+   * Bot's to carry — a registered Bot has no such field — and what goes is `balanced`, every run.
+   */
+  test("carries the one fixed effort, in the product's own words", async () => {
+    // `balanced`, not `medium`: the server and agent-bot speak different APIs and each translates
     // its own. See the middleware's comment.
     const body = await bodySentBy(true);
     expect(
       (body.forwardedProps as Record<string, unknown> | undefined)?.effort,
-    ).toBe("thorough");
+    ).toBe("balanced");
   });
 
   test("leaves what the caller forwarded alone", async () => {
     const forwarded = (await bodySentBy(true, { threadName: "Q3" }))
       .forwardedProps as Record<string, unknown>;
     expect(forwarded.threadName).toBe("Q3");
-    expect(forwarded.effort).toBe("thorough");
+    expect(forwarded.effort).toBe("balanced");
+  });
+
+  test("passes on no effort a caller forwarded: the fixed one replaces it, or none goes at all", async () => {
+    const replaced = (await bodySentBy(true, { effort: "thorough" }))
+      .forwardedProps as Record<string, unknown>;
+    expect(replaced.effort).toBe("balanced");
+    const dropped = (await bodySentBy(false, { effort: "thorough" }))
+      .forwardedProps as Record<string, unknown>;
+    expect(dropped).not.toHaveProperty("effort");
+    expect(dropped.botId).toBe("agent_expense");
   });
 
   /*

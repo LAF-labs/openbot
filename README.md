@@ -87,7 +87,7 @@ architecture, kept and still running.
 | **A tool's words are consented to** | A vendor's tool that was added after the service was connected, or whose description changed, is held back until a person has read it on 관리 → 플러그인 — and the Bot says a tool is waiting there, rather than that it does not exist. The adapters that ship in this repository are not a vendor's: their definitions arrive with the release and are recorded as that. |
 | **Where you are** | The place you said, else your device's (rounded to about a kilometre), else Seoul without asking — and the Bot's browser is told the same, so a site does not take the VM's address for yours. |
 | **It tells you when it is out of date** | An open window notices a newer build on the server and offers one press, never mid-turn. |
-| **Effort** | The one model setting, per Bot, carried into every run — chat and routines. |
+| **One effort, fixed** | How hard the main conversation thinks is the deployment's, the same on every run — chat and routines — so a conversation that lasts for life keeps its prompt cache. Nobody sets it, the Bot included. |
 | **Korean first** | Every user-facing string, enforced by a test. |
 | **One VM per person** | The deployment decides the architecture, not the other way round. |
 

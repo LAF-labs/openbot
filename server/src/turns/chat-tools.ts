@@ -60,7 +60,6 @@ import {
   MANAGE_ROUTINE,
   REMEMBER,
   UPDATE_PROFILE,
-  UPDATE_PROFILE_WITHOUT_EFFORT,
 } from "../../../shared/tools/self";
 import { normalizeSkillName, SKILL_VIEW } from "../../../shared/tools/skills";
 import {
@@ -377,12 +376,7 @@ async function executableNames(
  * The tools a turn offers when its window declared none: the ones this server can describe on its
  * own. The gallery's cards are not among them — their schemas live in the page.
  */
-function serverTools(
-  deps: ChatToolsDeps,
-  pluginTools: Tool[],
-  effort: boolean,
-): Tool[] {
-  const profile = effort ? UPDATE_PROFILE : UPDATE_PROFILE_WITHOUT_EFFORT;
+function serverTools(deps: ChatToolsDeps, pluginTools: Tool[]): Tool[] {
   return [
     ...(deps.gateway
       ? COMPUTER_TOOLS.map((tool) => ({
@@ -394,9 +388,9 @@ function serverTools(
     ...(deps.agents
       ? [
           {
-            name: profile.name,
-            description: profile.description,
-            parameters: profile.parameters,
+            name: UPDATE_PROFILE.name,
+            description: UPDATE_PROFILE.description,
+            parameters: UPDATE_PROFILE.parameters,
           },
         ]
       : []),
@@ -436,7 +430,6 @@ export function createChatTools(deps: ChatToolsDeps) {
   return async (
     context: ChatTurnContext,
     declared: readonly Tool[] | null,
-    options: { effort?: boolean } = {},
   ): Promise<ChatToolkit> => {
     const { botId, owner, threadId, runId } = context;
     const { names, pluginRefs, pluginTools, waiting, withheld } =
@@ -507,7 +500,7 @@ export function createChatTools(deps: ChatToolsDeps) {
           ),
           ...pluginTools.filter((tool) => isServerWorded(tool.name)),
         ]
-      : serverTools(deps, pluginTools, options.effort !== false);
+      : serverTools(deps, pluginTools);
     /*
      * THE CONNECT CARD IS HANDED ON WITH THIS PERSON'S ACCOUNTS WRITTEN ON IT: which this
      * deployment can connect, and whether each is on. A lookup that finds nothing of a connected
@@ -1041,7 +1034,8 @@ export function createChatTools(deps: ChatToolsDeps) {
       if (args.name !== undefined) patch.name = args.name;
       if (args.description !== undefined)
         patch.roleDescription = args.description;
-      if (args.effort !== undefined) patch.effort = args.effort;
+      // No `effort`, even from a call that carries one: how hard a Bot thinks is fixed since
+      // 2026-10-08, and the tool no longer offers it (`shared/tools/self.ts`).
       const edited = await editProfile(
         deps.agents,
         owner,

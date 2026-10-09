@@ -48,7 +48,6 @@ function person(trial?: Record<string, unknown>): CurrentUser {
     onboarded: true,
     consentRequired: false,
     deployment: {
-      effort: true,
       autoReview: true,
       ...(trial
         ? {

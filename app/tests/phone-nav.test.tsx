@@ -45,7 +45,6 @@ const bot = (id: string, name: string) => ({
   name,
   roleDescription: "",
   avatarSeed: id,
-  effort: "balanced",
   autoReview: "",
   endpoint: null,
   hasAuth: false,

@@ -192,7 +192,6 @@ function deployment(bot: { botId: string }, script: Script, withLane = false) {
               name: "리뷰봇",
               roleDescription: "스토어 리뷰에 답글 초안을 쓴다.",
             },
-            effort: "balanced",
           },
         ],
         { provider: "openai", defaultModel: "laf-1", supportsEffort: false },

@@ -23,7 +23,7 @@ import type { ShopProfile } from "../../shared/shop/catalogue";
 import { isDeferredToolName, openAccountsIn } from "../../shared/tools/bridge";
 import { type WithheldTools, withheldToolsIn } from "../../shared/tools/paused";
 import { deviceOf } from "../../shared/whereabouts";
-import type { AgentActor, AgentEffort } from "./agents/profile-types";
+import type { AgentActor } from "./agents/profile-types";
 import { type AuditStore, auditRowLost, recordAuditEvent } from "./audit";
 import { withAttachments } from "./attachments/for-model";
 import { withFeedQuotes } from "./feed/quote";
@@ -75,16 +75,10 @@ type RegisteredRemoteAgent = {
    * The profile here is what is true now, which the store compares against what was told.
    */
   profile: AgentStandingProfile;
-  /**
-   * How hard it thinks, sent to the endpoint on every run.
-   *
-   * REMOTE IS NOT THE EXOTIC CASE, IT IS EVERY CASE. Only the Bots a package shipped are
-   * `built_in`; every Bot anybody creates is `remote_ag_ui`, pointed at this deployment's own
-   * `agent-bot`. A setting wired into the built-in configuration alone therefore reaches nothing
-   * anybody will ever make — which is what shipped, and was mistaken for working because the Bot it
-   * was tried on answered perfectly well with the setting going nowhere at all.
+  /*
+   * No `effort` since 2026-10-08: how hard a Bot thinks is not the Bot's any more but the
+   * deployment's, the same for every run (`FIXED_EFFORT` below).
    */
-  effort: AgentEffort;
   /** The key this agent sits behind, resolved from the vault at load time. Never logged. */
   headers?: Record<string, string>;
 };
@@ -293,16 +287,29 @@ export type RuntimeModel = {
   provider: "openai";
   defaultModel: string;
   /**
-   * Whether this deployment's model takes an effort setting.
+   * Whether this deployment's model takes an effort setting, and so is sent `FIXED_EFFORT`.
    *
-   * False sends nothing, whatever a Bot's own setting says. A model that does not reason answers a
-   * request carrying the parameter with a 400 on some providers and silence on others, and the one
-   * thing this must not do is turn a Bot that works into a Bot that errors because somebody moved a
-   * slider. The surface reads the same flag and hides the control, so nobody is offered a choice
-   * that does nothing.
+   * False sends nothing, and the model thinks as its own default has it. A model that does not
+   * reason answers a request carrying the parameter with a 400 on some providers and silence on
+   * others, and the one thing this must not do is turn a Bot that works into a Bot that errors.
+   * False is the package's default since 2026-10-08 (`tenant/laf/model.yaml`).
    */
   supportsEffort: boolean;
 };
+
+/**
+ * HOW HARD THE MAIN CONVERSATION THINKS, AND THE ONLY VALUE IT IS EVER SENT.
+ *
+ * It was each Bot's own setting — three buttons on the profile, and a field the Bot could write
+ * with `update_profile`. The owner fixed it on 2026-10-08 (docs/laf/redesign-2026-10.md §4, §8):
+ * the main conversation is one conversation for life, and a setting that changes what leads every
+ * request breaks its prompt cache — so it is the same on every run, shown nowhere, and set by
+ * neither a person nor the Bot. `balanced` because it is what nearly every Bot already had (the
+ * column's default), so a deployment that still says its model takes an effort sends the same
+ * request it did, and its conversations keep their epoch. A Bot whose row says otherwise is sent
+ * this all the same: the column is kept, and read by nothing that decides a run.
+ */
+const FIXED_EFFORT = "balanced";
 
 type RuntimeAgentRow = {
   id: string;
@@ -310,8 +317,6 @@ type RuntimeAgentRow = {
   type: "built_in" | "remote_ag_ui";
   configuration: unknown;
   roleDescription: string;
-  /** Absent on a row read by something that does not select it; `balanced` is the column's default. */
-  effort?: AgentEffort;
   /**
    * What this Bot has learned about the person the row was read for.
    *
@@ -365,7 +370,6 @@ export function registeredAgentFromRow(
             : {}),
           ...(row.guidance ? { guidance: row.guidance } : {}),
         },
-        effort: row.effort ?? "balanced",
       }
     : null;
 }
@@ -642,6 +646,8 @@ function remoteAgentWithPrompt(
       typeof input.forwardedProps === "object" && input.forwardedProps !== null
         ? (input.forwardedProps as Record<string, unknown>)
         : {};
+    // Everything the caller forwarded but `effort`, which is `FIXED_EFFORT` or nothing (below).
+    const { effort: _callerEffort, ...passedOn } = forwarded;
     // What the run says it is. Chat says nothing, and silence is a chat.
     const mode = promptModeOf(forwarded);
     // The store's clock, so the day a run is dated by is the day its close was made for.
@@ -711,7 +717,7 @@ function remoteAgentWithPrompt(
       key: {
         harness: HARNESS_VERSION,
         model: options.model,
-        effort: supportsEffort ? agent.effort : "none",
+        effort: supportsEffort ? FIXED_EFFORT : "none",
         tools: toolsFingerprint(input.tools),
       },
       facts,
@@ -735,11 +741,14 @@ function remoteAgentWithPrompt(
        * service in this deployment names the Bot in its logs and that one could not.
        *
        * `effort` on the run rather than in a configuration: a remote Bot's model is answered by the
-       * endpoint, not here, so the setting has to travel — and this middleware is the one place
-       * every run path goes through, so chat, rooms and routines all carry it without any of them
-       * knowing. OUR WORD, NOT THE PROVIDER'S: `thorough`, not `high`, because each end translates
-       * its own spelling and adding a third API is then one file. Omitted entirely, not defaulted,
-       * where the deployment's model takes no effort setting.
+       * endpoint, not here, so the value has to travel — and this middleware is the one place every
+       * run path goes through, so chat and routines all carry it without any of them knowing. OUR
+       * WORD, NOT THE PROVIDER'S: `balanced`, not `medium`, because each end translates its own
+       * spelling and adding a third API is then one file. Always `FIXED_EFFORT`, and omitted
+       * entirely, not defaulted, where the deployment's model takes no effort setting — and an
+       * `effort` a caller forwarded is not passed on either way: what a run thinks at is this
+       * deployment's to say, and a value that slipped past here would be the per-run setting the
+       * owner removed, arriving by another door.
        *
        * `timeZone` is the person's, resolved — what the `now` tool reads the clock in, since the
        * minute is no longer in the prompt. `question` is what this question has cost in dollars
@@ -749,9 +758,9 @@ function remoteAgentWithPrompt(
        * Merged over whatever the caller forwarded rather than replacing it.
        */
       forwardedProps: {
-        ...forwarded,
+        ...passedOn,
         botId: agent.id,
-        ...(supportsEffort ? { effort: agent.effort } : {}),
+        ...(supportsEffort ? { effort: FIXED_EFFORT } : {}),
         timeZone: facts.timeZone,
         ...(prepared
           ? {

@@ -159,7 +159,7 @@ function server(me: Me) {
           shop: { kind: null, places: [] },
           whereabouts: held,
         },
-        deployment: { effort: true, autoReview: true },
+        deployment: { autoReview: true },
         ...(me.consent ? { consent: me.consent } : {}),
       });
     }
@@ -227,7 +227,7 @@ describe("the browser is asked where it is only once the person has agreed", () 
                 coordinates: null,
               },
             },
-            deployment: { effort: true, autoReview: true },
+            deployment: { autoReview: true },
             consent: { version: OWED.current, current: OWED.current },
           });
         }

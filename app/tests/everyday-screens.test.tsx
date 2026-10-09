@@ -953,7 +953,7 @@ describe("수첩", () => {
             onboarded: true,
             ...me,
           },
-          deployment: { effort: true, autoReview: true },
+          deployment: { autoReview: true },
         });
       }
       return undefined;

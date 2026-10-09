@@ -68,7 +68,7 @@ const runtimeTraffic = (requests: { method: string; pathname: string }[]) =>
 /** A person who has not finished the first run, and has no Bot. */
 const newcomer = {
   user: { ...CURRENT_USER, role: "user", onboarded: false },
-  deployment: { effort: true, autoReview: true },
+  deployment: { autoReview: true },
 };
 
 const conversation = (id: string, agentId: string, at: string) => ({

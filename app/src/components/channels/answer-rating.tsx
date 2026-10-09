@@ -288,9 +288,8 @@ export function AnswerRatingQuestion({
         >
           <PopoverTitle>{t("What fell short?")}</PopoverTitle>
           {/*
-           * A fieldset and `aria-pressed` on the buttons — the grammar the effort chooser and the
-           * face picker already use for one choice out of a few, so a reader arriving on the second
-           * reason hears which one is already chosen.
+           * A fieldset and `aria-pressed` on the buttons — the grammar for one choice out of a few,
+           * so a reader arriving on the second reason hears which one is already chosen.
            */}
           <fieldset
             className="flex flex-wrap gap-1.5"

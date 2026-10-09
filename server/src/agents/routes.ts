@@ -26,13 +26,11 @@ import {
   ProtectedAgentError,
 } from "./profile-store";
 import { profileTextOf } from "./profile-text";
-import {
-  AGENT_EFFORTS,
-  type AgentActor,
-  type AgentEffort,
-  type AgentPreferencePatch,
-  type AgentProfile,
-  type CreateAgentInput,
+import type {
+  AgentActor,
+  AgentPreferencePatch,
+  AgentProfile,
+  CreateAgentInput,
 } from "./profile-types";
 
 /**
@@ -48,7 +46,6 @@ export type AgentInputRefusal =
   | "laf:agent_role_too_long"
   | "laf:agent_endpoint_refused"
   | "laf:agent_endpoint_not_taken"
-  | "laf:agent_effort_invalid"
   | "laf:agent_auto_review_too_long"
   | "laf:agent_auth_header_invalid"
   | "laf:agent_auth_value_unsendable";
@@ -91,7 +88,6 @@ type AgentInputObject = {
   name?: unknown;
   roleDescription?: unknown;
   endpoint?: unknown;
-  effort?: unknown;
   autoReview?: unknown;
   auth?: unknown;
 };
@@ -165,20 +161,13 @@ export function parseAgentInput(
    * is read like any other key this parser does not know, and IGNORED rather than refused: the
    * first-run screen sent one with every create, and a stale copy of it refused on the press that
    * makes somebody's Bot would be the worst first minute there is.
+   *
+   * NOR `effort`, from the same day and for the same reason (§8): how hard the main conversation
+   * thinks is fixed, shown nowhere, and set by neither a person nor the Bot (`copilot.ts`). The
+   * profile's effort buttons and the Bot's `update_profile` sent one; a window or a conversation
+   * from before still may, and is not refused for it. Ignored, never stored: a stored value would
+   * read as a setting, and nothing would ever act on it.
    */
-
-  // Optional, and one of exactly three. Checked against the list rather than passed through, because
-  // it reaches a Postgres enum: an unknown value is a failed transaction at write time rather than a
-  // 400 here, which is the same outcome dressed as a server fault.
-  let effort: AgentEffort | undefined;
-  if (input.effort !== undefined) {
-    const supplied =
-      typeof input.effort === "string" ? input.effort.trim() : "";
-    if (!AGENT_EFFORTS.includes(supplied as AgentEffort)) {
-      return { ok: false, code: "laf:agent_effort_invalid" };
-    }
-    effort = supplied as AgentEffort;
-  }
 
   /*
    * The standing instruction for waving actions through. Optional, and an empty string is a real
@@ -236,7 +225,6 @@ export function parseAgentInput(
       roleDescription,
       endpoint,
       auth,
-      ...(effort === undefined ? {} : { effort }),
       // Sent whenever the field was present, empty string included, because clearing it is a thing
       // somebody does on purpose. `optionalBoundedText` answers "" for an absent field too, so the
       // presence check is on the input rather than on what came back.
@@ -293,9 +281,6 @@ export async function editProfile(
       {
         name: name.value ?? current.name,
         roleDescription: roleDescription.value ?? current.roleDescription,
-        // Absent leaves it alone. A Bot writing its own description must not reset how hard it
-        // thinks as a side effect of doing so.
-        ...(patch.effort === undefined ? {} : { effort: patch.effort }),
         /*
          * `autoReview` IS DELIBERATELY NOT HERE, and this is the security line of the whole
          * feature. This is what a Bot's own `update_profile` tool reaches, from the route and from a
@@ -1091,7 +1076,6 @@ function agentDto(
     name: agent.name,
     roleDescription: agent.roleDescription,
     avatarSeed: agent.avatarSeed,
-    effort: agent.effort,
     autoReview: agent.autoReview,
     hidden: agent.hidden,
     notify: agent.notify,

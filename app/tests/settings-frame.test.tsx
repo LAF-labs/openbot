@@ -129,7 +129,7 @@ const ADMINISTRATOR: CurrentUser = {
   role: "admin",
   onboarded: true,
   consentRequired: false,
-  deployment: { effort: true, autoReview: true },
+  deployment: { autoReview: true },
 };
 
 async function adminScreenAt(at: string) {
