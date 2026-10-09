@@ -187,7 +187,6 @@ function computerThatAnswers(): ComputerClient {
     snapshot: SNAPSHOT,
     control: { holder: "bot", url: SNAPSHOT.url },
     requestControl: { holder: "bot", url: SNAPSHOT.url },
-    takeControl: { holder: "human", url: SNAPSHOT.url },
     releaseControl: { holder: "bot", url: SNAPSHOT.url },
     computers: { computers: [] },
     listFiles: { path: ".", entries: [] },
@@ -880,8 +879,6 @@ const A_ALLOWED = [
   "POST /api/computers/:botId/computers/stop",
   "POST /api/computers/:botId/control/release",
   "POST /api/computers/:botId/control/request",
-  "POST /api/computers/:botId/control/take",
-  "POST /api/computers/:botId/human/:kind",
   "POST /api/computers/:botId/snapshot",
   "POST /api/routines",
   "POST /api/routines/:id/enabled",
@@ -901,8 +898,9 @@ const A_ALLOWED = [
  * rule, `actorMayDriveBot`, which had kept an administrator exception of its own and is the reason
  * this list doubled: driving somebody's Bot is the stronger half of seeing it. It types into the
  * browser holding their bank and marketplace logins, answers the questions their boundary raises,
- * spends the credentials their tools sit behind, and takes the wheel of a session they are in the
- * middle of. Closing the roster and leaving that open would have been the smaller half of the job.
+ * spends the credentials their tools sit behind, and — until nobody could, 2026-10-09 — took the
+ * wheel of a session they were in the middle of. Closing the roster and leaving that open would
+ * have been the smaller half of the job.
  *
  * WHAT IS NOT ON THIS LIST IS THE POINT, and it is what an operator still runs a deployment with:
  * every `/api/admin/*` door, the audit table, the approval metrics, the package read,
@@ -945,8 +943,6 @@ const NAMES_SOMEBODY_ELSES_BOT = [
   "POST /api/computers/:botId/computers/stop",
   "POST /api/computers/:botId/control/release",
   "POST /api/computers/:botId/control/request",
-  "POST /api/computers/:botId/control/take",
-  "POST /api/computers/:botId/human/:kind",
   "POST /api/computers/:botId/snapshot",
   // The questions its boundary raised — reading them and answering them — and what it may spend.
   "GET /api/approvals/:botId",
@@ -1255,7 +1251,7 @@ describe("the matrix", () => {
       "GET /api/computers/:botId/read",
       "GET /api/computers/:botId/screenshot",
       "POST /api/computers/:botId/click",
-      "POST /api/computers/:botId/control/take",
+      "POST /api/computers/:botId/control/release",
       "POST /api/computers/:botId/computers/reset",
       // The file a Bot wrote for its owner, taken out of its folder: not an administrator's.
       "GET /api/computers/:botId/files/download",

@@ -28,7 +28,6 @@ import {
   requestHelp,
   requestSecret,
   supplySecret,
-  takeControl,
 } from "./control-routes";
 import {
   downloadFile,
@@ -39,7 +38,6 @@ import {
   statFile,
   writeFile,
 } from "./file-routes";
-import { HUMAN_INPUT, humanInput } from "./human-input";
 import type { StreamData } from "./live-screen";
 import type { Profiles } from "./profiles";
 import { navigate } from "./navigation";
@@ -54,12 +52,7 @@ const BOT_ROUTES = new Map<string, BotRoute>([
   ["POST /control/request", requestHelp],
   ["POST /control/secret", requestSecret],
   ["POST /human/secret", supplySecret],
-  ["POST /control/take", takeControl],
   ["POST /control/release", releaseControl],
-  ...[...HUMAN_INPUT].map((path): [string, BotRoute] => [
-    `POST ${path}`,
-    humanInput,
-  ]),
   ["POST /computers/stop", stopComputer],
   ["POST /computers/reset", resetComputer],
   ["POST /navigate", navigate],
@@ -157,7 +150,7 @@ export function computerFetch(computer: Computer) {
      * root. Checked again on this side rather than trusted from the server: see `isBotId`.
      */
     if (!isBotId(botId)) return fact(BOT_ID_INVALID);
-    // Resolved once per request. Everything below that touches a browser, a takeover or a snapshot
+    // Resolved once per request. Everything below that touches a browser, an ask or a snapshot
     // goes through this Bot's session, so there is no path where one Bot's call reaches another's.
     const session = computer.sessions.sessionFor(botId);
 

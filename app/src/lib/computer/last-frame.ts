@@ -108,7 +108,7 @@ export async function keepLastFrame({
   isCutOff?: boolean;
 }): Promise<boolean> {
   const { state } = await readControl(botId).catch(() => ({ state: null }));
-  if (state?.holder === "human" || state?.secretWanted) return false;
+  if (state?.secretWanted) return false;
 
   // Asked for at the size it is kept at: the computer scales and encodes it, and this tab decodes
   // nothing. An older computer answers with the full PNG, which is shrunk here as it always was.

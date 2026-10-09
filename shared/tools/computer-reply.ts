@@ -22,8 +22,7 @@ export function computerReplyOutcome(
 ): ComputerOutcome {
   if (status < 200 || status >= 300) {
     /*
-     * The computer answers with a fact code where it has one — `laf:human_has_control` is the whole
-     * of the sentence the container used to ship — so the words the model reads are chosen here, in
+     * The computer answers with a fact code where it has one, so the words the model reads are chosen here, in
      * Korean, rather than by a service that has never heard of a locale. Anything that is not a code
      * is passed through: an English sentence from somewhere upstream reaching the person is a
      * regression, and it is visible rather than swallowed.
@@ -34,18 +33,10 @@ export function computerReplyOutcome(
       ok: false,
       ...(code ? { code } : {}),
       reason: code ? toolResultText(code) : said || "That did not work.",
-      // Preserve refusal/stale-ref/control distinctions for the model's next step.
+      // Preserve refusal/stale-ref distinctions for the model's next step. A 409 is always "look
+      // again" now: it also meant "a person holds the wheel" until nobody could (2026-10-09).
       ...(status === 403 ? { refused: true, rule: body?.rule ?? null } : {}),
-      /*
-       * By the code: the server answers a failure as its code and nothing beside it, so the
-       * container's `humanHasControl: true` never reached this line, and a person at the wheel was
-       * handed to the model as `staleRefs: true` beside a sentence telling it to wait.
-       */
-      ...(status === 409
-        ? code === "laf:human_has_control" || body?.humanHasControl === true
-          ? { humanHasControl: true }
-          : { staleRefs: true }
-        : {}),
+      ...(status === 409 ? { staleRefs: true } : {}),
     };
   }
   /*

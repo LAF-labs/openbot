@@ -15,6 +15,10 @@ import { own } from "@/lib/own";
  * that is what most of the container's codes did until then.
  */
 export const OUTCOME_LABELS: Record<string, string> = {
+  /*
+   * Nothing sends this since 2026-10-09, when nobody could take the Bot's browser any more. A
+   * transcript or an audit row from before then can still carry it, and is still read.
+   */
   "laf:human_has_control": "A person has the computer",
   "laf:stopped": "Stopped",
   "laf:person_declined": "A person declined that",

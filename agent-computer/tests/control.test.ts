@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { askOutcome, PERSON_WAIT_MS } from "../../shared/person-wait";
 import {
-  ControlError,
   ControlRequestError,
   type ControlState,
   createControl,
@@ -10,12 +9,14 @@ import {
 } from "../src/control";
 
 /**
- * The wheel, tested on both paths.
+ * The Bot's asks, tested on both paths.
  *
- * This is the piece standing between two drivers and one page, and until now it had no tests at all, * it lived as a `let` inside the file that imports playwright, so a test could not reach it without
- * launching Chrome. What is checked here is mostly the refusal path, because that is where this
- * component earns its keep: a Bot clicking while a person types, a secret typed when nothing asked for
- * one, a request answered twice, a handover that leaves a password box open behind it.
+ * It lived as a `let` inside the file that imports playwright until it had tests, so a test could
+ * not reach it without launching Chrome. What is checked here is mostly the refusal path, because
+ * that is where this component earns its keep: a secret typed when nothing asked for one, a request
+ * answered twice, an answer that leaves a password box open behind it. Until 2026-10-09 it also
+ * stood between two drivers and one page; nobody but the Bot drives now, and the tests of a person
+ * holding the wheel went with it.
  *
  * A fake clock is injected so `since` can be asserted rather than shrugged at.
  */
@@ -29,117 +30,64 @@ function fixture() {
   return { control };
 }
 
-describe("the happy path: ask, hand over, hand back", () => {
-  test("starts with the Bot driving and nothing pending", () => {
+describe("the happy path: ask, and answer", () => {
+  test("starts with the Bot's and nothing pending", () => {
     const { control } = fixture();
     const state = control.get();
     expect(state.holder).toBe("bot");
     expect(state.requested).toBe(false);
     expect(state.reason).toBeUndefined();
     expect(control.pendingSecret()).toBeNull();
-    // Nothing to refuse yet.
-    expect(() => control.assertBotMayAct()).not.toThrow();
   });
 
-  test("the Bot asking for help does NOT hand itself the human's authority", () => {
+  test("the Bot asking for help raises the flag and hands nobody anything", () => {
     const { control } = fixture();
     const state = control.requestHelp("There is a login wall.");
-    // The flag is raised and a person decides. A Bot that could take control on its own behalf could
-    // also hand a person a page they never asked to see.
+    // The flag is raised and a person answers. The browser stays the Bot's throughout.
     expect(state.requested).toBe(true);
     expect(state.reason).toBe("There is a login wall.");
     expect(state.holder).toBe("bot");
-    // And it may still act while it waits: asking is not being blocked.
-    expect(() => control.assertBotMayAct()).not.toThrow();
   });
 
-  test("taking the wheel keeps the reason and lowers the flag", () => {
+  test("an answer clears the old request", () => {
     const { control } = fixture();
-    control.requestHelp("Sign in to continue.");
-    const state = control.take();
-    expect(state.holder).toBe("human");
-    // The reason survives, because it is the thing the person was just asked to do.
-    expect(state.reason).toBe("Sign in to continue.");
-    // The request is answered, so the surface stops asking.
-    expect(state.requested).toBe(false);
-    expect(control.humanMayDrive()).toBe(true);
-  });
-
-  test("handing back returns the wheel and clears the old request", () => {
-    const { control } = fixture();
-    control.requestHelp("Sign in to continue.");
-    control.take();
+    control.requestHelp("Approve the sign-in on your phone.");
     const state = control.release();
     expect(state.holder).toBe("bot");
     // Dropped on purpose: leaving it set has the surface still showing a request that was dealt with.
     expect(state.reason).toBeUndefined();
     expect(state.requested).toBe(false);
-    expect(control.humanMayDrive()).toBe(false);
-    expect(() => control.assertBotMayAct()).not.toThrow();
   });
 
-  test("`since` moves on a handover and not on a request", () => {
+  test("`since` moves on an answer and not on a request", () => {
     const { control } = fixture();
     const created = control.get().since;
     control.requestHelp("Stuck.");
-    // Asking for help is not a change of driver, so the clock does not restart.
+    // Asking for help is not an answer, so the clock does not restart.
     expect(control.get().since).toBe(created);
-    expect(control.take().since).not.toBe(created);
+    expect(control.release().since).not.toBe(created);
   });
 });
 
-describe("the crappy paths: two drivers, one page", () => {
-  test("the Bot is refused while a person holds the wheel", () => {
-    const { control } = fixture();
-    control.take();
-    expect(() => control.assertBotMayAct()).toThrow(ControlError);
-    /*
-     * Refused with a FACT, not a sentence. The refusal used to carry the English paragraph the
-     * model reads; that paragraph is now Korean and lives in `shared/prompt/tool-results.ko.ts`,
-     * and this container ships the code that selects it. What this pins is that the code is the
-     * one the prompt table answers — a refusal carrying a code nothing translates would reach a
-     * person as `laf:` and a machine identifier.
-     */
-    expect(() => control.assertBotMayAct()).toThrow("laf:human_has_control");
-  });
-
-  test("the refusal lifts the moment the person hands back", () => {
-    const { control } = fixture();
-    control.take();
-    control.release();
-    expect(() => control.assertBotMayAct()).not.toThrow();
-  });
-
-  test("a person's input is not applied merely because they asked", () => {
-    const { control } = fixture();
-    control.requestHelp("Sign in.");
-    // The Bot asked for help and no person has taken the wheel. An open socket is not permission: this is
-    // what stops anything that can reach the port from driving the browser mid-task.
-    expect(control.humanMayDrive()).toBe(false);
-  });
-
-  test("taking the wheel twice is not a way to lose the reason", () => {
-    const { control } = fixture();
-    control.requestHelp("Sign in.");
-    control.take();
-    const state = control.take();
-    expect(state.holder).toBe("human");
-    expect(state.reason).toBe("Sign in.");
-  });
-
-  test("handing back when the Bot already has it is harmless", () => {
+describe("the crappy paths: asks", () => {
+  test("an answer when nothing was asked is harmless", () => {
     const { control } = fixture();
     const state = control.release();
     expect(state.holder).toBe("bot");
-    expect(() => control.assertBotMayAct()).not.toThrow();
+    expect(state.requested).toBe(false);
   });
 
   test("the caller cannot reach in and change the state it was handed", () => {
     const { control } = fixture();
+    control.requestHelp("Sign in.");
     const state = control.get();
-    state.holder = "human";
-    // A copy, so reading the state is not a way to take the wheel.
-    expect(control.get().holder).toBe("bot");
+    state.requested = false;
+    state.reason = "something else";
+    // A copy, so reading the state is not a way to answer the ask.
+    expect(control.get()).toMatchObject({
+      requested: true,
+      reason: "Sign in.",
+    });
   });
 
   test("junk reasons fall back to something a person can read", () => {
@@ -220,16 +168,14 @@ describe("the crappy paths: secrets", () => {
     expect(control.pendingSecret()).not.toBeNull();
   });
 
-  test("handing the wheel over or back closes any pending secret", () => {
-    for (const handover of ["take", "release"] as const) {
-      const { control } = fixture();
-      control.requestSecret({ ref: "e12", label: "password" });
-      control[handover]();
-      // A person who drove the browser themselves has dealt with the login. A masked box still asking
-      // for a password afterwards is asking for a secret nothing is waiting for.
-      expect(control.pendingSecret()).toBeNull();
-      expect(control.get().secretWanted).toBeUndefined();
-    }
+  test("an answer closes any pending secret", () => {
+    const { control } = fixture();
+    control.requestSecret({ ref: "e12", label: "password" });
+    // 건너뛰기 on the masked box: the person said go on without it. A box still asking for a
+    // password afterwards is asking for a secret nothing is waiting for.
+    control.release();
+    expect(control.pendingSecret()).toBeNull();
+    expect(control.get().secretWanted).toBeUndefined();
   });
 
   test("the secret VALUE is never anywhere in the state", () => {
@@ -250,15 +196,15 @@ describe("the crappy paths: secrets", () => {
 /**
  * AN ASK NOBODY ANSWERED DOES NOT OUTLIVE THE TURN THAT MADE IT BY MUCH — AND NEVER ENDS INSIDE IT.
  *
- * The wheel belongs to the computer, not to a conversation, and an ask used to stand on it for ever:
+ * An ask belongs to the computer, not to a conversation, and it used to stand there for ever:
  * measured before this, `requestHelp` and `requestSecret` were both still there with the clock moved
  * on eleven minutes — `requested: true`, the label, and `pendingSecret()` still naming the field. The
  * Bot went on showing 도움 필요 through every later conversation, and the masked box went on taking a
  * password for a turn that was over (upstream OpenBot #145 and #457).
  *
  * The edge these pin is the one upstream's ten minutes would get wrong HERE. The Bot's own wait is
- * ten minutes, and it reads an ask that is gone as the person having handed the wheel back. So the
- * ask has to stand through the whole of that wait and a little past it, and only then go.
+ * ten minutes, and it reads an ask that is gone as the person having answered it. So the ask has to
+ * stand through the whole of that wait and a little past it, and only then go.
  */
 describe("an ask nobody answered", () => {
   const ASKED = Date.parse("2026-10-02T03:00:00.000Z");
@@ -286,24 +232,19 @@ describe("an ask nobody answered", () => {
     expect(REQUEST_TTL_MS).toBeLessThanOrEqual(PERSON_WAIT_MS * 1.5);
   });
 
-  test("answered a second before the wait runs out, the wheel still changes hands and comes back", () => {
+  test("answered a second before the wait runs out, the ask is still there to answer", () => {
     const { control, after } = asking();
-    control.requestHelp("네이버 로그인");
+    control.requestHelp("휴대폰에서 로그인 승인");
     after(PERSON_WAIT_MS - SECOND);
     expect(control.get()).toMatchObject({
       holder: "bot",
       requested: true,
-      reason: "네이버 로그인",
+      reason: "휴대폰에서 로그인 승인",
     });
-    expect(control.take()).toMatchObject({
-      holder: "human",
-      reason: "네이버 로그인",
-    });
-    // What the Bot's wait reads as done: the wheel back, and nothing asked.
-    expect(control.release()).toMatchObject({
-      holder: "bot",
-      requested: false,
-    });
+    // What the Bot's wait reads as done: nothing asked, and nothing marked unanswered.
+    const answered = control.release();
+    expect(answered).toMatchObject({ holder: "bot", requested: false });
+    expect(askOutcome(answered)).toBe("answered");
   });
 
   test("a value typed a second before the wait runs out still has its field", () => {
@@ -316,8 +257,7 @@ describe("an ask nobody answered", () => {
 
   test("still stands when the Bot's wait gives up, so giving up is never read as a hand-back", () => {
     /*
-     * THE TRAP. `nothing asked, the Bot holds the wheel` is what the waiting call reads as
-     * `laf:control_returned`, and `no value wanted` as `laf:secret_entered`. Its last look is made
+     * THE TRAP. `nothing asked` is what the waiting call reads as `laf:control_returned`, and `no value wanted` as `laf:secret_entered`. Its last look is made
      * just before its own ten minutes are up, counted from after the ask was answered — so on this
      * clock it lands at ten minutes and some. An ask gone by then turns "nobody came" into "done".
      */
@@ -370,20 +310,6 @@ describe("an ask nobody answered", () => {
     expect(control.pendingSecret()).toBeNull();
   });
 
-  test("never takes the wheel back from a person who holds it", () => {
-    // The one thing that must not run out: somebody may be half-way through typing a code.
-    const { control, after } = asking();
-    control.requestHelp("네이버 로그인");
-    after(60 * SECOND);
-    control.take();
-    after(6 * 60 * 60 * SECOND);
-    expect(control.get()).toMatchObject({
-      holder: "human",
-      reason: "네이버 로그인",
-    });
-    expect(control.humanMayDrive()).toBe(true);
-  });
-
   test("asking again starts the time again, for each ask by itself", () => {
     // A Bot that asks twice waits twice, and the first ask's time must not run out under the second.
     const { control, after } = asking();
@@ -422,16 +348,6 @@ describe("an ask nobody answered", () => {
       ref: "e40",
       snapshotId: undefined,
     });
-  });
-
-  test("a person who takes the wheel after it ran out is not handed its reason", () => {
-    // With no look in between: taking the wheel is itself the next look.
-    const { control, after } = asking();
-    control.requestHelp("네이버 로그인");
-    after(REQUEST_TTL_MS + 1);
-    const state = control.take();
-    expect(state.holder).toBe("human");
-    expect(state.reason).toBeUndefined();
   });
 
   test("whoever keeps the state is told once, when it runs out, and not by a look before that", () => {
@@ -505,19 +421,6 @@ describe("an ask whose tab is gone", () => {
     expect(askOutcome(control.get())).toBe("answered");
   });
 
-  test("never takes the wheel from a person who holds it", () => {
-    const { control } = fixture();
-    control.requestHelp("네이버 로그인");
-    control.take();
-    expect(control.tabLost()).toBe(false);
-    // Still theirs, with what they were asked to do: they are looking at the screen.
-    expect(control.get()).toMatchObject({
-      holder: "human",
-      reason: "네이버 로그인",
-    });
-    expect(control.get().unanswered).toBeUndefined();
-  });
-
   test("is forgotten by the next ask, which is waited on afresh", () => {
     const { control } = fixture();
     control.requestSecret({ ref: "e7", label: "비밀번호" });
@@ -536,9 +439,8 @@ describe("an ask whose tab is gone", () => {
       reason: "한 번 더",
     });
     expect(control.get().unanswered).toBeUndefined();
-    // And a hand-over or a hand-back says nothing of an old ask either.
+    // And an answer says nothing of an old ask either.
     control.tabLost();
-    expect(control.take().unanswered).toBeUndefined();
     expect(control.release().unanswered).toBeUndefined();
   });
 

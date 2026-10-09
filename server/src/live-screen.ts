@@ -36,7 +36,7 @@ type StreamData = {
    * at the upgrade, where a refused upgrade would leave a row saying a screen was watched.
    */
   viewer: ScreenViewer;
-  /** Which Bot's browser this socket drives, for the row `open` writes. */
+  /** Which Bot's browser this socket shows, for the row `open` writes. */
   botId: string;
 };
 
@@ -46,8 +46,7 @@ type StreamData = {
  * It clears every gate a screen does — the computer, the origin, the session, whose Bot it is — and
  * is then answered with one frame and closed. NOTHING INWARD: the computer keeps one viewer per Bot
  * and a new one replaces the last (`agent-computer/src/live-screen.ts`), so a check that opened the
- * real stream would freeze the picture in any window already watching that Bot, and take the
- * keyboard from somebody driving it. And NO ROW: the trail's line says a person looked at a Bot's
+ * real stream would freeze the picture in any window already watching that Bot. And NO ROW: the trail's line says a person looked at a Bot's
  * screen (`computer/screen-view.ts`), and a check shows nobody anything.
  */
 type ProbeData = { screenProbe: true };
@@ -157,8 +156,7 @@ export function createLiveScreen(input: {
    * Where a person's sessions are ended — removed by an administrator, struck off the sign-in list.
    *
    * THE SESSION IS CHECKED ONCE, AT THE UPGRADE, and a socket that opened lives as long as nobody
-   * closes it: taking the row away does nothing to a connection already carrying frames out and
-   * keystrokes in. So the screens a person has open are held here by who opened them, and closed
+   * closes it: taking the row away does nothing to a connection already carrying frames out. So the screens a person has open are held here by who opened them, and closed
    * when their sessions end. Absent in the suites that drive the proxy alone.
    */
   sessions?: Pick<SessionRevocation, "onEnded">;
@@ -202,8 +200,8 @@ export function createLiveScreen(input: {
       /*
        * Where the socket was opened from, checked before anything else and before the session.
        *
-       * This is the socket a person's clicks and keystrokes travel down, into a browser holding
-       * their real logins. It checked nothing but the cookie — and every deployment of this product
+       * This is the socket that shows a browser holding a person's real logins — and until
+       * 2026-10-09 carried their clicks and keystrokes into it. It checked nothing but the cookie — and every deployment of this product
        * is a name under one registrable domain, so `SameSite=Lax` sends that cookie on a socket
        * opened from another customer's page. An upgrade with no `Origin` at all is refused too: a
        * browser always sends one on a handshake, and nothing but a browser drives this.
@@ -284,7 +282,7 @@ export function createLiveScreen(input: {
         inward.binaryType = "arraybuffer";
         ws.data.inward = inward;
         /*
-         * Frames outward, input inward. A frame the browser is too slow for is dropped, not queued,
+         * Frames outward, and nothing inward (see `message`). A frame the browser is too slow for is dropped, not queued,
          * because a stale frame is worse than a missing one — which this said and did not do: Bun
          * queues whatever `send` cannot write at once, so a slow viewer's backlog grew without bound.
          * A picture is dropped while the viewer is more than {@link RELAY_BACKLOG_BYTES} behind; text
@@ -303,19 +301,16 @@ export function createLiveScreen(input: {
         inward.onerror = () => ws.close();
       },
       message(ws: ServerWebSocket<SocketData>, raw) {
-        // A probe takes no input: there is no browser behind it to take any to.
-        if (isProbe(ws.data)) return;
-        if (!isProxiedStream(ws.data)) {
-          channels.message(asChannelSocket(ws), raw);
-          return;
-        }
         /*
-         * Every click and keystroke a person makes in a Bot's browser passes through this line on
-         * its way there, passwords included. It is forwarded and never read or kept: the recorder
-         * that watched here went with teaching by demonstration (2026-10-08), and nothing else in
-         * this process sees these messages.
+         * NOTHING GOES INWARD (owner, 2026-10-09) — from a probe, which has no browser behind it,
+         * and from a screen. Every click and keystroke a person made in a Bot's browser, passwords
+         * included, used to pass through here on its way to the page. Nobody drives the Bot's
+         * browser now, on any surface, and what a window loaded before that still sends is dropped
+         * here unread — and again at the computer, which takes nothing from this socket either
+         * (`agent-computer/src/live-screen.ts`).
          */
-        if (ws.data.inward?.readyState === 1) ws.data.inward.send(String(raw));
+        if (isProbe(ws.data) || isProxiedStream(ws.data)) return;
+        channels.message(asChannelSocket(ws), raw);
       },
       close(ws: ServerWebSocket<SocketData>, code, reason) {
         if (isProbe(ws.data)) return;

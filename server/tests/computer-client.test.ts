@@ -4,7 +4,6 @@ import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import { FILE_PATH_HEADER } from "../../shared/workspace-files";
 import {
   ComputerUnavailableError,
-  ControlHeldError,
   createComputerClient,
   PAGE_TIMEOUT,
   PageLoadFailedError,
@@ -501,18 +500,6 @@ describe("a refusal from the computer", () => {
     );
     expect(failure).toBeInstanceOf(StaleSnapshotError);
     expect(failure.message).toBe("laf:label_changed");
-
-    const held = clientWith(
-      answering(409, {
-        error: "laf:human_has_control",
-        code: "laf:human_has_control",
-        humanHasControl: true,
-      }),
-    );
-    const waiting = await failureOf(held.click({ ref: "e5", snapshotId: 1 }));
-    // Its own type: routes.ts found this one by matching `control` in a message until 2026-09-14.
-    expect(waiting).toBeInstanceOf(ControlHeldError);
-    expect(waiting.message).toBe("laf:human_has_control");
   });
 
   test("about a workspace path is the container's own fact, one name for each", async () => {
@@ -569,18 +556,6 @@ describe("a refusal from the computer", () => {
     expect((await failureOf(gone.supplySecret(SECRET_VALUE))).message).toBe(
       "laf:element_not_actionable",
     );
-    // The live screen, pressed before the wheel was taken.
-    const notYours = clientWith(
-      answering(409, {
-        error: "laf:take_control_first",
-        code: "laf:take_control_first",
-      }),
-    );
-    const early = await failureOf(
-      notYours.humanInput({ kind: "click", x: 1, y: 2 }),
-    );
-    expect(early).toBeInstanceOf(ControlHeldError);
-    expect(early.message).toBe("laf:take_control_first");
   });
 
   test("a code this server does not know yet still passes through, and a malformed one does not", async () => {
@@ -930,11 +905,9 @@ describe("the header that says which Bot", () => {
     await client.downloadFile("notes.md");
     await client.control();
     await client.requestControl("stuck");
-    await client.takeControl();
     await client.releaseControl();
     await client.requestSecret({ label: "PIN", ref: "e1", snapshotId: 1 });
     await client.supplySecret("hunter2");
-    await client.humanInput({ kind: "click", x: 1, y: 2 });
     await client.computers();
     await client.stopComputer();
     await client.resetComputer();

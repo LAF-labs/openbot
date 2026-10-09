@@ -195,16 +195,16 @@ describe("the shared control poll", () => {
   });
 
   test("a changed answer restarts the count", async () => {
-    let holder: ControlState["holder"] = "bot";
+    let requested: ControlState["requested"] = false;
     answer = () =>
-      new Response(JSON.stringify({ ...BOT, holder }), { status: 200 });
+      new Response(JSON.stringify({ ...BOT, requested }), { status: 200 });
 
     await watching(
       nextComputer(),
       () => false,
       async () => {
         expect(await quiet()).toBe(READS_TO_SETTLE);
-        holder = "human";
+        requested = true;
         // Nothing wakes it on its own; a state change is only seen because something poked it.
         expect(await quiet()).toBe(READS_TO_SETTLE);
       },

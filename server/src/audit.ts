@@ -129,9 +129,9 @@ export const auditEventTypes = [
    * would bury the attempts themselves under the observation that they kept happening.
    */
   "computer.action_repeated",
-  // A person taking the wheel and giving it back. Recorded as a period rather than as keystrokes: the
-  // useful fact for an investigator is that a human drove this browser between these two times, and
-  // logging every click a person made would bury it while telling nobody anything.
+  // The Bot asking a person for a hand, and the answer. `control_taken` was a person taking the
+  // wheel, recorded as a period rather than as keystrokes; nobody has since 2026-10-09, nothing writes
+  // it, and it stays so the rows from before are still read.
   "computer.help_requested",
   "computer.control_taken",
   "computer.control_released",

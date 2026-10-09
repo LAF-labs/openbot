@@ -2,7 +2,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { PANEL_SIZES } from "../src/components/computer/live-view";
 import {
   DEFAULT_SCREEN_PANEL,
-  DRIVING_MAX_WIDTH,
   forgetScreenPanel,
   parseScreenPanel,
   readScreenPanel,
@@ -20,8 +19,8 @@ import { ko } from "../src/lib/i18n-ko";
  * Three things are held here. The STORE — what a stored value that is not this module's shape reads
  * as, and that a browser with no usable `localStorage` still answers with something drawable rather
  * than throwing on the way to a render. OPEN — that it starts closed, and that an old stored value
- * from when the screen opened itself does not open it. And the WIDTH — a sheet the width of a phone,
- * a chosen size on a wide window, and more room while a person drives.
+ * from when the screen opened itself does not open it. And the WIDTH — a sheet the width of a phone
+ * and a chosen size on a wide window.
  */
 
 /** A `localStorage` that behaves however a case needs, installed on `globalThis` for that case. */
@@ -149,11 +148,11 @@ const open = (size: ScreenPanel["size"]): ScreenPanel => ({
   isOpen: true,
 });
 /** A 1440px laptop, which leaves every size its room. */
-const wide = (panel: ScreenPanel, isDriving = false) =>
-  screenPanelWidth(panel, { isWide: true, viewportWidth: 1440, isDriving });
+const wide = (panel: ScreenPanel) =>
+  screenPanelWidth(panel, { isWide: true, viewportWidth: 1440 });
 /** A 375px phone, which the requirement names. */
-const phone = (panel: ScreenPanel, isDriving = false) =>
-  screenPanelWidth(panel, { isWide: false, viewportWidth: 375, isDriving });
+const phone = (panel: ScreenPanel) =>
+  screenPanelWidth(panel, { isWide: false, viewportWidth: 375 });
 
 describe("how wide the screen is allowed to be", () => {
   test("on a window with room, the screen is exactly what was chosen", () => {
@@ -169,10 +168,6 @@ describe("how wide the screen is allowed to be", () => {
      */
     for (const { size } of PANEL_SIZES) {
       expect({ size, width: phone(open(size)) }).toEqual({ size, width: 375 });
-      expect({ size, width: phone(open(size), true) }).toEqual({
-        size,
-        width: 375,
-      });
     }
   });
 
@@ -184,17 +179,6 @@ describe("how wide the screen is allowed to be", () => {
       SCREEN_PANEL_WIDTHS.small,
     );
     expect(at1024(open("small"))).toBe(SCREEN_PANEL_WIDTHS.small);
-  });
-
-  test("while a person drives, the screen takes the room a page needs, and no less than chosen", () => {
-    const driving = wide(open("small"), true);
-    expect(driving).toBeGreaterThan(SCREEN_PANEL_WIDTHS.large);
-    expect(driving).toBeLessThanOrEqual(DRIVING_MAX_WIDTH);
-    // The conversation beside it is still there: the request for help and its 다 했어요 are in it.
-    expect(1440 - driving).toBeGreaterThanOrEqual(360);
-    expect(wide(open("large"), true)).toBeGreaterThanOrEqual(
-      SCREEN_PANEL_WIDTHS.large,
-    );
   });
 
   test("a window with no width to report is treated as one with room", () => {

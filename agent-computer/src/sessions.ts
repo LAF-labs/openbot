@@ -1,7 +1,8 @@
 /**
- * What this process holds for each Bot besides its browser: who has the wheel, which snapshot its
- * refs belong to, the facts waiting to be told, the fields a person typed into and what is known of
- * what they typed (never the value), the navigation in flight and the person watching.
+ * What this process holds for each Bot besides its browser: what it has asked a person for, which
+ * snapshot its refs belong to, the facts waiting to be told, the fields a person typed into and
+ * what is known of what they typed (never the value), the navigation in flight and the person
+ * watching.
  *
  * Per Bot, and resolved once per request, so there is no path where one Bot's call reaches
  * another's. Profiles are isolated, but this process is not a security boundary.
@@ -28,7 +29,7 @@ import type { TabLost } from "./tabs";
  * a click did nothing, and Playwright dismisses it before any tool call returns — so the fact has to
  * travel out of band, on the next result, or the Bot reports "I clicked it" about a page that never
  * moved. The Korean the model reads for each code is in `shared/prompt/tool-results.ko.ts`, for the
- * same reason `laf:human_has_control` lives there: this container ships facts and knows no locale.
+ * same reason every other code's Korean does: this container ships facts and knows no locale.
  */
 export type ComputerNote = { code: NoteCode } & Record<string, unknown>;
 
@@ -45,10 +46,7 @@ export type SecretField = {
   handle: ElementHandle;
   /** The ref it was last known by, or empty until a look finds it (`typedIntoRefs`). */
   ref: string;
-  /**
-   * The frame it is in, where that is known, so a person's next keystroke can ask that frame alone
-   * whether it is landing in the same box.
-   */
+  /** The frame it is in, where that is known, so a look can find it there. */
   frame?: Frame;
   /** A keyed digest of what it held when last read, never what it held (`typed-values.ts`). */
   digest?: string;
@@ -84,11 +82,10 @@ export type BotSession = {
    */
   secretTab?: Page;
   /**
-   * The tab the Bot asked a person for a hand on, or a person took the wheel on. For as long as
-   * that ask stands or that person holds the wheel, it is not the tab closed to keep the Bot's
-   * tabs to their number (`tab-cap.ts`).
+   * The tab the Bot asked a person for a hand on. For as long as that ask stands, it is not the tab
+   * closed to keep the Bot's tabs to their number (`tab-cap.ts`).
    */
-  wheelTab?: Page;
+  helpTab?: Page;
   /** Facts waiting to ride out on the next tool result. Drained when they do. */
   notes: ComputerNote[];
   /**
@@ -96,14 +93,13 @@ export type BotSession = {
    *
    * Identity, not description: whatever the page calls the box and whatever its markup says, the
    * value in THIS node is one the model was promised it would never see — typed through
-   * `computer_request_secret`, or by a person holding the wheel (`person-typing.ts`). Followed at
-   * every snapshot (`typedIntoRefs`) and let go when the node or its document is gone.
+   * `computer_request_secret`, the one way a person's typing reaches the page. Followed at every
+   * snapshot (`typedIntoRefs`) and let go when the node or its document is gone.
    */
   secretFields: SecretField[];
   /**
-   * Keyed digests of what a person typed whose box is gone, or that arrived as one block — so an
-   * address carrying it is blanked after the page it was typed on has left (`typed-values.ts`).
-   * Never the values.
+   * Keyed digests of what a person typed whose box is gone — so an address carrying it is blanked
+   * after the page it was typed on has left (`typed-values.ts`). Never the values.
    */
   typedDigests: string[];
   /**
@@ -111,20 +107,6 @@ export type BotSession = {
    * them already, and blanking one it chose would tell it the guess was what a person typed.
    */
   ownDigests: string[];
-  /** The box a person's last keystroke landed in, for the next keystroke to be compared with. */
-  lastTyped?: SecretField;
-  /**
-   * The tabs a person typed into while the page would not say where the typing went, and which of
-   * each tab's documents it was (`documentOf`). That document shows no box's contents until it is
-   * gone (`person-typing.ts`).
-   */
-  typedBlind: WeakMap<Page, number | undefined>;
-  /**
-   * A person's input, applied one piece at a time in the order it arrived. Finding the box a
-   * keystroke lands in is a question to the page, and two keystrokes whose questions answered out of
-   * order would reach the page out of order.
-   */
-  personInput: Promise<void>;
   /**
    * The `/navigate` in flight, while it is: which tab's frame it drives, which host it was judged
    * for, and what the guard stopped on its way.
@@ -138,7 +120,7 @@ export type BotSession = {
   viewer?: {
     socket: unknown;
     cast: Screencast;
-    /** The tab being cast, which is the tab the person's input goes to. */
+    /** The tab being cast. */
     page: Page;
     /** Stops the loop that keeps the cast pointed at whatever page the Bot is actually on. */
     follow?: ReturnType<typeof setInterval>;
@@ -170,15 +152,15 @@ export function withNotes(
 /**
  * Every Bot's session, keyed by its id.
  *
- * `stateDirectoryFor` is where who had the wheel is written between lives of this process. Functions
+ * `stateDirectoryFor` is where a Bot's asks are written between lives of this process. Functions
  * rather than paths so the layout stays profiles.ts's to decide — and it is no longer the profile
  * directory: the profile is the deployment's and control is one Bot's, so five Bots writing
- * `control.json` into one directory would each answer "is a person driving" for all of them.
+ * `control.json` into one directory would each answer for all of them.
  *
- * `legacyStateDirectoryFor` is where it used to be, read when the new place has nothing. A container
- * upgraded while somebody held the wheel must not hand it back to the Bot on the way through:
- * `createControl`'s default holder is the Bot, so a control file this process cannot find is a
- * control file that silently makes control looser.
+ * `legacyStateDirectoryFor` is where it used to be, read when the new place has nothing, so a value
+ * request a restart cut short is said to the Bot (`laf:secret_request_lost`) wherever the last
+ * release kept its file. A file from when a person could hold the wheel is read the same way, and
+ * its hold is the Bot's (`restoredControl`).
  */
 export function createSessions(directories: {
   stateDirectoryFor: (botId: string) => string;
@@ -194,8 +176,8 @@ export function createSessions(directories: {
     try {
       return JSON.parse(readFileSync(path, "utf8"));
     } catch {
-      // No file is the ordinary case: a Bot that has never been driven. An unreadable one is treated
-      // the same way, because the fail-safe below only ever makes control stickier, never looser.
+      // No file is the ordinary case: a Bot that has never asked anybody for anything. An
+      // unreadable one is treated the same way.
       return null;
     }
   };
@@ -229,13 +211,9 @@ export function createSessions(directories: {
       const existing = sessions.get(botId);
       if (existing) return existing;
       /*
-       * WHO HAD THE WHEEL BEFORE THIS PROCESS STARTED.
-       *
-       * A restart in the middle of a takeover used to hand the browser back to the Bot in silence:
-       * the person was still looking at a bank's login form, and the Bot was free to click on it.
-       * Control is written to the profile directory on every change, and read back here, so a
-       * restart cannot quietly promote a Bot. See `restoredControl` for what survives and what does
-       * not.
+       * WHAT THE LAST LIFE OF THIS PROCESS LEFT. Control is written on every change and read back
+       * here: a value request it cut short is said to the Bot, and a person's hold on the wheel
+       * from a release that still had one is the Bot's. See `restoredControl`.
        */
       const restored = restoredControl(readControlFile(botId));
       const created: BotSession = {
@@ -250,8 +228,6 @@ export function createSessions(directories: {
         secretFields: [],
         typedDigests: [],
         ownDigests: [],
-        typedBlind: new WeakMap(),
-        personInput: Promise.resolve(),
       };
       sessions.set(botId, created);
       return created;

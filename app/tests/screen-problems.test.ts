@@ -37,8 +37,6 @@ const SENT_BY_THE_SERVER = [
 ];
 const SENT_BY_THE_COMPUTER = [
   "laf:screen_not_started",
-  "laf:take_control_first",
-  "laf:input_not_applied",
   // Its door and its browser, passed through the screenshot route by their own names.
   "laf:computer_token_refused",
   "laf:bot_header_missing",
@@ -124,7 +122,6 @@ describe("the panes read the table, not the wire", () => {
     join(COMPONENTS, "computer/live-screen.tsx"),
     "utf8",
   );
-  const handoff = readFileSync(join(COMPONENTS, "sites/handoff.tsx"), "utf8");
 
   test("the live socket takes the code and never the container's sentence", () => {
     expect(live).toContain("message.code");
@@ -136,18 +133,11 @@ describe("the panes read the table, not the wire", () => {
 
   test("wherever a problem is drawn, it is drawn through the table", () => {
     /*
-     * The live view holds the code the socket handed up and draws the table's words for it; the
-     * sign-in handoff does the same. Checked against the code, not a comment: this once passed on a
-     * card because a comment in it quoted the call.
+     * The live view holds the code the socket handed up and draws the table's words for it.
+     * Checked against the code, not a comment: this once passed on a card because a comment in it
+     * quoted the call.
      */
     expect(view).toContain("screenProblemText(problem)");
     expect(view).not.toMatch(/\{problem\}/);
-    /*
-     * Since 0.5.3 the handoff draws no screen of its own: it is the live view's sheet
-     * (`DrivingScreen`), so what it says about the picture is what the live view says.
-     */
-    expect(handoff).toContain("<DrivingScreen");
-    expect(handoff).not.toContain("<LiveScreen");
-    expect(handoff).not.toMatch(/\{problem\}/);
   });
 });

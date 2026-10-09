@@ -815,8 +815,6 @@ export const ko: Record<string, string> = {
   "This Bot's screen could not be found.": "이 봇의 화면을 찾지 못했어요.",
   "The page is taking too long to open.":
     "페이지가 너무 오래 열리지 않고 있어요.",
-  "Somebody is using this browser right now.":
-    "지금 다른 사람이 이 브라우저를 쓰고 있어요.",
   "The Bot's browser did not respond.": "봇의 브라우저가 응답하지 않았어요.",
   "The Bot's computer did not accept this server's connection.":
     "봇의 컴퓨터가 이 서버의 연결을 받지 않았어요.",
@@ -827,8 +825,6 @@ export const ko: Record<string, string> = {
   "Something went wrong on the Bot's computer.":
     "봇의 컴퓨터에서 문제가 생겼어요.",
   "The live picture could not be started.": "실시간 화면을 시작하지 못했어요.",
-  "That click or keystroke did not reach the page.":
-    "방금 누른 클릭이나 키가 페이지에 전달되지 않았어요.",
   "The server did not answer": "서버가 응답하지 않음",
   "The service refused this deployment's registration. Please try again in a moment.":
     "해당 서비스가 이 배포의 등록을 거절했어요. 잠시 후 다시 시도해 주세요.",
@@ -870,9 +866,6 @@ export const ko: Record<string, string> = {
   // 대화상자의 버튼이 일하는 동안 하는 말.
   "Adding…": "추가하는 중…",
   "Installing…": "설치하는 중…",
-  "Handing back…": "돌려주는 중…",
-  "The browser could not be handed back to the Bot. Try again.":
-    "봇에게 브라우저를 돌려주지 못했어요. 다시 시도하세요.",
   // 안 읽어서 멈춘 루틴 배너 — 누른 결과를 배너가 사라진 뒤에도 알린다.
   "Turned {name}'s routines back on.": "{name}의 루틴을 다시 켰어요.",
   "{name}'s routines will keep running, read or not.":
@@ -966,7 +959,6 @@ export const ko: Record<string, string> = {
   Gray: "회색",
   "Filled in": "입력함",
   General: "일반",
-  "Hand back": "제어 반환",
   "Held for this deployment and never shown again once saved.":
     "이 배포에만 보관되며, 저장 후에는 다시 표시되지 않아요.",
   "Your account, and how the app looks on this device.":
@@ -1269,16 +1261,12 @@ export const ko: Record<string, string> = {
   "The fleet could not be told": "함대에 전달하지 못함",
 
   // 사이트 연결 — 화면의 말.
-  // 로그인은 계정의 것이다. 고르는 것은 "누가 여느냐"이지 "어디에 로그인되느냐"가 아니다.
-  "Which Bot should open it?": "어느 봇이 열까요?",
   "Needs signing in again": "다시 로그인 필요",
-  "Opening…": "여는 중…",
-  "Somebody has to allow this before the page will open.":
-    "허락을 받아야 이 페이지가 열려요.",
-  "The Bot's browser could not be reached.": "봇의 브라우저에 닿지 못했어요.",
-  "That page still looks like a login screen, so nothing was recorded. Try again when you are through.":
-    "아직 로그인 화면으로 보여서 아무것도 기록하지 않았어요. 로그인을 마친 뒤 다시 해 주세요.",
-  "Checking the page…": "화면을 확인하는 중…",
+  // 2026-10-09부터 사람이 봇의 브라우저를 넘겨받지 않는다. 연결은 비밀번호 카드로 돌아온다.
+  "Connecting comes back soon, through the password card.":
+    "곧 비밀번호 카드로 연결할 수 있게 돼요.",
+  "The Bot cannot sign in here: it needs a certificate on your device.":
+    "봇은 여기에 로그인할 수 없어요 — 내 기기에 있는 인증서가 필요해요.",
 
   // 사이트 연결 — 사이트 이름. shared/sites/catalogue.ts의 표를 그대로 따른다.
   "Naver Smart Store Seller Centre": "네이버 스마트스토어 판매자센터",
@@ -1446,18 +1434,8 @@ export const ko: Record<string, string> = {
     "연결에 필요한 권한이 빠져 있어요. 껐다 다시 켜고, 서비스가 묻는 것에 모두 동의해 주세요.",
   "This connection has stopped working. Turn it off and on again.":
     "이 연결이 더는 동작하지 않아요. 껐다 다시 켜 주세요.",
-  "The Bot has taken the browser back. Nothing you type reaches it.":
-    "봇이 브라우저를 다시 가져갔어요. 지금 입력하는 내용은 전달되지 않아요.",
-  "This Bot is not allowed to open that address.":
-    "이 봇은 그 주소를 열 수 없어요.",
-  "The browser could not be handed over. Please try again.":
-    "브라우저를 넘겨받지 못했어요. 다시 시도해 주세요.",
-  "The browser's state could not be read.":
-    "브라우저 상태를 읽지 못했어요 — 다시 확인해 주세요.",
   "That could not be turned off. Please try again.":
     "끄지 못했어요. 다시 시도해 주세요.",
-  "You authenticate each time — the Bot cannot keep this one.":
-    "인증은 매번 직접 하셔야 해요 — 봇이 대신 보관할 수 없어요.",
   "Connected · {name} · KakaoTalk is still reviewing the messages":
     "연결됨 · {name} · 카카오가 메시지 서식을 심사 중이에요",
   "Connected · {name} · connected on {date}": "연결됨 · {name} · {date}에 연결",
@@ -1623,17 +1601,11 @@ export const ko: Record<string, string> = {
   "Connecting to the screen…": "화면에 연결하는 중…",
   "Live · {site}": "실시간 · {site}",
   Live: "실시간",
-  "You can click and type on this page yourself.":
-    "이 페이지를 직접 누르고 입력할 수 있어요.",
-  "Take over": "직접 하기",
   // 봇이 사람에게 넘기는 일 — 대화 속 카드, 팝업이 아니다(`components/computer/help-card.tsx`).
   "The Bot needs your help": "봇이 도움을 청해요",
   "The Bot needs a value it must not see": "봇이 보면 안 되는 값이 필요해요",
   "Needs you": "도움 필요",
   "Goes into {field} on {site}": "{site}의 '{field}' 칸에 들어가요",
-  "You have the browser. Press I'm done when you are finished.":
-    "지금 직접 조작하고 있어요. 끝나면 '다 했어요'를 눌러 주세요.",
-  "Do it myself": "직접 하기",
   "I'm done": "다 했어요",
   "The Bot carries on without this step": "이 단계 없이 봇이 계속해요",
   Skip: "건너뛰기",
@@ -2627,23 +2599,11 @@ export const ko: Record<string, string> = {
   "Save something you ask for often, and call it in the conversation by / and its name.":
     "자주 시키는 일을 저장해 두면 대화에서 /와 이름으로 불러 써요.",
 
-  // 0.5.3 B — 봇의 컴퓨터: 넘겨받기와 실시간 화면, 사이트 연결.
-  "Turn it on again": "다시 켜기",
+  // 0.5.3 B — 봇의 컴퓨터: 실시간 화면과 사이트 연결.
   Reconnect: "다시 연결",
   "The picture has not come through for five seconds.":
     "화면이 5초 넘게 오지 않고 있어요.",
-  // 넘겨받기는 "직접 하기 → 다 했어요" 한 쌍이다. "제어"라는 말은 쓰지 않는다.
-  "Log in on {name}, then press I'm done.":
-    "{name}에 로그인한 뒤 '다 했어요'를 눌러 주세요.",
-  "Escape does the same as I'm done": "Esc를 눌러도 '다 했어요'와 같아요",
-  "Handing it to you…": "넘겨받는 중…",
-  "The Bot's screen. You are doing it yourself: click and type here. Tab leaves, and Escape is the same as I'm done.":
-    "봇의 화면이에요. 여기서 직접 누르고 입력하세요. Tab으로 빠져나가고, Esc를 누르면 '다 했어요'와 같아요.",
-  "Press Do it myself before clicking or typing on the page.":
-    "페이지를 누르거나 입력하려면 먼저 '직접 하기'를 눌러 주세요.",
   // 연결 화면 — 봇은 하나다. 봇이 여럿인 옛 계정에도 참인 말로 쓴다(한국어는 수를 말하지 않아도 된다).
-  "Make your Bot first — a site is connected on its browser.":
-    "먼저 봇을 만들어 주세요. 사이트 연결은 봇의 브라우저에 로그인하는 일이에요.",
   "Connected · {name} last looked {date}":
     "연결됨 · {name}{josa} {date}에 확인",
   "Turn this site off? The Bot will stop using it. Its browser stays signed in until you log out on the site itself.":

@@ -199,8 +199,9 @@ export function comparableValue(value: string): string {
  *
  * 승인번호, 인증코드, 주민등록번호 and PIN for the same reason (audit R3-01, 2026-09-16): a parser
  * dry-run kept all four boxes' values, and the audit's takeover reproduction typed into a box called
- * 승인번호. What fixes a takeover is following the box a person typed into (`person-typing.ts`);
- * these keep the last net from missing the boxes a Korean checkout and 본인인증 actually ask for.
+ * 승인번호. What fixed a takeover was following the box a person typed into, until a person could
+ * no longer take the wheel (2026-10-09); these keep the last net from missing the boxes a Korean
+ * checkout and 본인인증 actually ask for.
  */
 const SECRET_LABEL_WORDS = [
   "비밀번호",
@@ -689,7 +690,7 @@ export function readAriaSnapshot(
  * A CONTROL THE PAGE DID NOT ANSWER FOR IS LEFT WITHOUT A NAME, and nothing stands in for it. The
  * words the tree printed beneath the control once did (`readAriaSnapshot` says what became of
  * them), and they cannot tell an editable region from ordinary text — Playwright prints a plain
- * `contenteditable` as `generic` with no mark (`person-typing.ts` measured it, 2026-09-16) — so a
+ * `contenteditable` as `generic` with no mark (measured 2026-09-16) — so a
  * nameless link wrapping one would have carried whatever had been typed into it as its name, to
  * the model and the trail (review of pull request 69). When the page's own name comes, it leaves
  * editable regions out on every path (`page-names.ts`); when it does not come in time, or the ref

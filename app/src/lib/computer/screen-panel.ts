@@ -50,21 +50,6 @@ export const DEFAULT_SCREEN_PANEL: ScreenPanel = {
   isOpen: false,
 };
 
-/**
- * While a person drives the browser, the screen takes all the window can spare.
- *
- * Clicking into a 1280px page drawn a third of its size is clicking at a third of the size, and a
- * login is exactly where a mis-click costs something. The conversation keeps `ROOM_FOR_THE_REST`,
- * because the request for help with its "다 했어요" is in it; the screen takes the rest, up to what
- * a page needs.
- *
- * On a wide window that is now the pane BEHIND the driving: since 0.5.3 the page itself is driven on
- * a sheet over the whole window (`DrivingScreen` in `live-view.tsx`), because even this width drew
- * a 1280px login at 43% in a 1280px window (audit item 4). The pane keeps it so that nothing
- * jumps under the sheet, and settles back to the chosen size when the wheel is handed back.
- */
-export const DRIVING_MAX_WIDTH = 1_040;
-
 const STORAGE_KEY = "laf.screen-panel";
 
 const SIZES: readonly ScreenPanelSize[] = ["small", "medium", "large"];
@@ -169,11 +154,7 @@ const WIDE_QUERY = "(min-width: 64rem)";
 
 export function screenPanelWidth(
   panel: ScreenPanel,
-  {
-    isWide,
-    viewportWidth,
-    isDriving = false,
-  }: { isWide: boolean; viewportWidth: number; isDriving?: boolean },
+  { isWide, viewportWidth }: { isWide: boolean; viewportWidth: number },
 ): number {
   const hasWidth = Number.isFinite(viewportWidth) && viewportWidth > 0;
   if (!isWide && hasWidth) return viewportWidth;
@@ -184,8 +165,7 @@ export function screenPanelWidth(
     SCREEN_PANEL_WIDTHS.small,
     viewportWidth - ROOM_FOR_THE_REST,
   );
-  if (!isDriving) return Math.min(chosen, spare);
-  return Math.max(Math.min(chosen, spare), Math.min(DRIVING_MAX_WIDTH, spare));
+  return Math.min(chosen, spare);
 }
 
 export type Viewport = { isWide: boolean; viewportWidth: number };
@@ -269,9 +249,6 @@ export function useScreenPanelViewport(): Viewport {
 }
 
 /** The screen's width in pixels: the person's choice, as far as this window can honour it. */
-export function useScreenPanelWidth(isDriving = false): number {
-  return screenPanelWidth(useScreenPanel(), {
-    ...useScreenPanelViewport(),
-    isDriving,
-  });
+export function useScreenPanelWidth(): number {
+  return screenPanelWidth(useScreenPanel(), useScreenPanelViewport());
 }

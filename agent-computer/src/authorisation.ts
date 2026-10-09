@@ -42,11 +42,11 @@ export function offeredToken(headers: Headers, url: URL): string {
  * The Bot a caller named, and whether this process will treat it as a name at all.
  *
  * THE ID BECOMES A DIRECTORY. `x-openbot-bot-id` is joined onto `PROFILES_DIR` — the profile Chrome
- * launches from, the `control.json` written on every handover, and the tree `/computers/reset`
+ * launches from, the `control.json` written on every ask, and the tree `/computers/reset`
  * hands to `rm -rf`. Nothing ever looked at the string, and the server's routes did not either:
  * Hono decodes `%2F` in a path parameter, so `POST /api/computers/..%2F..%2Ftmp%2Fx/control/take`
  * arrived here as `../../tmp/x` and `join("/profiles", that)` is `/tmp/x`. Measured: taking control
- * wrote a file there, as root, in the container that holds every login this customer has.
+ * (a door that went on 2026-10-09; `control/release` writes the same file) wrote a file there, as root, in the container that holds every login this customer has.
  *
  * The server refuses this too, in `server/src/computer/bot-id.ts`, and the two checks are
  * deliberately duplicated rather than shared: this image copies `agent-computer/src` and nothing

@@ -16,11 +16,9 @@ import {
   COMPUTER_FAILED,
   type ComputerClient,
   ComputerUnavailableError,
-  ControlHeldError,
   ElementNotFoundError,
   FILE_NOT_FOUND,
   FILE_PATH_REFUSED,
-  HUMAN_HAS_CONTROL,
   NAVIGATION_FAILED,
   NAVIGATION_REFUSED,
   NavigationRefusedError,
@@ -367,22 +365,11 @@ export function createComputerRoutes(
   );
 
   /**
-   * Taking the wheel, and handing it back.
-   *
-   * Somebody's private business in their own browser, which is why `audit.ts` records it as a
-   * period rather than as keystrokes. The take used to carry a `teaching` flag that started a
-   * recording of the session; a Bot is taught in words now, as a skill
-   * (docs/laf/redesign-2026-10.md §7), so nothing here records anything, and a window from before
-   * that still sends the flag is handed the wheel like anybody else.
+   * A person answering what the Bot asked: 다 했어요, or 건너뛰기 after the surface has told the
+   * waiting turn (`server/src/turns/people.ts`). There is no door by which a person takes the
+   * Bot's browser — nobody drives it but the Bot (owner, 2026-10-09) — and a window from before
+   * that still posts `/control/take` meets the router's 404.
    */
-  routes.post(
-    "/:botId/control/take",
-    requireUser,
-    requireBotAccess(),
-    (context) =>
-      act(context, (botId, actor) => gateway.takeControl(botId, botId, actor)),
-  );
-
   routes.post(
     "/:botId/control/release",
     requireUser,
@@ -420,9 +407,10 @@ export function createComputerRoutes(
   /**
    * A person supplying it.
    *
-   * The value is read from the body, passed straight through, and referred to nowhere else. Its own
-   * route rather than a `kind` on the input route below, so that grepping for where a secret can enter
-   * this server returns exactly one place.
+   * The value is read from the body, passed straight through, and referred to nowhere else. It is
+   * the one door by which anything a person types reaches the Bot's page: the routes that carried
+   * their own clicks and keys (`/human/click`, `/type`, `/key`, `/scroll`) went on 2026-10-09, when
+   * nobody could drive the Bot's browser any more, and a window from before that meets a 404.
    */
   routes.post(
     "/:botId/human/secret",
@@ -438,52 +426,6 @@ export function createComputerRoutes(
         }
         return gateway.supplySecret(botId, botId, actor, body.text);
       }),
-  );
-
-  /**
-   * A person's own mouse and keyboard.
-   *
-   * Not through the policy gateway, and not audited per keystroke, see the note on `humanInput` in
-   * client.ts. The takeover is the audited event; what the person typed during it is deliberately
-   * unrecorded, because the reason a takeover exists is to let them enter the thing nothing else
-   * should keep.
-   */
-  routes.post(
-    "/:botId/human/:kind",
-    requireUser,
-    requireBotAccess(),
-    async (context) => {
-      const kind = context.req.param("kind");
-      if (
-        kind !== "click" &&
-        kind !== "type" &&
-        kind !== "key" &&
-        kind !== "scroll"
-      ) {
-        return context.json(
-          { error: "laf:input_unknown", code: "laf:input_unknown" },
-          400,
-        );
-      }
-      const body = (await context.req.json().catch(() => null)) as Record<
-        string,
-        unknown
-      > | null;
-      try {
-        return context.json(
-          await gateway.humanInput(context.req.param("botId"), {
-            // The body first and the validated `kind` LAST. Spread the other way round, a body
-            // carrying `kind: "secret"` overwrote the one this route checked, and the person's own
-            // input became a secret being supplied — down a path this route does not audit and whose
-            // whole design is that there is exactly one door into it.
-            ...(body ?? {}),
-            kind,
-          } as Parameters<typeof gateway.humanInput>[1]),
-        );
-      } catch (error) {
-        return failed(context, error);
-      }
-    },
   );
 
   /*
@@ -1041,9 +983,6 @@ export function statusFor(
   // the call assumed, look again. Not 503, which says the computer is unavailable and sends an
   // operator hunting a container that is running perfectly.
   if (error instanceof ElementNotFoundError) return 409;
-  // Nothing is broken; the caller has to wait or take control first, and 409 is how both of those
-  // are already reported.
-  if (error instanceof ControlHeldError) return 409;
   // The page did not load in time. Not 409 — a fresh snapshot would not help — and not 503, which
   // sends an operator after a container that is running: the site, not the computer, is the problem.
   if (error instanceof PageLoadTimeoutError) return 504;
@@ -1083,9 +1022,6 @@ export function codeFor(error: unknown): string {
     error instanceof ElementNotFoundError
   ) {
     return carriedBy(error) ?? STALE_REFS;
-  }
-  if (error instanceof ControlHeldError) {
-    return carriedBy(error) ?? HUMAN_HAS_CONTROL;
   }
   if (error instanceof PageLoadTimeoutError) return PAGE_TIMEOUT;
   if (error instanceof PageLoadFailedError) {

@@ -401,7 +401,8 @@ describe("a card that was waiting on the person, when its conversation is drawn 
       "the card's buttons, drawn again",
       6000,
     );
-    expect(buttons(view.host)).toEqual(["Do it myself", "I'm done", "Skip"]);
+    // Nobody takes the Bot's browser any more (2026-10-09): 다 했어요, the screen to look at, 건너뛰기.
+    expect(buttons(view.host)).toEqual(["I'm done", "View screen", "Skip"]);
     expect(card(view.host)?.textContent).toContain("Needs you");
     expect(askedOfNobody(view.requests)).toEqual([]);
     turns.close();

@@ -1109,8 +1109,12 @@ export const COMPUTER_FACTS: Record<string, string> = {
   // A person's own doors, and the live screen.
   "laf:stream_upgrade_required": "The live screen was opened the wrong way",
   "laf:secret_not_pending": "Nothing was waiting for that value any more",
-  "laf:take_control_first": "A person had not taken the wheel",
   "laf:screen_not_started": "The live picture could not be started",
+  /*
+   * A person's own clicks and keys on the Bot's page, refused or lost. Nothing sends either since
+   * 2026-10-09 — nobody drives the Bot's browser — and a row from before then is still read.
+   */
+  "laf:take_control_first": "A person had not taken the wheel",
   "laf:input_not_applied": "A click or keystroke did not reach the page",
   // What the browser noticed that nobody asked about.
   "laf:dialog": "The page opened a dialog",

@@ -48,7 +48,6 @@ export type BrowsingStep = {
 export type ComputerOutcome = {
   ok?: boolean;
   stopped?: boolean;
-  humanHasControl?: boolean;
   refused?: boolean;
   /** The fact, where there is one. The words come from this, not from `reason`. */
   code?: string;

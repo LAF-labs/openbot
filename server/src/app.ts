@@ -317,8 +317,8 @@ export type CreateAppOptions = {
    *
    * Absent leaves the 사이트 연결 routes unmounted, and the section then draws every card as "not
    * connected yet" — which is honest: a deployment that cannot remember a connection genuinely does
-   * not know about one. Nothing else changes; the handoff itself is the ordinary navigate-and-take-
-   * the-wheel path and works without any of this.
+   * not know about one. Nothing else changes: whatever signs a Bot's browser in works without any of
+   * this, which only remembers that it did.
    */
   siteConnections?: SiteConnectionStore;
   /**

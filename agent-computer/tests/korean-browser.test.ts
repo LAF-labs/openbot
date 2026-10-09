@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { botTimeZone, botUserAgent } from "../src/browser-identity";
+import { askOutcome } from "../../shared/person-wait";
 import { createControl, restoredControl } from "../src/control";
 import {
   createWorkspace,
@@ -16,8 +17,8 @@ import {
  *
  * Everything that does — the page text, the tabs, the dialogs, the downloads — is exercised against
  * a real Chromium in `korean-sites.test.ts`. What is here is the part that would still be wrong if
- * that one passed: what a name from a website is allowed to become on this filesystem, and who has
- * the wheel after a restart.
+ * that one passed: what a name from a website is allowed to become on this filesystem, and what the
+ * Bot's asks are after a restart.
  */
 
 describe("where the Bot lives", () => {
@@ -147,18 +148,30 @@ describe("a download arriving in the workspace", () => {
   });
 });
 
-describe("who has the wheel after a restart", () => {
-  test("a person who held it still holds it", () => {
+/**
+ * A PERSON'S HOLD ON THE WHEEL, SAVED BY A RELEASE THAT HAD ONE, IS THE BOT'S.
+ *
+ * Until 2026-10-09 a restart in the middle of a takeover restored the takeover, so the Bot stayed
+ * refused while somebody finished a login. Nobody can hold the wheel now and nothing can hand it
+ * back, so a deployment upgraded mid-takeover would have left its Bot refused every action for
+ * ever. The file is still read — it is how a cut-short value request reaches the Bot — and its hold
+ * is not believed.
+ */
+describe("what the Bot's asks are after a restart", () => {
+  test("a person's hold from an earlier release is the Bot's, and reads as nobody's answer", () => {
     const restored = restoredControl({
       holder: "human",
       since: "2026-09-03T01:00:00.000Z",
       reason: "이 페이지가 인증번호를 묻고 있습니다.",
       requested: false,
     });
-    expect(restored.state?.holder).toBe("human");
-    expect(restored.state?.since).toBe("2026-09-03T01:00:00.000Z");
-    // What they were asked to do survives with them; they are still standing in front of it.
-    expect(restored.state?.reason).toContain("인증번호");
+    expect(restored.state?.holder).toBe("bot");
+    expect(restored.state?.requested).toBe(false);
+    // What they were asked to do is not asked again: the call that asked went with the process.
+    expect(restored.state?.reason).toBeUndefined();
+    // And a wait still reading this does not hear that they came and did it.
+    expect(restored.state?.unanswered).toBe(true);
+    expect(askOutcome(restored.state ?? {})).toBe("gave up");
     expect(restored.secretLost).toBe(false);
   });
 
@@ -187,7 +200,7 @@ describe("who has the wheel after a restart", () => {
     expect(restored.state?.secretWanted).toBe(undefined);
   });
 
-  test("a takeover that survived a restart keeps no secret box open behind it", () => {
+  test("a takeover cut short by a restart keeps no secret box open, and no ask standing", () => {
     const restored = restoredControl({
       holder: "human",
       since: "2026-09-03T01:00:00.000Z",
@@ -195,9 +208,8 @@ describe("who has the wheel after a restart", () => {
       secretWanted: "비밀번호",
       secretRef: "e3",
     });
-    expect(restored.state?.holder).toBe("human");
+    expect(restored.state?.holder).toBe("bot");
     expect(restored.state?.secretRef).toBe(undefined);
-    // Somebody holding the wheel is not somebody waiting to be given it.
     expect(restored.state?.requested).toBe(false);
     expect(restored.secretLost).toBe(true);
   });
@@ -207,29 +219,39 @@ describe("control state on its way to disk", () => {
   test("every change is offered to whoever is keeping it", () => {
     const written: string[] = [];
     const control = createControl(() => "2026-09-03T00:00:00.000Z", {
-      onChange: (state) => written.push(state.holder),
+      onChange: (state) =>
+        written.push(
+          `${state.requested ? "asked" : "-"}/${state.secretWanted ?? "-"}`,
+        ),
     });
 
     control.requestHelp("로그인이 필요합니다");
-    control.take();
     control.requestSecret({ ref: "e1", label: "인증번호" });
     control.secretSupplied();
     control.release();
 
-    expect(written).toEqual(["bot", "human", "human", "human", "bot"]);
+    expect(written).toEqual(["asked/-", "asked/인증번호", "asked/-", "-/-"]);
   });
 
-  test("what survived the last life is where it starts", () => {
-    const control = createControl(() => "2026-09-03T00:00:00.000Z", {
-      initial: {
-        holder: "human",
-        since: "2026-09-02T23:00:00.000Z",
-        requested: false,
-      },
+  test("what survived the last life is where it starts — a takeover's file included", () => {
+    // The whole way through: the file an upgrade finds, read, and handed to the machine.
+    const restored = restoredControl({
+      holder: "human",
+      since: "2026-09-02T23:00:00.000Z",
+      requested: false,
     });
-    expect(control.get().holder).toBe("human");
-    // And the Bot is still refused, which is the whole point of restoring it.
-    expect(() => control.assertBotMayAct()).toThrow();
+    const control = createControl(() => "2026-09-03T00:00:00.000Z", {
+      ...(restored.state ? { initial: restored.state } : {}),
+    });
+    expect(control.get()).toMatchObject({
+      holder: "bot",
+      requested: false,
+      unanswered: true,
+    });
+    // And the next ask is asked and waited on afresh.
+    control.requestHelp("휴대폰에서 승인해 주세요");
+    expect(control.get()).toMatchObject({ requested: true });
+    expect(control.get().unanswered).toBeUndefined();
   });
 
   test("a value is never in what gets written down", () => {

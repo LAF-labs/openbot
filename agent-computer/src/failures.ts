@@ -1,12 +1,11 @@
 /**
  * What a failed call is answered with, by what failed rather than by what it said.
  *
- * Every refusal here has a status that tells the caller what to do next — 409 look again or wait,
+ * Every refusal here has a status that tells the caller what to do next — 409 look again,
  * 403 never, 400 send something different, 502 the browser did not manage it — and a code that says
  * which. The status belongs to the code (codes.ts); see `fact` in respond.ts for why the code is all
  * there is.
  */
-import { ControlError, HUMAN_HAS_CONTROL } from "./control";
 import { LabelChangedError } from "./label-hold";
 import {
   ELEMENT_NOT_ACTIONABLE,
@@ -71,10 +70,6 @@ export function actionFailure(error: unknown): Response {
   // the control is still there under another name, and the Bot must look before it acts on it.
   if (error instanceof LabelChangedError) {
     return fact("laf:label_changed", { stale: true });
-  }
-  // 409 as well, and for the same reason: nothing is broken, the caller simply has to wait.
-  if (error instanceof ControlError) {
-    return fact(HUMAN_HAS_CONTROL, { humanHasControl: true });
   }
   if (
     error instanceof WorkspacePathError ||

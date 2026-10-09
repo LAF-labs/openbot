@@ -14,11 +14,7 @@ import {
   revisionOf,
 } from "../src/computer/policy-store";
 import { createComputerRoutes } from "../src/computer/routes";
-import type {
-  HumanInput,
-  SecretRequest,
-  SnapshotResult,
-} from "../src/computer/schema";
+import type { SecretRequest, SnapshotResult } from "../src/computer/schema";
 
 /**
  * The computer's routes, exercised as the browser reaches them.
@@ -84,8 +80,6 @@ const LISTED_ELSEWHERE = {
 
 function fakeClient() {
   const calls: string[] = [];
-  /** What `humanInput` was actually handed, which is the whole question in one of these tests. */
-  const human: HumanInput[] = [];
   /** Everything the far side was told, so a secret-absence test can search all of it at once. */
   const sentToComputer: unknown[] = [];
   const client = {
@@ -107,7 +101,6 @@ function fakeClient() {
     downloadFile: async () => new TextEncoder().encode("hi"),
     control: async () => ({ holder: "bot" as const, url: SNAPSHOT.url }),
     requestControl: async () => ({ holder: "bot" as const, url: SNAPSHOT.url }),
-    takeControl: async () => ({ holder: "human" as const, url: SNAPSHOT.url }),
     releaseControl: async () => ({ holder: "bot" as const, url: SNAPSHOT.url }),
     // One row, so a list that came back is told apart from a list that was never asked for.
     computers: async () => {
@@ -117,7 +110,7 @@ function fakeClient() {
     requestSecret: async (input: SecretRequest) => {
       calls.push("requestSecret");
       sentToComputer.push(input);
-      return { holder: "human" as const, url: SNAPSHOT.url };
+      return { holder: "bot" as const, url: SNAPSHOT.url };
     },
     resetComputer: async () => {
       calls.push("resetComputer");
@@ -126,11 +119,6 @@ function fakeClient() {
     stopComputer: async () => {
       calls.push("stopComputer");
       return { wasRunning: true } as never;
-    },
-    humanInput: async (input: HumanInput) => {
-      human.push(input);
-      sentToComputer.push(input);
-      return { action: "human_click", characters: 0 } as never;
     },
     supplySecret: async (text: string) => {
       calls.push("supplySecret");
@@ -142,7 +130,7 @@ function fakeClient() {
       return client;
     },
   } as unknown as ComputerClient;
-  return { client, calls, human, sentToComputer };
+  return { client, calls, sentToComputer };
 }
 
 function surface(
@@ -171,7 +159,7 @@ function surface(
       rows.push(event);
     },
   };
-  const { client, calls, human, sentToComputer } = fakeClient();
+  const { client, calls, sentToComputer } = fakeClient();
   const approvals = createApprovalRegistry();
   const gateway = createComputerGateway({
     client,
@@ -205,7 +193,6 @@ function surface(
   return {
     app,
     calls,
-    human,
     rows,
     policyStore,
     sentToComputer,
@@ -220,8 +207,8 @@ function surface(
  * `control.json` written on every handover, the tree `/computers/reset` hands to `rm -rf`. Nothing
  * on this side ever looked at the string — and Hono decodes `%2F` in a path parameter before a
  * handler sees it, so `POST /..%2F..%2Ftmp%2Fx/control/take` reached the container as
- * `../../tmp/x`. Measured: `join("/profiles", "../../tmp/x")` is `/tmp/x`, and taking control wrote
- * a file there, as root, inside the container that holds every login this customer has. Any signed
+ * `../../tmp/x`. Measured: `join("/profiles", "../../tmp/x")` is `/tmp/x`, and taking control (a
+ * door gone since 2026-10-09; `control/release` writes the same file) wrote a file there, as root, inside the container that holds every login this customer has. Any signed
  * in member of staff could do it; the reset route, which an owner can reach, deletes such a tree.
  */
 describe("the Bot an address names", () => {
@@ -245,7 +232,7 @@ describe("the Bot an address names", () => {
     const { app, calls, rows, sentToComputer } = surface(ADMIN);
 
     for (const id of ESCAPES) {
-      const response = await app.request(`/${id}/control/take`, {
+      const response = await app.request(`/${id}/control/release`, {
         method: "POST",
       });
       const body = (await response.json()) as { code?: string };
@@ -505,37 +492,25 @@ describe("the computers the Computers page lists", () => {
 });
 
 describe("a person's own mouse and keyboard", () => {
-  test("cannot be rerouted into the secret path by the request body", async () => {
+  test("have no door: nobody drives the Bot's browser, and a body naming a secret opens nothing", async () => {
     /*
-     * The body used to be spread AFTER the validated `kind`, so `{"kind":"secret"}` overwrote the
-     * one the route had just checked: a person's ordinary input became a secret being supplied, on
-     * a path this route does not audit and whose whole design is that there is exactly one door
-     * into it. `kind` goes last now, and the URL decides.
+     * `/human/click`, `/type`, `/key` and `/scroll` carried a person's own input to the Bot's page
+     * while they held the wheel. Nobody holds it now (owner, 2026-10-09). The secret path is the one
+     * way anything a person types reaches the page, and a window from before the change still
+     * posting here — even with `{"kind":"secret"}` in the body, which once rerouted a click into
+     * that path — reaches nothing.
      */
-    const { app, human, calls } = surface(ADMIN);
-
-    const response = await app.request("/bot-1/human/click", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ kind: "secret", text: "hunter2", x: 1, y: 2 }),
-    });
-
-    expect(response.status).toBe(200);
-    expect(human).toHaveLength(1);
-    expect(human[0]?.kind).toBe("click");
-    // And nothing went down the secret path, which is the thing that must have exactly one door.
+    const { app, calls, sentToComputer } = surface(ADMIN);
+    for (const kind of ["click", "type", "key", "scroll"]) {
+      const response = await app.request(`/bot-1/human/${kind}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: "secret", text: "hunter2", x: 1, y: 2 }),
+      });
+      expect({ kind, status: response.status }).toEqual({ kind, status: 404 });
+    }
     expect(calls).not.toContain("supplySecret");
-  });
-
-  test("still refuses a kind the URL does not name", async () => {
-    const { app, human } = surface(ADMIN);
-    const response = await app.request("/bot-1/human/secretly", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ x: 1, y: 2 }),
-    });
-    expect(response.status).toBe(400);
-    expect(human).toEqual([]);
+    expect(sentToComputer).toEqual([]);
   });
 });
 
@@ -1174,9 +1149,6 @@ describe("a secret being asked for and supplied", () => {
 
   test("supplying one records that it happened and how long it was, never what it was", async () => {
     const { app, rows } = surface(ADMIN);
-    // The realistic case: somebody has taken the wheel in order to type the thing the Bot must not
-    // hold.
-    await app.request("/bot-1/control/take", { method: "POST" });
 
     const response = await app.request("/bot-1/human/secret", {
       method: "POST",
@@ -1200,27 +1172,26 @@ describe("a secret being asked for and supplied", () => {
     expect(carrying(rows)).not.toContain(SECRET);
   });
 
-  test("the value is in no row and no reply, on either of its two routes", async () => {
+  test("the value is in no row and no reply, on its way through", async () => {
     const { app, rows, sentToComputer, seen } = surface(ADMIN);
     await seen();
-    await app.request("/bot-1/control/take", { method: "POST" });
 
     const replies: unknown[] = [];
     /*
-     * The Bot asking, a person typing into the page with their own keyboard, and a person handing
-     * the value over — the three calls a real secret entry is made of, in order.
+     * The Bot asking, and a person handing the value over in the masked box — the two calls a real
+     * secret entry is made of, in order. A third, a person typing it into the page with their own
+     * keyboard, went with taking the wheel (2026-10-09).
      *
      * The label the Bot sends is its own words for the field and is recorded, deliberately: it is
      * what tells an investigator which credential entered this session. It is not a place the value
      * can appear, because a Bot asking for a secret is by construction a Bot that does not have one.
-     * The two calls that DO carry it are the second and the third.
+     * The call that DOES carry it is the second.
      */
     for (const [path, body] of [
       [
         "/bot-1/control/secret",
         { label: "은행 비밀번호", ref: "e4", snapshotId: 7 },
       ],
-      ["/bot-1/human/type", { text: SECRET }],
       ["/bot-1/human/secret", { text: SECRET }],
     ] as const) {
       const response = await app.request(path, {
@@ -1262,7 +1233,6 @@ describe("the whole surface", () => {
     ["GET", "/"],
     ["POST", "/bot-1/computers/stop"],
     ["POST", "/bot-1/computers/reset"],
-    ["POST", "/bot-1/control/take"],
     ["POST", "/bot-1/control/release"],
     [
       "POST",
@@ -1270,10 +1240,6 @@ describe("the whole surface", () => {
       { label: "PIN", ref: "e4", snapshotId: 7 },
     ],
     ["POST", "/bot-1/human/secret", { text: "x" }],
-    ["POST", "/bot-1/human/click", { x: 1, y: 2 }],
-    ["POST", "/bot-1/human/type", { text: "x" }],
-    ["POST", "/bot-1/human/key", { key: "Enter" }],
-    ["POST", "/bot-1/human/scroll", { deltaY: 10 }],
     // The person's own doors into the Bot's folder (`computer-file-handoff.test.ts`).
     ["GET", "/bot-1/files"],
     ["GET", "/bot-1/files/info?path=notes.md"],
