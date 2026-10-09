@@ -29,7 +29,6 @@ import {
   StaleSnapshotError,
   URL_INVALID,
 } from "../src/computer/client";
-import type { DemonstrationRecorder } from "../src/computer/demonstration";
 import { createComputerGateway } from "../src/computer/gateway";
 import type { ActionPolicy } from "../src/computer/policy";
 import {
@@ -38,7 +37,6 @@ import {
 } from "../src/computer/policy-store";
 import { createComputerRoutes } from "../src/computer/routes";
 import type { SnapshotResult } from "../src/computer/schema";
-import type { WriteUp } from "../src/computer/write-up";
 
 /**
  * What the two routes a pane reads say when they cannot answer.
@@ -356,14 +354,7 @@ const SNAPSHOT: SnapshotResult = {
 };
 
 /** The routes over a computer whose every acting call fails the given way. */
-function acting(
-  options: {
-    failure?: Error;
-    policyStore?: PolicyStore;
-    demonstrations?: DemonstrationRecorder;
-    writeUp?: WriteUp;
-  } = {},
-) {
+function acting(options: { failure?: Error; policyStore?: PolicyStore } = {}) {
   const fail = async () => {
     throw options.failure ?? new Error("no failure was given");
   };
@@ -398,8 +389,6 @@ function acting(
       gateway,
       options.policyStore ?? createPolicyStore(PERMISSIVE),
       requireUser,
-      options.demonstrations,
-      options.writeUp,
     ),
   );
   return app;
@@ -541,64 +530,6 @@ describe("a person's own doors", () => {
       });
     }
   });
-
-  test("writing a recording up says which of its four outcomes it was", async () => {
-    const recorded = {
-      read: () => ({
-        steps: [{ kind: "click", name: "저장" }],
-        finished: true,
-      }),
-    } as unknown as DemonstrationRecorder;
-    const empty = {
-      read: () => ({ steps: [], finished: true }),
-    } as unknown as DemonstrationRecorder;
-    const path = "/bot-1/demonstration/write-up";
-
-    expect(await send(acting({ demonstrations: empty }), path, {})).toEqual({
-      status: 409,
-      body: { error: "laf:recording_empty", code: "laf:recording_empty" },
-    });
-    expect(await send(acting({ demonstrations: recorded }), path, {})).toEqual({
-      status: 501,
-      body: {
-        error: "laf:write_up_unavailable",
-        code: "laf:write_up_unavailable",
-      },
-    });
-    expect(
-      await send(
-        acting({
-          demonstrations: recorded,
-          writeUp: async () => ({ ok: false, because: "busy" }),
-        }),
-        path,
-        {},
-      ),
-    ).toEqual({
-      status: 503,
-      body: {
-        error: "laf:write_up_busy",
-        code: "laf:write_up_busy",
-        retryLater: true,
-      },
-    });
-    expect(
-      await send(
-        acting({
-          demonstrations: recorded,
-          writeUp: async () => ({ ok: false, because: "unreadable" }),
-        }),
-        path,
-        {},
-      ),
-    ).toEqual({
-      status: 502,
-      body: {
-        error: "laf:write_up_unreadable",
-        code: "laf:write_up_unreadable",
-      },
-    });
-  });
 });
 
 /**
@@ -628,11 +559,6 @@ describe("what a Bot is told when its computer says no", () => {
     "laf:secret_value_required",
     // The live screen's own input, fired and not read back.
     "laf:input_unknown",
-    // Writing a demonstration up (`teach-a-task.tsx` reads `retryLater`).
-    "laf:recording_empty",
-    "laf:write_up_unavailable",
-    "laf:write_up_busy",
-    "laf:write_up_unreadable",
     // The Boundaries page.
     "laf:policy_not_saved",
     "laf:policy_changed",

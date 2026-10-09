@@ -105,24 +105,11 @@ export async function readControl(
 }
 
 /**
- * Take the wheel, and say why.
- *
- * `teaching` is a separate door, not a flag on the same one. Taking control to unstick a Bot and
- * taking it to show the Bot how something is done are not the same act: the first is somebody's
- * private business in the Bot's browser and is recorded as a period rather than as keystrokes, on
- * purpose. Only the second records what was done, and only because the person pressed the button
- * that says so.
+ * Take the wheel. What a person does with it is their own business in the Bot's browser, and the
+ * trail records it as a period rather than as keystrokes, on purpose.
  */
-export function takeControl(computerId: string, teaching = false) {
-  return callControl(computerId, "/control/take", {
-    method: "POST",
-    ...(teaching
-      ? {
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ teaching: true }),
-        }
-      : {}),
-  });
+export function takeControl(computerId: string) {
+  return callControl(computerId, "/control/take", { method: "POST" });
 }
 
 export function releaseControl(computerId: string) {

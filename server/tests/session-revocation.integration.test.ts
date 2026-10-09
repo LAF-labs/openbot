@@ -14,7 +14,6 @@ import {
   SESSION_REVOKED,
 } from "../src/auth/session-revocation";
 import type { websocket as channelSocket } from "../src/channels/socket";
-import { createDemonstrationRecorder } from "../src/computer/demonstration";
 import { loadConfig } from "../src/config";
 import { createDatabase } from "../src/db/client";
 import { sessions, userRoles, users } from "../src/db/schema";
@@ -328,8 +327,7 @@ describe("the live screen of a removed person", () => {
       actorOf: deployment.actors.resolveOrNull,
       // A Bot nobody made, which the rule lets every signed-in person watch.
       botOwner: async () => null,
-      screenViews: { opened: async () => {}, replayed: async () => {} },
-      demonstrations: createDemonstrationRecorder(),
+      screenViews: { opened: async () => {} },
       sessions: deployment.revocation,
     });
     const server = Bun.serve<SocketData>({

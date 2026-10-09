@@ -1,5 +1,5 @@
 /**
- * The live screen, proxied — and the names of the presses somebody makes on it while teaching.
+ * The live screen, proxied.
  *
  * Proxied rather than connected directly. `agent-computer` authenticates its callers with a
  * shared token, not with a person's session, and it must never be reachable from a browser. So the
@@ -21,60 +21,10 @@ import {
 import { streamBotAccess } from "./auth/stream-access";
 import type { BotOwnerLookup } from "./auth/guards";
 import type { websocket as channelSocket } from "./channels/socket";
-import type {
-  DemonstrationRecorder,
-  PointNamer,
-} from "./computer/demonstration";
 import type { ScreenViewAudit, ScreenViewer } from "./computer/screen-view";
 import type { DeploymentConfig } from "./config";
 import { describeFailure } from "./failure-text";
 import { log } from "./log";
-
-/**
- * What is at a point on a Bot's screen, asked of its computer, for a demonstration's step.
- *
- * It names each press, which is the whole difference between a trace worth writing up and a list of
- * coordinates. See `computer/demonstration.ts`.
- */
-export function describePointOn(
-  computer: DeploymentConfig["computer"],
-): PointNamer {
-  return async (botId, point) => {
-    if (!computer) return null;
-    const response = await fetch(
-      `${computer.baseUrl.replace(/\/$/, "")}/describe-point`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          /*
-           * THE HEADER, NOT A QUERY. `agent-computer` reads the Bot from `x-openbot-bot-id` and
-           * falls back to a default when it is absent — so a query string is not a different Bot,
-           * it is silently the wrong one. Measured: every press came back unnameable, because every
-           * lookup was asking about a blank page belonging to nobody.
-           */
-          "x-openbot-bot-id": botId,
-          ...(computer.token
-            ? { authorization: `Bearer ${computer.token}` }
-            : {}),
-        },
-        body: JSON.stringify(point),
-        // A name is a nicety. A lookup that hangs must not sit in a map for the rest of the session.
-        signal: AbortSignal.timeout(3_000),
-      },
-    );
-    if (!response.ok) return null;
-    const body = (await response.json()) as {
-      element?: { role?: unknown; name?: unknown } | null;
-    };
-    const element = body.element;
-    return element &&
-      typeof element.role === "string" &&
-      typeof element.name === "string"
-      ? { role: element.role, name: element.name }
-      : null;
-  };
-}
 
 /** What each proxied socket carries: where to connect inward, and the socket once opened. */
 type StreamData = {
@@ -86,13 +36,7 @@ type StreamData = {
    * at the upgrade, where a refused upgrade would leave a row saying a screen was watched.
    */
   viewer: ScreenViewer;
-  /**
-   * Which Bot's browser this socket drives.
-   *
-   * Carried so a demonstration can be recorded from the messages passing through. The proxy is
-   * otherwise byte-for-byte and has no reason to know — see the `message` handler for the one line
-   * that reads it, and `demonstration.ts` for why that line is where teaching happens.
-   */
+  /** Which Bot's browser this socket drives, for the row `open` writes. */
   botId: string;
 };
 
@@ -209,8 +153,6 @@ export function createLiveScreen(input: {
   botOwner: BotOwnerLookup;
   /** The row a looked-at screen leaves. */
   screenViews: ScreenViewAudit;
-  /** Where teaching is recorded from the messages passing through. */
-  demonstrations: DemonstrationRecorder;
   /**
    * Where a person's sessions are ended — removed by an administrator, struck off the sign-in list.
    *
@@ -221,7 +163,7 @@ export function createLiveScreen(input: {
    */
   sessions?: Pick<SessionRevocation, "onEnded">;
 }): LiveScreen {
-  const { computer, demonstrations, screenViews } = input;
+  const { computer, screenViews } = input;
   /** Every proxied screen open on this process, by the person who opened it. */
   const openByViewer = new Map<string, Set<ServerWebSocket<StreamData>>>();
 
@@ -367,25 +309,13 @@ export function createLiveScreen(input: {
           channels.message(asChannelSocket(ws), raw);
           return;
         }
-        const text = String(raw);
         /*
-         * WHERE TEACHING HAPPENS, and the only place it could.
-         *
-         * Every click and keystroke a person makes in a Bot's browser passes through this line on its
-         * way there. When they are showing the Bot how a task is done, that is the demonstration —
-         * and nothing else in this process ever sees these messages.
-         *
-         * Before the forward, never instead of it: the recorder is told and the message goes on
-         * regardless. It cannot throw and does not wait; see `observe`.
+         * Every click and keystroke a person makes in a Bot's browser passes through this line on
+         * its way there, passwords included. It is forwarded and never read or kept: the recorder
+         * that watched here went with teaching by demonstration (2026-10-08), and nothing else in
+         * this process sees these messages.
          */
-        if (demonstrations.recording(ws.data.botId)) {
-          try {
-            demonstrations.observe(ws.data.botId, JSON.parse(text));
-          } catch {
-            // Not JSON, so not an input message this understands. Forwarded all the same.
-          }
-        }
-        if (ws.data.inward?.readyState === 1) ws.data.inward.send(text);
+        if (ws.data.inward?.readyState === 1) ws.data.inward.send(String(raw));
       },
       close(ws: ServerWebSocket<SocketData>, code, reason) {
         if (isProbe(ws.data)) return;

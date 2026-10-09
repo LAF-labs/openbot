@@ -57,8 +57,9 @@ import { WITHHELD_GONE } from "./withheld-secrets";
  * Thirty-three refusals here were English until 2026-09-14 — "A slug is lower-case letters, numbers
  * and hyphens.", "`${slug}` is somebody else's skill.", a vendor's own failure sentence on a 502 —
  * and four screens printed them as they came: the skill form, the skill's Bot list, the admin
- * Plugins page and a teaching session's 스킬로 저장. Each answers `{ error: code, code }` now; the
- * words are `app/src/lib/plugins/refusals.ts`, whose test reads this file for the codes.
+ * Plugins page and a teaching session's 스킬로 저장 (gone with teaching by demonstration). Each
+ * answers `{ error: code, code }` now; the words are `app/src/lib/plugins/refusals.ts`, whose test
+ * reads this file for the codes.
  */
 /** `POST /servers` without the catalogue entry it is adding. */
 export const CATALOGUE_KEY_REQUIRED = "laf:catalogue_key_required";

@@ -30,7 +30,6 @@ import {
   supplySecret,
   takeControl,
 } from "./control-routes";
-import { describePoint } from "./describe-point";
 import {
   downloadFile,
   fileBytes,
@@ -73,7 +72,6 @@ const BOT_ROUTES = new Map<string, BotRoute>([
   ["POST /files/bytes", fileBytes],
   ["POST /files/put", putFile],
   ["GET /read", readPage],
-  ["POST /describe-point", describePoint],
   ["POST /snapshot", snapshot],
   ["POST /tabs/switch", switchTab],
   ["POST /upload", upload],

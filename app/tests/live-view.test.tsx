@@ -98,9 +98,6 @@ beforeAll(() => {
   originalFetch = globalThis.fetch;
   globalThis.fetch = stubFetch(async (url) => {
     const path = String(url);
-    if (path.includes("/demonstration")) {
-      return Response.json({ demonstration: null });
-    }
     // A press answers with the state it made, as the computer's routes do.
     if (path.endsWith("/control/take")) {
       presses.push("take");
@@ -349,36 +346,26 @@ describe("somebody driving on a wide window", () => {
     expect(presses).toEqual(["release"]);
   });
 
-  test("does not offer to teach while the Bot is asking for help", async () => {
-    // A captcha or a code sent to a phone is not a task anybody can show a Bot how to do.
+  /*
+   * This held that teaching was not offered under a request for help. Teaching went, and the other
+   * half of what it held stays: 직접 하기 is offered while the Bot is asking, not only when it is not.
+   */
+  test("still offers 직접 하기 while the Bot is asking for help", async () => {
     control = { ...control, requested: true, reason: "캡차를 풀어 주세요" };
     const asked = await mountedView();
     await asked.act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
-    expect(asked.button("Teach a task")).toBeUndefined();
     expect(asked.button("Take over")).toBeDefined();
     await asked.unmount();
-
-    control = {
-      holder: "bot",
-      since: "2026-09-24T00:00:00Z",
-      requested: false,
-    };
-    const quiet = await mountedView();
-    await quiet.act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    });
-    expect(quiet.button("Teach a task")).toBeDefined();
-    await quiet.unmount();
   });
 });
 
 /**
  * ONE PAIR OF WORDS FOR ONE ACT: 직접 하기, then 다 했어요.
  *
- * Walked over every sentence the Bot's screen, its sheet, the request for help, teaching and the
- * sign-in handoff say — the screen-problem table too, which is read through a variable — so "제어"
+ * Walked over every sentence the Bot's screen, its sheet, the request for help and the sign-in
+ * handoff say — the screen-problem table too, which is read through a variable — so "제어"
  * cannot come back on any of them through a new key.
  */
 describe("the words for taking over", () => {
@@ -387,7 +374,6 @@ describe("the words for taking over", () => {
       "computer/live-view.tsx",
       "computer/live-screen.tsx",
       "computer/help-card.tsx",
-      "computer/teach-a-task.tsx",
       "sites/handoff.tsx",
     ].flatMap((file) =>
       [

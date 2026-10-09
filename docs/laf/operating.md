@@ -58,7 +58,7 @@ The lines worth knowing by name:
 | `runs_reconciled`              | server           | At boot: `count` runs were still `running` when the last process died and were marked `unknown`. |
 | `interrupted_runs_reported`    | server           | At boot, once the outbox exists: `count` of those runs whose person was told (`run.failed`, `laf:turn_interrupted`). `interrupted_routine_not_marked` / `interrupted_conversation_not_read` name a run that could not be marked or placed; it is still told about. |
 | `agent_stream_stalled`         | server           | A Bot's stream produced nothing for `AGENT_STALL_TIMEOUT_MS` (`stallMs`, a minute unless set; `0` switches the watchdog off); the turn was ended for the person with `laf:agent_stalled`. Facts only: `silentForMs`, `chunks`, `thread`, `run`. |
-| `model_call_refused`, `auto_review_probe_failed` | server | The server's own model calls (the auto-review judge, the demonstration write-up) were refused or unusable. |
+| `model_call_refused`, `auto_review_probe_failed` | server | The server's own model calls (the auto-review judge and its probe, a judge's stand-in, the day's summary, the dream) were refused or unusable. |
 | `dev_no_auth`, `encryption_key_is_example`, `fleet_webhook_unconfigured` | server | Boot warnings about settings that are fine on a laptop and wrong on a VM. |
 | `unhandled_rejection`          | server           | A promise nobody awaited rejected; the server kept running (a remote Bot's socket resetting must not take everyone down). |
 | `screen_failed`                | server           | A part of the app's screen failed on the `user`'s screen, as the app reported it (`POST /api/support/screen-errors`, since 2026-09-18). `section` says which part (`sidebar`, `transcript`, `computer`, `settings_page`, `tool_card`, …; `window_error` and `unhandled_rejection` for what nothing on screen caught), `route` the route's template (`/channel/$channelId`, never the address), `kind` the error's constructor, `fingerprint` a digest of where it was thrown — the same failure has the same one — `components` up to eight component names from React's component stack, innermost first (since 2026-09-24; a production build's names are what the minifier left, so read them with `revision`), and `build` and `surface` (`shell` or `browser`) what the page was running. Never the message. At most six a minute per session; the person's 문의 diagnostic details carry it. |
@@ -128,8 +128,8 @@ tickets. It carries facts about what happened and never the material it happened
   password in it — is cut where the secret starts.
 - **Nothing a person or a Bot typed.** Not the message, not the answer, not the text a Bot typed
   into a page. `run_finished` says a turn happened, for which Bot, how long, how many tools —
-  counts, ids and durations only. The same rule as the audit fingerprint and the demonstration
-  recorder (`CLAUDE.md`, "Never record what somebody typed").
+  counts, ids and durations only. The same rule as the audit fingerprint (`CLAUDE.md`, "Never
+  record what somebody typed").
 - **No SQL.** A Drizzle error's message is the statement and every bound parameter — for a failed
   message append, the whole conversation. Every error goes through `describeFailure`, which turns a
   query error into its PostgreSQL code (`database error (23505)`).

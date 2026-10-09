@@ -33,7 +33,6 @@ import {
   WorkspaceRefusedError,
   WorkspaceRequestError,
 } from "./client";
-import type { DemonstrationRecorder } from "./demonstration";
 import {
   type ActionActor,
   ActionNeedsApprovalError,
@@ -48,9 +47,7 @@ import {
   type PolicyWrite,
   parseActionPolicy,
 } from "./policy-store";
-import type { ScreenViewAudit } from "./screen-view";
 import { snapshotForModel } from "./snapshot-lines";
-import type { WriteUp } from "./write-up";
 
 /**
  * The Bot computer's surface, behind the same session guard as every other API route.
@@ -69,31 +66,13 @@ export function createComputerRoutes(
   policyStore: PolicyStore,
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
   /**
-   * Where a demonstration is recorded, when somebody is teaching rather than fixing.
-   *
-   * Optional: without one, taking the wheel is what it always was and the two handlers below say
-   * there is nothing to show. A deployment with no computer has no wheel to take either.
-   */
-  demonstrations?: DemonstrationRecorder,
-  /**
-   * Turns a finished recording into a procedure. Absent leaves the recording readable and nothing
-   * more, which is what a deployment without a model can honestly offer.
-   */
-  writeUp?: WriteUp,
-  /**
    * Where a change to the boundary itself is recorded.
    *
-   * Last, and optional, like everything else here: without it the policy still saves and the trail
-   * simply does not say who widened it or why. Every acting route already writes through the
-   * gateway's own store — this one is for the edit to the rules, which no gateway call goes through.
+   * Last, and optional: without it the policy still saves and the trail simply does not say who
+   * widened it or why. Every acting route already writes through the gateway's own store — this one
+   * is for the edit to the rules, which no gateway call goes through.
    */
   auditStore?: AuditStore,
-  /**
-   * Where reading a recording back is written down. A recording is the pages a person's own
-   * browser went to and the controls they pressed; reading it is looking at that screen after the
-   * fact, and the trail records it the way it records the live one. See `screen-view.ts`.
-   */
-  screenViews?: ScreenViewAudit,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -388,26 +367,20 @@ export function createComputerRoutes(
   );
 
   /**
-   * Taking the wheel, and saying which of the two reasons it is.
+   * Taking the wheel, and handing it back.
    *
-   * `teaching` is a separate door on purpose. Taking control to unstick a Bot and taking it to show
-   * the Bot how something is done look identical from here and are not the same act: the first is
-   * somebody's private business in their own browser, and `audit.ts` deliberately records it as a
-   * period rather than as keystrokes precisely so it stays that way. Recording every handover would
-   * quietly turn that decision over.
-   *
-   * So a demonstration is entered by pressing the button that says so, and by nothing else.
+   * Somebody's private business in their own browser, which is why `audit.ts` records it as a
+   * period rather than as keystrokes. The take used to carry a `teaching` flag that started a
+   * recording of the session; a Bot is taught in words now, as a skill
+   * (docs/laf/redesign-2026-10.md §7), so nothing here records anything, and a window from before
+   * that still sends the flag is handed the wheel like anybody else.
    */
   routes.post(
     "/:botId/control/take",
     requireUser,
     requireBotAccess(),
     (context) =>
-      act(context, async (botId, actor, body) => {
-        const state = await gateway.takeControl(botId, botId, actor);
-        if (body?.teaching === true) demonstrations?.start(botId, actor.id);
-        return state;
-      }),
+      act(context, (botId, actor) => gateway.takeControl(botId, botId, actor)),
   );
 
   routes.post(
@@ -415,129 +388,9 @@ export function createComputerRoutes(
     requireUser,
     requireBotAccess(),
     (context) =>
-      act(context, async (botId, actor) => {
-        // Handing back ends the demonstration, always. A recording with its own stop button is a
-        // second state to get wrong, and somebody who has finished showing has finished showing.
-        demonstrations?.finish(botId);
-        return await gateway.releaseControl(botId, botId, actor);
-      }),
-  );
-
-  /**
-   * What was recorded, for the person who recorded it to read.
-   *
-   * FOR THE PERSON WHO RECORDED IT, and that used to be a sentence in this comment rather than
-   * something the code did: the recorder was asked for a Bot's recording and answered anybody. A
-   * demonstration is somebody's own browser for the length of an afternoon — the bank page, the
-   * payroll page, every control they pressed by name — so the asker goes in and a stranger is told
-   * there is nothing, which for them is true.
-   *
-   * A read, but not an unrecorded one. What is in here never leaves this process and never
-   * becomes a Bot's instruction until somebody says so — see the note at the top of
-   * `demonstration.ts` about what it does and does not keep — but a FINISHED recording read back
-   * is a person looking at a screen after the fact, and `computer.screen_viewed` says so, once per
-   * recording (`screen-view.ts` holds the once). Not while it is still being made: the panel polls
-   * this once a second then, and the person reading it is the person driving.
-   */
-  routes.get(
-    "/:botId/demonstration",
-    requireUser,
-    requireBotAccess(),
-    (context) => {
-      const botId = context.req.param("botId") ?? "";
-      const actor = context.var.actor;
-      const recording = demonstrations?.read(botId, actor.id) ?? null;
-      if (recording?.finished) {
-        void screenViews?.replayed(
-          botId,
-          { id: actor.id, role: actor.role },
-          recording,
-        );
-      }
-      return context.json({ demonstration: recording });
-    },
-  );
-
-  /**
-   * Write the recording up as a procedure, for the person to read and edit.
-   *
-   * A POST because it costs a model call, not because it changes anything: nothing is stored and no
-   * Bot is touched. What the person does with the draft — edit it, name it, save it as a skill — is
-   * theirs, and it goes through the skills surface like any other skill somebody wrote.
-   *
-   * Not audited. Nothing happened to a Bot, and the recording it read never leaves this process.
-   */
-  routes.post(
-    "/:botId/demonstration/write-up",
-    requireUser,
-    requireBotAccess(),
-    async (context) => {
-      // Theirs, like the read above: a recording nobody may look at is not one anybody may spend a
-      // model call turning into a procedure either.
-      const recording = demonstrations?.read(
-        context.req.param("botId") ?? "",
-        context.var.actor.id,
-      );
-      if (!recording || recording.steps.length === 0) {
-        return context.json(
-          { error: "laf:recording_empty", code: "laf:recording_empty" },
-          409,
-        );
-      }
-      if (!writeUp) {
-        return context.json(
-          {
-            error: "laf:write_up_unavailable",
-            code: "laf:write_up_unavailable",
-          },
-          501,
-        );
-      }
-      const written = await writeUp(recording);
-      if (written.ok) return context.json({ draft: written.draft });
-      /*
-       * The recording survives every one of these, so the offer is always to try again — but not
-       * always straight away. A provider that refused in under a second is not going to do better
-       * on the next press, and telling somebody to press it again is how a working feature comes to
-       * look broken. 503 for that, 502 for a reply that arrived and could not be used.
-       */
-      return written.because === "busy"
-        ? context.json(
-            {
-              error: "laf:write_up_busy",
-              code: "laf:write_up_busy",
-              retryLater: true,
-            },
-            503,
-          )
-        : context.json(
-            {
-              error: "laf:write_up_unreadable",
-              code: "laf:write_up_unreadable",
-            },
-            502,
-          );
-    },
-  );
-
-  /**
-   * Thrown away. What somebody decides not to keep should stop existing.
-   *
-   * Their own, and 204 either way. The answer says what is true for the caller — there is nothing
-   * of theirs recorded on this Bot any more — and a 404 for somebody else's would answer the
-   * question the read above declines to.
-   */
-  routes.delete(
-    "/:botId/demonstration",
-    requireUser,
-    requireBotAccess(),
-    (context) => {
-      demonstrations?.discard(
-        context.req.param("botId") ?? "",
-        context.var.actor.id,
-      );
-      return context.body(null, 204);
-    },
+      act(context, (botId, actor) =>
+        gateway.releaseControl(botId, botId, actor),
+      ),
   );
 
   /** The Bot asking for a value it must not be told. */

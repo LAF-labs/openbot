@@ -546,7 +546,8 @@ reuse 99.2–99.6%) — 생각을 싣지 않은 같은 하네스 89.7%(99.6%)와
 |---|---|---|
 | 자동 검토 | **Jev**, 실패하면 `SERVER_MODEL` | `eval:auto-review` 36개 × 3: Jev 틀린 허용 **0**, 정직한 허용 18/18, **p50 220ms · p95 383ms**. GLM-5.3-Flash(`low`) 0 · 18/18, p50 894ms · p95 4.3초. MiMo-V2.6-Pro(앞의 측정) 0 · 6/6, p50 5.3초 · p95 19.1초 |
 | 압축 | **Jev**, 실패하면 `SERVER_MODEL`, 그다음 결정적 규칙 | `eval:compaction` Xiaomi 고정 3회: Jev 3/3 사유 보존, 0.29–0.30초. GLM-5.3-Flash 대역 3/3, 6.4–8.9초. MiMo 대역(앞의 측정) 1/3, 두 번 120초 넘김 |
-| 시연 정리 | MiMo-V2.6-Pro(그대로) | 사람이 기다리는 한 번 |
+
+이 표에 있던 세 번째 호출, 시연 정리(write-up)는 시범으로 가르치기와 함께 지웠다(`redesign-2026-10.md` §7).
 
 `SERVER_MODEL`(비우면 `z-ai/glm-5.3-flash`)과 `SERVER_MODEL_EFFORT`(비우면 `true` — GLM에 `low`)가
 새 이름이다. `REVIEW_MODEL`은 판정만 덮는다. **`JEV_ENABLED`는 이제 `off`라고 적지 않으면 켜짐이다** —
