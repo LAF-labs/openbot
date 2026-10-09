@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
-import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import {
@@ -247,9 +246,9 @@ function SkillsPage() {
             </PageRows>
           ) : null}
           {/*
-           * A section title over nothing at all reads as a screen that failed to load. Routines and
-           * the agents roster both answer this with a face and a sentence; this is that, so the
-           * three of them say "none yet" the same way.
+           * A section title over nothing at all reads as a screen that failed to load. Routines
+           * answer this with a sentence; this is that, so they say "none yet" the same way. (Both
+           * stood a face over it until 2026-10-09, when the Bot stopped having one.)
            *
            * ONE LINE, AND NO SECOND 새 스킬. The line is what a skill is for and how it is called —
            * what the page's own sentence said — and the verb is the one on the title's row.
@@ -259,12 +258,6 @@ function SkillsPage() {
               className="flex flex-col items-center gap-3 py-10"
               data-skills-empty
             >
-              {/* The plainest face the generator makes: a skill is a note, not a character. */}
-              <BotAvatar
-                className="opacity-80"
-                seed="s:pebble.gray"
-                size={56}
-              />
               <p className="text-center text-sm text-muted-foreground">
                 {t(
                   "Save something you ask for often, and call it in the conversation by / and its name.",

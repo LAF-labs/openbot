@@ -1,11 +1,10 @@
 import type { Message } from "@ag-ui/core";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import type { BotAvatarState } from "@/components/avatar/bot-avatar";
 import { workingKeys } from "./working";
 
 /**
- * WHAT THE BOT IS DOING, AS ONE WORD UNDER ITS FACE (UI/UX audit 0.5.3, item 18).
+ * WHAT THE BOT IS DOING, AS ONE WORD BESIDE ITS NAME (UI/UX audit 0.5.3, item 18).
  *
  * The header named the Bot and nothing else. Whether it was working, waiting on the person or idle
  * was spread over four places — the transcript's last line, a banner that comes and goes, a card
@@ -53,10 +52,12 @@ export type Presence = {
   kind: PresenceKind;
   /** English key for `t()`; the Korean is in `i18n-ko.ts`, and a test walks this table. */
   label: string;
-  /** How the pill is drawn: amber for the person's turn, the Bot's colour while busy, grey idle. */
+  /** How the pill is drawn: amber for the person's turn, the control's colour while busy, grey idle. */
   tone: "attention" | "active" | "quiet";
-  /** The face's expression for it, before `useBotMood` adds "just finished" and "asleep". */
-  face: BotAvatarState;
+  /*
+   * There was a `face` here: the expression the Bot's face took for each kind. The Bot has no face
+   * since 2026-10-09, and every kind is still said — by its word, and by the dot's tone.
+   */
 };
 
 /** The words, one per kind — read through `t(variable)`, so `presence.test.ts` checks each has Korean. */
@@ -80,26 +81,21 @@ export const PRESENCE_LABELS: Readonly<Record<PresenceKind, string>> = {
  * so it is "working" and no finer.
  */
 export function presenceOf(facts: PresenceFacts): Presence {
-  const is = (
-    kind: PresenceKind,
-    tone: Presence["tone"],
-    face: BotAvatarState,
-  ) => ({
+  const is = (kind: PresenceKind, tone: Presence["tone"]) => ({
     kind,
     label: PRESENCE_LABELS[kind],
     tone,
-    face,
   });
-  if (facts.approvals > 0) return is("approval", "attention", "blocked");
-  if (facts.isHelpWanted) return is("help", "attention", "blocked");
+  if (facts.approvals > 0) return is("approval", "attention");
+  if (facts.isHelpWanted) return is("help", "attention");
   if (facts.isBrowsing || facts.turn === "working") {
-    return is("working", "active", "searching");
+    return is("working", "active");
   }
-  if (facts.isRoutineRunning) return is("routine", "active", "working");
-  if (facts.turn === "answering") return is("answering", "active", "working");
-  if (facts.turn === "thinking") return is("thinking", "active", "thinking");
-  if (facts.isTurnOffScreen) return is("working", "active", "working");
-  return is("idle", "quiet", "idle");
+  if (facts.isRoutineRunning) return is("routine", "active");
+  if (facts.turn === "answering") return is("answering", "active");
+  if (facts.turn === "thinking") return is("thinking", "active");
+  if (facts.isTurnOffScreen) return is("working", "active");
+  return is("idle", "quiet");
 }
 
 /**

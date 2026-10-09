@@ -37,11 +37,9 @@ import { isImeKey } from "@/lib/ime";
  * later on the Bot's profile. The agreement is the sentence under the button, recorded by the same
  * press — a stamp with no sentence in front of it would be a consent nobody gave.
  *
- * NO FACE TO CHOOSE (2026-10-08, docs/laf/redesign-2026-10.md §8). This screen used to open on the
- * face picker. Now the server gives the Bot its face when it makes it, from the Bot's own id
- * (`server/src/agents/profile-store.ts`), and nothing changes it afterwards — so there is no face
- * to show here before the Bot exists, and the first one the person sees is the Bot's own, in its
- * conversation.
+ * NO FACE (2026-10-08, docs/laf/redesign-2026-10.md §8, and 2026-10-09). This screen used to open
+ * on the face picker; then the face stopped being chosen, and the next day the Bot stopped having
+ * one. The profile is a name, so the name is all there is to settle here.
  *
  * A person who closed the laptop after the Bot was made but before the stamp landed comes back to
  * this screen with a Bot already: the screen starts from that Bot's name and saves over it rather

@@ -8,8 +8,8 @@ import { ko } from "../src/lib/i18n-ko";
  * THE PROFILE PANE: what it offers, and what it must never quietly do.
  *
  * Checked by walking the file, for the properties an assertion about an element could not see: that
- * the profile is a name, with a face shown and not chosen, and nothing about what the Bot is for
- * (2026-09-24, and the face's picker gone 2026-10-08), that a save
+ * the profile is a name, with no face, and nothing about what the Bot is for (2026-09-24; the
+ * face's picker went 2026-10-08 and the face itself 2026-10-09), that a save
  * carries the fields it does not change, that the standing allowance still goes through the
  * REPLACING patch and never through the merging `/profile` a Bot's own tool posts to, and that the
  * memories card no longer returns nothing when there is nothing to show.
@@ -23,7 +23,8 @@ const PROFILE = join(
 /**
  * A BOT'S PROFILE IS ITS NAME AND ITS FACE (2026-09-24): "프로필 설정은 이름과 봇 프로필 이미지만
  * 만들면 끝인 걸로(언제든지 바꿀 수 있음). 무슨 일을 시킬건지도 적지 않는다." And from 2026-10-08,
- * "프로필 이미지 설정을 지운다" (docs/laf/redesign-2026-10.md §8): the face is drawn, never picked.
+ * "프로필 이미지 설정을 지운다" (docs/laf/redesign-2026-10.md §8): the face stopped being picked, and
+ * on 2026-10-09 it went altogether. The profile is a name.
  */
 describe("the profile's identity", () => {
   const source = () => readFileSync(PROFILE, "utf8");
@@ -33,13 +34,13 @@ describe("the profile's identity", () => {
       source().indexOf("function NameField"),
     );
 
-  test("is a name you can change and a face you cannot, and nothing else", () => {
+  test("is a name you can change, and nothing else: no face", () => {
     expect(identity()).toContain("<NameField");
-    // The face is drawn from the Bot's seed, and there is nothing beside it to change it with.
-    expect(identity()).toContain("<Mascot seed={profile.avatarSeed}");
-    expect(source()).not.toContain("BotAvatarPicker");
+    // No face is drawn, from any seed, and there is nothing to change one with.
+    expect(source()).not.toContain("Mascot");
+    expect(source()).not.toContain("BotAvatar");
+    expect(source()).not.toContain("avatarSeed");
     expect(source()).not.toContain("Change the face");
-    expect(identity()).not.toContain("avatarSeed:");
     // What the Bot is for is not asked, not shown and not offered as a list to pick from.
     expect(source()).not.toContain("profile.title");
     expect(source()).not.toContain("WorkStyleCard");

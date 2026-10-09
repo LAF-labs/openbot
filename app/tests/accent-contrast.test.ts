@@ -1,17 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { accentOf } from "../src/lib/avatar/accent";
-import { FACE_COLOR_IDS } from "../src/lib/avatar/bot-avatar";
 
 /**
- * THE BOT'S COLOUR IS EVERY BUTTON'S COLOUR, SO EVERY PALETTE HAS TO CLEAR AA IN BOTH THEMES.
+ * THE ACCENT IS EVERY BUTTON'S COLOUR, SO IT HAS TO CLEAR AA IN BOTH THEMES.
  *
- * A face's colour was picked for how the face looks — by a person until 2026-10-08, dealt from the
- * Bot's id since — and nobody ever picked a button colour; nothing on the profile says "this red
- * will be your 보내기". So the accent a palette becomes is not anybody's to get wrong, and a palette
- * that made white text on a button unreadable would be a design decision nobody took. These tests read `styles.css` back — the values the browser will actually
- * use, not a copy of them — and measure every pair a screen puts together:
+ * One accent, the same for everybody (`--app-accent` in `styles.css`). It was the Bot's — the
+ * colour of its face, one of ten palettes, every one measured here — until 2026-10-09, when the Bot
+ * stopped having a face. The neutral control is what is left, and a brand colour, when there is
+ * one, is a change to four lines that these tests measure the moment it is made. They read
+ * `styles.css` back — the values the browser will actually use, not a copy of them — and measure
+ * every pair a screen puts together:
  *
  *  - the label on a filled control, and on its hover (4.5:1, it is text);
  *  - the same value as text — a link, the name of what the Bot is waiting on — on the page, the
@@ -23,6 +22,7 @@ import { FACE_COLOR_IDS } from "../src/lib/avatar/bot-avatar";
  */
 
 const CSS = readFileSync(join(import.meta.dir, "../src/styles.css"), "utf8");
+const HTML = readFileSync(join(import.meta.dir, "../index.html"), "utf8");
 
 type Theme = "light" | "dark";
 
@@ -88,7 +88,7 @@ function contrast(
 }
 
 /**
- * Every surface a control, a link or a line of the Bot's colour can sit on.
+ * Every surface a control, a link or a line in the accent can sit on.
  *
  * There was a fourth, the grey of the Bot's own bubble (`--sand-fill-bubble-agent`). The Bot has
  * had no bubble since 2026-10-04 — its answers and its greeting are words on the page — and the
@@ -104,87 +104,67 @@ function surfaces(theme: Theme): Record<string, [number, number, number]> {
   };
 }
 
-const PALETTE_IDS: string[] = [...FACE_COLOR_IDS];
+/** A value as the theme resolves it: `var(--x)` followed through the theme's own declarations. */
+function resolved(values: Record<string, string>, name: string): string {
+  let value = values[name];
+  for (let hop = 0; value?.startsWith("var(") && hop < 8; hop += 1) {
+    value = values[value.slice(4, -1).trim()];
+  }
+  if (!value?.startsWith("#")) throw new Error(`${name} does not resolve`);
+  return value;
+}
 
-function accent(id: string, theme: Theme) {
-  const selector =
-    theme === "light"
-      ? `:root[data-accent="${id}"]`
-      : `:root.dark[data-accent="${id}"]`;
-  const values = block(selector);
+function accent(theme: Theme) {
+  const values = palette(theme);
   return {
-    fill: rgb(values["--bot-accent"] as string),
-    hover: rgb(values["--bot-accent-hover"] as string),
-    foreground: rgb(values["--bot-accent-foreground"] as string),
-    ink: rgb(values["--bot-accent-ink"] as string),
+    fill: rgb(resolved(values, "--app-accent")),
+    hover: rgb(resolved(values, "--app-accent-hover")),
+    foreground: rgb(resolved(values, "--app-accent-foreground")),
+    ink: rgb(resolved(values, "--app-accent-ink")),
   };
 }
 
-describe("every palette a face can have is an accent the app can be drawn in", () => {
-  test("each one has a block for light and a block for dark", () => {
-    for (const id of PALETTE_IDS) {
-      expect(() => accent(id, "light")).not.toThrow();
-      expect(() => accent(id, "dark")).not.toThrow();
-    }
-    // Black is the one colour no face is drawn in, so it has no accent of its own.
-    expect(PALETTE_IDS).not.toContain("black");
-  });
-
+describe("the accent, the same for everybody", () => {
   for (const theme of ["light", "dark"] as const) {
     test(`${theme}: the label on a filled control reads at 4.5:1, hovered or not`, () => {
-      const short: string[] = [];
-      for (const id of PALETTE_IDS) {
-        const { fill, hover, foreground } = accent(id, theme);
-        if (contrast(fill, foreground) < 4.5) short.push(`${id} fill`);
-        if (contrast(hover, foreground) < 4.5) short.push(`${id} hover`);
-      }
-      expect(short).toEqual([]);
+      const { fill, hover, foreground } = accent(theme);
+      expect(contrast(fill, foreground)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(hover, foreground)).toBeGreaterThanOrEqual(4.5);
     });
 
-    test(`${theme}: as text it reads at 4.5:1 on the page, the sidebar and a card`, () => {
-      const short: string[] = [];
-      for (const id of PALETTE_IDS) {
-        const { ink, fill } = accent(id, theme);
-        const grounds = surfaces(theme);
-        for (const [name, ground] of Object.entries(grounds)) {
-          if (contrast(ink, ground) < 4.5) short.push(`${id} on ${name}`);
-        }
-        // The accent's own 8% tint (`bg-primary/8`) — a selected row, the pill — is a surface too.
-        const tint = mix(fill, 0.08, grounds.page);
-        if (contrast(ink, tint) < 4.5) short.push(`${id} on its tint`);
-      }
+    test(`${theme}: as text it reads at 4.5:1 on the page, the sidebar, a card and its own tint`, () => {
+      const { ink, fill } = accent(theme);
+      const grounds = surfaces(theme);
+      const short = Object.entries(grounds)
+        .filter(([, ground]) => contrast(ink, ground) < 4.5)
+        .map(([name]) => name);
+      // The accent's own 8% tint (`bg-primary/8`) — a selected row, the pill — is a surface too.
+      if (contrast(ink, mix(fill, 0.08, grounds.page)) < 4.5)
+        short.push("tint");
       expect(short).toEqual([]);
     });
 
     test(`${theme}: as a ring or a border it stands out 3:1 from the page`, () => {
-      const short = PALETTE_IDS.filter(
-        (id) => contrast(accent(id, theme).fill, surfaces(theme).page) < 3,
-      );
-      expect(short).toEqual([]);
+      expect(
+        contrast(accent(theme).fill, surfaces(theme).page),
+      ).toBeGreaterThanOrEqual(3);
     });
   }
 
-  test("the neutral control, before there is a Bot, keeps the same promises", () => {
-    for (const theme of ["light", "dark"] as const) {
-      const values = palette(theme);
-      const fill = rgb(values["--sand-fill-primary"] as string);
-      const label = rgb(values["--sand-text-on-primary"] as string);
-      expect(contrast(fill, label)).toBeGreaterThanOrEqual(4.5);
-      const link = rgb(values["--sand-text-accent"] as string);
-      for (const ground of Object.values(surfaces(theme))) {
-        expect(contrast(link, ground)).toBeGreaterThanOrEqual(4.5);
-      }
-    }
-  });
-
-  test("the palette is read from the seed, and nothing before there is one", () => {
-    expect(accentOf("s:egg.orange")).toBe("orange");
-    expect(accentOf("s:blob.violet")).toBe("violet");
-    expect(accentOf(undefined)).toBeUndefined();
-    // Any seed at all lands on a palette that has a block.
-    for (const seed of ["f:3.4", "g:0.0", "anything", ""]) {
-      expect(PALETTE_IDS).toContain(accentOf(seed) as string);
-    }
+  /*
+   * NO PALETTE PER BOT, AND NONE PUT BACK BEFORE THE FIRST PAINT (2026-10-09). The sheet mapped
+   * `data-accent` on <html> to ten palettes per theme, and `index.html` put the last one back from
+   * storage before React ran. A value an older build left in somebody's storage must not paint an
+   * old colour, so nothing may read it, and nothing in the sheet may answer it if something did.
+   */
+  test("is one: no palette per Bot in the sheet, and no Bot's colour read back before the first paint", () => {
+    expect(CSS).not.toMatch(/\[data-accent/);
+    expect(CSS).not.toMatch(/\.bot-avatar/);
+    expect(CSS).not.toContain("--bot-accent");
+    expect(HTML).not.toMatch(/getItem\(\s*["']laf-accent/);
+    expect(HTML).not.toMatch(
+      /dataset\.accent|setAttribute\(\s*["']data-accent/,
+    );
   });
 });
 

@@ -35,7 +35,6 @@ const READY: Presence = {
   kind: "idle",
   label: "Ready",
   tone: "quiet",
-  face: "idle",
 };
 const THINKING: Presence = {
   ...READY,

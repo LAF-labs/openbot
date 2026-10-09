@@ -155,12 +155,12 @@ export function parseAgentInput(
   }
 
   /*
-   * NO `avatarSeed` SINCE 2026-10-08 (docs/laf/redesign-2026-10.md §8): the face is not chosen any
-   * more, by a person or by anything else. A Bot is given one when it is made (`profile-store.ts`)
-   * and keeps it. A body that still carries one — a tab opened before the picker went, a script —
-   * is read like any other key this parser does not know, and IGNORED rather than refused: the
-   * first-run screen sent one with every create, and a stale copy of it refused on the press that
-   * makes somebody's Bot would be the worst first minute there is.
+   * NO `avatarSeed` SINCE 2026-10-08 (docs/laf/redesign-2026-10.md §8): the face stopped being
+   * chosen that day, and the next the Bot stopped having one at all — the profile is a name. A body
+   * that still carries one — a tab opened before the picker went, a script — is read like any other
+   * key this parser does not know, and IGNORED rather than refused: the first-run screen sent one
+   * with every create, and a stale copy of it refused on the press that makes somebody's Bot would
+   * be the worst first minute there is.
    *
    * NOR `effort`, from the same day and for the same reason (§8): how hard the main conversation
    * thinks is fixed, shown nowhere, and set by neither a person nor the Bot (`copilot.ts`). The
@@ -1075,7 +1075,6 @@ function agentDto(
     id: agent.id,
     name: agent.name,
     roleDescription: agent.roleDescription,
-    avatarSeed: agent.avatarSeed,
     autoReview: agent.autoReview,
     hidden: agent.hidden,
     notify: agent.notify,

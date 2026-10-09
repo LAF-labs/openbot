@@ -132,7 +132,6 @@ export function agentFixture(
 ): AgentProfile {
   return {
     roleDescription: "",
-    avatarSeed: `s:${overrides.id}`,
     autoReview: "",
     endpoint: "http://bot.local",
     hasAuth: false,

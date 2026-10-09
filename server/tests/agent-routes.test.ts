@@ -44,7 +44,6 @@ function profile(overrides: Partial<AgentProfile> = {}): AgentProfile {
     id: "agent-1",
     name: validInput.name,
     roleDescription: validInput.roleDescription,
-    avatarSeed: "expense-manager",
     autoReview: "",
     ownerUserId: actor.id,
     systemOwned: false,
@@ -333,7 +332,6 @@ describe("agent lifecycle routes", () => {
           id: "agent-1",
           name: validInput.name,
           roleDescription: validInput.roleDescription,
-          avatarSeed: "expense-manager",
           autoReview: "",
           hidden: false,
           notify: true,
@@ -347,7 +345,6 @@ describe("agent lifecycle routes", () => {
           id: "agent-2",
           name: validInput.name,
           roleDescription: validInput.roleDescription,
-          avatarSeed: "expense-manager",
           autoReview: "",
           hidden: false,
           notify: true,
@@ -361,7 +358,6 @@ describe("agent lifecycle routes", () => {
           id: "system-agent",
           name: validInput.name,
           roleDescription: validInput.roleDescription,
-          avatarSeed: "expense-manager",
           autoReview: "",
           hidden: false,
           notify: true,
@@ -756,10 +752,12 @@ describe("the auto-review instruction", () => {
 });
 
 /**
- * NOTHING CHOOSES A FACE (2026-10-08, docs/laf/redesign-2026-10.md §8).
+ * NOTHING CHOOSES A FACE (2026-10-08, docs/laf/redesign-2026-10.md §8), AND THERE IS NONE
+ * (2026-10-09).
  *
- * The face is given when a Bot is made and the field went from the API with the picker. Ignored and
- * not refused, at every door: the first-run screen sent a face with every create, and a tab opened
+ * The field went from the API with the picker, and the next day the face went from the Bot: the
+ * column keeps what creation wrote, and the app is told nothing of it. Ignored and not refused, at
+ * every door: the first-run screen sent a face with every create, and a tab opened
  * before the change would otherwise be refused on the press that makes somebody's Bot. Even a value
  * the parser used to refuse goes through now, because it is no longer looked at at all.
  */
@@ -804,6 +802,33 @@ describe("the face", () => {
     for (const write of writes) {
       expect(write.at(-1)).not.toHaveProperty("avatarSeed");
     }
+  });
+
+  test("is not told to the app: the Bot the API answers with, alone or in the list, carries none", async () => {
+    // A row read the way it was before the face went, seed and all: what the app is told is
+    // decided here, at the door, and not by what a store happens to hand over.
+    const withSeed = (id: string) =>
+      ({ ...profile({ id }), avatarSeed: "s:cloud.green" }) as AgentProfile;
+    const app = appFor(
+      fakeStore({
+        async get(_actor, id) {
+          return withSeed(id);
+        },
+        async list() {
+          return [withSeed("agent-1")];
+        },
+      }),
+    );
+    const one = (await json(await app.request("http://laf.test/agent-1"))) as {
+      agent: Record<string, unknown>;
+    };
+    const all = (await json(await app.request("http://laf.test/"))) as {
+      agents: Record<string, unknown>[];
+    };
+    expect(one.agent.name).toBe(validInput.name);
+    expect(one.agent).not.toHaveProperty("avatarSeed");
+    expect(all.agents).toHaveLength(1);
+    expect(all.agents[0]).not.toHaveProperty("avatarSeed");
   });
 });
 

@@ -225,7 +225,6 @@ function FirstConversation({
           </Link>
         }
         agentId={botId}
-        avatarSeed={bot?.avatarSeed}
         name={bot?.name}
         pill={(presence) => (
           <PresenceDrawer botId={botId} presence={presence} />

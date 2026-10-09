@@ -158,7 +158,7 @@ function FullCard({ routine }: { routine: Routine }) {
       className={cn(chatCard, chatCardPadding, "flex flex-col gap-2")}
     >
       <div className="flex items-start gap-2">
-        {/* The Bot's colour: a routine is the Bot's own work, on a schedule. */}
+        {/* The link ink, which is how the app writes "active": a routine is work on a schedule. */}
         <IconClock
           aria-hidden="true"
           className="mt-0.5 size-4 shrink-0 text-link"

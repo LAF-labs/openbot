@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useState } from "react";
-import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { LegalLinks } from "@/components/legal/legal-links";
 import { Button } from "@/components/ui/button";
 import {
@@ -283,32 +282,12 @@ function SignScreen() {
         }}
       >
         {/*
-         * THE FACES, NOT AN ORB.
-         *
-         * The only brand mark on the way into this product was a generic pink-violet-magenta mesh
-         * gradient — four hues from no palette this app has, on the one screen that sets a first
-         * impression, in a product whose whole identity is a roster of faces. Three of them, at the
-         * size they appear on Home, which is the next thing the person sees once they are through
-         * this screen.
-         *
-         * Fixed seeds, and no accessories on any of the three: a brand mark that shuffled itself on
-         * every load is not a mark, and a hat on the sign-in screen is a joke told to somebody who
-         * has not been introduced yet. The colours are three from opposite ends of the palette so
-         * the mark carries at favicon size.
+         * NO MARK OVER THE HEADING. Three Bot faces stood here, in place of a mesh gradient that
+         * had no colour this app uses; the Bot has no face since 2026-10-09, and the heading names
+         * the product on its own.
          */}
-        <motion.div
-          transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
-          variants={{ hidden, shown }}
-          className="-space-x-2 flex items-center justify-center"
-        >
-          {["s:pebble.blue", "s:cloud.green", "s:teardrop.orange"].map(
-            (seed) => (
-              <BotAvatar key={seed} seed={seed} size={48} />
-            ),
-          )}
-        </motion.div>
         <motion.h1
-          className="text-2xl font-medium tracking-tight text-center mt-8"
+          className="text-2xl font-medium tracking-tight text-center"
           transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
           variants={{ hidden, shown }}
         >

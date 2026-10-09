@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useId, useState } from "react";
 import { AllowancesCard } from "@/components/agents/allowances-card";
-import { Mascot } from "@/components/agents/mascot";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import { LiveRegion } from "@/components/layout/live-region";
 import { ReadNotice } from "@/components/layout/read-states";
@@ -58,13 +57,12 @@ function saveFailure(error: unknown): string {
 }
 
 /**
- * The shape of the profile, not a generic one: the face, then the name.
+ * The shape of the profile, not a generic one: the name, then the cards.
  */
 function ProfileSkeleton() {
   return (
     <>
       <header className="flex flex-col items-center gap-3">
-        <Skeleton className="h-[132px] w-full rounded-2xl" />
         <Skeleton className="h-9 w-full" />
       </header>
       <div className="flex flex-col gap-2">
@@ -77,15 +75,16 @@ function ProfileSkeleton() {
 }
 
 /**
- * A BOT'S PROFILE IS ITS NAME (2026-10-08), AND ITS FACE IS SHOWN, NOT CHOSEN.
+ * A BOT'S PROFILE IS ITS NAME (2026-10-08), AND THE BOT HAS NO FACE (2026-10-09).
  *
  * The owner, 2026-09-24: "프로필 설정은 이름과 봇 프로필 이미지만 만들면 끝인 걸로(언제든지 바꿀 수
  * 있음). 무슨 일을 시킬건지도 적지 않는다." The job title under the name, the "how it works"
  * paragraph and the row of kinds of work to pick from went that day: what the Bot is for is settled
  * by talking to it. The rows still hold what older Bots were given, and the server still accepts
  * them; nothing on the surface writes or shows them. Then on 2026-10-08 the face stopped being a
- * setting too (docs/laf/redesign-2026-10.md §8): it is the mascot the Bot was given when it was
- * made, drawn here as everywhere else, with nothing to press.
+ * setting (docs/laf/redesign-2026-10.md §8), and the next day the owner took the face away
+ * altogether: the mascot this screen drew above the name, on a wash of the colour the app took from
+ * it, is gone with that colour, and the name stands at the top alone.
  *
  * WHAT STAYS BELOW THE NAME IS NOT PROFILE, IT IS HOW THE BOT BEHAVES: what it may do without
  * asking, what it remembers, the skills it holds, and whether it may notify. None of those can be
@@ -150,25 +149,6 @@ export function AgentProfile({
   const profile = settled.data;
 
   /*
-   * THE FACE ON A SOFT WASH OF ITS OWN COLOUR, NOT IN A GREY BOX (UI/UX audit 0.5.3, item 21).
-   *
-   * It sat in a 4:3 grey tile that was also, invisibly, the button to change it. The face is not
-   * changed any more (2026-10-08), so it stands on its own and is only a face. The wash is the
-   * accent at 10%, so the profile shows the colour the rest of the app has taken from this face.
-   */
-  const face = (
-    <span className="relative flex items-center justify-center py-2">
-      <span
-        aria-hidden="true"
-        className="absolute size-36 rounded-full bg-primary/10 blur-2xl"
-      />
-      <span className="relative">
-        <Mascot seed={profile.avatarSeed} size={112} />
-      </span>
-    </span>
-  );
-
-  /*
    * A PATCH replaces the fields it carries, so the ones the parser requires go back unchanged —
    * the description included, which nothing here shows but the Bot may have written itself.
    * `endpoint` is deliberately absent: an absent one leaves the stored configuration alone.
@@ -187,8 +167,6 @@ export function AgentProfile({
     <div className={`flex w-full flex-col gap-6 ${className}`}>
       {notice}
       <header className="flex flex-col items-center gap-3 text-center">
-        {face}
-
         {/*
          * The name is the control. A Bot the deployment shipped is not editable here at all — the
          * server refuses — so it offers nothing it cannot deliver.

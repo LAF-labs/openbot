@@ -84,22 +84,15 @@ function account(extra: ApiAnswer = () => undefined): ApiAnswer {
 }
 
 /**
- * What the screen drew, without what a Bot's face draws into itself.
+ * What the screen drew.
  *
- * The face is a frame loop (`grok-engine.ts`) that writes its body's transform, its eyes and its
- * badge straight into its own SVG, every frame, for as long as it is on screen — so a page with a
- * face never looked the same twice, and the loop below ran out its 150 looks: three seconds of
- * waiting on every screen that greets an empty state with a face (measured 2026-10-04: 스킬 twice,
- * 루틴 with no routine, the 스킬 title; 13 s of the gate). The face's own element stays — its class
- * and its `data-bot-state` are what React drew — and only what the engine writes inside it is left
- * out.
+ * It left out what a Bot's face drew into itself: a frame loop that rewrote its SVG every frame, so
+ * a page with a face never looked the same twice and the loop below ran out its 150 looks (measured
+ * 2026-10-04: 13 s of the gate). The Bot has no face since 2026-10-09, and a screen that stops
+ * changing is the whole of what is drawn.
  */
 function drawnOf(main: HTMLElement): string {
-  const copy = main.cloneNode(true) as HTMLElement;
-  for (const face of copy.querySelectorAll("svg.bot-avatar")) {
-    face.replaceChildren();
-  }
-  return copy.innerHTML;
+  return main.innerHTML;
 }
 
 async function screen(path: string, extra?: ApiAnswer) {
@@ -811,9 +804,10 @@ describe("루틴", () => {
     );
   });
 
-  test("with no routine: a face and one line, and the one verb is the header's", async () => {
+  test("with no routine: one line, no face over it, and the one verb is the header's", async () => {
     const view = await screen("/routines", routines([]));
     const empty = view.one("[data-routines-empty]");
+    expect(empty.querySelector("svg")).toBeNull();
     expect({
       said: [...empty.querySelectorAll("p")].map((line) => line.textContent),
       presses: empty.querySelectorAll("a, button").length,
@@ -873,9 +867,10 @@ describe("스킬", () => {
     ]);
   });
 
-  test("with none of the person's own: a face and one line that says how one is called, and the header's verb", async () => {
+  test("with none of the person's own: one line that says how one is called, no face over it, and the header's verb", async () => {
     const view = await screen("/skills", skills([BUILT_IN]));
     const empty = view.one("[data-skills-empty]");
+    expect(empty.querySelector("svg")).toBeNull();
     expect({
       said: [...empty.querySelectorAll("p")].map((line) => line.textContent),
       presses: empty.querySelectorAll("a, button").length,

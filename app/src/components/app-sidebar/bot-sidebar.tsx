@@ -20,12 +20,12 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
   BotRow,
+  RailNameTile,
   ROSTER_RAIL_ROW_CLASS,
   RosterUnreadDot,
 } from "@/components/app-sidebar/bot-row";
 import { footerLinksFor } from "@/components/app-sidebar/places";
 import { StopAllDialog } from "@/components/app-sidebar/stop-all-dialog";
-import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { PersonAvatar } from "@/components/avatar/person-avatar";
 import { PILL_CLASS, PILL_TONES } from "@/components/channels/bot-header";
 import { usePresence } from "@/components/channels/use-presence";
@@ -52,7 +52,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useBotMood } from "@/lib/agents/bot-mood";
 import { conversationOf, useMyBots } from "@/lib/agents/my-bots";
 import type { Presence } from "@/lib/agents/presence";
 import type { AgentProfile } from "@/lib/agents/queries";
@@ -76,20 +75,20 @@ import { cn } from "@/lib/utils";
  *
  * It was built as a roster — one row per colleague, newest first, a preview line so somebody could
  * glance at four Bots and see which needed them — and after the decision that a person has one Bot
- * (docs/laf/deployment-model.md, "봇은 하나다") it held one row and a footer of links, with the
- * column's whole height of nothing in between. Then it filled up: a word under the face for what
- * the Bot was doing, the last thing said and when, the Bot's whole day, four places, a 메뉴 row and
- * the account's address.
+ * (docs/laf/deployment-model.md, "봇은 하나다") it held one row and a footer of links, with the column's
+ * whole height of nothing in between. Then it filled up: a word under the Bot's face for what it
+ * was doing, the last thing said and when, the Bot's whole day, four places, a 메뉴 row and the
+ * account's address.
  *
- * 216px OF FACE, NAME AND FIVE LABELLED ROWS (2026-10-04, the layout the owner chose). The
- * complaint was the number of words on the screen — "아이콘으로도 되는 걸 항상 글자로 표시하는 게
- * 문제" — so a word is drawn where it is the only way to say the thing, and a face, an icon or a
- * dot says the rest. Top to bottom:
+ * 216px OF NAME AND FIVE LABELLED ROWS (2026-10-04, the layout the owner chose). The complaint was
+ * the number of words on the screen — "아이콘으로도 되는 걸 항상 글자로 표시하는 게 문제" — so a word
+ * is drawn where it is the only way to say the thing, and an icon or a dot says the rest. Top to
+ * bottom:
  *
- *  1. THE BOT, on one row of 44px: its face (32px), alive — the same presence as the conversation's
- *     header: working, waiting on the person, glad it finished — and its name. What it is doing is
- *     a dot beside the name; the word is drawn only when it is the person's turn (`BotIdentity`).
- *     Pressing the row opens the profile, the only place the name changes.
+ *  1. THE BOT, on one row of 44px: its name, and what it is doing as a dot beside the name; the
+ *     word is drawn only when it is the person's turn (`BotIdentity`). Pressing the row opens the
+ *     profile, the only place the name changes. A face led the row until 2026-10-09; the Bot has
+ *     none now.
  *  2. THE CONVERSATION AND THE PLACES A PERSON GOES TO LOOK: five rows of 36px, an icon and a name
  *     each — 대화 · 소식 · 아이디어 · 목표 · 만든 것. These keep their names because they are the
  *     navigation (`LOOK_ROWS`). 대화 no longer carries the last thing said or when
@@ -108,7 +107,7 @@ import { cn } from "@/lib/utils";
  *  - 오늘 IS NOT HERE. From 2026-09-25 the height under the rows held the Bot's day — what is
  *    waiting on the person, what it did, what is next (`bot-day.tsx`) — and it was the first thing
  *    the owner had taken out, the same day and for the same reason. The day is a row away, on 소식;
- *    that something waits on the person is still said here, by the face and the amber pill.
+ *    that something waits on the person is still said here, by the amber pill.
  *  - THE WIDTH WAS 280px, a roster's: a face, a name, a line of preview and a time. One Bot's name
  *    and five short labels have no line that long. Settings and Admin draw their rails at this
  *    column's width, so they narrowed with it — at different widths, crossing into Settings read as
@@ -117,22 +116,22 @@ import { cn } from "@/lib/utils";
  * AN ACCOUNT FROM BEFORE THE CAP CAME DOWN keeps every Bot it had, and reaches them the old way: with
  * more than one, the list under "내 봇" is back, a row per Bot, each its own conversation, and 봇
  * 프로필 is a link again. Those rows are the roster's still — the name, the last thing said and
- * when, at 54px (`bot-row.tsx`) — because with several faces in a list that line is how somebody
+ * when, at 54px (`bot-row.tsx`) — because with several Bots in a list that line is how somebody
  * sees which one said what. Nothing else in the app behaves as if there were several.
  *
- * THREE WIDTHS. The full column (216px) at `lg` and up. Below it, a 64px rail of faces and icons
- * with their names in tooltips, which the titlebar's toggle puts back to full for as long as
- * somebody wants — measured at an 800px window, a fixed 280 was 35% of everything the person could
- * see. The rail had no words to lose on 2026-10-04; its foot is the one button too, the picture
- * alone (2026-10-06).
- * And below `md`, NO COLUMN: at 375px the rail was 15% of the screen and five unlabelled icons
- * (UI/UX audit 0.5.3, item 20). There the phone's bottom bar is the way around — 대화 · 소식 · 메뉴
- * (`phone-tab-bar.tsx`) — and the sheet this column used to slide in as, from a menu button in each
- * screen's header, is gone (2026-09-27, muse-shape plan phase 3). The column stays MOUNTED there,
- * only hidden (`max-md:hidden` on the nav): its watch on the working poll is what refreshes the
- * conversation's unread mark when a routine's answer lands, and the bar's dot reads the same list.
- * The installed app's window cannot be narrower than 1024 (`desktop/src-tauri/tauri.conf.json`), so
- * the phone's width is the phone's and the browser's, never the PC app's.
+ * THREE WIDTHS. The full column (216px) at `lg` and up. Below it, a 64px rail of tiles — an icon,
+ * or a Bot's first letter (`RailNameTile`) — with their names in tooltips, which the titlebar's
+ * toggle puts back to full for as long as somebody wants — measured at an 800px window, a fixed 280
+ * was 35% of everything the person could see. The rail had no words to lose on 2026-10-04; its foot
+ * is the one button too, the picture alone (2026-10-06). And below `md`, NO COLUMN: at 375px the
+ * rail was 15% of the screen and five unlabelled icons (UI/UX audit 0.5.3, item 20). There the
+ * phone's bottom bar is the way around — 대화 · 소식 · 메뉴 (`phone-tab-bar.tsx`) — and the sheet this
+ * column used to slide in as, from a menu button in each screen's header, is gone (2026-09-27,
+ * muse-shape plan phase 3). The column stays MOUNTED there, only hidden (`max-md:hidden` on the
+ * nav): its watch on the working poll is what refreshes the conversation's unread mark when a
+ * routine's answer lands, and the bar's dot reads the same list. The installed app's window cannot
+ * be narrower than 1024 (`desktop/src-tauri/tauri.conf.json`), so the phone's width is the phone's
+ * and the browser's, never the PC app's.
  */
 
 /**
@@ -227,8 +226,8 @@ function BotRowMenu({
 }
 
 /**
- * The dot beside the Bot's name, per tone: amber for the person's turn, the Bot's colour while it
- * is busy, grey at rest. The conversation header's pill has the same three (`DOT_TONES` in
+ * The dot beside the Bot's name, per tone: amber for the person's turn, the control's colour while
+ * it is busy, grey at rest. The conversation header's pill has the same three (`DOT_TONES` in
  * `channels/bot-header.tsx`), which that file keeps to itself.
  */
 const PRESENCE_DOT_TONES: Readonly<Record<Presence["tone"], string>> = {
@@ -238,11 +237,13 @@ const PRESENCE_DOT_TONES: Readonly<Record<Presence["tone"], string>> = {
 };
 
 /**
- * THE BOT, AT THE TOP OF ITS COLUMN, ON ONE ROW: the face with what it is doing on it, and the
- * name. The way to its profile, which is why the pencil shows on hover.
+ * THE BOT, AT THE TOP OF ITS COLUMN, ON ONE ROW: the name, and what it is doing beside it. The way
+ * to its profile, which is why the pencil shows on hover. There was a face before the name until
+ * 2026-10-09; the Bot has none now, and nothing it said is lost — the dot and the pill below said
+ * all of it, and in the rail the tile's corner carries the dot.
  *
  * NO LINE OF STATUS WORDS UNDER THE NAME (2026-10-04). It read 쉬는 중 all day under a face that
- * already says so, and the owner's complaint about the column was its words: "아이콘으로도 되는 걸
+ * already said so, and the owner's complaint about the column was its words: "아이콘으로도 되는 걸
  * 항상 글자로 표시하는 게 문제". So what the Bot is doing is a dot beside the name, and the word is
  * the dot's name and title — and the link's own name, as it always was, for whoever cannot see a
  * dot. ONE WORD IS STILL DRAWN: when the Bot is waiting on the person, the amber pill stays, with
@@ -256,19 +257,11 @@ const PRESENCE_DOT_TONES: Readonly<Record<Presence["tone"], string>> = {
 function BotIdentity({
   agent,
   isCompact,
-  lastMessageAt,
 }: {
   agent: AgentProfile;
   isCompact: boolean;
-  lastMessageAt: string | undefined;
 }) {
   const presence = usePresence(agent.id);
-  const mood = useBotMood({
-    working: presence.tone === "active",
-    blocked: presence.tone === "attention",
-    lastMessageAt,
-  });
-  const face = mood === "working" ? presence.face : mood;
   const word = t(presence.label);
   const label = `${agent.name} · ${word}`;
 
@@ -288,7 +281,18 @@ function BotIdentity({
             />
           }
         >
-          <BotAvatar seed={agent.avatarSeed} size={36} state={face} />
+          <RailNameTile name={agent.name}>
+            {presence.tone === "quiet" ? null : (
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "absolute right-0.5 bottom-0.5 size-2 rounded-full ring-2 ring-sidebar",
+                  PRESENCE_DOT_TONES[presence.tone],
+                )}
+                data-presence={presence.tone}
+              />
+            )}
+          </RailNameTile>
         </TooltipTrigger>
         <TooltipContent side="right">{label}</TooltipContent>
       </Tooltip>
@@ -306,12 +310,6 @@ function BotIdentity({
       search={{ agent: agent.id }}
       to="/agents"
     >
-      <BotAvatar
-        className="shrink-0"
-        seed={agent.avatarSeed}
-        size={32}
-        state={face}
-      />
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
         <span className="min-w-0 truncate font-semibold text-base">
           {agent.name}
@@ -467,8 +465,8 @@ function LookRow({
  * preview a roster of several needs to tell which colleague said what. With one Bot it was a
  * sentence the person had just read, or was a press away from reading, drawn again beside the
  * conversation it came from — and it was the longest run of words in the column the owner asked to
- * have fewer words in. What a routine is doing as it runs went with it; the face and the dot beside
- * the name say the Bot is busy. The several-Bots list keeps its preview (`bot-row.tsx`).
+ * have fewer words in. What a routine is doing as it runs went with it; the dot beside the name
+ * says the Bot is busy. The several-Bots list keeps its preview (`bot-row.tsx`).
  *
  * In the rail it is what it was: the icon in its tile, the dot on the tile's corner.
  */
@@ -857,11 +855,7 @@ export function BotSidebar() {
         {/* One Bot: who it is, then its conversation. */}
         {!isLegacy && only ? (
           <>
-            <BotIdentity
-              agent={only.agent}
-              isCompact={isRail}
-              lastMessageAt={only.channel?.lastMessageAt ?? undefined}
-            />
+            <BotIdentity agent={only.agent} isCompact={isRail} />
             <ul className="mt-1 flex flex-col gap-0.5">
               <li>
                 <BotRowMenu
@@ -899,7 +893,6 @@ export function BotSidebar() {
                   <BotRowMenu agentId={agent.id} channelId={channel?.id}>
                     <BotRow
                       agentId={agent.id}
-                      avatarSeed={agent.avatarSeed}
                       channelId={channel?.id}
                       isCompact={isRail}
                       lastMessageAt={rosterTime(at, now)}

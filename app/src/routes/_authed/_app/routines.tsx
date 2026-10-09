@@ -8,7 +8,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useSyncExternalStore } from "react";
 import { z } from "zod";
-import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import { DetailPanel } from "@/components/layout/detail-panel";
 import { LiveRegion } from "@/components/layout/live-region";
@@ -225,18 +224,10 @@ function RoutineRow({
     >
       <div className="flex items-start gap-3 p-4">
         {/*
-         * The routine's Bot, and the Bot's id when the roster has not answered yet — a face from
-         * the id is stable and merely not the right one, which beats a hole in the row. Only where
-         * there is more than one Bot to tell apart, and not on a phone, where it took a fifth of
-         * the width from the name.
+         * Which Bot it is, where there is more than one to tell apart, is the name on the line
+         * under the routine's (`data-routine-line`). A face stood before the row too until
+         * 2026-10-09; the Bot has none now.
          */}
-        {showBot ? (
-          <BotAvatar
-            className="hidden shrink-0 sm:block"
-            seed={bot?.avatarSeed ?? routine.agentId}
-            size={36}
-          />
-        ) : null}
         <button
           aria-expanded={showRuns}
           // The house ring. It had none at all, so tabbing across a list of routines went dark.
@@ -675,21 +666,15 @@ function RoutinesPage() {
               />
             ))}
             {/*
-             * A FACE AND ONE LINE. It drew 새 루틴 a second time under the sentence, because the
-             * sentence told the person to make one; it says what will be here now, and the verb is
-             * the one on the title's row, on screen with it.
+             * ONE LINE. It drew 새 루틴 a second time under the sentence, because the sentence told
+             * the person to make one; it says what will be here now, and the verb is the one on the
+             * title's row, on screen with it. A resting face stood over it until 2026-10-09.
              */}
             {list.empty ? (
               <div
                 className="flex flex-col items-center gap-3 py-10"
                 data-routines-empty
               >
-                {/* Eyes closed and nothing on its head: the face the set has for unhurried. */}
-                <BotAvatar
-                  className="opacity-80"
-                  seed="s:wedge.cyan"
-                  size={56}
-                />
                 <p className="text-center text-muted-foreground text-sm">
                   {list.empty}
                 </p>

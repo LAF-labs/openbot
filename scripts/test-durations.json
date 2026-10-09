@@ -65,7 +65,6 @@
   "app/tests/audit-silence.test.ts": 0,
   "app/tests/auth-client.test.ts": 0.01,
   "app/tests/auth-queries.test.ts": 0.01,
-  "app/tests/bot-avatar.test.ts": 4.76,
   "app/tests/bot-day.test.tsx": 3.87,
   "app/tests/bot-notifications.test.ts": 0,
   "app/tests/bot-profile.test.ts": 0,

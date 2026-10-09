@@ -18,8 +18,9 @@ were public and ownerless; it ships none.
 ## Standing role
 
 A person has **one Bot**, and its profile is its name (2026-09-24,
-`deployment-model.md` "봇은 하나다"). Its face is given when it is made and is not
-a setting since 2026-10-08 (`redesign-2026-10.md` §8). Nothing on the surface asks or shows what
+`deployment-model.md` "봇은 하나다"). It has no face since 2026-10-09; the
+`avatar_seed` column is still written when a Bot is made, because it is NOT NULL,
+and is read by nothing but the account export (`redesign-2026-10.md` §8). Nothing on the surface asks or shows what
 the Bot is for. The system message every run is composed with
 (`shared/prompt/index.ts`) names the Bot, and — only when the person has told it
 in conversation what to keep doing, which it writes down with `update_profile` —

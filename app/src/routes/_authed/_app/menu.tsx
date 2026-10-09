@@ -10,7 +10,6 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { footerLinksFor } from "@/components/app-sidebar/places";
 import { StopAllDialog } from "@/components/app-sidebar/stop-all-dialog";
-import { BotAvatar } from "@/components/avatar/bot-avatar";
 import { PageShell } from "@/components/layout/page-shell";
 import { focusRing } from "@/components/ui/focus";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -74,7 +73,6 @@ function MenuPage() {
             search={{ agent: bot.id }}
             to="/agents"
           >
-            <BotAvatar seed={bot.avatarSeed} size={44} />
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="truncate font-semibold text-base">
                 {bot.name}
