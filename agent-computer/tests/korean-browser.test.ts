@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { botTimeZone, botUserAgent } from "../src/browser-identity";
 import { askOutcome } from "../../shared/person-wait";
 import { createControl, restoredControl } from "../src/control";
+import { watchRoom } from "../src/page-watch";
 import {
   createWorkspace,
   safeDownloadName,
@@ -112,21 +113,165 @@ describe("a download arriving in the workspace", () => {
     expect((await workspace.read("downloads/정산내역.csv")).text).toBe("8월");
   });
 
-  test("one too big for the workspace is refused and not left behind", async () => {
+  test("one larger than a Bot may write is kept: a download is bounded by the disk, not by the write", async () => {
+    // It was the write's megabyte, and an ordinary workbook a site hands over is larger than that.
     const workspace = createWorkspace(root, {
       readBytes: 100,
       writeBytes: 10,
       listEntries: 10,
     });
+    const saved = await workspace.saveDownload("big.csv", async (to) => {
+      await writeFile(to, "x".repeat(50), "utf8");
+    });
+    expect(saved).toEqual({ path: "downloads/big.csv", bytes: 50 });
+    expect(await readFile(join(root, "downloads", "big.csv"), "utf8")).toBe(
+      "x".repeat(50),
+    );
+    // And the Bot's own write is still held to its own bound.
     await expect(
-      workspace.saveDownload("big.csv", async (to) => {
-        await writeFile(to, "x".repeat(50), "utf8");
-      }),
+      workspace.write("notes/big.txt", "x".repeat(50)),
     ).rejects.toBeInstanceOf(WorkspaceFileError);
+  });
+
+  test("the shipped bounds keep a file of three megabytes", async () => {
+    const workspace = createWorkspace(root);
+    const saved = await workspace.saveDownload("정산내역.xlsx", async (to) => {
+      await writeFile(to, Buffer.alloc(3_000_000, 1));
+    });
+    expect(saved).toEqual({
+      path: "downloads/정산내역.xlsx",
+      bytes: 3_000_000,
+    });
+  });
+
+  test("one over the ceiling for a single file is refused and not left behind", async () => {
+    const workspace = createWorkspace(root, {
+      readBytes: 100,
+      writeBytes: 10,
+      listEntries: 10,
+      landedBytes: 40,
+    });
+    const refused = await workspace
+      .saveDownload("big.csv", async (to) => {
+        await writeFile(to, "x".repeat(50), "utf8");
+      })
+      .catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(WorkspaceFileError);
+    expect((refused as WorkspaceFileError).code).toBe("laf:file_too_large");
     // Written and then removed: the limit is real, and the disk does not keep the proof.
     await expect(
       readFile(join(root, "downloads", "big.csv")),
     ).rejects.toThrow();
+    // At the ceiling exactly, it is kept.
+    const kept = await workspace.saveDownload("at.csv", async (to) => {
+      await writeFile(to, "x".repeat(40), "utf8");
+    });
+    expect(kept.bytes).toBe(40);
+  });
+
+  test("one that leaves the volume less room than it must is refused and not left behind, whatever its size", async () => {
+    // The disk is the deployment's one disk: the bound on a download is what it leaves the rest.
+    let free = 1_000;
+    const workspace = createWorkspace(root, {
+      readBytes: 100,
+      writeBytes: 10,
+      listEntries: 10,
+      spareBytes: 500,
+      freeBytes: async () => free,
+    });
+    expect(await workspace.hasRoom()).toBe(true);
+    const kept = await workspace.saveDownload("first.csv", async (to) => {
+      await writeFile(to, "x", "utf8");
+      free = 500;
+    });
+    expect(kept.path).toBe("downloads/first.csv");
+    expect(await workspace.hasRoom()).toBe(true);
+
+    const refused = await workspace
+      .saveDownload("second.csv", async (to) => {
+        await writeFile(to, "x", "utf8");
+        free = 499;
+      })
+      .catch((error: unknown) => error);
+    expect((refused as WorkspaceFileError).code).toBe("laf:file_too_large");
+    await expect(
+      readFile(join(root, "downloads", "second.csv")),
+    ).rejects.toThrow();
+    expect(await workspace.hasRoom()).toBe(false);
+    // The one already kept is untouched.
+    expect(await readFile(join(root, "downloads", "first.csv"), "utf8")).toBe(
+      "x",
+    );
+  });
+
+  test("a volume that cannot be asked deletes nobody's file: the ceiling still holds, and the watch does not stop a download", async () => {
+    const workspace = createWorkspace(root, {
+      readBytes: 100,
+      writeBytes: 10,
+      listEntries: 10,
+      landedBytes: 40,
+      freeBytes: async () => {
+        throw new Error("no such volume");
+      },
+    });
+    expect(await workspace.hasRoom()).toBe(true);
+    const kept = await workspace.saveDownload("a.csv", async (to) => {
+      await writeFile(to, "x".repeat(40), "utf8");
+    });
+    expect(kept.bytes).toBe(40);
+    await expect(
+      workspace.saveDownload("b.csv", async (to) => {
+        await writeFile(to, "x".repeat(41), "utf8");
+      }),
+    ).rejects.toBeInstanceOf(WorkspaceFileError);
+  });
+
+  test("while one lands the volume is watched: out of room, it is cancelled once, and said to be that", async () => {
+    let room = true;
+    let cancelled = 0;
+    const watch = watchRoom(
+      async () => room,
+      async () => {
+        cancelled += 1;
+      },
+      5,
+    );
+    await Bun.sleep(30);
+    expect([watch.ranOut(), cancelled]).toEqual([false, 0]);
+    room = false;
+    await Bun.sleep(40);
+    // Asked several times since, and cancelled once.
+    expect([watch.ranOut(), cancelled]).toEqual([true, 1]);
+    watch.stop();
+
+    // Stopped, it asks no more: a download that landed is not cancelled afterwards.
+    let asked = 0;
+    const done = watchRoom(
+      async () => {
+        asked += 1;
+        return false;
+      },
+      async () => undefined,
+      5,
+    );
+    done.stop();
+    await Bun.sleep(30);
+    expect([asked, done.ranOut()]).toEqual([0, false]);
+
+    // A volume that cannot be asked cancels nothing.
+    let unasked = 0;
+    const blind = watchRoom(
+      async () => {
+        throw new Error("no such volume");
+      },
+      async () => {
+        unasked += 1;
+      },
+      5,
+    );
+    await Bun.sleep(30);
+    blind.stop();
+    expect([blind.ranOut(), unasked]).toEqual([false, 0]);
   });
 
   test("a name that tried to escape has already stopped being a path", async () => {

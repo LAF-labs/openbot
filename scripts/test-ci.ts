@@ -2207,6 +2207,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  *    once it is on;
  *  - `app` 2153 → 2154: `connection-choices.test.tsx`, the card offers a site only once it is on.
  *
+ * RAISED 2026-10-09, `agent-computer` from 476 to 481, for a download bounded by the disk and not
+ * by what a Bot may write (owner, 2026-10-08: a download over 1 MB works). All in
+ * `korean-browser.test.ts`, where the one test that held the old megabyte ("one too big for the
+ * workspace is refused") became five: a file larger than a Bot's own write is kept, and the write
+ * is still refused; the shipped bounds keep three megabytes; one over the ceiling for a single
+ * file is refused and removed, and one at it is kept; one that leaves the volume less room than
+ * it must is refused and removed whatever its size, the file before it untouched; and a volume
+ * that cannot be asked deletes nobody's file. And one more for the watch while a download lands:
+ * out of room it is cancelled once and said to be that, stopped it asks no more, and a volume that
+ * cannot be asked cancels nothing. Eight mutations each fail one of them.
+ * By hand: one became five and one was added, which is five more; 476 and 5 are 481.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2239,7 +2251,7 @@ const GROUPS: readonly {
   { name: "app", floor: 2154, roots: ["app"] },
   {
     name: "agent-computer",
-    floor: 476,
+    floor: 481,
     roots: ["agent-computer"],
     processes: 1,
   },

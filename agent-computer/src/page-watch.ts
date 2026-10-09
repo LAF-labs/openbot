@@ -11,6 +11,35 @@ import { followArrivals } from "./page-arrival";
 import { type BotSession, note } from "./sessions";
 import { type Workspace, WorkspaceFileError } from "./workspace";
 
+/** How often the volume is asked for its room while a download lands. */
+const DOWNLOAD_WATCH_MS = 1_000;
+
+/**
+ * A DOWNLOAD IS WATCHED WHILE IT LANDS. How large it is cannot be asked until it has landed, and it
+ * lands on the deployment's one disk: a link to a file larger than what is free would fill it under
+ * the database before anything measured it. So the volume is asked on a clock, and a download that
+ * has taken the room it must leave is cancelled — once; `saveAs` then fails, and `ranOut` is how
+ * the caller tells that failure from any other and says too large, not failed.
+ */
+export function watchRoom(
+  hasRoom: () => Promise<boolean>,
+  cancel: () => Promise<unknown>,
+  everyMs: number = DOWNLOAD_WATCH_MS,
+): { ranOut: () => boolean; stop: () => void } {
+  let ranOut = false;
+  const clock = setInterval(() => {
+    void hasRoom().then(
+      (room) => {
+        if (room || ranOut) return;
+        ranOut = true;
+        void cancel().catch(() => undefined);
+      },
+      () => undefined,
+    );
+  }, everyMs);
+  return { ranOut: () => ranOut, stop: () => clearInterval(clock) };
+}
+
 export function watchPage(
   session: BotSession,
   botId: string,
@@ -53,6 +82,10 @@ export function watchPage(
 
   page.on("download", (download) => {
     void (async () => {
+      const room = watchRoom(
+        () => workspace.hasRoom(),
+        () => download.cancel(),
+      );
       try {
         const saved = await workspace.saveDownload(
           download.suggestedFilename(),
@@ -68,12 +101,15 @@ export function watchPage(
         note(session, {
           // By the workspace's own code: a download that never arrived is not one that was too big.
           code:
-            error instanceof WorkspaceFileError &&
-            error.code === "laf:file_too_large"
+            room.ranOut() ||
+            (error instanceof WorkspaceFileError &&
+              error.code === "laf:file_too_large")
               ? "laf:download_too_large"
               : "laf:download_failed",
         });
         log.error("download_not_saved", { bot: botId, reason: error });
+      } finally {
+        room.stop();
       }
     })();
   });
