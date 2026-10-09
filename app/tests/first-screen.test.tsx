@@ -32,8 +32,9 @@ import {
  * The owner: "봇 1개로 하자. 프로필 설정은 이름과 봇 프로필 이미지만 만들면 끝인 걸로(언제든지 바꿀
  * 수 있음). 무슨 일을 시킬건지도 적지 않는다. 그냥 모든걸 채팅으로 처리한다."
  *
- * So: a person with no Bot sees one screen — a name already filled in, a face already chosen, and
- * the button — and lands in the conversation. Home is that conversation. The sidebar is that Bot and
+ * So: a person with no Bot sees one screen — a name already filled in and the button — and lands in
+ * the conversation. (The face was chosen on that screen too, until 2026-10-08: the server gives it
+ * now, and nothing chooses it — docs/laf/redesign-2026-10.md §8.) Home is that conversation. The sidebar is that Bot and
  * the places to change how it works; an account from before, with several, gets a short list of them
  * and nothing else that behaves as if there were several.
  *
@@ -84,7 +85,7 @@ const conversation = (id: string, agentId: string, at: string) => ({
 });
 
 describe("the first run", () => {
-  test("is one screen: a name filled in, a face, and the button — nothing about what the Bot is for", async () => {
+  test("is one screen: a name filled in and the button — no face to pick, nothing about what the Bot is for", async () => {
     const view = await mountApp({
       path: "/",
       api: ({ pathname }) =>
@@ -104,10 +105,13 @@ describe("the first run", () => {
     expect(inputs).toHaveLength(1);
     const name = inputs[0] as HTMLInputElement;
     expect(name.value.trim().length).toBeGreaterThan(0);
-    // The face: the chooser's shuffle and its two rows of shapes and colours.
-    expect(view.buttonNamed("Another face")).toBeDefined();
-    expect(view.host.textContent).toContain("Shape");
-    expect(view.host.textContent).toContain("Colour");
+    // No face to pick: the chooser's shuffle and its two rows of shapes and colours are gone.
+    expect(view.buttonNamed("Another face")).toBeUndefined();
+    expect(view.host.textContent).not.toContain("Shape");
+    expect(view.host.textContent).not.toContain("Colour");
+    expect(view.host.querySelector("svg.bot-avatar")).toBeNull();
+    // The name field and the button are the only two controls on the screen.
+    expect(view.host.querySelectorAll("button")).toHaveLength(1);
     expect(view.buttonNamed("Start")).toBeDefined();
     // The agreement is the sentence under the button, and it is the only other thing here.
     expect(view.host.textContent).toContain("By continuing you agree to the");
@@ -123,7 +127,7 @@ describe("the first run", () => {
     expect(ko["Meet your Bot"]).toBe("내 봇 만들기");
   });
 
-  test("Start agrees, makes the one Bot with the name and face on screen, and opens its conversation", async () => {
+  test("Start agrees, makes the one Bot with the name on screen and no face, and opens its conversation", async () => {
     let onboarded = false;
     let made: Record<string, unknown> | null = null;
     const view = await mountApp({
@@ -135,6 +139,7 @@ describe("the first run", () => {
         if (pathname === "/api/me/consent" && method === "POST") {
           return new Response(null, { status: 204 });
         }
+        // The seed the server gives a Bot it makes: its own id (`agents/profile-store.ts`).
         if (pathname === "/api/agents" && method === "POST") {
           made = body as Record<string, unknown>;
           return json(
@@ -142,7 +147,7 @@ describe("the first run", () => {
               agent: agentFixture({
                 id: "bot-new",
                 name: String(made.name),
-                avatarSeed: String(made.avatarSeed),
+                avatarSeed: "bot-new",
               }),
             },
             201,
@@ -154,7 +159,7 @@ describe("the first run", () => {
               agentFixture({
                 id: "bot-new",
                 name: String(made.name),
-                avatarSeed: String(made.avatarSeed),
+                avatarSeed: "bot-new",
               }),
             ],
           });
@@ -172,7 +177,6 @@ describe("the first run", () => {
     );
     const name = view.host.querySelector("input") as HTMLInputElement;
     await view.type(name, "  미소  ");
-    await view.click(view.buttonNamed("Another face") as HTMLButtonElement);
     const start = view.buttonNamed("Start") as HTMLButtonElement;
     await view.click(start);
     await view.waitFor(
@@ -188,24 +192,24 @@ describe("the first run", () => {
       "/api/agents",
       "/api/me/onboarded",
     ]);
-    expect(made).toMatchObject({
+    // Exactly these two: no face is sent, because the server would not take one.
+    expect(made as Record<string, unknown> | null).toEqual({
       name: "미소",
       roleDescription: "",
     });
-    expect(
-      String((made as Record<string, unknown> | null)?.avatarSeed),
-    ).toMatch(/^s:/);
     expect(view.router.state.location.search).toEqual({ agent: "bot-new" });
   });
 
   test("a person who already has a Bot but never finished is not asked the server for a second", async () => {
     const posts: string[] = [];
+    let saved: unknown = null;
     const view = await mountApp({
       path: "/welcome",
-      api: ({ method, pathname }) => {
+      api: ({ method, pathname, body }) => {
         if (method === "POST" || method === "PATCH") {
           posts.push(`${method} ${pathname}`);
         }
+        if (method === "PATCH") saved = body;
         if (pathname === "/api/me") return json(newcomer);
         if (pathname === "/api/agents" && method === "GET") {
           return json({
@@ -236,6 +240,8 @@ describe("the first run", () => {
       "PATCH /api/agents/bot-old",
       "POST /api/me/onboarded",
     ]);
+    // The name and the description it already had: the face it was given is not sent back.
+    expect(saved).toEqual({ name: "초롱", roleDescription: "" });
   });
 });
 

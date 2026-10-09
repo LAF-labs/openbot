@@ -88,7 +88,6 @@ const ALLOWED: Record<string, Record<string, number>> = {
   sand: {
     // Was 5. The height went first, because `--sand-row-height` finally has a name: `h-row`.
     "components/app-sidebar/bot-row.tsx": 4,
-    "components/avatar/bot-avatar-picker.tsx": 1,
     "components/channels/chat-transcript.tsx": 3,
     "components/channels/composer/composer.tsx": 6,
     "components/layout/shell-titlebar.tsx": 2,

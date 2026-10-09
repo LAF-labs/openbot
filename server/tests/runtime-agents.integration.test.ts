@@ -506,7 +506,6 @@ describe("where a Bot is dialled", () => {
     const renamed = await profileStore.update(owner, pointed.id, {
       name: "새 이름",
       roleDescription: "",
-      avatarSeed: "r2c6",
       effort: "thorough",
     });
     expect(renamed.name).toBe("새 이름");
