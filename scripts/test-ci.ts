@@ -2342,13 +2342,14 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * By hand: 5, 1 and 1 are 7, and 1 more is 8, and 3894 and 8 are 3902; 3 and 1 and 4 are 8, and
  * 488 and 8 are 496; 2134 and 1 and 1 are 2136.
  *
- * RAISED 2026-10-10 AGAIN, `server` from 3902 to 3909, `agent-computer` from 496 to 504, `app`
+ * RAISED 2026-10-10 AGAIN, `server` from 3902 to 3910, `agent-computer` from 496 to 504, `app`
  * from 2136 to 2138 and `root` from 921 to 927, for a card that asks a person for several values
- * at once (record §6, piece 2-1b; `shared/secret-ask.ts`). Seven to `server`. Three in
+ * at once (record §6, piece 2-1b; `shared/secret-ask.ts`). Eight to `server`. Four in
  * `computer-gateway.test.ts`: a card of several boxes is one act — one decision, one request,
  * one row a person is told by — with each value held to its own box and every box remembered;
  * a rule about any box is a rule about the card, refused beside the box it was about or asked
- * about once with every box named, and a yes to one card is not a yes to a wider one; a card
+ * about once with every box named, and a yes to one card is not a yes to a wider one; every
+ * box has to be allowed, so an allow for one does not carry a box no rule allows; a card
  * that names something that is not a field, one box twice, too many or none asks nobody. One in
  * `chat-tools.test.ts`: the tool's two shapes are one card by the time the gate is asked, and a
  * list that is no card reaches nothing. One in `computer-routes.test.ts`: a value for every box
@@ -2365,8 +2366,8 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * sent together once every box holds something; and an answer that did not all go in is not
  * drawn as done. Six to `root`, in the new `tests/secret-ask.test.ts`: how a card's boxes are
  * read by everybody who reads them, what is no card, which ask an ask is, and the shape the
- * model is handed. Twenty-four mutations each fail one of these.
- * By hand: 3, 1, 1 and 2 are 7, and 3902 and 7 are 3909; 4 and 4 are 8, and 496 and 8 are 504;
+ * model is handed. Twenty-five mutations each fail one of these.
+ * By hand: 4, 1, 1 and 2 are 8, and 3902 and 8 are 3910; 4 and 4 are 8, and 496 and 8 are 504;
  * 2136 and 2 are 2138; 921 and 6 are 927.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
@@ -2397,7 +2398,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 3909, roots: ["server"] },
+  { name: "server", floor: 3910, roots: ["server"] },
   { name: "app", floor: 2138, roots: ["app"] },
   {
     name: "agent-computer",
