@@ -57,7 +57,6 @@ const serverThat =
       return json({
         user: { ...CURRENT_USER, role: "admin", onboarded: true },
         deployment: {
-          effort: true,
           autoReview: true,
           ...(botEndpoints === undefined ? {} : { botEndpoints }),
         },

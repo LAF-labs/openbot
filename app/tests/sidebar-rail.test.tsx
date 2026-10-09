@@ -119,7 +119,6 @@ const agent = (id: string, name: string) => ({
   name,
   roleDescription: "",
   avatarSeed: id,
-  effort: "balanced",
   autoReview: "",
   endpoint: null,
   hasAuth: false,

@@ -120,7 +120,6 @@ describe("what a remote Bot is sent about a filed result", () => {
       title: "Finance Operations",
       roleDescription: "Review receipts.",
     },
-    effort: "balanced" as const,
   };
   const model = {
     provider: "openai" as const,

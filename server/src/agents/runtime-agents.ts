@@ -220,8 +220,7 @@ function selectActiveAgents(database: Database, actor: AgentActor) {
         type: agents.type,
         configuration: agents.configuration,
         roleDescription: agentProfiles.roleDescription,
-        // The one model setting a Bot carries into its own run. See RegisteredRemoteAgent.effort.
-        effort: agentProfiles.effort,
+        // Not `effort`: how hard a Bot thinks is the deployment's now (`FIXED_EFFORT`, copilot.ts).
       })
       .from(agents)
       .innerJoin(agentProfiles, eq(agentProfiles.agentId, agents.id))

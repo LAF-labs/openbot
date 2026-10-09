@@ -81,7 +81,7 @@ function answering(
           role,
           onboarded: true,
         },
-        deployment: { effort: true, autoReview: true },
+        deployment: { autoReview: true },
       });
     }
     if (init?.method === "POST" && url.pathname.startsWith("/api/approvals/")) {

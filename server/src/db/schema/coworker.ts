@@ -34,18 +34,17 @@ const updatedAt = () =>
  */
 
 /**
- * How hard a Bot thinks before it answers.
+ * How hard a Bot thinks before it answers — a choice nobody makes any more (see the column below).
  *
- * The only thing about the model a person can change, and deliberately so. Which model answers is
- * the deployment's decision — one model, served by us, the same for everybody — because a list of
- * model names is a question a person cannot answer well: it asks them to know which of a dozen
- * vendors' products is better at their particular job, and the honest answer changes every month.
- * How long they are willing to wait, though, is a question only they can answer, and it is the one
- * that actually differs from task to task.
+ * It was the only thing about the model a person could change, and deliberately so. Which model
+ * answers is the deployment's decision — one model, served by us, the same for everybody — because
+ * a list of model names is a question a person cannot answer well: it asks them to know which of a
+ * dozen vendors' products is better at their particular job, and the honest answer changes every
+ * month. How long they were willing to wait seemed the question only they could answer.
  *
- * Three, named for the wait rather than for the mechanism. `quick`, `balanced` and `thorough` become
- * a reasoning effort at the model call; a person choosing between "low" and "high" is being asked
- * to reason about somebody's API.
+ * Three, named for the wait rather than for the mechanism. `quick`, `balanced` and `thorough`
+ * became a reasoning effort at the model call; a person choosing between "low" and "high" is being
+ * asked to reason about somebody's API.
  */
 export const agentEffort = pgEnum("agent_effort", [
   "quick",
@@ -76,7 +75,14 @@ export const agentProfiles = pgTable(
      */
     avatarSeed: text("avatar_seed").notNull(),
     /**
-     * Defaulted rather than required, so every Bot that already exists has one and nothing has to
+     * KEPT, AND READ BY NOTHING THAT DECIDES A RUN, since 2026-10-08 (docs/laf/redesign-2026-10.md
+     * §8): how hard the main conversation thinks is fixed and shown nowhere, and neither a person
+     * nor the Bot can change it. What a run is sent is `FIXED_EFFORT` (`copilot.ts`), or nothing,
+     * whatever a row says here. The column stays because it is NOT NULL and its rows exist; a new
+     * Bot takes the default, nothing writes it after that, and only the account export still
+     * carries what it holds (`account/export.ts`), since that is everything stored about a person.
+     *
+     * Defaulted rather than required, so every Bot that already existed had one and nothing had to
      * be backfilled. `balanced` because a Bot nobody has thought about should be the one that
      * neither keeps somebody waiting nor answers a hard question badly.
      */

@@ -133,7 +133,6 @@ export function agentFixture(
   return {
     roleDescription: "",
     avatarSeed: `s:${overrides.id}`,
-    effort: "balanced",
     autoReview: "",
     endpoint: "http://bot.local",
     hasAuth: false,
@@ -155,7 +154,7 @@ function shellAnswer(
   if (pathname === "/api/me") {
     return json({
       user: { ...CURRENT_USER, role, onboarded: true },
-      deployment: { effort: true, autoReview: true },
+      deployment: { autoReview: true },
     });
   }
   if (pathname === "/api/agents") return json({ agents: [] });

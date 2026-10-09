@@ -54,22 +54,21 @@ export type AuthenticatedUser = {
 /**
  * What this deployment can do, as the app needs to know before it draws anything.
  *
- * Two booleans, and each one decides whether a control exists at all. `effort` false means the model
- * this deployment serves takes no effort setting. `autoReview` false means it cannot judge a "do not
- * ask me about" instruction — the server asked it a trivial question and did not get a readable
- * answer in time. Either one drawn anyway is a control that saves, shows its state, and reaches
- * nothing, which is worse than not having it: the person most likely to use it is the one who most
- * needs it to work.
+ * `autoReview` decides whether a control exists at all: false means the model cannot judge a "do
+ * not ask me about" instruction — the server asked it a trivial question and did not get a readable
+ * answer in time. Drawn anyway, it is a control that saves, shows its state, and reaches nothing,
+ * which is worse than not having it: the person most likely to use it is the one who most needs it
+ * to work. (`effort` was the other such fact; nobody sets how hard a Bot thinks since 2026-10-08,
+ * and the server says false to an older build that still reads it.)
  *
  * The surface has no other way to know. It is never told which model this deployment serves, and
  * knowing which model names reason is not a thing a form should have to know.
  */
 export type Deployment = {
-  effort: boolean;
   autoReview: boolean;
   /**
    * Whether the composer takes files at all, and whether photos are among them (the model sees).
-   * Absent reads as NO, unlike the two above: a server that says nothing about attachments is one
+   * Absent reads as NO, unlike the one above: a server that says nothing about attachments is one
    * from before them, and an attach button there would upload into a 404.
    */
   attachments?: boolean;
@@ -268,7 +267,6 @@ async function currentUser(): Promise<CurrentUserResult> {
       body.consent !== undefined &&
       body.consent.version !== body.consent.current,
     deployment: {
-      effort: body.deployment?.effort !== false,
       autoReview: body.deployment?.autoReview !== false,
       attachments: body.deployment?.attachments === true,
       images: body.deployment?.images === true,

@@ -358,7 +358,7 @@ export function turnServer(options: {
     if (pathname === "/api/me") {
       return json({
         user: { ...CURRENT_USER, role: "user", onboarded: true },
-        deployment: { effort: true, autoReview: true, serverTurns: true },
+        deployment: { autoReview: true, serverTurns: true },
       });
     }
     if (pathname === `/api/agents/${BOT_ID}`) {

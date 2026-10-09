@@ -927,10 +927,7 @@ const turnEngine = createTurnEngine({
   lane: botLane,
   work: workInFlight,
   resolveAgents: resolveAgentsFor,
-  tools: (context, declared) =>
-    chatTools(context, declared, {
-      effort: tenantPackage.model.supportsEffort,
-    }),
+  tools: (context, declared) => chatTools(context, declared),
   // An account the list no longer admits acts on nothing, a turn nobody watches included.
   admits: (userId) => admission.admitsPerson(userId),
   // On unless `FIRST_MOVE` says off, and only where Jev may be asked: the weather for the
@@ -1013,7 +1010,6 @@ const app = createApp({
     turnEngine.working(userId),
   ),
   standingApprovals,
-  deploymentEffort: tenantPackage.model.supportsEffort,
   agentMemoryStore,
   // The OAuth connect flow: where vendors send people back, and who still has access. See the module.
   pluginConnect: connectConfigFor({

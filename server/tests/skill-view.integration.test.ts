@@ -148,7 +148,6 @@ describe("a Bot reading a skill it holds", () => {
       type: "remote_ag_ui" as const,
       endpoint: "http://bots.internal/ag-ui",
       profile: { id, name: id, roleDescription: "For a test." },
-      effort: "balanced" as const,
     });
     const load = withGrantedSkills(
       async () => [remote(heldBot), remote(bareBot)],

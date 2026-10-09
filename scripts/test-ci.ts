@@ -2209,12 +2209,27 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * files before and after the change: app 66 to 64, server 114 to 115.
  * By hand: 2153 less 2 is 2151; 3892 and 1 are 3893.
  *
+ * LOWERED AGAIN 2026-10-09, `server` from 3893 to 3892: four tests went and three came, for §8's
+ * other half — how hard the main conversation thinks is fixed, shown nowhere, and set by neither a
+ * person nor the Bot. Gone, the four of `agent-routes.test.ts`'s "how hard a Bot thinks", which
+ * held the parse of a field the API no longer has: one of three words, the three it took, absent
+ * leaving the column alone, and a blank one refused. Added: one in its place, the effort taken at
+ * no door and not told back to the app; one in `copilot.test.ts`, an effort a caller forwards
+ * replaced by the fixed one, or dropped where none is sent; and one in
+ * `conversation-epochs.test.ts`, the epoch keyed on the fixed effort or on none. Rewritten and
+ * counted as before: the run carrying the Bot's own `thorough` now carries `balanced`, on the
+ * forwarded props and on the wire (`effort-on-the-wire.integration.test.ts`), and the package's
+ * default holds false against agent-bot's table. `app` keeps its count: the effort card had no test
+ * of its own, and the profile's test now holds that it is gone. Counted by running the changed
+ * files before and after the change: server 330 to 329, app 240 to 240.
+ * By hand: 3893 less 4 is 3889, and 3 more are 3892.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3893, roots: ["server"] },
+  { name: "server", floor: 3892, roots: ["server"] },
   { name: "app", floor: 2151, roots: ["app"] },
   { name: "agent-computer", floor: 475, roots: ["agent-computer"] },
   { name: "root", floor: 918, roots: ["tests", "agent-bot"] },

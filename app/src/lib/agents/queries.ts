@@ -10,27 +10,11 @@ import { refusedRequest } from "@/lib/refusals";
  * `canManage` and `systemOwned` are server-decided authorization facts; components render from the
  * returned flags rather than recomputing ownership rules.
  */
-export type AgentEffort = "quick" | "balanced" | "thorough";
-
-export const AGENT_EFFORTS: readonly AgentEffort[] = [
-  "quick",
-  "balanced",
-  "thorough",
-];
-
 export type AgentProfile = {
   id: string;
   name: string;
   roleDescription: string;
   avatarSeed: string;
-  /**
-   * How hard it thinks before it answers.
-   *
-   * The only thing about the model anybody chooses; which model answers is the deployment's
-   * decision. Present on every Bot even where the deployment's model takes no such setting — the
-   * value is stored either way, and `deployment.effort` decides whether the control is drawn.
-   */
-  effort: AgentEffort;
   /**
    * What this Bot may be waved through for, in the owner's own words.
    *

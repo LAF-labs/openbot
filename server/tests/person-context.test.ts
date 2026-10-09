@@ -57,7 +57,6 @@ function remoteBot(endpoint: string): RegisteredAgent {
     type: "remote_ag_ui",
     endpoint,
     profile: { id: "bot_miso", name: "미소", roleDescription: "" },
-    effort: "balanced",
   };
 }
 

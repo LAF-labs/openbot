@@ -45,6 +45,9 @@ describe("the profile's identity", () => {
     expect(source()).not.toContain("WorkStyleCard");
     expect(source()).not.toContain("How it works");
     expect(source()).not.toContain("preset");
+    // Nor how hard it thinks: fixed and shown nowhere since 2026-10-08 (§8 of the same record).
+    expect(source()).not.toContain("EffortCard");
+    expect(source()).not.toContain('"How hard it thinks"');
     // Nor copied, hidden or pinned from here: those belonged to a roster of several.
     expect(source()).not.toContain("duplicate");
     expect(source()).not.toContain("setAgentHidden");
@@ -68,7 +71,7 @@ describe("the profile's identity", () => {
   test("the name saves when it is left, and an empty one saves nothing", () => {
     const field = source().slice(
       source().indexOf("function NameField"),
-      source().indexOf("function EffortCard"),
+      source().indexOf("function MemoriesCard"),
     );
     expect(field).toContain("onBlur={() => void commit()}");
     expect(field).toContain("if (!next || next === name)");
@@ -107,8 +110,15 @@ describe("do not ask me about", () => {
     const card = source.slice(source.indexOf("function AutoReviewCard"));
     expect(card).toContain("autoReview: draft.trim()");
     expect(card).toContain("updateAgent.mutateAsync");
-    expect(card).not.toContain("setAgentEffortMutationOptions");
     expect(card).not.toContain("/profile");
+    // Nor can anything else on the surface reach the merging door: since the effort buttons went
+    // (2026-10-08) the app holds no request to it at all, so no control can be rewired onto it.
+    const mutations = readFileSync(
+      join(import.meta.dir, "../src/lib/agents/mutations.ts"),
+      "utf8",
+    );
+    expect(mutations).not.toMatch(/\/api\/agents\/\$\{[^}]+\}\/profile/);
+    expect(mutations).not.toContain("setAgentEffortMutationOptions");
   });
 });
 
