@@ -336,6 +336,35 @@ export function createControl(
     },
 
     /**
+     * THE CALLER THAT ASKED FOR A VALUE HAS STOPPED, and takes its ask back.
+     *
+     * Only the value, and only the one that caller asked for: a hand another turn is still
+     * waiting on is not this caller's to end, and `release` — which is a person's answer — ends
+     * both and marks neither, so the turn waiting on the hand was told the person had done it
+     * (Codex's second read of the change that began taking asks back). The ref and the snapshot
+     * the ask was made with say which one it is; an ask that has since been answered, or replaced
+     * by a later one, is left exactly as it is.
+     *
+     * Says whether there was one to take back.
+     */
+    withdrawSecret(asked: { ref?: unknown; snapshotId?: unknown }): boolean {
+      lapse();
+      if (!state.secretWanted || state.secretRef !== asked.ref) return false;
+      if (state.secretSnapshotId !== asked.snapshotId) return false;
+      secretAskedAt = undefined;
+      const {
+        secretWanted: _was,
+        secretRef: _ref,
+        secretSnapshotId: _id,
+        ...rest
+      } = state;
+      // Nobody's answer, like every ask that ends without one: nothing reads this as a value.
+      state = { ...rest, unanswered: true };
+      changed();
+      return true;
+    },
+
+    /**
      * The tab the Bot was on has gone from under it, and every ask about that tab goes with it.
      *
      * A value was wanted for a box on a page that no longer exists, and a hand for a page nobody

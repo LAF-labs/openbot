@@ -2300,7 +2300,8 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * told it changed nothing, where it was answered 200 over a row nobody had touched.
  * By hand: 2133 and 1 are 2134; 920 and 1 are 921.
  *
- * RAISED 2026-10-10, `server` from 3894 to 3902 and `agent-computer` from 488 to 492, for a value
+ * RAISED 2026-10-10, `server` from 3894 to 3902, `agent-computer` from 488 to 496 and `app` from
+ * 2134 to 2135, for a value
  * asked of a person going through the gate (record §6, piece 2-1a). Seven to `server`. Five in
  * `computer-gateway.test.ts`: asking for a value is an intent of its own — the shipped policy
  * refuses a Bot typing into a password box and lets it ask a person to, with the row every act
@@ -2322,8 +2323,17 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * failed lets go of nothing. `agent-computer`, in `secret-snapshot.test.ts`: a box that turns
  * into another the moment it is focused gets no value — it is asked what it is after the click
  * as well as before it. Six more mutations each fail one of the two.
- * By hand: 5, 1 and 1 are 7, and 1 more is 8, and 3894 and 8 are 3902; 3 and 1 are 4, and 488
- * and 4 are 492.
+ * And for its second read, of taking back a request whose caller stopped: four to
+ * `agent-computer` — three in `control.test.ts` (only the value is taken back and a hand somebody
+ * else asked for stays asked; alone it ends as nobody's answer; another field, another snapshot,
+ * an answered ask and none at all are left as they are) and one in `secret-snapshot.test.ts` (a
+ * request the server takes back is over at the door, and a value typed after it goes nowhere) —
+ * and one to `app`, in `help-card-reload.test.tsx`: a request a rule asks about first is drawn
+ * as the question, with its buttons, until it is answered, and then as the masked box. The
+ * gateway's test of a Stop holds more than it did: that ask and no other, on a deadline of its
+ * own, not waited for. Eight more mutations each fail one of these.
+ * By hand: 5, 1 and 1 are 7, and 1 more is 8, and 3894 and 8 are 3902; 3 and 1 and 4 are 8, and
+ * 488 and 8 are 496; 2134 and 1 are 2135.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -2354,10 +2364,10 @@ const GROUPS: readonly {
   processes?: number;
 }[] = [
   { name: "server", floor: 3902, roots: ["server"] },
-  { name: "app", floor: 2134, roots: ["app"] },
+  { name: "app", floor: 2135, roots: ["app"] },
   {
     name: "agent-computer",
-    floor: 492,
+    floor: 496,
     roots: ["agent-computer"],
     processes: 1,
   },

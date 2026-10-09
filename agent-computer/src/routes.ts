@@ -28,6 +28,7 @@ import {
   requestHelp,
   requestSecret,
   supplySecret,
+  withdrawSecret,
 } from "./control-routes";
 import {
   downloadFile,
@@ -53,6 +54,7 @@ const BOT_ROUTES = new Map<string, BotRoute>([
   ["POST /control/secret", requestSecret],
   ["POST /human/secret", supplySecret],
   ["POST /control/release", releaseControl],
+  ["POST /control/secret/withdraw", withdrawSecret],
   ["POST /computers/stop", stopComputer],
   ["POST /computers/reset", resetComputer],
   ["POST /navigate", navigate],
