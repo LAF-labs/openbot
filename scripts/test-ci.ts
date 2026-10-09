@@ -2224,13 +2224,31 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * files before and after the change: server 330 to 329, app 240 to 240.
  * By hand: 3893 less 4 is 3889, and 3 more are 3892.
  *
+ * LOWERED 2026-10-09, `app` from 2151 to 2132, and RAISED `server` from 3892 to 3893: the owner took
+ * the face away from the Bot altogether (the profile is a name), and the colour the app took from
+ * it went too. Gone from `app`: all eighteen of `bot-avatar.test.ts`, with the file — the seed
+ * grammar, the bodies, the eyes and the frame-loop engine they measured were deleted whole — and
+ * nine of `accent-contrast.test.ts`: a block per palette, the three promises per theme measured over
+ * ten palettes, the neutral control's own test, and the palette read from a seed. In their place
+ * are seven: the same three promises per theme measured on the one accent left, and one that the
+ * sheet has no palette per Bot and `index.html` reads no Bot's colour back before the first paint.
+ * And one more in `first-screen.test.tsx`: the conversation's header is the name and its dot, no
+ * face is drawn anywhere on the screen, and `<html>` is given no `data-accent`. One to `server`, in
+ * `agent-routes.test.ts`: the Bot the API answers with, alone or in the list, carries no face even
+ * from a row that still has a seed. Rewritten and counted as before: the rail's rows drawn as the
+ * name's first letter, the identity row whose only picture is its pencil, the presence kinds said
+ * by word and tone with no expression, the empty routines and skills with no face over them, and
+ * the profile's identity with no face in its source. Counted by running the changed files before
+ * and after the change: app 183 to 164 (the deleted file run before), server 118 to 119.
+ * By hand: 18 and 9 are 27, less 7 and 1 is 19, and 2151 less 19 is 2132; 3892 and 1 are 3893.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3892, roots: ["server"] },
-  { name: "app", floor: 2151, roots: ["app"] },
+  { name: "server", floor: 3893, roots: ["server"] },
+  { name: "app", floor: 2132, roots: ["app"] },
   { name: "agent-computer", floor: 475, roots: ["agent-computer"] },
   { name: "root", floor: 918, roots: ["tests", "agent-bot"] },
 ] as const;

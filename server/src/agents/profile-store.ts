@@ -141,7 +141,6 @@ const joinedProjection = {
   id: agents.id,
   name: agents.name,
   roleDescription: agentProfiles.roleDescription,
-  avatarSeed: agentProfiles.avatarSeed,
   autoReview: agentProfiles.autoReview,
   ownerUserId: agentProfiles.ownerUserId,
   packageId: deploymentPackages.id,
@@ -186,7 +185,6 @@ function mapProfile(
     id: row.id,
     name: row.name,
     roleDescription: row.roleDescription,
-    avatarSeed: row.avatarSeed,
     autoReview: row.autoReview,
     ownerUserId: row.ownerUserId,
     systemOwned: row.packageId !== null,
@@ -413,11 +411,9 @@ export function createAgentProfileStore(
           ownerUserId: actor.id,
           roleDescription: input.roleDescription,
           /*
-           * The face is dealt from the Bot's own id: the surface hashes any seed it does not
-           * recognise into a shape and a colour (`app/src/lib/avatar/bot-avatar.ts`), the same one
-           * every time. Nobody picks a face since 2026-10-08 (docs/laf/redesign-2026-10.md §8), so
-           * this is the only seed a Bot made from now on ever has, and nothing writes the column
-           * again. The column stays because every face is drawn from it, and it is NOT NULL.
+           * The id, and only because the column is NOT NULL. The Bot has no face since 2026-10-09
+           * and nothing reads this (`agentProfiles.avatarSeed`); writing the id keeps a row valid
+           * without inventing a value that would look like a choice.
            */
           avatarSeed: id,
           ...(input.autoReview === undefined

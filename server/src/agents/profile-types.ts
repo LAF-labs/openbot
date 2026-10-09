@@ -19,7 +19,6 @@ export type AgentProfile = {
   id: string;
   name: string;
   roleDescription: string;
-  avatarSeed: string;
   /**
    * What this Bot may be waved through for, in the owner's own words. Empty means ask about
    * everything the policy stops. See `agentProfiles.autoReview`.
@@ -56,8 +55,9 @@ export type CreateAgentInput = Pick<
    */
   endpoint?: string;
   /*
-   * No `avatarSeed`. The face is given when the Bot is made and nothing changes it afterwards
-   * (2026-10-08, docs/laf/redesign-2026-10.md §8); `AgentProfile.avatarSeed` is read, never written.
+   * No `avatarSeed`. The Bot has no face since 2026-10-09 (the face stopped being chosen the day
+   * before, docs/laf/redesign-2026-10.md §8); the column is written once at creation and read by
+   * nothing but the account export.
    * No `effort` either, since the same decision: a new Bot takes the column's default and keeps it.
    */
   /**

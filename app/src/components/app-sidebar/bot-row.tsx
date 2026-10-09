@@ -1,18 +1,24 @@
 import { Link } from "@tanstack/react-router";
-import { memo, useEffect, useRef, useSyncExternalStore } from "react";
-import { BotAvatar } from "@/components/avatar/bot-avatar";
+import {
+  memo,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useBotMood } from "@/lib/agents/bot-mood";
 import { openQuestions, watchQuestions } from "@/lib/approvals";
 import { focusRing } from "@/components/ui/focus";
 import { t } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 
 /**
- * THE MEASURED ROW: 54px tall, 10px corners, 8px gap, a 36px face.
+ * THE MEASURED ROW: 54px tall, 10px corners, 8px gap. (A 36px face led it until 2026-10-09; the Bot
+ * has no face now, and the name leads.)
  *
  * Not a padding that happens to add up — a fixed height, because the row holds two lines of text
  * whose lengths vary and a roster whose rows breathe at different heights stops reading as a list.
@@ -43,12 +49,12 @@ const ROSTER_ROW_SHARED = `h-row w-full flex-row items-center rounded-lg border 
 
 export const ROSTER_ROW_CLASS = `flex gap-2 px-2 ${ROSTER_ROW_SHARED}`;
 
-/** The same row with the words taken out: a face centred in the 64px rail. */
+/** The same row with the words taken out: a tile centred in the 64px rail. */
 export const ROSTER_RAIL_ROW_CLASS = `flex justify-center ${ROSTER_ROW_SHARED}`;
 
 /**
- * 8px, at the face's bottom-right with a 2px inset — the measured corner marker. The ring is the
- * row's own background so the dot reads as sitting on top of the face rather than punched into it.
+ * 8px, at a rail tile's bottom-right with a 2px inset — the measured corner marker. The ring is the
+ * row's own background so the dot reads as sitting on top of the tile rather than punched into it.
  */
 export const RosterUnreadDot = () => (
   <span
@@ -73,6 +79,30 @@ export const RosterUnreadDot = () => (
  * from a colour its own rule had made transparent, fixed 2026-09-24 (styles.css). The roster, the
  * most read surface in the product, does not depend on a paint trick to say what a Bot is doing.
  */
+/**
+ * A Bot in the 64px rail, where its name has no room: the name's first letter on the rail's tile.
+ *
+ * THE NAME, CUT TO WHAT FITS — NOT A PICTURE (2026-10-09). The rail drew the Bot's face here; the
+ * Bot has no face now, the profile is a name, and the rail is the one place the whole name cannot
+ * stand. The tile is the one the conversation's icon sits on beside it, so the rail stays one row
+ * of tiles; the whole name is in the tooltip and in the link's own name.
+ */
+export function RailNameTile({
+  children,
+  name,
+}: {
+  /** A corner marker, drawn over the tile. */
+  children?: ReactNode;
+  name: string;
+}) {
+  return (
+    <span className="relative flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted font-semibold text-base text-muted-foreground">
+      <span aria-hidden="true">{Array.from(name.trim())[0] ?? ""}</span>
+      {children}
+    </span>
+  );
+}
+
 export const RosterRowLines = ({
   isSubtitleLive = false,
   isUnread = false,
@@ -122,21 +152,20 @@ export const RosterRowLines = ({
 );
 
 /**
- * One Bot in the roster: its face, its name, and the last thing said to it.
+ * One Bot in the roster: its name, and the last thing said to it.
  *
  * THE ROW IS THE COLLEAGUE, NOT A SESSION WITH THEM. This list used to hold conversations, and
  * because every message from Home minted a fresh one, three Bots filled it with thirteen rows —
  * the same face nine times over. A Bot in this product is a colleague with a standing role, its own
  * routines and its own seat at the account's computer, and every other table in the server is keyed
- * on it. The conversation is now too, so the list is the roster: bounded, stable, and a face you
- * return to rather than a pile of sessions you have to choose between.
+ * on it. The conversation is now too, so the list is the roster: bounded, stable, and a colleague
+ * you return to rather than a pile of sessions you have to choose between.
  *
  * A Bot nobody has spoken to yet still has a row. It leads to the compose screen, which introduces
  * the Bot and creates the conversation on the first message.
  */
 export const BotRow = memo(function BotRow({
   agentId,
-  avatarSeed,
   isCompact = false,
   name,
   channelId,
@@ -146,8 +175,7 @@ export const BotRow = memo(function BotRow({
   working,
 }: {
   agentId: string;
-  avatarSeed: string;
-  /** The 64px rail: the face alone, its name in a tooltip. */
+  /** The 64px rail: the name's first letter, the whole name in a tooltip. */
   isCompact?: boolean;
   name: string;
   /** The Bot has said something since this person last opened the room. */
@@ -196,24 +224,14 @@ export const BotRow = memo(function BotRow({
     openQuestions().some((question) => question.botId === agentId),
   );
   /*
-   * THE FACE'S MOOD, from the three things this row knows: a question waiting, a turn running,
-   * and when the Bot last said anything. Asleep after half an hour of quiet, glad for a moment when
-   * a turn ends — see `bot-mood.ts` for the order those win in.
+   * WHAT THE FACE SAID, IN WORDS (2026-10-09). The row led with the Bot's face, whose eyes widened
+   * when it had stopped to ask; that was the only place a sighted person was told, and the Bot has
+   * no face now. So the preview line says it — the same sentence a screen reader was always given —
+   * before what the Bot is doing and before what it last said: a question waiting on the person
+   * beats both. Working was already said there.
    */
-  const mood = useBotMood({
-    working: Boolean(working),
-    blocked,
-    lastMessageAt,
-  });
-
-  /*
-   * A dot, a posture and a weight are not announced. This is — and blocked is announced even though
-   * the face says it loudly, because a widened eye is exactly the kind of signal a screen reader
-   * cannot pass on.
-   */
-  const announced = blocked
-    ? t("Waiting for your answer")
-    : (working ?? (unread ? t("Unread") : undefined));
+  const waiting = blocked ? t("Waiting for your answer") : undefined;
+  const announced = waiting ?? working ?? (unread ? t("Unread") : undefined);
   const status = announced ? (
     <span className="sr-only" role={blocked || working ? "status" : undefined}>
       {announced}
@@ -221,35 +239,22 @@ export const BotRow = memo(function BotRow({
   ) : null;
 
   /*
-   * `relative` and NOT `overflow-hidden` on the outer span: the dot overhangs the face by design,
-   * and clipping the wrapper would slice it in half. The face is not clipped at all any more — its
-   * silhouette IS the identity now, and a squircle inside a `rounded-xl` window is a squircle with
-   * its corners taken off.
-   *
-   * THE SPINNING RING IS GONE, AND THE FACE CARRIES WORK INSTEAD. The ring existed because the old
-   * avatar was a photograph that could not react to anything, so "busy" had to be welded to its
-   * corner. This face looks up and breathes while a turn runs and widens its eyes when the Bot has
-   * stopped to ask, which leaves the corner free for the one thing that is about the CONVERSATION
-   * rather than about the Bot.
+   * THE UNREAD DOT HAS A SLOT OF ITS OWN at the start of the row, drawn or not, so a row that is
+   * read and one that is not keep their names on the same edge. It sat on the face's corner.
    */
-  const face = (
-    <span className="relative inline-flex size-9 shrink-0">
-      <BotAvatar
-        className="size-full"
-        seed={avatarSeed}
-        size={36}
-        state={mood}
-      />
-      {unread ? <RosterUnreadDot /> : null}
-    </span>
+  const mark = (
+    <span
+      aria-hidden="true"
+      className={cn("size-2 shrink-0 rounded-full", unread ? "bg-mark" : null)}
+    />
   );
 
   const body = (
     <>
       {status}
-      {face}
+      {mark}
       <RosterRowLines
-        isSubtitleLive={Boolean(working)}
+        isSubtitleLive={Boolean(waiting ?? working)}
         isUnread={unread}
         name={name}
         /*
@@ -257,19 +262,25 @@ export const BotRow = memo(function BotRow({
          * The last thing it said is still there when it finishes, and a row that keeps showing
          * yesterday's sentence through a live run is a row that never looks like anything happens.
          */
-        subtitle={working ?? subtitle}
+        subtitle={waiting ?? working ?? subtitle}
         time={lastMessageAt}
       />
     </>
   );
 
   /*
-   * In the rail the words are gone, so the link would have no accessible name at all — the face is
-   * an SVG and the dot is decorative. The name becomes the label, and whatever the row was
+   * In the rail the words are gone, so the link would have no accessible name at all — the tile is
+   * one letter and the dot is decorative. The name becomes the label, and whatever the row was
    * announcing is folded into it: `aria-label` replaces the contents of an element, so an `sr-only`
-   * span inside would have gone unread.
+   * span inside would have gone unread. The tooltip says the same, so a question waiting is in
+   * words on hover too.
    */
   const compactLabel = announced ? `${name} · ${announced}` : name;
+  const tile = (
+    <RailNameTile name={name}>
+      {unread ? <RosterUnreadDot /> : null}
+    </RailNameTile>
+  );
 
   if (isCompact) {
     return (
@@ -295,9 +306,9 @@ export const BotRow = memo(function BotRow({
             )
           }
         >
-          {face}
+          {tile}
         </TooltipTrigger>
-        <TooltipContent side="right">{name}</TooltipContent>
+        <TooltipContent side="right">{compactLabel}</TooltipContent>
       </Tooltip>
     );
   }

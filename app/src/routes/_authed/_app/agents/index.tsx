@@ -28,7 +28,7 @@ export const Route = createFileRoute("/_authed/_app/agents/")({
  *
  * This was 봇: a gallery of the person's Bots, "내 봇 3/5", a button to make another, and a pane
  * that slid out with one Bot's profile. A person has one Bot now, so the page is that Bot's
- * profile — its face and its name, changed here whenever they like, and the settings that are
+ * profile — its name, changed here whenever they like, and the settings that are
  * about how it works rather than what it is. `?agent=` picks another only on an account from
  * before the cap came down to one; the sidebar's switcher is how such a person gets there.
  */

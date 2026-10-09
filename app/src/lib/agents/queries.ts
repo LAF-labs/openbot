@@ -14,7 +14,6 @@ export type AgentProfile = {
   id: string;
   name: string;
   roleDescription: string;
-  avatarSeed: string;
   /**
    * What this Bot may be waved through for, in the owner's own words.
    *

@@ -15,7 +15,6 @@ const bot = (id: string, extra: Partial<AgentProfile> = {}): AgentProfile => ({
   id,
   name: id,
   roleDescription: "",
-  avatarSeed: `s:pebble.blue`,
   autoReview: "",
   endpoint: null,
   hasAuth: false,

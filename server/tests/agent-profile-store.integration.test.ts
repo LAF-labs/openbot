@@ -326,8 +326,8 @@ describe("agent profile store integration", () => {
       // coworker and losing its conversations. It reaches here already validated by the same check
       // that guards creation.
       endpoint: "https://moved.example.test/ag-ui",
-      // Everything left in this payload is forged — the face too, since 2026-10-08: it is given
-      // when the Bot is made and nothing changes it afterwards.
+      // Everything left in this payload is forged — the face too, since 2026-10-08, and the Bot
+      // has none at all since 2026-10-09: the column keeps what creation wrote.
       avatarSeed: "r2c6",
       ownerUserId: "forged-owner",
       packageId: deploymentPackage.id,
@@ -339,10 +339,11 @@ describe("agent profile store integration", () => {
       name: "Renamed Assistant",
       roleDescription: "Updated role description.",
       ownerUserId: owner.id,
-      avatarSeed: source.avatarSeed,
       systemOwned: false,
       deletedAt: null,
     });
+    // The profile carries no face, and the row keeps the seed it was made with.
+    expect(result).not.toHaveProperty("avatarSeed");
     const [canonical] = await database
       .select()
       .from(agents)
@@ -605,7 +606,8 @@ describe("agent profile store integration", () => {
       name: `Created ${randomUUID()}`,
       roleDescription: "Created role description.",
     };
-    // A face a caller still sends is not the face it gets: the Bot's own id is (2026-10-08).
+    // A face a caller still sends is not stored: the row is given the Bot's own id, because the
+    // column is NOT NULL, and the profile says nothing of it (the Bot has no face, 2026-10-09).
     Object.assign(input, { avatarSeed: "s:cloud.green" });
 
     const created = await store.create(owner, input);
@@ -614,12 +616,17 @@ describe("agent profile store integration", () => {
     expect(created).toMatchObject({
       name: input.name,
       roleDescription: input.roleDescription,
-      avatarSeed: created.id,
       ownerUserId: owner.id,
       systemOwned: false,
       hidden: false,
       deletedAt: null,
     });
+    expect(created).not.toHaveProperty("avatarSeed");
+    const [row] = await database
+      .select({ avatarSeed: agentProfiles.avatarSeed })
+      .from(agentProfiles)
+      .where(eq(agentProfiles.agentId, created.id));
+    expect(row?.avatarSeed).toBe(created.id);
     const [canonical] = await database
       .select()
       .from(agents)

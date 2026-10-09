@@ -3,7 +3,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTakesBotEndpoints } from "@/components/admin/admin-sidebar";
 import { LoadFailed, RowsSkeleton } from "@/components/admin/admin-states";
-import { Mascot } from "@/components/agents/mascot";
 import { LiveRegion } from "@/components/layout/live-region";
 import {
   PageEmpty,
@@ -178,13 +177,6 @@ function BotEndpoint({ agent }: { agent: AgentProfile }) {
   return (
     <details className="rounded-xl border border-border px-3 py-2">
       <summary className="flex cursor-pointer list-none items-center gap-2 text-sm marker:content-none">
-        <span className="inline-flex size-7 shrink-0 overflow-hidden rounded-lg">
-          <Mascot
-            className="size-full object-cover"
-            seed={agent.avatarSeed}
-            size={28}
-          />
-        </span>
         <span className="truncate font-medium">{agent.name}</span>
         <span className="truncate text-muted-foreground text-xs">
           {agent.endpoint ?? t("Runs here")}

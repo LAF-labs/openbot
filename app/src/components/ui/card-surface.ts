@@ -21,9 +21,9 @@ export const chatCardPadding = "p-3";
 
 /**
  * The same card while it waits on the person — an approval not yet answered, a help request not yet
- * done. Amber, whatever the Bot's colour: "your turn" is a signal and must not look like a red Bot's
- * ordinary button or disappear on a yellow one. The edge is the only change, so the card does not
- * jump when the answer lands.
+ * done. Amber, whatever the accent is: "your turn" is a signal and must not look like a red
+ * accent's ordinary button or disappear on a yellow one. The edge is the only change, so the card
+ * does not jump when the answer lands.
  */
 export const chatCardWaiting = "border-warning/55";
 
@@ -41,7 +41,7 @@ export const chatCardChip =
  * A chip's tone, by the kind of news its word is — three, so two cards cannot say the same thing in
  * two colours. Quiet for what is simply over. Live for what is going on now: the link ink, which
  * is how the rest of the app writes "active". Amber for what did not finish and for the person's
- * turn: a signal, whatever the Bot's colour (`chatCardWaiting` says why).
+ * turn: a signal, whatever the accent is (`chatCardWaiting` says why).
  */
 export const chatCardChipQuiet = "bg-muted text-muted-foreground";
 export const chatCardChipLive = "bg-muted text-link";

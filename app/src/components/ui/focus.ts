@@ -19,8 +19,9 @@
  * painted at all, so `outline-none` leaves somebody using Windows High Contrast with no focus
  * indicator anywhere in the app. The app already spelled it both ways.
  *
- * THE RING IS THE BOT'S COLOUR SINCE 2026-09-24 (`--ring` is `--bot-accent`), and that changed what
- * carries the contrast. The old ring was a 50% halo of a 40% grey — about 1.3:1 against the page,
+ * THE RING IS THE ACCENT (`--ring` is `--app-accent`) — the Bot's colour from 2026-09-24, the
+ * neutral control's since the Bot lost its face on 2026-10-09 — and that changed what carries the
+ * contrast. The old ring was a 50% halo of a 40% grey — about 1.3:1 against the page,
  * a hint rather than an indicator. Now the part that must clear 3:1 is solid: the recoloured border
  * on a control, the whole inset ring on a row. The halo around a control is 35% of the same colour,
  * there to make the solid line findable, not to carry it.

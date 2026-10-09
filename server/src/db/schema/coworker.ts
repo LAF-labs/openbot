@@ -69,9 +69,13 @@ export const agentProfiles = pgTable(
      */
     roleDescription: text("role_description").notNull(),
     /*
-     * What the Bot's face is drawn from (`app/src/lib/avatar/bot-avatar.ts`). Written once, when the
-     * Bot is made, and never again since the face stopped being chosen (2026-10-08,
-     * docs/laf/redesign-2026-10.md §8). Every face on the surface is still drawn from it.
+     * KEPT, AND READ BY NOTHING BUT THE ACCOUNT EXPORT. It named the Bot's face — its shape and
+     * colour — and the surface drew every face from it. The face stopped being chosen on 2026-10-08
+     * (docs/laf/redesign-2026-10.md §8) and the Bot stopped having one on 2026-10-09: the profile
+     * is a name, and neither the agent API nor the app carries this any more. It stays because it
+     * is NOT NULL and its rows exist; a new Bot's row is given its own id here
+     * (`profile-store.ts`), and the export still carries what is stored, since that is everything
+     * held about a person.
      */
     avatarSeed: text("avatar_seed").notNull(),
     /**

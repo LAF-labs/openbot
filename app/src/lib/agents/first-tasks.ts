@@ -20,7 +20,7 @@ import { own } from "@/lib/own";
 /**
  * The first things worth asking a Bot that has never been asked anything.
  *
- * A new Bot arrives with a name and a face and an empty composer, and the honest state of the
+ * A new Bot arrives with a name and an empty composer, and the honest state of the
  * person in front of it is "I don't know what to type". The launch definition (L3) is a useful
  * answer inside ten minutes of signing up, and the ten minutes are mostly spent on that blank.
  * So the empty conversation offers four sentences to press, chosen from the eight work patterns

@@ -118,7 +118,6 @@ const agent = (id: string, name: string) => ({
   id,
   name,
   roleDescription: "",
-  avatarSeed: id,
   autoReview: "",
   endpoint: null,
   hasAuth: false,
@@ -419,10 +418,12 @@ describe("the roster collapses to a rail", () => {
     expect(styled).toEqual([]);
   });
 
-  test("a face in the rail still has a name, on screen and in the tree", async () => {
+  test("a Bot in the rail is its name's first letter, and still has its whole name in the tree", async () => {
     /*
-     * A face with no words beside it is a link with no accessible name, so the rail hands every row
+     * A tile with no words beside it is a link with no accessible name, so the rail hands every row
      * an `aria-label` and a tooltip. Losing either turns the whole column into unlabelled graphics.
+     * The tile held the Bot's face until 2026-10-09; the Bot has none now, and what the rail draws
+     * is the name cut to what fits — a letter, not a picture.
      */
     const view = await roster({ wide: false });
     const rows = view.rows();
@@ -431,6 +432,8 @@ describe("the roster collapses to a rail", () => {
       "두리",
       "세모",
     ]);
+    expect(rows.map((row) => row.textContent)).toEqual(["초", "두", "세"]);
+    expect(view.column().querySelector("svg.bot-avatar")).toBeNull();
     for (const row of rows) {
       expect(row.dataset.slot).toBe("tooltip-trigger");
       expect(classes(row)).toContain("justify-center");
@@ -615,11 +618,12 @@ describe("one Bot: who it is, then the conversation, then where else to go", () 
     ]);
   });
 
-  test("the Bot's row is its face and its name: no word for what it is doing at rest, and the word when it is the person's turn", async () => {
+  test("the Bot's row is its name: no face, no word for what it is doing at rest, and the word when it is the person's turn", async () => {
     /*
      * THE LINE OF STATUS WORDS UNDER THE NAME WENT ON 2026-10-04: 쉬는 중 all day, under a face
-     * that says so. It is the dot's name and title now, and the link's. One word is still drawn —
-     * 확인 필요, in the amber pill — because that one asks the person for something.
+     * that said so. It is the dot's name and title now, and the link's. One word is still drawn —
+     * 확인 필요, in the amber pill — because that one asks the person for something. The face went on
+     * 2026-10-09: the Bot has none, and the name leads the row.
      */
     const view = await roster({ bots: one() });
     const identity = () =>
@@ -632,9 +636,13 @@ describe("one Bot: who it is, then the conversation, then where else to go", () 
     expect(identity()?.getAttribute("aria-label")).toBe(
       "초롱 · Ready. Bot profile",
     );
-    // One row of 44px, the face 32px in it.
+    // One row of 44px, and the only picture in it is the pencil that shows on hover.
     expect(classes(identity())).toContain("h-11");
-    expect(identity()?.querySelector("svg")?.getAttribute("width")).toBe("32");
+    expect(
+      [...(identity()?.querySelectorAll("svg") ?? [])].map((svg) =>
+        classes(svg).includes("tabler-icon-pencil"),
+      ),
+    ).toEqual([true]);
 
     const { closeQuestion, openQuestion } = await import(
       "../src/lib/approvals"
@@ -791,12 +799,13 @@ describe("one Bot: who it is, then the conversation, then where else to go", () 
     expect(scroller?.textContent).toContain("Conversation");
   });
 
-  test("the rail keeps a name on the face and on the conversation", async () => {
+  test("the rail keeps a name on the Bot's letter and on the conversation", async () => {
     const view = await roster({ bots: one(), wide: false });
     const identity = view
       .column()
       .querySelector<HTMLAnchorElement>('a[href^="/agents"]');
     expect(identity?.getAttribute("aria-label")).toBe("초롱 · Ready");
+    expect(identity?.textContent).toBe("초");
     expect(view.rows()[0]?.getAttribute("aria-label")).toBe(
       "Conversation · Unread",
     );

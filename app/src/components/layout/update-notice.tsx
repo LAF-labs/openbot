@@ -107,7 +107,7 @@ function UpdateControl({
   const facts = useBuildFacts();
   /*
    * The first of the person's Bots: there is one (docs/laf/deployment-model.md). The same answer
-   * as the pill under its face and the tray's line (`ShellSync`), folded the way the tray folds
+   * as the pill beside its name and the tray's line (`ShellSync`), folded the way the tray folds
    * it — and held only while the Bot is WORKING. A Bot waiting on the person (a question, a
    * request for help) is not working: the sentence under a held control says it is and to wait
    * until it is done, which told somebody to wait for a Bot that was waiting for them, for as long

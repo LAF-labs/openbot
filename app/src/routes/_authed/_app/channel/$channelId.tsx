@@ -20,7 +20,6 @@ import {
   type AgentChannel,
   ChannelGoneError,
   channelKeys,
-  channelListQueryOptions,
   channelQueryOptions,
 } from "@/lib/channels/queries";
 import { isInUse, useBrowsingNow } from "@/lib/computer/browsing-now";
@@ -126,11 +125,6 @@ function RouteComponent() {
   const agentId = channel.data?.agentIds[0];
   const roster = useQuery(agentListQueryOptions());
   const headerAgent = roster.data?.find((agent) => agent.id === agentId);
-  // When it last spoke, for the face: a Bot quiet for half an hour dozes (`useBotMood`).
-  const conversations = useQuery(channelListQueryOptions());
-  const lastSpokenAt = conversations.data?.find(
-    (summary) => summary.id === channelId,
-  )?.lastMessageAt;
   const panel = useScreenPanel();
   const isWatching = panel.isOpen && agentId !== undefined;
   const screenWidth = useScreenPanelWidth();
@@ -183,8 +177,8 @@ function RouteComponent() {
       }
     >
       {/*
-       * THE BOT, AS A PRESENCE: its face with the expression of what it is doing, its name, and the
-       * pill that says it in a word and opens the drawer (`BotHeader`). No rule under it — the
+       * THE BOT, AS A PRESENCE: its name, and the pill that says what it is doing in a word and
+       * opens the drawer (`BotHeader`). No rule under it — the
        * transcript below is the same surface, and a line across the top of a conversation reads as
        * a toolbar the conversation is filed under.
        */}
@@ -241,8 +235,6 @@ function RouteComponent() {
           </>
         }
         agentId={agentId}
-        avatarSeed={headerAgent?.avatarSeed}
-        lastMessageAt={lastSpokenAt ?? undefined}
         name={headerAgent?.name ?? channel.data?.name ?? t("Channel")}
         pill={(presence) =>
           agentId ? (
