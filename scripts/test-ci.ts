@@ -2370,9 +2370,9 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * By hand: 4, 1, 1 and 2 are 8, and 3902 and 8 are 3910; 4 and 4 are 8, and 496 and 8 are 504;
  * 2136 and 2 are 2138; 921 and 6 are 927.
  *
- * RAISED 2026-10-10 A THIRD TIME, `server` from 3910 to 3927, `app` from 2138 to 2140 and
+ * RAISED 2026-10-10 A THIRD TIME, `server` from 3910 to 3928, `app` from 2138 to 2140 and
  * `root` from 927 to 932, for the
- * vault of logins a person saves for their Bot's browser (record §6, piece 2-3). Seventeen to
+ * vault of logins a person saves for their Bot's browser (record §6, piece 2-3). Eighteen to
  * `server`, in three new files. Five in `login-crypto.test.ts`: a seal opens to what was sealed
  * and holds neither value; it is made under a new key every time; it opens only as the row, the
  * owner and the field it was sealed for, under the key that sealed it; it says nothing of what
@@ -2380,13 +2380,14 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `login-routes.test.ts`, the doors without a database: whose rows are asked for; the five
  * things a login is made of and nothing else a body carries; nothing answered is kept on the
  * way; a refusal is the fact and the field, and bytes that cannot be read are refused as that.
- * Eight in `saved-logins.integration.test.ts`, against
+ * Nine in `saved-logins.integration.test.ts`, against
  * the real table: planted values are in no row, no answer, no trail and no export; a row is its
  * owner's and nobody else's; a new value is a new key and a new name is not; what is not a login
  * is not saved at all, and leaves a row saying it was refused; a deleted one is gone at once;
  * full is said as full, and a row this deployment's key no longer opens is put right by typing
- * both values again; a change is written with its row in the trail or not at all; and as
- * deployed those rows are on the change's own transaction. Five to `root`,
+ * both values again; a change is written with its row in the trail or not at all; a refusal
+ * for a person who is gone is written under their pseudonym; and as deployed those rows are on
+ * the change's own transaction. Five to `root`,
  * in `tests/login-origin.test.ts`: the origin a login is saved for, read one way; never plain
  * HTTP; a developer's loopback only when asked by name; a frame is where a login was saved for
  * by origin, and not by host. `account-lifecycle.integration.test.ts` and the authorization
@@ -2396,8 +2397,8 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * login's rows: one that was saved, changed or deleted is named by its site and the hosts it
  * may go to; one that was refused says so in the refusal's colour and says why in words.
  * (`audit-rows.test.ts` holds more: two rows that differ in a site, an origin or a refusal's
- * fact are not one row.) Thirty-six mutations each fail one of these.
- * By hand: 5, 4 and 8 are 17, and 3910 and 17 are 3927; 2138 and 2 are 2140; 927 and 5 are 932.
+ * fact are not one row.) Forty-two mutations each fail one of these.
+ * By hand: 5, 4 and 9 are 18, and 3910 and 18 are 3928; 2138 and 2 are 2140; 927 and 5 are 932.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -2427,7 +2428,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 3927, roots: ["server"] },
+  { name: "server", floor: 3928, roots: ["server"] },
   { name: "app", floor: 2140, roots: ["app"] },
   {
     name: "agent-computer",

@@ -12,6 +12,7 @@ import { eq, inArray, sql } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { createAccountExport } from "../src/account/export";
+import { pseudonymFor } from "../src/account/pseudonym";
 import type { AuditEventInput, AuditStore } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";
 import { createDatabase } from "../src/db/client";
@@ -47,7 +48,6 @@ const auditStore: AuditStore = {
  */
 const vault = createLoginVault({
   database,
-  auditStore,
   keyEncryptionKey: KEY,
   trailWithin: () => auditStore,
 });
@@ -213,7 +213,6 @@ describe("a login a person saves", () => {
     // Under another deployment's key it does not open, and says nothing of why.
     const elsewhere = createLoginVault({
       database,
-      auditStore,
       keyEncryptionKey: OTHER_KEY,
     });
     expect(
@@ -344,13 +343,15 @@ describe("a login a person saves", () => {
         "laf:login_origin_refused",
         "origins",
       ],
-      [{ ...NAVER, origins: [] }, "laf:login_origin_refused", "origins"],
+      // No address, too many, and one that is not an HTTPS site are three facts: the trail's page
+      // says why in words, and "not an HTTPS site" is false of nine good ones.
+      [{ ...NAVER, origins: [] }, "laf:login_origins_required", "origins"],
       [
         { ...NAVER, origins: "nid.naver.com" },
-        "laf:login_origin_refused",
+        "laf:login_origins_required",
         "origins",
       ],
-      [{ ...NAVER, origins: nine }, "laf:login_origin_refused", "origins"],
+      [{ ...NAVER, origins: nine }, "laf:login_origins_too_many", "origins"],
       // The same address sixty-five times, and twenty thousand different ones: neither is read
       // to its end to be refused — a body may be a megabyte, and the bound is on what is READ.
       [
@@ -358,7 +359,7 @@ describe("a login a person saves", () => {
           ...NAVER,
           origins: Array.from({ length: 65 }, () => "nid.naver.com"),
         },
-        "laf:login_origin_refused",
+        "laf:login_origins_too_many",
         "origins",
       ],
       [
@@ -369,7 +370,7 @@ describe("a login a person saves", () => {
             (_, n) => `https://s${n}.example`,
           ),
         },
-        "laf:login_origin_refused",
+        "laf:login_origins_too_many",
         "origins",
       ],
       [{ ...NAVER, label: "   " }, "laf:login_label_required", "label"],
@@ -457,7 +458,15 @@ describe("a login a person saves", () => {
       ["POST", ""],
       ["PATCH", `/${mine?.id}`],
     ] as const) {
-      for (const body of ['"not an object"', '["label"]', "{not json", ""]) {
+      // The last is an object, and names something a login is not made of: a typo for
+      // `password`, which read as "nothing was sent" would be answered as a change that was made.
+      for (const body of [
+        '"not an object"',
+        '["label"]',
+        "{not json",
+        "",
+        '{"passwrod":"typo-CANARY"}',
+      ]) {
         const unreadable = await app.request(`/api/logins${path}`, {
           method,
           headers: { "content-type": "application/json", "x-test-user": owner },
@@ -477,16 +486,16 @@ describe("a login a person saves", () => {
       }
     }
     expect(await stored(owner)).toBe(before);
-    // Four that never became a login, and four about the login a change was sent for.
+    // Five that never became a login, and five about the login a change was sent for.
     expect(
       rows.map((one) => [one.eventType, one.targetId, one.payload]),
     ).toEqual([
-      ...Array.from({ length: 4 }, () => [
+      ...Array.from({ length: 5 }, () => [
         "account.login_refused",
         "unsaved",
         { code: "laf:login_invalid" },
       ]),
-      ...Array.from({ length: 4 }, () => [
+      ...Array.from({ length: 5 }, () => [
         "account.login_refused",
         mine?.id,
         {
@@ -586,7 +595,6 @@ describe("a login a person saves", () => {
     let down = true;
     const fragile = createLoginVault({
       database,
-      auditStore,
       keyEncryptionKey: KEY,
       trailWithin: () => ({
         insert: async (event) => {
@@ -636,6 +644,26 @@ describe("a login a person saves", () => {
     expect(await fragile.remove(owner, saved.id)).toBe(true);
   });
 
+  test("writes a refusal under the person's pseudonym once the person is gone: a request that outlived its account does not put their id back in the trail", async () => {
+    /*
+     * A refusal's row has no key to the person, so it can be written after they have left — by a
+     * request that was already past the session check when the deletion committed. Everything
+     * else of theirs in the trail has just been re-pointed at a pseudonym (migration 0028).
+     */
+    const gone = `login-gone-${tag}`;
+    rows.length = 0;
+    await vault
+      .save(gone, { ...NAVER, origins: ["http://nid.naver.com"] })
+      .catch(() => undefined);
+    await vault.save(owner, { ...NAVER, origins: [] }).catch(() => undefined);
+    expect(rows.map((one) => [one.eventType, one.actorUserId])).toEqual([
+      ["account.login_refused", pseudonymFor(gone)],
+      // Somebody who is here is still themselves.
+      ["account.login_refused", owner],
+    ]);
+    expect(JSON.stringify(rows)).not.toContain(gone);
+  });
+
   test("writes those rows on the change's own transaction when nobody says otherwise: they are in the trail's table, under the person", async () => {
     // As `main.ts` makes it: no `trailWithin`. The rows go where every row of the trail goes.
     //
@@ -649,7 +677,6 @@ describe("a login a person saves", () => {
       .values({ id: person, email: `${person}@laf.test`, name: person });
     const asDeployed = createLoginVault({
       database,
-      auditStore,
       keyEncryptionKey: KEY,
     });
     const saved = await asDeployed.save(person, NAVER);

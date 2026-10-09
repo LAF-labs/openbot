@@ -66,9 +66,14 @@ const EVENTS = [
     field: "origins",
   }),
   row("row-3", 3, "account.login_removed", LOGIN, where),
-  row("row-2", 2, "account.login_replaced", LOGIN, {
+  row("row-2b", 2, "account.login_replaced", LOGIN, {
     ...where,
     values: "replaced",
+  }),
+  // Renamed a moment before: the same login, the same places, and NOT the same row.
+  row("row-2a", 2, "account.login_replaced", LOGIN, {
+    ...where,
+    values: "kept",
   }),
   // Another login, for a site this deployment does not know by name: only where it may go.
   row("row-1", 1, "account.login_saved", OTHER_LOGIN, {
@@ -108,16 +113,23 @@ describe("the trail's page and a saved login", () => {
     expect(site).not.toBe("");
     const hosts = "nid.naver.com, sell.smartstore.naver.com";
 
-    const [, what, target, , verdict] = cells(5);
+    const [, what, target, , verdict] = cells(6);
     expect(what).toBe("A saved login");
     expect(target).toBe(`${site}${hosts}`);
     expect(verdict).toBe("A person saved a login for their Bot");
     // A site nobody here knows by name is its host, with its port.
-    expect(cells(4)[2]).toBe("shop.example:8443");
-    expect(cells(3)[4]).toBe("A person changed a saved login");
+    expect(cells(5)[2]).toBe("shop.example:8443");
+    // The rename is its own row, and says nothing was replaced by saying nothing more.
+    expect(cells(4)[4]).toBe("A person changed a saved login");
+    // A change says whether it replaced the login's values: what tells a rename from a new
+    // password, which is the one thing about a change a reader of the trail asks.
+    expect(cells(3)[4]).toBe(
+      "A person changed a saved login" +
+        "Its sign-in name or password was replaced",
+    );
     expect(cells(2)[4]).toBe("A person deleted a saved login");
     // Ordinary rows: not the colour of a refusal.
-    for (const index of [2, 3, 4, 5]) {
+    for (const index of [2, 3, 4, 5, 6]) {
       expect(rows[index]?.querySelector(".text-destructive")).toBeNull();
     }
     // The login's own id is not a name worth drawing, and no row says a value or a label.

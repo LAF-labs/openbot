@@ -136,6 +136,8 @@ export function signatureOf(event: AuditEvent): string {
     text(payload.code),
     // Which field a refusal was about: a missing name and a missing password are two rows.
     text(payload.field),
+    // Whether a change replaced the values: a rename and a new password are two rows.
+    text(payload.values),
   ]);
 }
 

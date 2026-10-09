@@ -38,7 +38,7 @@ const FILTERS = [
     // stopped an action just as surely as a deny rule did, and it leaves no action row of its own,
     // so without it here the trail's answer to "was anything blocked" is missing a whole family.
     search:
-      "?eventType=computer.action_refused,approval.denied,mcp.call_rejected,component.refused,component.function_refused",
+      "?eventType=computer.action_refused,approval.denied,mcp.call_rejected,component.refused,component.function_refused,account.login_refused",
   },
   {
     label: "Did not happen",
@@ -430,6 +430,16 @@ function Row({
           {/* The map is data; it is translated where it is drawn, English as the key. */}
           {verdict ? t(verdict) : "-"}
         </span>
+        {/*
+         * Whether a change replaced the login's values: the one thing about a change a reader of
+         * the trail asks, and what tells a renamed login from one with a new password.
+         */}
+        {event.eventType === "account.login_replaced" &&
+        payload.values === "replaced" ? (
+          <div className="mt-0.5 text-xs text-muted-foreground">
+            {t("Its sign-in name or password was replaced")}
+          </div>
+        ) : null}
         {/* Why a login was not saved or changed: the fact the server recorded, in this column's words. */}
         {event.eventType === "account.login_refused" &&
         typeof payload.code === "string" ? (
@@ -1163,6 +1173,8 @@ export const FACTS: Record<string, string> = {
   "laf:login_invalid": "What was sent could not be read",
   "laf:login_label_required": "It had no name",
   "laf:login_origin_refused": "An address was not an HTTPS site",
+  "laf:login_origins_required": "It had no address to go to",
+  "laf:login_origins_too_many": "It had more addresses than a login may have",
   "laf:login_site_unknown": "The site is not one this deployment knows",
   "laf:login_value_required": "A value was missing",
   "laf:login_value_too_long": "A value was too long",

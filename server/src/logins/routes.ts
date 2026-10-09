@@ -41,7 +41,7 @@ export function createLoginRoutes(
    * read as "nothing was sent", a change answered 200 with the row as it stood — to a window that
    * had tried to replace a password, that says the new one is saved while the old one still is
    * (Codex's read of this change). It is handed to the vault as `null`, which refuses it like any
-   * refusal — with a row. An explicit `{}` is still a change of nothing.
+   * refusal — with a row. An explicit `{}` is still a change of nothing, and the only one.
    */
 
   /** A refusal as the form reads it: which fact, and which field where it is one. */
@@ -51,12 +51,28 @@ export function createLoginRoutes(
     ...(error.field ? { field: error.field } : {}),
   });
 
-  /** The body, as an object or as nothing: a list or a string is not a login. */
+  /** The five things a login is made of. A body is made of these, and of nothing else. */
+  const FIELDS: ReadonlySet<string> = new Set([
+    "label",
+    "site",
+    "origins",
+    "username",
+    "password",
+  ]);
+
+  /**
+   * The body, as an object or as nothing: a list or a string is not a login — AND NEITHER IS AN
+   * OBJECT THAT NAMES SOMETHING A LOGIN IS NOT MADE OF. The doors used to drop what they did not
+   * know and go on, so `{"passwrod": "new"}` became a change of nothing and was answered 200 with
+   * the row as it stood: a typo in a window, told that the password was replaced (Codex's fourth
+   * read of this change). A key this does not know is a body this cannot read.
+   */
   const written = async (request: {
     json: () => Promise<unknown>;
   }): Promise<Partial<LoginInput> | null> => {
     const body = await request.json().catch(() => null);
-    return body && typeof body === "object" && !Array.isArray(body)
+    if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+    return Object.keys(body).every((key) => FIELDS.has(key))
       ? (body as Partial<LoginInput>)
       : null;
   };

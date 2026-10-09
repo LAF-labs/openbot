@@ -45,19 +45,16 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { AbstractAgent } from "@ag-ui/client";
 import { eq, inArray } from "drizzle-orm";
-import { createAccountDeletion } from "../src/account/deletion";
-import { createMadeReader } from "../src/agents/made";
-import { createFeedStore } from "../src/feed/store";
-import { createGoalStore } from "../src/goals/store";
-import { createLoginVault } from "../src/logins/store";
-import { createAccountExport } from "../src/account/export";
 import { createConsentStore } from "../src/account/consent";
+import { createAccountDeletion } from "../src/account/deletion";
+import { createAccountExport } from "../src/account/export";
+import { createMadeReader } from "../src/agents/made";
 import { createAgentMemoryStore } from "../src/agents/memory-store";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import { createApp } from "../src/app";
 import { createAuditReader, createAuditStore } from "../src/audit";
-import type { AuthService } from "../src/auth/guards";
 import { createSignInAllowlist } from "../src/auth/allowlist";
+import type { AuthService } from "../src/auth/guards";
 import { createRoleRepository, lookupBotOwner } from "../src/auth/guards";
 import { createOnboardingStore } from "../src/auth/onboarding";
 import {
@@ -93,6 +90,9 @@ import {
   userRoles,
   users,
 } from "../src/db/schema";
+import { createFeedStore } from "../src/feed/store";
+import { createGoalStore } from "../src/goals/store";
+import { createLoginVault } from "../src/logins/store";
 import { readApprovalMetrics } from "../src/notifications/approval-metrics";
 import { createNotificationOutbox } from "../src/notifications/outbox";
 import { createPartnerRuntime } from "../src/plugins/partners";
@@ -364,7 +364,6 @@ function deployment() {
     // 로그인 보관함: mounted as `main.ts` mounts it, so its four doors are pressed by every person.
     logins: createLoginVault({
       database,
-      auditStore,
       keyEncryptionKey: config.keyEncryptionKey,
     }),
   });

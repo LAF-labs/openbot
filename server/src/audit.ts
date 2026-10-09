@@ -645,6 +645,8 @@ export const auditFactCodes = [
   "laf:login_invalid",
   "laf:login_label_required",
   "laf:login_origin_refused",
+  "laf:login_origins_required",
+  "laf:login_origins_too_many",
   "laf:login_site_unknown",
   "laf:login_value_required",
   "laf:login_value_too_long",
