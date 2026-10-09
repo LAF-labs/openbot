@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AppVariables } from "../auth/guards";
+import { LoginSealError } from "./crypto";
 import {
   type LoginInput,
   LoginRefused,
@@ -106,6 +107,15 @@ export function createLoginRoutes(
     } catch (error) {
       if (error instanceof LoginRefused) {
         return context.json(refused(error), 400);
+      }
+      /*
+       * One value was sent, and the one the row holds does not open — the deployment's key is not
+       * the one that sealed it. Not this request's mistake and not a crash: a fact the screen has
+       * a sentence for ("이 로그인은 아이디와 비밀번호를 둘 다 다시 넣어 주세요"), because sending
+       * both is what puts the row right.
+       */
+      if (error instanceof LoginSealError) {
+        return context.json({ error: error.message, code: error.message }, 409);
       }
       throw error;
     }

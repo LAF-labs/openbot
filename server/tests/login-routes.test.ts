@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import type { AppVariables } from "../src/auth/guards";
+import { LoginSealError } from "../src/logins/crypto";
 import { createLoginRoutes } from "../src/logins/routes";
 import { LoginRefused, type SavedLogin } from "../src/logins/store";
 
@@ -163,7 +164,9 @@ describe("the saved logins' doors", () => {
             ? new LoginRefused("laf:logins_full")
             : new LoginRefused("laf:login_origin_refused", "origins");
         },
-        replace: async () => {
+        replace: async (_user, id) => {
+          // A row whose seal this deployment's key does not open.
+          if (id === "login_sealed-elsewhere") throw new LoginSealError();
           throw new LoginRefused("laf:login_value_too_long", "password");
         },
         remove: async () => false,
@@ -203,6 +206,21 @@ describe("the saved logins' doors", () => {
         error: "laf:login_value_too_long",
         code: "laf:login_value_too_long",
         field: "password",
+      },
+    ]);
+
+    // A row that does not open is a fact with a code, not a crash: sending both values again is
+    // what puts it right, and the screen needs to be able to say so.
+    const unreadable = await routes.request("/login_sealed-elsewhere", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: "x" }),
+    });
+    expect([unreadable.status, await unreadable.json()]).toEqual([
+      409,
+      {
+        error: "laf:login_seal_unreadable",
+        code: "laf:login_seal_unreadable",
       },
     ]);
 
