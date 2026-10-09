@@ -6,6 +6,8 @@
  * testable in the ordinary suite. Everything that talks to a model lives in run.ts.
  */
 
+import { FIXED_EFFORT } from "../shared/fixed-effort";
+
 export type StreamEvent = {
   type: string;
   name?: string;
@@ -329,4 +331,23 @@ export function saysNumber(text: string, value: number): boolean {
   const grouped = value.toLocaleString("en-US");
   const stripped = text.replace(/,/g, "");
   return text.includes(grouped) || stripped.includes(plain);
+}
+
+/**
+ * THE EFFORT AN EVAL SENDS IS THE ONE PRODUCTION WOULD, FOR THE DEPLOYMENT IT IS RUN FOR.
+ *
+ * Production sends none unless the deployment says its model takes one (`BOT_MODEL_EFFORT=true`,
+ * `tenant/laf/model.yaml`), and then it sends the one fixed word. The evals read `EVAL_EFFORT` and
+ * nothing else, so a deployment that had opted back in was judged on a request without the effort
+ * it runs with — a verdict about a different request (Codex's read of this change). `EVAL_EFFORT`
+ * still wins where it is set: it is how two efforts are compared.
+ */
+export function evalEffort(
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  const asked = env.EVAL_EFFORT?.trim();
+  if (asked) return asked;
+  return env.BOT_MODEL_EFFORT?.trim().toLowerCase() === "true"
+    ? FIXED_EFFORT
+    : undefined;
 }

@@ -82,7 +82,7 @@ import {
   roundsOf,
   withoutInvitation,
 } from "./browse-measure";
-import { clientMessagesOf, eventsOfSse } from "./lib";
+import { clientMessagesOf, evalEffort, eventsOfSse } from "./lib";
 import { EVAL_TIME_ZONE, systemMessageFor } from "./prompt";
 
 type Task = { id: string; ask: string } & (
@@ -517,7 +517,7 @@ async function runTask(task: Task) {
       maxSteps: MAX_STEPS,
       forwardedProps: {
         // What production sends: no effort by default (see `evals/run.ts`).
-        ...(process.env.EVAL_EFFORT ? { effort: process.env.EVAL_EFFORT } : {}),
+        ...(evalEffort() ? { effort: evalEffort() } : {}),
         timeZone: resolveTimeZone(EVAL_TIME_ZONE),
       },
       runIdFor: (run) => `browse_${task.id}_${run + 1}_${Date.now()}`,

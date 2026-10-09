@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   callsOf,
   discipline,
+  evalEffort,
   eventsOfSse,
   hangulShare,
   resultsOf,
@@ -9,6 +10,7 @@ import {
   usageOf,
   usagesOf,
 } from "../evals/lib";
+import { FIXED_EFFORT } from "../shared/fixed-effort";
 
 const sse = (events: object[]) =>
   events.map((event) => `data: ${JSON.stringify(event)}`).join("\n\n");
@@ -169,5 +171,26 @@ describe("the deterministic checks", () => {
     expect(saysNumber("총액 29,500원입니다", 29500)).toBe(true);
     expect(saysNumber("총액 29500원", 29500)).toBe(true);
     expect(saysNumber("총액 2,950원", 29500)).toBe(false);
+  });
+});
+
+describe("the effort an eval sends", () => {
+  test("is what production would send for this deployment, unless a comparison names another", () => {
+    // Nothing by default: production sends none, and the model answers at its own.
+    expect(evalEffort({})).toBeUndefined();
+    expect(evalEffort({ BOT_MODEL_EFFORT: "false" })).toBeUndefined();
+    expect(evalEffort({ BOT_MODEL_EFFORT: "" })).toBeUndefined();
+    // A deployment that says its model takes one is judged on the request it makes.
+    expect(evalEffort({ BOT_MODEL_EFFORT: "true" })).toBe(FIXED_EFFORT);
+    expect(evalEffort({ BOT_MODEL_EFFORT: " TRUE " })).toBe(FIXED_EFFORT);
+    // And EVAL_EFFORT still wins, either way: it is how two are compared.
+    expect(evalEffort({ EVAL_EFFORT: "thorough" })).toBe("thorough");
+    expect(evalEffort({ EVAL_EFFORT: "quick", BOT_MODEL_EFFORT: "true" })).toBe(
+      "quick",
+    );
+    expect(evalEffort({ EVAL_EFFORT: "  ", BOT_MODEL_EFFORT: "true" })).toBe(
+      FIXED_EFFORT,
+    );
+    expect(FIXED_EFFORT).toBe("balanced");
   });
 });

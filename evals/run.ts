@@ -39,6 +39,7 @@ import {
   resultsOf,
   type StreamEvent,
   usagesOf,
+  evalEffort,
 } from "./lib";
 import {
   CATALOGUE_HASH,
@@ -233,13 +234,12 @@ async function runOnce(
          * scenarios failed on a shape no customer's run had. Since the owner fixed the main
          * conversation's effort (2026-10-08), production sends NONE by default
          * (`tenant/laf/model.yaml` `supports_effort`, false unless BOT_MODEL_EFFORT says so), and
-         * the model answers at its own default. So nothing is sent here either; EVAL_EFFORT sends
-         * one, for comparisons and for a deployment that opts back in (it then sends `balanced`).
+         * the model answers at its own default. So nothing is sent here either, unless this
+         * deployment has opted back in — then the same fixed word is (`evalEffort`, `lib.ts`).
+         * EVAL_EFFORT overrides both, for comparing two.
          */
         forwardedProps: {
-          ...(process.env.EVAL_EFFORT
-            ? { effort: process.env.EVAL_EFFORT }
-            : {}),
+          ...(evalEffort() ? { effort: evalEffort() } : {}),
           /*
            * The person's zone, resolved, as the server's middleware forwards it — what the `now`
            * tool reads the clock in. Without it a Dubai owner's "지금 몇 시야" would read Seoul.
