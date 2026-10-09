@@ -33,6 +33,7 @@ const INTENTS = Object.keys({
   list_files: true,
   upload: true,
   run_script: true,
+  fill_secret: true,
   call_tool: true,
   act: true,
 } satisfies Record<AskSubject["intent"], true>) as AskSubject["intent"][];

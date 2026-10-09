@@ -104,6 +104,9 @@ export function intentOf(
       return "read";
     case "computer_upload_file":
       return "upload";
+    // Asking a person to put a value into a field. Not `type`: see `PolicyContext.intent`.
+    case "computer_request_secret":
+      return "fill_secret";
     case "computer_read_file":
       return "read_file";
     case "computer_write_file":

@@ -10,7 +10,8 @@
 import type { BotRoute } from "./computer";
 import { ControlRequestError, NO_SECRET_PENDING } from "./control";
 import { actionFailure } from "./failures";
-import { locateRef, onElement, STALE_REFS, StaleSnapshotError } from "./refs";
+import { holdToLabel } from "./label-hold";
+import { onElement, resolveRef, STALE_REFS, StaleSnapshotError } from "./refs";
 import { bodyOf, fact, invalid, json } from "./respond";
 import { rememberSecretField, SECRET_JOIN_TIMEOUT_MS } from "./secret-fields";
 import { assertLooked } from "./tab-loss";
@@ -97,7 +98,7 @@ export const supplySecret: BotRoute = async (
 ) => {
   const pending = session.control.pendingSecret();
   if (!pending) return fact(NO_SECRET_PENDING);
-  const body = await bodyOf<{ text?: unknown }>(request);
+  const body = await bodyOf<{ text?: unknown; element?: unknown }>(request);
   const text = body?.text;
   if (typeof text !== "string" || !text) return invalid("text");
   try {
@@ -125,7 +126,15 @@ export const supplySecret: BotRoute = async (
     //
     // ON THE TAB THE BOT ASKED ON, which is the half of that the rules do not give: each tab has
     // its own most recent snapshot, and the same ref names a different box on each.
-    const field = locateRef(session, target, pending.ref, undefined);
+    //
+    // AND HELD TO WHAT THE GATE JUDGED IT AS (2026-10-10). The paragraph above rests on how
+    // Playwright mints refs, which is its business and can change under us; a click has not rested
+    // on it since 2026-09-07 (`label-hold.ts`). The server sends the role and the name its policy
+    // judged the request on, and a field that is called something else by now — or is no longer
+    // there to be asked — gets no value: a person's password goes into the box they were shown
+    // the name of, or nowhere. An older server sends neither and is held to neither.
+    const field = await resolveRef(session, target, pending.ref, undefined);
+    await holdToLabel(field, body?.element);
     await onElement(() => field.click({ timeout: config.actionTimeoutMs }));
     // A failure here must not say what it was filling: Playwright's message for it does.
     await onElement(() =>

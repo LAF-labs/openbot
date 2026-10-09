@@ -201,6 +201,15 @@ export type PolicyContext = {
     | "upload"
     // A script, run over named files in a place with no network. See the list above.
     | "run_script"
+    /*
+     * A value a person is asked to put into a field themselves, through the masked box
+     * (`computer_request_secret`), and never a value the Bot holds. ITS OWN INTENT AND NOT `type`:
+     * the shipped policy refuses a Bot typing into a password field (`SECRET_FIELD_RULE`, which
+     * says `intent == "type"`), and that field is exactly where this is for. A rule about it is
+     * written `intent == "fill_secret"` — "never ask for a value on this host", "ask me before
+     * a value is asked for there".
+     */
+    | "fill_secret"
     // A tool on somebody else's MCP server. Split by effect for the same reason as the browser
     // intents: an operator thinks "nothing may change anything in Jira", not "nothing may call
     // editJiraIssue, transitionJiraIssue, addCommentToJiraIssue and the six others".

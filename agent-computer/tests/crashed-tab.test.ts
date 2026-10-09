@@ -1445,10 +1445,11 @@ describe.skipIf(!HAS_BROWSER)("a value a person typed", () => {
     await tab.evaluate(() => document.querySelector("input")?.remove());
 
     const typed = await post("/human/secret", bot, { text: TYPED });
-    expect([typed.status, typed.body.code]).toEqual([
-      409,
-      "laf:element_not_actionable",
-    ]);
+    // Said as a ref that names nothing — asked of the page before anything is pressed
+    // (`resolveRef`, since 2026-10-10) — where it used to be said as a box that would not take a
+    // press, after waiting out the press. The same refusal to a person either way: the masked
+    // box has one sentence for the two (`app/src/lib/computer/refusals.ts`).
+    expect([typed.status, typed.body.code]).toEqual([409, "laf:stale_refs"]);
     expect(typed.text).not.toContain(TYPED);
 
     const state = await call("GET", "/control", bot);

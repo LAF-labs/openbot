@@ -10,17 +10,26 @@
  * crosses this process.
  */
 import type { AuditStore } from "../../audit";
-import { type ComputerClient, STALE_REFS, StaleSnapshotError } from "../client";
+import {
+  type ComputerClient,
+  NO_SECRET_PENDING,
+  STALE_REFS,
+  StaleSnapshotError,
+} from "../client";
 import { isSecretFieldElement } from "../default-policy";
 import type { PolicyDecision } from "../policy";
 import type { SecretRequest, SnapshotElement, SnapshotResult } from "../schema";
 import { hostOf, originOf } from "./addresses";
 import { type ActionActor, ActionRefusedError } from "./caller";
+import type { Govern } from "./govern";
 import type { SnapshotCache } from "./snapshots";
 import { write, writeControlEvent } from "./trail";
 
 /** A field a person typed a secret into, as this server can know it: its ref, on an origin. */
 type TypedInto = { ref: string; origin: string; role: string; name: string };
+
+/** A field a value is waiting for: where it was judged, and as what. See `supplySecret`. */
+type Requested = TypedInto & { snapshotId: number };
 
 /** How many such fields one computer's snapshots are masked against. */
 const TYPED_INTO_LIMIT = 8;
@@ -53,8 +62,13 @@ export function createSecrets(deps: {
   as: (botId: string) => ComputerClient;
   auditStore: AuditStore;
   snapshots: SnapshotCache;
+  /**
+   * The gate every acting call goes through. Handed in as a function because it is made after
+   * this is (`gateway.ts`: it reads `suppliedOn` from here), and called only once both exist.
+   */
+  govern: Govern;
 }) {
-  const { as, auditStore, snapshots } = deps;
+  const { as, auditStore, snapshots, govern } = deps;
   /**
    * Where each open secret request points, as this server resolved it when the request was made.
    *
@@ -81,7 +95,7 @@ export function createSecrets(deps: {
    * a new ref anyway. Not the path: a single-page app moves its path under a box still holding the
    * value.
    */
-  const secretRequests = new Map<string, TypedInto>();
+  const secretRequests = new Map<string, Requested>();
   const typedInto = new Map<string, TypedInto[]>();
 
   function forgetTypedInto(computerId: string): void {
@@ -145,6 +159,10 @@ export function createSecrets(deps: {
     botId: string,
     actor: ActionActor,
     input: SecretRequest,
+    /** A person's answer, where a rule asked about this request before it was made. */
+    approvalId?: string,
+    /** The caller's Stop. */
+    signal?: AbortSignal,
   ) {
     /*
      * THE FIELD IS RESOLVED HERE, NEVER TAKEN FROM THE BOT.
@@ -188,10 +206,37 @@ export function createSecrets(deps: {
     };
     // One line, bounded: it is rendered on the masked box and written into the trail.
     const label = input.label.replace(/\s+/g, " ").trim().slice(0, 120);
-    const state = await as(botId).requestSecret({ ...input, label });
+    /*
+     * THROUGH THE GATE, LIKE EVERY OTHER ACT OF THE BOT'S (2026-10-10, record §6).
+     *
+     * This went to the computer on the checks above and nothing else: no rule was asked, the
+     * repeat count never saw it, and its one row was a note beside the trail. A Bot could ask a
+     * person for a value on a site the deployment had forbidden it to act on, as often as it
+     * liked. It is decided as `fill_secret` now — an intent of its own, because the shipped
+     * policy refuses a Bot TYPING into a password field (`intent == "type"`) and that field is
+     * what this is for — and it leaves the rows every act leaves: allowed, refused, or a question.
+     *
+     * What is judged is the Bot asking. The value is a person's, typed by them into the masked
+     * box; no rule stands between a person and a field they were shown (the same line
+     * `person-files.ts` draws for the folder). What the gate gives their typing is the FIELD: it
+     * goes into the one judged here, or nowhere (`supplySecret`).
+     */
+    const state = await govern(
+      computerId,
+      "computer_request_secret",
+      botId,
+      actor,
+      {
+        ref: input.ref,
+        ...(signal ? { signal } : {}),
+        ...(approvalId ? { approvalId } : {}),
+      },
+      () => as(botId).requestSecret({ ...input, label }),
+    );
     secretTargets.set(computerId, into);
     secretRequests.set(computerId, {
       ref: input.ref,
+      snapshotId: input.snapshotId,
       origin: originOf(cached.url),
       role: element.role,
       name: element.name,
@@ -211,15 +256,33 @@ export function createSecrets(deps: {
     actor: ActionActor,
     text: string,
   ) {
-    const result = await as(botId).supplySecret(text);
-    secretTargets.delete(computerId);
+    /*
+     * INTO THE FIELD THAT WAS JUDGED, OR NOWHERE.
+     *
+     * The value used to be sent with nothing beside it, and the computer put it into whatever its
+     * own note of the request named. The field the gate judged — its role and its name, on the
+     * snapshot it was judged in — travels with the value now, and the computer refuses where the
+     * control is called something else by then or the page has moved on (`holdToLabel`, the hold
+     * a click has had since 2026-09-07). A page that swaps its password box for a comment box
+     * between the question and the answer gets no value.
+     *
+     * WITH NO JUDGEMENT HELD HERE, NOTHING IS SENT. This server restarted between the question and
+     * the answer, or the request was let go: the turn that asked is gone, and a value typed now
+     * would land in a page nobody is reading, into a field nothing here vouches for. It is told
+     * what the computer says of a value nothing is waiting for.
+     */
     const request = secretRequests.get(computerId);
+    if (!request) throw new StaleSnapshotError(NO_SECRET_PENDING);
+    const result = await as(botId).supplySecret(text, {
+      snapshotId: request.snapshotId,
+      element: { role: request.role, name: request.name },
+    });
+    secretTargets.delete(computerId);
     secretRequests.delete(computerId);
-    if (request) {
-      // Bounded: a session that asks for a hundred secrets is not one this should remember.
-      const known = typedInto.get(computerId) ?? [];
-      typedInto.set(computerId, [...known, request].slice(-TYPED_INTO_LIMIT));
-    }
+    // Bounded: a session that asks for a hundred secrets is not one this should remember.
+    const known = typedInto.get(computerId) ?? [];
+    const { snapshotId: _judgedIn, ...field } = request;
+    typedInto.set(computerId, [...known, field].slice(-TYPED_INTO_LIMIT));
     await writeControlEvent(auditStore, "computer.secret_supplied", {
       botId,
       actor,

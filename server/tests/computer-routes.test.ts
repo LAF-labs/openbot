@@ -1148,7 +1148,18 @@ describe("a secret being asked for and supplied", () => {
   });
 
   test("supplying one records that it happened and how long it was, never what it was", async () => {
-    const { app, rows } = surface(ADMIN);
+    const { app, rows, seen } = surface(ADMIN);
+    await seen();
+    const asked = await app.request("/bot-1/control/secret", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        label: "은행 비밀번호",
+        ref: "e4",
+        snapshotId: 7,
+      }),
+    });
+    expect(asked.status).toBe(200);
 
     const response = await app.request("/bot-1/human/secret", {
       method: "POST",
@@ -1170,6 +1181,31 @@ describe("a secret being asked for and supplied", () => {
     });
     // Every row, not only that one: nothing else along the way may have picked it up either.
     expect(carrying(rows)).not.toContain(SECRET);
+  });
+
+  test("a value nothing asked for reaches no computer: the door answers what the computer says of one", async () => {
+    /*
+     * It used to be passed on, and the computer put it wherever its own note of a request named.
+     * A value is held to the field the gateway judged the request on now, so a value with no
+     * request held here — this server restarted between the question and the answer, or nothing
+     * ever asked — has no field to be held to, and goes nowhere.
+     */
+    const { app, rows, sentToComputer, seen } = surface(ADMIN);
+    await seen();
+    const response = await app.request("/bot-1/human/secret", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: SECRET }),
+    });
+    expect([response.status, await response.json()]).toEqual([
+      409,
+      { error: "laf:secret_not_pending", code: "laf:secret_not_pending" },
+    ]);
+    expect(carrying(sentToComputer)).not.toContain(SECRET);
+    expect(carrying(rows)).not.toContain(SECRET);
+    expect(
+      rows.filter((row) => row.eventType === "computer.secret_supplied"),
+    ).toEqual([]);
   });
 
   test("the value is in no row and no reply, on its way through", async () => {

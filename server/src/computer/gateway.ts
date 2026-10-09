@@ -173,7 +173,13 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
   const as = (botId: string) => client.forBot(botId);
 
   const snapshots = createSnapshotCache();
-  const secrets = createSecrets({ as, auditStore, snapshots });
+  const secrets = createSecrets({
+    as,
+    auditStore,
+    snapshots,
+    // Made just below, from what this hands it; called only once a request arrives.
+    govern: (...call) => govern(...call),
+  });
   const govern = createGovern({
     auditStore,
     policy: options.policy,

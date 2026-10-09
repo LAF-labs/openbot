@@ -393,14 +393,21 @@ export function createComputerRoutes(
         if (typeof body?.snapshotId !== "number") {
           return ARGUMENTS_INVALID_BODY;
         }
-        return gateway.requestSecret(botId, botId, actor, {
-          label:
-            typeof body?.label === "string" && body.label.trim()
-              ? body.label.trim()
-              : "the value this page is asking for",
-          ref: body.ref,
-          snapshotId: body.snapshotId,
-        });
+        return gateway.requestSecret(
+          botId,
+          botId,
+          actor,
+          {
+            label:
+              typeof body?.label === "string" && body.label.trim()
+                ? body.label.trim()
+                : "the value this page is asking for",
+            ref: body.ref,
+            snapshotId: body.snapshotId,
+          },
+          // Decided by the gate like any act of the Bot's, so an answer travels with it like any.
+          asApprovalId(body),
+        );
       }),
   );
 

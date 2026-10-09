@@ -24,6 +24,14 @@ export const SECRET_REFUSALS: Record<string, string> = {
   // The same box, gone by the time the value arrived: the page changed under the request.
   "laf:stale_refs":
     "The box for that value is no longer on the page. Ask the Bot to request it again.",
+  /*
+   * The box is there and is called something else than when the Bot asked: the value is held to
+   * the field the gateway judged (`agent-computer/src/control-routes.ts`, `holdToLabel`), and a
+   * page that renamed it gets none. Said to the person who just typed, so it says what did not
+   * happen to what they typed.
+   */
+  "laf:label_changed":
+    "The box changed after the Bot asked, so what you typed was not put in. Ask the Bot to request it again.",
   "laf:computer_unreachable": "The Bot's computer could not be reached.",
   "laf:computer_timed_out": "The Bot's computer did not answer in time.",
 };

@@ -610,6 +610,7 @@ bunx playwright install chromium   # 없으면 이 파일의 13개가 skip된다
 | `laf:request_invalid` | 요청에 필요한 값이 빠졌다. 어느 값인지 `field` |
 | `laf:file_path_refused` / `laf:file_not_found` / `laf:file_wrong_kind` / `laf:file_too_large` / `laf:file_failed` | 작업 공간 파일 요청. 너무 크면 `bytes`·`limit` |
 | `laf:secret_not_pending` | 기다리는 비밀값 요청이 없는데 값이 왔다 |
+| `laf:label_changed` (비밀값) | 값을 넣으려는 칸이 부탁할 때 판단한 이름이 아니다(2026-10-10부터 비밀값에도). 값은 들어가지 않고 요청은 끝난다 |
 | `laf:bot_header_missing` | 어느 봇인지 말하지 않은 호출(배포 버그) |
 | `laf:computer_token_refused` / `laf:computer_route_unknown` | 비밀이 맞지 않거나 없는 경로(배포 버그) |
 
