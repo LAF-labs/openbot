@@ -572,7 +572,11 @@ Hark의 project와 같다.
 - 얼굴의 색이 앱 전체의 강조색이었다(`app/src/lib/avatar/accent.ts`). 얼굴과 함께 지우고, 강조색은
   검정에 가까운 중립색 하나다(`--app-accent`). 브랜드 색은 미정(1).
 - 프롬프트의 "이름과 얼굴은 이 사람이 정했고"는 "이름은 이 사람이 정했고"가 됐다
-  (`shared/prompt/base.ko.ts`). 프롬프트 해시가 바뀌어 eval 판정을 새로 받는다.
+  (`shared/prompt/base.ko.ts`). 프롬프트 해시가 바뀌어 eval 판정을 새로 받았다(2026-10-10,
+  `eval-pack.md` "The profile is a name, and no effort is sent"): 82개 중 80개. 하나는 제공사의 요청
+  제한이었고, 하나(`weather-for-the-place-just-said`)는 main에서도 다섯에 한 번꼴로 틀리는
+  시나리오다(35회씩: main 30, 이 변경 28). effort를 보내지 않아도 추론량은 같았다. 그 시나리오는
+  묶음 A를 내보내기 전에 다시 본다.
 - **effort는 보이지 않고, 사람도 봇도 바꾸지 못한다.** 카드와 `update_profile`의 effort를 지웠다.
   보내는지는 `BOT_MODEL_EFFORT`(기본 false)가 정한다: false면 보내지 않고(모델의 기본값 — Muse
   Spark에서는 medium), true면 모든 실행에 같은 값 하나(`FIXED_EFFORT`, `server/src/copilot.ts`)를
