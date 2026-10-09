@@ -38,6 +38,12 @@ export type ControlState = {
     /** Every box of the card, by the control's own name beside what the Bot called it. */
     fields?: { ref: string; label: string; role: string; name: string }[];
   };
+  /**
+   * A value was put into this Bot's browser for a person, in a run that is not over. No picture
+   * of the browser is kept for that long (`@/lib/computer/last-frame`): a page may show the
+   * value back, and a picture is not something it can be taken out of.
+   */
+  valuesHeld?: true;
 };
 
 /**

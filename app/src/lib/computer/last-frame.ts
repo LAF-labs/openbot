@@ -108,7 +108,8 @@ export async function keepLastFrame({
   isCutOff?: boolean;
 }): Promise<boolean> {
   const { state } = await readControl(botId).catch(() => ({ state: null }));
-  if (state?.secretWanted) return false;
+  // Nor for the rest of a run a person's value was put in: see the picture's own word below.
+  if (state?.secretWanted || state?.valuesHeld) return false;
 
   // Asked for at the size it is kept at: the computer scales and encodes it, and this tab decodes
   // nothing. An older computer answers with the full PNG, which is shrunk here as it always was.
@@ -121,8 +122,17 @@ export async function keepLastFrame({
     base64?: string;
     mime?: string;
     url?: string;
+    valuesHeld?: boolean;
   } | null;
   if (!shot?.base64 || isBlankAddress(shot.url)) return false;
+  /*
+   * A PICTURE THAT SAYS IT IS NOT ONE TO KEEP IS NOT KEPT. A value put into the Bot's browser for
+   * a person is taken out of every word the computer answers for the rest of that run, and a page
+   * that shows the value back shows it in its picture too — which would be filed on the message
+   * and in every backup of it. The computer says so on the picture itself, at the instant it was
+   * taken; what was read above was read a moment before, and a value may have gone in between.
+   */
+  if (shot.valuesHeld) return false;
   const jpeg =
     shot.mime === "image/jpeg" ? shot.base64 : await shrink(shot.base64);
   if (!jpeg) return false;

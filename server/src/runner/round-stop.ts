@@ -57,6 +57,7 @@ const ALWAYS_ENDS: ReadonlySet<string> = new Set([
 const TABS_MOVED: ReadonlySet<string> = new Set([
   "laf:tab_replaced",
   "laf:old_tab_closed",
+  "laf:value_tab_closed",
 ]);
 
 /** The codes of the facts a step's result carried, kept beside their words for this rule. */

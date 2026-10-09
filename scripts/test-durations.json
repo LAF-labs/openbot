@@ -22,6 +22,8 @@
   "agent-computer/tests/egress.test.ts": 0,
   "agent-computer/tests/fact-codes.test.ts": 0.05,
   "agent-computer/tests/file-handoff.test.ts": 0.12,
+  "agent-computer/tests/filled-values-site.test.ts": 2.84,
+  "agent-computer/tests/filled-values.test.ts": 0.02,
   "agent-computer/tests/fixture-site.test.ts": 0.01,
   "agent-computer/tests/korean-browser.test.ts": 0.02,
   "agent-computer/tests/live-screen-input.test.ts": 0.01,

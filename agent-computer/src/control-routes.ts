@@ -11,6 +11,12 @@ import { isSameAsk, secretFieldsOf } from "../../shared/secret-ask";
 import type { BotRoute } from "./computer";
 import { ControlRequestError, NO_SECRET_PENDING } from "./control";
 import { actionFailure } from "./failures";
+import {
+  filledTabs,
+  forgetFilled,
+  holdsFilled,
+  rememberFilled,
+} from "./filled-values";
 import { holdToLabel } from "./label-hold";
 import { onElement, resolveRef, STALE_REFS, StaleSnapshotError } from "./refs";
 import { bodyOf, fact, invalid, json } from "./respond";
@@ -21,8 +27,15 @@ import { within } from "./within";
 
 // What the Bot is asking for. Polled by the surface alongside the screen, so the person sees the
 // Bot ask for help without having to reload anything.
+//
+// AND WHETHER A VALUE PUT IN FOR A PERSON IS STILL BEING KEPT OUT OF WHAT LEAVES (`valuesHeld`). Not
+// part of what is written to disk with the rest: it is true of this process's browser, and a
+// process that starts again starts with neither the tabs nor the values.
 export const controlState: BotRoute = ({ session }) =>
-  json(session.control.get());
+  json({
+    ...session.control.get(),
+    ...(holdsFilled(session) ? { valuesHeld: true } : {}),
+  });
 
 // The Bot asking for a hand with something outside its screen. It says what and why, and a person
 // answers: done, or skip.
@@ -207,6 +220,9 @@ export const supplySecret: BotRoute = async (
       // the change that began holding it). What a value is held to is what the box is when the
       // value goes in — and, on a card of several, after the boxes before it were filled.
       await holdToLabel(field, judged);
+      // HELD BEFORE IT GOES IN, so that no answer after this line carries it — the one that says
+      // the fill failed included (`filled-values.ts`).
+      rememberFilled(session, target, text);
       // A failure here must not say what it was filling: Playwright's message for it does.
       await onElement(() =>
         field.fill(text, { timeout: config.actionTimeoutMs }),
@@ -285,4 +301,30 @@ export const withdrawSecret: BotRoute = async ({ request, session }) => {
   }>(request);
   if (session.control.withdrawSecret(body ?? {})) session.secretTab = undefined;
   return json(session.control.get());
+};
+
+/**
+ * `POST /run/ended`: the server saying the run this Bot was on is over.
+ *
+ * WHAT ENDS WITH IT IS WHAT WAS PUT IN FOR A PERSON. For as long as the run lasted, a value that
+ * went into a page was kept out of everything that left (`filled-values.ts`). It stops being kept
+ * out here — and so the tabs it went into are closed first: a tab outlives a run by ten minutes
+ * (`tabs.ts`), and the next run would have come back to a page still holding it, with nothing
+ * hiding it and its picture being taken again. A sign-in is the browser's and stays; what goes is
+ * the page, and whatever it kept for the length of the tab.
+ *
+ * NOTHING IS LET GO OF UNTIL THE TABS ARE GONE. One that would not close leaves everything as it
+ * was, and the server asks again when the next run ends.
+ *
+ * A run in which nothing was put in ends nothing, and this is not what starts a browser.
+ */
+export const runEnded: BotRoute = async ({ botId, session }, { profiles }) => {
+  if (!holdsFilled(session)) return json({ ended: true, closed: 0 });
+  const tabs = filledTabs(session);
+  const open = tabs.filter((tab) => !tab.isClosed()).length;
+  if (!(await profiles.closeFor(botId, tabs))) {
+    return json({ ended: false, closed: 0 });
+  }
+  forgetFilled(session);
+  return json({ ended: true, closed: open });
 };

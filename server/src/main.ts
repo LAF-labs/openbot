@@ -927,6 +927,13 @@ const turnEngine = createTurnEngine({
   hub: turnHub,
   lane: botLane,
   work: workInFlight,
+  // What the Bot's computer held for a person for the length of the turn is let go of at its end.
+  ...(computerGateway
+    ? {
+        runEnded: ({ botId, threadId }) =>
+          computerGateway.runEnded(botId, threadId),
+      }
+    : {}),
   resolveAgents: resolveAgentsFor,
   tools: (context, declared) => chatTools(context, declared),
   // An account the list no longer admits acts on nothing, a turn nobody watches included.

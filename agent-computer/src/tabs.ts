@@ -138,7 +138,14 @@ export const STRAY_GRACE_MS = 60_000;
  * The tab a Bot was on, gone from under it: how, and which site it was showing — the origin only,
  * for the reason a log line carries no more (a path and a query are the page's).
  */
-export type TabLost = { cause: "crashed" | "closed"; origin: string };
+export type TabLost = {
+  /** `values`: closed by this process, for what a person had put into it (`closeFor`). */
+  cause: "crashed" | "closed" | "values";
+  origin: string;
+};
+
+/** How long a tab is given to close when its closing is waited for. A healthy one takes a moment. */
+const CLOSE_WAIT_MS = 5_000;
 
 /**
  * The tabs of a Bot's closed to keep them to {@link TAB_CAP} since it last read its list: how many,
@@ -550,6 +557,38 @@ export function createTabs(browser: TabsBrowser) {
       (one, other) => (used.get(one) ?? 0) - (used.get(other) ?? 0),
     )[0];
 
+  /**
+   * Close these tabs because of what was put into them — a person's value, in a run that has now
+   * ended (`filled-values.ts`). Says whether every one of them is closed by the end.
+   *
+   * LET GO OF BEFORE CLOSED, like everything this process closes, so `own`'s listener does not
+   * take the close for the site's. AND WAITED FOR, unlike the cap's: what the caller does next is
+   * stop hiding what these pages held, and it may do that only once they are gone.
+   *
+   * SAID AS A LOSS, ONCE, whichever of them the Bot was on: the list its `computer_switch_tab`
+   * index was read from is another list now, and its next look is told why (`tab-loss.ts`) rather
+   * than left to find a page missing.
+   */
+  const closeFor = async (botId: string, pages: Page[]): Promise<boolean> => {
+    const open = pages.filter((page) => !page.isClosed());
+    const mine = open.filter((page) => owners.get(page) === botId);
+    const told = mine.find((page) => isOn(botId, page)) ?? mine[0];
+    const origin = told ? originOf(told.url()) : undefined;
+    for (const page of mine) owners.delete(page);
+    for (const page of open) closing.add(page);
+    if (origin !== undefined)
+      browser.onLost(botId, { cause: "values", origin });
+    await Promise.all(
+      open.map((page) =>
+        within(
+          CLOSE_WAIT_MS,
+          page.close().catch(() => undefined),
+        ),
+      ),
+    );
+    return pages.every((page) => page.isClosed());
+  };
+
   /** Count a tab closed for the cap against the list the Bot last read, with the site it showed. */
   const closedFor = (running: Live, origin: string): void => {
     running.capped += 1;
@@ -786,6 +825,7 @@ export function createTabs(browser: TabsBrowser) {
     touch,
     use,
     closeTabsOf,
+    closeFor,
     closeStrays,
     adoptOpened,
     tabs,

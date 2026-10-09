@@ -211,6 +211,10 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
     ...createPersonFiles({ as, auditStore }),
     requestSecret: secrets.requestSecret,
     supplySecret: secrets.supplySecret,
+    /** Whether a person's value is being held in this Bot's browser. See `gateway/secrets.ts`. */
+    holdsValues: secrets.holdsValues,
+    /** A run of this Bot's is over: what was put in for it stops being held. */
+    runEnded: secrets.runEnded,
     ...createNavigation({ as, govern, siteSeen: options.siteSeen }),
     ...createActs({
       as,

@@ -28,6 +28,8 @@ export function createTranscriptRoutes(
   readMessageTimes: ReadMessageTimes | undefined,
   /** Tells the person's other windows a picture was kept. Absent in tests that only want the row. */
   events?: ChannelEventHub,
+  /** Whether a picture of this Bot's browser may not be kept just now. See `routes.ts`. */
+  framesWithheld?: (botId: string) => boolean,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -147,6 +149,18 @@ export function createTranscriptRoutes(
         context.req.param("channelId"),
       );
       if (!channel) return context.json(refusal("laf:channel_not_found"), 404);
+      /*
+       * NOT WHILE A PERSON'S VALUE IS BEING HELD IN THAT BROWSER. For the rest of the run a value
+       * was put in, the computer keeps it out of every word it answers — and a picture is not
+       * words: the page that shows a sign-in name back shows it in this JPEG, which would be kept
+       * on the message and in every backup of it. The window does not offer one (the picture says
+       * of itself that it is not to be kept, `app/src/lib/computer/last-frame.ts`); this is the
+       * same rule where the row is written, for a window that offered one anyway. The conversation's
+       * Bot, whichever conversation of its the value was asked in: it is one browser.
+       */
+      if (framesWithheld && channel.agentIds.some(framesWithheld)) {
+        return context.json(refusal("laf:frame_withheld"), 409);
+      }
       const toolCallId = context.req.param("toolCallId");
       const kept = store.keepFrame
         ? await store.keepFrame(channel.threadId, toolCallId, jpeg)

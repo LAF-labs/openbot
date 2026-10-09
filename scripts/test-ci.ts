@@ -2402,6 +2402,39 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * fact are not one row.) Fifty-three mutations each fail one of these.
  * By hand: 5, 4 and 11 are 20, and 3910 and 20 are 3930; 2138 and 2 are 2140; 927 and 6 are 933.
  *
+ * RAISED 2026-10-10 FOR WHAT A PAGE SHOWS BACK, `server` from 3930 to 3942, `agent-computer` from
+ * 504 to 532, `app` from 2140 to 2142 and `root` from 933 to 935 (record §6, piece 2-2): a value
+ * put into the Bot's browser for a person is kept out of every word the computer answers for the
+ * rest of that run, no picture of the browser is kept for that long, and the tabs it went into
+ * are closed when the run ends. Twenty-eight to `agent-computer`. Twenty-five in the new
+ * `filled-values.test.ts`, the rule without a browser: a value is taken out wherever it stands in
+ * a sentence, in either case and across white space; the site of an address is left as it is and
+ * everything after it is looked in; one under four letters is not looked for; a number is hidden
+ * where it is the whole of a number and left alone inside a price, a date, a phone number and a
+ * ref; what the Bot itself typed is never hidden; nothing of a value is on the session; and an
+ * answer on its way out has it taken from every string, says that something was, and keeps a
+ * picture's bytes unread. Three in the new `filled-values-site.test.ts`, a real Chromium on a
+ * sign-in that takes its boxes away and writes both values into its text, its title, the path of
+ * its address and a second tab: neither is in anything the Bot is handed, the picture says of
+ * itself that it is not one to keep, and a file read through the same door is left as written; at
+ * the run's end the tab is closed, the Bot's next look is told so, and nothing acts before it;
+ * and a browser that is stopped has let go with its tabs. Twelve to `server`. Seven in
+ * `computer-gateway.test.ts`: the end is passed on for the run a value was put in for and no
+ * other, once; an ask that named no conversation is ended by whichever run ends next; it is noted
+ * before the values leave; a computer that could not close its tabs is told again; a server that
+ * started again relearns it from the computer's own word; a stopped browser has let go already;
+ * a value put in for another run while an end is on its way keeps that run's note.
+ * One in `frame-routes.test.ts`: no picture is kept of a browser a value is held in. One in
+ * `computer-client.test.ts`: the route the end is said on. One in `turn-loop-round-stop.test.ts`:
+ * a look that says the tab was closed ends the round. Two in `turn-engine.integration.test.ts`:
+ * the run is said to be over once, before the conversation takes another turn, and a turn whose
+ * end could not be told still ends. Two to `app`, in `last-frame-offer.test.ts`: no picture is
+ * asked for while a value is held, and one that says a value went in after the state was read is
+ * dropped. Two to `root`, in `tool-notes.test.ts`: what the Bot hears of the mark and of the
+ * closed tab. Forty-nine mutations each fail one of these.
+ * By hand: 25 and 3 are 28, and 504 and 28 are 532; 7, 1, 1, 1 and 2 are 12, and 3930 and 12 are
+ * 3942; 2140 and 2 are 2142; 933 and 2 are 935.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2430,15 +2463,15 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 3930, roots: ["server"] },
-  { name: "app", floor: 2140, roots: ["app"] },
+  { name: "server", floor: 3942, roots: ["server"] },
+  { name: "app", floor: 2142, roots: ["app"] },
   {
     name: "agent-computer",
-    floor: 504,
+    floor: 532,
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 933, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 935, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

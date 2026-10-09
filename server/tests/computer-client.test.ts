@@ -1630,4 +1630,10 @@ describe("a card that asks for values, on the wire", () => {
       },
     ]);
   });
+
+  test("the end of a run is said to that Bot's computer, on its own route", async () => {
+    const { client, sent } = bodies();
+    await client.runEnded();
+    expect(sent).toEqual([{ path: "/run/ended", body: {} }]);
+  });
 });

@@ -936,6 +936,18 @@ export function createComputerClient(options: ComputerClientOptions) {
         })) as SecretResult;
       },
 
+      /**
+       * Say that the run this Bot was on is over. The computer closes the tabs a person's value
+       * went into and stops holding it (`agent-computer/src/control-routes.ts`, `runEnded`):
+       * `ended` is false when a tab would not close, and everything is as it was.
+       */
+      async runEnded(): Promise<{ ended: boolean; closed: number }> {
+        return (await post("/run/ended", {})) as {
+          ended: boolean;
+          closed: number;
+        };
+      },
+
       /** The same computer, addressed as a particular Bot. */
       forBot(id: string) {
         return build(id);

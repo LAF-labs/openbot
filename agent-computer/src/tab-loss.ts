@@ -38,6 +38,7 @@ import type { TabLost } from "./tabs";
  * sign-ins are the profile's. `cause` and the site's `origin` ride beside it.
  */
 const TAB_REPLACED = "laf:tab_replaced";
+const VALUE_TAB_CLOSED = "laf:value_tab_closed";
 
 /**
  * The tab this Bot was on is gone. Called the moment it happens (`ProfileOptions.onTabLost`).
@@ -97,7 +98,15 @@ export function assertLooked(session: BotSession): void {
  */
 export function looked(session: BotSession, seen: number): void {
   if (seen > session.tabsSeen && session.lostTab) {
-    note(session, { code: TAB_REPLACED, ...session.lostTab });
+    // Closed by this process, for what a person had put into it (`runEnded`), is its own fact:
+    // nothing died and no site closed anything, and the Bot is not left to guess which.
+    const { cause, ...lost } = session.lostTab;
+    note(
+      session,
+      cause === "values"
+        ? { code: VALUE_TAB_CLOSED, ...lost }
+        : { code: TAB_REPLACED, cause, ...lost },
+    );
   }
   session.tabsSeen = seen;
 }

@@ -8,6 +8,7 @@
  */
 import { isBotId } from "./authorisation";
 import type { BotRoute, Computer } from "./computer";
+import { forgetFilled } from "./filled-values";
 import { stopViewer } from "./live-screen";
 import { bodyOf, json } from "./respond";
 import { forgetSecretFields } from "./secret-fields";
@@ -77,6 +78,8 @@ export const stopComputer: BotRoute = async (
   // The wheel goes back to the Bot because the controlled browser no longer exists.
   session.control.release();
   forgetSecretFields(session);
+  // Its tabs are closed, so the pages a value went into are gone with the rest.
+  forgetFilled(session);
   return json({ stopped: true, wasRunning });
 };
 

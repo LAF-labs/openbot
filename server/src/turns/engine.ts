@@ -103,6 +103,12 @@ export type TurnEngineOptions = {
   /** The one queue per Bot every server-side path shares. */
   lane?: BotLane;
   work?: WorkInFlight;
+  /**
+   * Told when a turn's run is over, before the Bot and the conversation are free for the next:
+   * what the Bot's computer held for the length of the run is let go of here
+   * (`computer/gateway/secrets.ts`, `runEnded`). Never throws.
+   */
+  runEnded?: (run: { botId: string; threadId: string }) => Promise<void>;
   /** The same agents every run path resolves, as the conversation's owner. */
   resolveAgents: (
     actor: AgentActor,
@@ -735,6 +741,16 @@ export function createTurnEngine(options: TurnEngineOptions) {
       }
     }
     meter.end();
+    /*
+     * THE RUN IS SAID TO BE OVER BEFORE THE BOT IS ANYBODY ELSE'S, AND BEFORE THE CONVERSATION IS
+     * FREE. A value put into the Bot's browser for a person is held, and its tab kept, for the
+     * length of the run (`computer/gateway/secrets.ts`). Told of the end only once the next run had
+     * the Bot, the computer would close the tab that run was already working in — or let go of a
+     * value that run had just had put in. Only here: a turn that never got this far put nothing in.
+     */
+    await options.runEnded?.({ botId, threadId }).catch((error: unknown) => {
+      log.warn("turn_end_not_told", { reason: describeFailure(error) });
+    });
     // Nothing of this turn drives the Bot any more: whoever is next may have it.
     over = true;
     letGo();
