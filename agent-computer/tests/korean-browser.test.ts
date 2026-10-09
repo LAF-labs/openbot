@@ -175,10 +175,32 @@ describe("what the Bot's asks are after a restart", () => {
     expect(restored.secretLost).toBe(false);
   });
 
-  test("a Bot that held it is simply the default, not something restored", () => {
-    expect(restoredControl({ holder: "bot", requested: true }).state).toBe(
+  test("a Bot that held it and asked nothing is simply the default, not something restored", () => {
+    expect(restoredControl({ holder: "bot", requested: false }).state).toBe(
       undefined,
     );
+  });
+
+  /*
+   * The server's wait outlives this process and reads an ask that is simply gone as one answered:
+   * restored as nothing, this ask told the Bot the person had approved on their phone (review,
+   * 2026-10-09).
+   */
+  test("an ask for a hand that a restart cut short reads as nobody's answer, not as one answered", () => {
+    const restored = restoredControl({
+      holder: "bot",
+      since: "2026-09-03T01:00:00.000Z",
+      requested: true,
+      reason: "휴대폰 앱에서 로그인을 승인해 주세요",
+    });
+    expect(restored.state).toMatchObject({
+      holder: "bot",
+      requested: false,
+      unanswered: true,
+    });
+    expect(restored.state?.reason).toBeUndefined();
+    expect(askOutcome(restored.state ?? {})).toBe("gave up");
+    expect(restored.secretLost).toBe(false);
   });
 
   test("nothing readable is the same as nothing", () => {
@@ -198,6 +220,9 @@ describe("what the Bot's asks are after a restart", () => {
     expect(restored.secretLost).toBe(true);
     // The ref named a snapshot of a page in a browser that no longer exists.
     expect(restored.state?.secretWanted).toBe(undefined);
+    // And the wait still reading this state is not told a value was typed.
+    expect(restored.state?.unanswered).toBe(true);
+    expect(askOutcome(restored.state ?? {})).toBe("gave up");
   });
 
   test("a takeover cut short by a restart keeps no secret box open, and no ask standing", () => {

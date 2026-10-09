@@ -2199,6 +2199,14 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * By hand: 529 less 54 is 475; 2187 less 34 is 2153; 3896 less 4 is 3892. `root` lost and gained
  * none.
  *
+ * RAISED 2026-10-09, by one each, for three review findings on the same branch. Each comes with a
+ * test that fails without its fix:
+ *  - `agent-computer` 475 → 476: `korean-browser.test.ts`, an ask for a hand that a restart cut
+ *    short reads as nobody's answer;
+ *  - `server` 3892 → 3893: `connections-overview.test.ts`, a site is a switch a card may draw only
+ *    once it is on;
+ *  - `app` 2153 → 2154: `connection-choices.test.tsx`, the card offers a site only once it is on.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2227,11 +2235,11 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 3892, roots: ["server"] },
-  { name: "app", floor: 2153, roots: ["app"] },
+  { name: "server", floor: 3893, roots: ["server"] },
+  { name: "app", floor: 2154, roots: ["app"] },
   {
     name: "agent-computer",
-    floor: 475,
+    floor: 476,
     roots: ["agent-computer"],
     processes: 1,
   },
