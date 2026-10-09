@@ -516,7 +516,8 @@ async function runTask(task: Task) {
       timeoutMs: TASK_TIMEOUT_MS,
       maxSteps: MAX_STEPS,
       forwardedProps: {
-        effort: process.env.EVAL_EFFORT ?? "balanced",
+        // What production sends: no effort by default (see `evals/run.ts`).
+        ...(process.env.EVAL_EFFORT ? { effort: process.env.EVAL_EFFORT } : {}),
         timeZone: resolveTimeZone(EVAL_TIME_ZONE),
       },
       runIdFor: (run) => `browse_${task.id}_${run + 1}_${Date.now()}`,

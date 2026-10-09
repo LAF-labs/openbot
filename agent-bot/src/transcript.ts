@@ -224,7 +224,16 @@ function readableArguments(raw: string): string {
   return parseToolArguments(raw) === null ? "{}" : raw;
 }
 
-/** The product's three words for how hard a Bot thinks. */
+/**
+ * The product's three words for how hard a Bot thinks.
+ *
+ * NO LONGER A SETTING ON THE BOT (owner, 2026-10-08): the main conversation's effort is fixed, so
+ * the server forwards nothing by default and `balanced` only where a deployment opts back in
+ * (`server/src/copilot.ts` `FIXED_EFFORT`). The three words and their per-model mapping below stay
+ * because a forwarded word must still mean exactly one request on each model, and the eval's
+ * EVAL_EFFORT compares them; the notes about "three settings on the profile" are the record of why
+ * each model's words are what they are.
+ */
 export type ProductEffort = "quick" | "balanced" | "thorough";
 
 /** What a provider is sent as `reasoning_effort`. `max` is GLM's own top, which OpenAI does not name. */
