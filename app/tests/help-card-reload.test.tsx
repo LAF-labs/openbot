@@ -268,6 +268,14 @@ describe("a value that did not reach the page", () => {
     }
 
     expect(asked.some((url) => url.endsWith("/human/secret"))).toBe(true);
+    // One value is said as a list AND the way it always was: a server from before a card held
+    // several — restarted a moment after the page — reads only the second.
+    expect(
+      posted.find((sent) => sent.url.endsWith("/human/secret"))?.body,
+    ).toEqual({
+      values: ["a-value-typed-by-a-person"],
+      text: "a-value-typed-by-a-person",
+    });
     // The box is gone with the request, and the reason is still on the card.
     expect(hasBox()).toBe(false);
     expect(view.host.textContent).toContain(

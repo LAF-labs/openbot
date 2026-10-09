@@ -141,7 +141,15 @@ export async function supplySecret(
       method: "POST",
       credentials: "include",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ values }),
+      /*
+       * One value is also said the way it always was (`text`): the page and the server are two
+       * images restarted one after the other, and a server from before a card held several reads
+       * nothing else. Several can only be a list.
+       */
+      body: JSON.stringify({
+        values,
+        ...(values.length === 1 ? { text: values[0] } : {}),
+      }),
     });
     if (response.ok) return { ok: true };
     const body = (await response.json().catch(() => null)) as {

@@ -2366,7 +2366,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * sent together once every box holds something; and an answer that did not all go in is not
  * drawn as done. Six to `root`, in the new `tests/secret-ask.test.ts`: how a card's boxes are
  * read by everybody who reads them, what is no card, which ask an ask is, and the shape the
- * model is handed. Twenty-five mutations each fail one of these.
+ * model is handed. Twenty-six mutations each fail one of these.
  * By hand: 4, 1, 1 and 2 are 8, and 3902 and 8 are 3910; 4 and 4 are 8, and 496 and 8 are 504;
  * 2136 and 2 are 2138; 921 and 6 are 927.
  *
