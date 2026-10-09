@@ -35,8 +35,8 @@ import type { ProfileMenuShown } from "./support/profile-menu-render";
  *
  *  - WHO THE BOT IS AND WHAT IT IS DOING is said at the left of the row on every screen — by the
  *    conversation itself on its own screen, and by the Bot's mark everywhere else (`bot-mark.tsx`).
- *  - WHERE A PERSON GOES is one list under the profile button at the right (`profile-menu.tsx`),
- *    with 채팅 | 프로젝트 in the middle of the row (`view-switcher.tsx`).
+ *  - WHERE A PERSON GOES is one list under the profile button at the right (`profile-menu.tsx`).
+ *    The record's 채팅 | 프로젝트 in the middle of the row waits for projects to switch to.
  *  - THE LEFT OF THE WINDOW is the home panel, which a person folds away and drags wider
  *    (`home-panel.tsx`), and whose width is theirs on this device.
  *
@@ -92,15 +92,8 @@ const homeButton = (view: View) =>
   view.host.querySelector("[data-home-button]") as HTMLButtonElement | null;
 const mark = (view: View) =>
   view.host.querySelector("[data-bot-mark]") as HTMLAnchorElement | null;
-const switcher = (view: View) =>
-  [...view.host.querySelectorAll("[data-view-switcher] a")].map((link) => ({
-    to: link.getAttribute("href"),
-    words: link.textContent,
-    isHere: link.getAttribute("aria-current") === "page",
-  }));
-
 describe("the row at the top", () => {
-  test("on a screen that is not the conversation: the Bot and its state, the switcher, and the menu's button — nothing to make or add", async () => {
+  test("on a screen that is not the conversation: the Bot and its state, and the menu's button — nothing to make or add, and no switcher before there are projects", async () => {
     const view = await mountApp({ path: "/help", api: oneBot });
     await view.waitFor(() => mark(view) !== null, "the Bot's mark");
 
@@ -111,11 +104,9 @@ describe("the row at the top", () => {
     expect(mark(view)?.getAttribute("href")).toBe("/");
     expect(mark(view)?.textContent).toBe("초롱");
 
-    // 채팅 | 프로젝트, and on 도움말 neither is where the person is.
-    expect(switcher(view)).toEqual([
-      { to: "/", words: "Chat", isHere: false },
-      { to: "/projects", words: "Projects", isHere: false },
-    ]);
+    // 채팅 | 프로젝트 is not drawn: one of its halves would lead to a screen that can do nothing.
+    expect(view.host.querySelector("[data-view-switcher]")).toBeNull();
+    expect(view.host.querySelector('a[href="/projects"]')).toBeNull();
 
     // Every other place is one press away, under the person's own picture: the button is named
     // for what it opens and for whom, and no word of that is written out in the row.
@@ -132,22 +123,6 @@ describe("the row at the top", () => {
     ).toBeNull();
     // And search is not drawn before there is anything it could find.
     expect(row(view)?.querySelector('[aria-label="Search"]')).toBeNull();
-  });
-
-  test("the switcher says which of the two a person is on, and the projects' screen offers nothing it cannot do yet", async () => {
-    const view = await mountApp({ path: "/projects", api: oneBot });
-    await view.waitFor(
-      () => (view.main()?.textContent ?? "").includes("Projects"),
-      "the projects' screen",
-    );
-    expect(switcher(view).map((half) => half.isHere)).toEqual([false, true]);
-    expect(view.main()?.textContent).toContain("Projects cannot be made yet.");
-    expect(view.main()?.querySelectorAll("button")).toHaveLength(0);
-    expect(ko.Chat).toBe("채팅");
-    expect(ko.Projects).toBe("프로젝트");
-    expect(ko["Projects cannot be made yet."]).toBe(
-      "아직 프로젝트를 만들 수 없어요.",
-    );
   });
 });
 

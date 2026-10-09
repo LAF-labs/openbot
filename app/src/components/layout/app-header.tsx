@@ -7,7 +7,6 @@ import { ProfileMenu } from "@/components/layout/profile-menu";
 import { ReadNotice } from "@/components/layout/read-states";
 import { shellLightsInset } from "@/components/layout/shell-titlebar";
 import { UpdateNotice } from "@/components/layout/update-notice";
-import { ViewSwitcher } from "@/components/layout/view-switcher";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { rosterNotice } from "@/lib/agents/roster-state";
 import { useRunEndRefresh } from "@/lib/agents/run-end-refresh";
@@ -18,13 +17,14 @@ import { cn } from "@/lib/utils";
 
 /**
  * THE ROW ACROSS THE TOP OF THE SCREEN (2026-10-09; `docs/laf/redesign-2026-10.md` §1, laid out as
- * Hark's is): the switcher in the middle, the profile button at the right, and at the left the
- * home button — but only while the home panel is folded away, because while it is open the button
- * is in the panel's own first row, at the same corner of the window.
+ * Hark's is): the profile button at the right, and at the left the home button — but only while
+ * the home panel is folded away, because while it is open the button is in the panel's own first
+ * row, at the same corner of the window.
  *
- * THREE COLUMNS, THE OUTER TWO EQUAL, so the switcher is in the middle of the screen it switches
- * whatever stands either side of it. The middle of the SCREEN, not of the window: the row is
- * beside the panel, and the conversation under it is centred on the same line.
+ * THE MIDDLE IS EMPTY UNTIL THERE ARE PROJECTS. The record puts `[채팅 | 프로젝트]` there, and a
+ * switcher with one half that goes somewhere and one that goes to a screen able to do nothing is
+ * not drawn (the owner's rule for every control; the user's word on this one, 2026-10-09). It
+ * comes with the projects it switches to.
  *
  * WHAT THE SCREEN PUTS IN IT. The conversation draws the Bot's face, name and state into the left
  * of the row and its own buttons into the right (`header-slots.tsx`); it had a row of its own under
@@ -70,7 +70,7 @@ export function AppHeader() {
 
   return (
     <header
-      className="grid h-titlebar w-full shrink-0 select-none grid-cols-[1fr_auto_1fr] items-center gap-2 px-2.5 max-md:hidden"
+      className="flex h-titlebar w-full shrink-0 select-none items-center justify-between gap-2 px-2.5 max-md:hidden"
       data-app-header
       data-tauri-drag-region
     >
@@ -86,7 +86,6 @@ export function AppHeader() {
         <HeaderSlot className="flex min-w-0 items-center" name="leading" />
         {isConversation ? null : <BotMark />}
       </div>
-      <ViewSwitcher />
       <div
         className="flex min-w-0 items-center justify-end gap-2"
         data-tauri-drag-region

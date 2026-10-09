@@ -145,7 +145,6 @@ const PATHS = [
   "/ideas",
   "/goals",
   "/made",
-  "/projects",
   "/channel/$channelId",
   "/channel/new",
   "/sign",
