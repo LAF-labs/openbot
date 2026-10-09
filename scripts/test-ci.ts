@@ -2170,13 +2170,41 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
+ *
+ * `processes` IS HOW MANY PROCESSES A GROUP'S FILES MAY BE SPREAD OVER, where that is fewer than
+ * the workers there are. ONE FOR `agent-computer`, WHOSE SUITES DRIVE A REAL CHROMIUM. Spread over
+ * four, two of its processes each held a browser at once, and `thumbnail-cast.test.ts` hung: the
+ * live screen's frames stopped part-way through a test, the next call to the browser never
+ * answered, and the two tests after it and the file's `afterAll` ran out their time (30 s, 30 s,
+ * 5 s). Every run of main's own checks failed that way from the day the workers arrived — three
+ * of three — while pull requests passed, on the same tree: it happened on the quicker of the two
+ * kinds of machine a run is handed (app's first share in about 98 s, not about 110 s), and main's
+ * runs drew that kind each time.
+ *
+ * MEASURED 2026-10-09, on a branch that ran these checks on a push and made that test say where
+ * it was: five of five runs on the quicker kind failed with the suites spread, and four of four
+ * passed with them in one process; every run on the slower kind passed either way (nine). Why
+ * two browsers at once do this to one of them is NOT known — the hang is inside Chromium, and
+ * the same file had passed for two weeks with the group in one process, on machines as quick.
+ * What it costs: the group is the run's longest piece, about 175 s on its own worker beside the
+ * others, against about 135 s spread — the gate still ends when it does.
  */
-const GROUPS = [
+const GROUPS: readonly {
+  name: string;
+  floor: number;
+  roots: readonly string[];
+  processes?: number;
+}[] = [
   { name: "server", floor: 3896, roots: ["server"] },
   { name: "app", floor: 2187, roots: ["app"] },
-  { name: "agent-computer", floor: 529, roots: ["agent-computer"] },
+  {
+    name: "agent-computer",
+    floor: 529,
+    roots: ["agent-computer"],
+    processes: 1,
+  },
   { name: "root", floor: 920, roots: ["tests", "agent-bot"] },
-] as const;
+];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
 const TEST_FILE_GLOBS = [
@@ -2539,7 +2567,7 @@ function runsOf(group: (typeof GROUPS)[number]): Run[] {
   const lists = spread(
     filesOwnedBy(group.roots, discovered),
     durations,
-    workers,
+    Math.min(workers, group.processes ?? workers),
   );
   const runs: Run[] = [];
   for (let index = 0; index < lists.length; index += 1) {
