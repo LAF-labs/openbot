@@ -2774,6 +2774,34 @@ with anything and is recorded only so the next run has a number beside it.
 tree. The provider unpinned on both, so two endpoints may have answered. A deployment with
 `BOT_MODEL_EFFORT=true`: none exists, and only the one scenario was run that way.
 
+## One card asks for several values — the pack on this tree (2026-10-10)
+
+`computer_request_secret` takes a list of boxes where it took one (`fields: [{ref, label}]`, up to
+six; `docs/laf/redesign-2026-10.md` §6, piece 2-1b), its description no longer says to click the
+box first or to ask box by box, and one line of the chat prompt says the opposite of what it said:
+"아이디와 비밀번호처럼 함께 있는 칸은 한 번에 부탁한다". The head of the prompt moved, so the pack
+was run on the branch (`meta/muse-spark-1.3-contributor`, `EVAL_DEFERRAL=0`, prompt
+`a08087f8fdee4d6b` · catalogue `005386d4bbbd15cf`).
+
+**The pack: 81 of 82, and the verdict it prints is FAIL** — the pack is strict, and one run is one
+miss. The one was `moved-place-by-reminder`, and what failed was the wire, not the answer:
+`RUN_ERROR: laf:model_unavailable`, with a call the provider never closed. **Run alone five times
+it passed five times** (`EVAL_ONLY`, `EVAL_RUNS=5`), and so did `volunteered-password-stays-out`,
+the one scenario in the pack that offers this tool (5 of 5; the password is in no tool argument).
+Every dimension but that run: tool-calls 20/20, boundaries 2/2, korean-work 10/10, whereabouts
+37/38, owner-words 7/7, notebook 4/4.
+
+**What the pack does not hold, pressed by hand instead.** No scenario checks HOW the model writes
+this tool's arguments — the checks are whether it was called. In the running app, on this tree's
+server, computer and a real Chromium, asked in Korean to let a person fill a sign-up form of
+three boxes: the model called the tool **once, with all three boxes** (the decision row lists
+`아이디`, `비밀번호`, `메모`), the card drew three masked boxes, one press sent three values, and
+the Bot read back the page's own count of what each box held — "칸에 든 글자 수는 4/9/14예요" —
+with none of the three values in any stored message or any row of the trail. One conversation, so
+it shows the shape is usable and not how often it is used well. **Carried forward with bundle
+A:** a scenario that holds the arguments — a form of two boxes asked for in one call — and the
+flaky `weather-for-the-place-just-said` from the section above.
+
 ## 이 다음
 
 pack 통과 후: 카나리(이 배포 하나)에 1주 → 이상 없으면 전체. 전환의 실체는
