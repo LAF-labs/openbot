@@ -6,7 +6,6 @@ export const ko: Record<string, string> = {
     "스킬을 가진 봇은 입력창에서 /이름으로 불러낼 수 있어요.",
   "A Bot carrying this offers /{slug} in its composer.":
     "이 스킬을 가진 봇은 입력창에서 /{slug}를 제공해요.",
-  "A click applies it right away.": "클릭하면 바로 적용돼요.",
   "A key is set. Type a new one to replace it.":
     "키가 설정되어 있어요. 바꾸려면 새로 입력하세요.",
   "A named instruction you invoke with /. It goes on the Bots you own, and nobody else sees it.":
@@ -349,7 +348,6 @@ export const ko: Record<string, string> = {
   "Client ID": "클라이언트 ID",
   "Client secret": "클라이언트 시크릿",
   Close: "닫기",
-  Cloud: "구름",
   Command: "명령",
   Components: "컴포넌트",
   "Components could not be loaded.": "컴포넌트를 불러오지 못했어요.",
@@ -489,7 +487,6 @@ export const ko: Record<string, string> = {
   "Edit description": "설명 수정",
   "Edit profile": "프로필 편집",
   "Edit skill": "스킬 수정",
-  Egg: "달걀",
   Email: "메일",
   "Every action taken in this deployment, and by whom.":
     "이 배포에서 일어난 모든 행동과 그 주체.",
@@ -718,7 +715,6 @@ export const ko: Record<string, string> = {
   // anybody, and 배포 is an operator's word.
   "Every Bot runs on this deployment. It cannot be pointed at another server here.":
     "모든 봇은 이 서버에서 실행돼요. 여기서는 다른 서버로 연결할 수 없어요.",
-  "That face cannot be used.": "그 얼굴은 쓸 수 없어요.",
   "Choose how hard this Bot thinks.": "봇이 얼마나 깊이 생각할지 골라 주세요.",
   "That instruction can be up to 1,000 characters.":
     "그 지침은 1,000자까지 쓸 수 있어요.",
@@ -932,31 +928,6 @@ export const ko: Record<string, string> = {
   "That routine is no longer there.": "그 루틴은 이제 없어요.",
   "What your Bot does on its own at set times is kept here.":
     "봇이 정해 둔 시각에 알아서 하는 일이 여기에 모여요.",
-  "Pick a face": "얼굴 고르기",
-  "Another face": "다른 얼굴",
-  // 얼굴 고르기의 세 줄. 눈 모양은 줄이 없고 "다른 얼굴"이 굴린다.
-  Shape: "모양",
-  Colour: "색",
-  Blob: "방울",
-  Squircle: "둥근 네모",
-  Tablet: "알약",
-  Capsule: "캡슐",
-  Hex: "육각",
-  Gem: "보석",
-  Wedge: "삼각",
-  Shield: "방패",
-  Teardrop: "물방울",
-  Black: "검정",
-  Brown: "갈색",
-  Red: "빨강",
-  Orange: "주황",
-  Yellow: "노랑",
-  Green: "초록",
-  Cyan: "청록",
-  Blue: "파랑",
-  Violet: "보라",
-  Magenta: "자홍",
-  Gray: "회색",
   "Filled in": "입력함",
   General: "일반",
   "Held for this deployment and never shown again once saved.":
@@ -1678,7 +1649,6 @@ export const ko: Record<string, string> = {
   "Delete {name}{josa}?": "'{name}'{josa} 삭제할까요?",
 
   /** The roster heading before the count is known — see `routes/_authed/_app/agents/index.tsx`. */
-  "Change the face": "얼굴 바꾸기",
 
   /*
    * ROUTINES: the row's two timings, the run-now answer, and the third repeat that always existed
@@ -2481,8 +2451,8 @@ export const ko: Record<string, string> = {
   "This conversation is no longer here. Conversations with several Bots were removed, along with everything said in them.":
     "이 대화는 이제 없어요. 여러 봇이 함께하던 대화는 정리되면서 그 안의 내용도 함께 지워졌어요.",
   "Go to your Bot": "내 봇과 대화하기",
-  "You already have your Bot. Change its name or face on its profile instead.":
-    "이미 봇이 있어요. 봇은 하나만 둘 수 있어요 — 이름이나 얼굴은 봇 프로필에서 바꿀 수 있어요.",
+  "You already have your Bot. Change its name on its profile instead.":
+    "이미 봇이 있어요. 봇은 하나만 둘 수 있어요 — 이름은 봇 프로필에서 바꿀 수 있어요.",
   "A conversation is with one Bot.": "대화는 봇 하나와 해요.",
 
   // 0.5.3 C

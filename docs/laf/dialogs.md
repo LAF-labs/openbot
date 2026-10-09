@@ -61,9 +61,6 @@ for a failure.
   dialog exists for the moment something looks wrong, and a slow server is not a reason to refuse a
   stop. "Everything had already finished by the time you pressed" is its one sentence, said after
   the press rather than instead of it.
-- **The face picker.** Every tile applies at once, so there is no primary button to lock. While a
-  choice is being saved the dialog cannot be closed and the tiles are locked, and a failure shows
-  inside it.
 
 ## How it is spelled
 

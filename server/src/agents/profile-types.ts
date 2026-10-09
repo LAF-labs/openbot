@@ -64,20 +64,15 @@ export type CreateAgentInput = Pick<
    * built-in endpoint.
    */
   endpoint?: string;
-  /**
-   * Which face this Bot wears, when somebody picked one.
-   *
-   * Absent means "leave it alone", the same as `auth`: an edit form that saves a name must not also
-   * silently reset a face, and a Bot created before anybody could choose keeps the seed it was made
-   * with. The client sends the id of a tile; anything else is hashed into one at render, so an
-   * unknown value degrades to a face rather than to nothing.
+  /*
+   * No `avatarSeed`. The face is given when the Bot is made and nothing changes it afterwards
+   * (2026-10-08, docs/laf/redesign-2026-10.md §8); `AgentProfile.avatarSeed` is read, never written.
    */
-  avatarSeed?: string;
   /**
    * How hard it thinks.
    *
-   * Absent means "leave it alone", like the face: a form that saves a name must not reset a setting
-   * it did not show, and a Bot made before anybody could choose keeps the column's default.
+   * Absent means "leave it alone": a form that saves a name must not reset a setting it did not
+   * show, and a Bot made before anybody could choose keeps the column's default.
    */
   effort?: AgentEffort;
   /**

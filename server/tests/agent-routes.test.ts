@@ -197,8 +197,8 @@ describe("agent input parser", () => {
           // `endpoint` is a real field for BYO-agent; validation protects it rather than refusing it
           // as a forged field. See agent-endpoint.test.ts.
           endpoint: "https://agents.example.com/ag-ui",
-          // So is `avatarSeed`. A face is a display value like the name beside it, not a fact about
-          // who owns the Bot, and the person looking at it is the person who gets to choose it.
+          // A field until 2026-10-08, when the face stopped being chosen; a tab opened before then
+          // still sends it, and it is read like any other key the parser does not know.
           avatarSeed: "  r2c6  ",
         },
         // A developer's stack: the one place an endpoint is a field at all (see the last describe).
@@ -210,7 +210,6 @@ describe("agent input parser", () => {
         name: "Expense Manager",
         roleDescription: "Reviews receipts.",
         endpoint: "https://agents.example.com/ag-ui",
-        avatarSeed: "r2c6",
       },
     });
   });
@@ -425,8 +424,9 @@ describe("agent lifecycle routes", () => {
       ownerUserId: "attacker",
       deletedAt: "now",
       systemOwned: true,
-      // Real fields now, not forged ones; the rest of this list still is.
+      // A real field now, not a forged one; the rest of this list still is.
       endpoint: "https://agents.example.com/ag-ui",
+      // A real field until 2026-10-08, and forged like the rest since: nothing chooses a face.
       avatarSeed: "r2c6",
     };
 
@@ -442,12 +442,10 @@ describe("agent lifecycle routes", () => {
       expect(response.status).toBe(method === "POST" ? 201 : 200);
     }
 
-    // The endpoint and the face reach the store because they are real fields; everything else
-    // forged does not.
+    // The endpoint reaches the store because it is a real field; everything else forged does not.
     const expected = {
       ...validInput,
       endpoint: "https://agents.example.com/ag-ui",
-      avatarSeed: "r2c6",
     };
     expect(store.calls).toEqual([
       ["create", actor, expected],
@@ -749,6 +747,58 @@ describe("the auto-review instruction", () => {
     // The name went through; the instruction did not reach the store at all.
     expect(input.name).toBe("Analyst");
     expect(input).not.toHaveProperty("autoReview");
+  });
+});
+
+/**
+ * NOTHING CHOOSES A FACE (2026-10-08, docs/laf/redesign-2026-10.md §8).
+ *
+ * The face is given when a Bot is made and the field went from the API with the picker. Ignored and
+ * not refused, at every door: the first-run screen sent a face with every create, and a tab opened
+ * before the change would otherwise be refused on the press that makes somebody's Bot. Even a value
+ * the parser used to refuse goes through now, because it is no longer looked at at all.
+ */
+describe("the face", () => {
+  test("is taken at no door: create, the edit form's save and /profile go through, and none hands it to the store", async () => {
+    const store = fakeStore();
+    const app = appFor(store);
+    const send = (path: string, method: string, body: object) =>
+      app.request(`http://laf.test${path}`, {
+        method,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const face = { avatarSeed: "s:cloud.green" };
+
+    expect((await send("/", "POST", { ...validInput, ...face })).status).toBe(
+      201,
+    );
+    expect(
+      (await send("/agent-1", "PATCH", { ...validInput, ...face })).status,
+    ).toBe(200);
+    // What the picker sent through the merging door: the face and nothing else.
+    expect((await send("/agent-1/profile", "POST", face)).status).toBe(200);
+    expect(
+      (
+        await send("/agent-1", "PATCH", {
+          ...validInput,
+          avatarSeed: "not a seed: <script>",
+        })
+      ).status,
+    ).toBe(200);
+
+    const writes = store.calls.filter(
+      ([method]) => method === "create" || method === "update",
+    );
+    expect(writes.map(([method]) => method)).toEqual([
+      "create",
+      "update",
+      "update",
+      "update",
+    ]);
+    for (const write of writes) {
+      expect(write.at(-1)).not.toHaveProperty("avatarSeed");
+    }
   });
 });
 
@@ -1274,12 +1324,11 @@ describe("a hosted deployment takes no endpoint of a person's own for a Bot", ()
     expect(store.calls).toEqual([]);
   });
 
-  test("the ordinary save — a name, a description, a face, how hard it thinks, what it need not ask about — goes through as it did", async () => {
+  test("the ordinary save — a name, a description, how hard it thinks, what it need not ask about — goes through as it did", async () => {
     const store = fakeStore();
     const hosted = appFor(store);
     const ordinary = {
       ...validInput,
-      avatarSeed: "r2c6",
       effort: "thorough",
       autoReview: "Reading a page needs no question.",
     };

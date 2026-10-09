@@ -69,6 +69,11 @@ export const agentProfiles = pgTable(
      * Bot writes down, with `update_profile`, a standing job somebody handed it in chat.
      */
     roleDescription: text("role_description").notNull(),
+    /*
+     * What the Bot's face is drawn from (`app/src/lib/avatar/bot-avatar.ts`). Written once, when the
+     * Bot is made, and never again since the face stopped being chosen (2026-10-08,
+     * docs/laf/redesign-2026-10.md §8). Every face on the surface is still drawn from it.
+     */
     avatarSeed: text("avatar_seed").notNull(),
     /**
      * Defaulted rather than required, so every Bot that already exists has one and nothing has to

@@ -414,10 +414,14 @@ export function createAgentProfileStore(
           agentId: id,
           ownerUserId: actor.id,
           roleDescription: input.roleDescription,
-          // The face the person picked, not the id. `update()` always honoured this; `create()`
-          // overwrote it with the agent id, so the mascot hashed that into SOME face and the person
-          // silently got a different one from the one they chose.
-          avatarSeed: input.avatarSeed ?? id,
+          /*
+           * The face is dealt from the Bot's own id: the surface hashes any seed it does not
+           * recognise into a shape and a colour (`app/src/lib/avatar/bot-avatar.ts`), the same one
+           * every time. Nobody picks a face since 2026-10-08 (docs/laf/redesign-2026-10.md §8), so
+           * this is the only seed a Bot made from now on ever has, and nothing writes the column
+           * again. The column stays because every face is drawn from it, and it is NOT NULL.
+           */
+          avatarSeed: id,
           // Absent takes the column's default rather than being written as one here, so the default
           // lives in exactly one place.
           ...(input.effort === undefined ? {} : { effort: input.effort }),
@@ -478,11 +482,7 @@ export function createAgentProfileStore(
             .update(agentProfiles)
             .set({
               roleDescription: input.roleDescription,
-              // Absent leaves the face alone. See CreateAgentInput.avatarSeed.
-              ...(input.avatarSeed === undefined
-                ? {}
-                : { avatarSeed: input.avatarSeed }),
-              // The same for how hard it thinks: a form that did not show it must not reset it.
+              // Absent leaves how hard it thinks alone: a form that did not show it must not reset it.
               ...(input.effort === undefined ? {} : { effort: input.effort }),
               ...(input.autoReview === undefined
                 ? {}

@@ -2,15 +2,15 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { accentOf } from "../src/lib/avatar/accent";
-import { BOT_AVATAR_PALETTES } from "../src/lib/avatar/bot-avatar";
+import { FACE_COLOR_IDS } from "../src/lib/avatar/bot-avatar";
 
 /**
  * THE BOT'S COLOUR IS EVERY BUTTON'S COLOUR, SO EVERY PALETTE HAS TO CLEAR AA IN BOTH THEMES.
  *
- * A person picks the face's colour for how the face looks; they never picked a button colour, and
- * nothing on the profile says "this red will be your 보내기". So the accent a palette becomes is not
- * theirs to get wrong, and a palette that made white text on a button unreadable would be a design
- * decision nobody took. These tests read `styles.css` back — the values the browser will actually
+ * A face's colour was picked for how the face looks — by a person until 2026-10-08, dealt from the
+ * Bot's id since — and nobody ever picked a button colour; nothing on the profile says "this red
+ * will be your 보내기". So the accent a palette becomes is not anybody's to get wrong, and a palette
+ * that made white text on a button unreadable would be a design decision nobody took. These tests read `styles.css` back — the values the browser will actually
  * use, not a copy of them — and measure every pair a screen puts together:
  *
  *  - the label on a filled control, and on its hover (4.5:1, it is text);
@@ -104,7 +104,7 @@ function surfaces(theme: Theme): Record<string, [number, number, number]> {
   };
 }
 
-const PALETTE_IDS: string[] = BOT_AVATAR_PALETTES.map((color) => color.id);
+const PALETTE_IDS: string[] = [...FACE_COLOR_IDS];
 
 function accent(id: string, theme: Theme) {
   const selector =
@@ -126,7 +126,7 @@ describe("every palette a face can have is an accent the app can be drawn in", (
       expect(() => accent(id, "light")).not.toThrow();
       expect(() => accent(id, "dark")).not.toThrow();
     }
-    // Black is the one colour a person cannot pick, so it has no accent of its own.
+    // Black is the one colour no face is drawn in, so it has no accent of its own.
     expect(PALETTE_IDS).not.toContain("black");
   });
 

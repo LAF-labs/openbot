@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Navigate, useNavigate } from "@tanstack/react-router";
 import { useId, useRef, useState } from "react";
-import { BotAvatarChooser } from "@/components/avatar/bot-avatar-picker";
 import { ConsentLine } from "@/components/legal/consent-line";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,13 +16,11 @@ import { useMyBots } from "@/lib/agents/my-bots";
 import type { AgentProfile } from "@/lib/agents/queries";
 import { agreeToLegal } from "@/lib/auth/consent";
 import { authKeys, currentUserQueryOptions } from "@/lib/auth/queries";
-import { useAccentPreview } from "@/lib/avatar/accent";
-import { randomBotAvatarSeed } from "@/lib/avatar/bot-avatar";
 import { t } from "@/lib/i18n";
 import { isImeKey } from "@/lib/ime";
 
 /**
- * THE FIRST RUN IS ONE SCREEN: A NAME AND A FACE (2026-09-24).
+ * THE FIRST RUN IS ONE SCREEN: A NAME (2026-09-24, and without the face since 2026-10-08).
  *
  * The owner: "봇 1개로 하자. 프로필 설정은 이름과 봇 프로필 이미지만 만들면 끝인 걸로(언제든지 바꿀
  * 수 있음). 무슨 일을 시킬건지도 적지 않는다. 그냥 모든걸 채팅으로 처리한다."
@@ -36,14 +33,19 @@ import { isImeKey } from "@/lib/ime";
  * Nothing on this screen asks what the Bot is for, because there is no answer to give: it is for
  * whatever it is asked.
  *
- * The name is filled in and the face is already one, so the only thing anybody HAS to do here is
- * press 시작하기; both are changed later on the Bot's profile. The agreement is the sentence under
- * the button, recorded by the same press — a stamp with no sentence in front of it would be a
- * consent nobody gave.
+ * The name is filled in, so the only thing anybody HAS to do here is press 시작하기; it is changed
+ * later on the Bot's profile. The agreement is the sentence under the button, recorded by the same
+ * press — a stamp with no sentence in front of it would be a consent nobody gave.
+ *
+ * NO FACE TO CHOOSE (2026-10-08, docs/laf/redesign-2026-10.md §8). This screen used to open on the
+ * face picker. Now the server gives the Bot its face when it makes it, from the Bot's own id
+ * (`server/src/agents/profile-store.ts`), and nothing changes it afterwards — so there is no face
+ * to show here before the Bot exists, and the first one the person sees is the Bot's own, in its
+ * conversation.
  *
  * A person who closed the laptop after the Bot was made but before the stamp landed comes back to
- * this screen with a Bot already: the screen starts from that Bot's name and face and saves over
- * it rather than asking the server for a second, which it would refuse.
+ * this screen with a Bot already: the screen starts from that Bot's name and saves over it rather
+ * than asking the server for a second, which it would refuse.
  */
 export const Route = createFileRoute("/_authed/welcome")({
   component: Welcome,
@@ -63,8 +65,8 @@ function Welcome() {
       <div className="my-auto flex w-full max-w-sm flex-col gap-6">
         {mine.bots ? (
           /*
-           * Keyed on the Bot it starts from, so the fields take that Bot's name and face the moment
-           * the roster says there is one, instead of keeping the defaults they were first drawn with.
+           * Keyed on the Bot it starts from, so the field takes that Bot's name the moment the
+           * roster says there is one, instead of keeping the default it was first drawn with.
            */
           <FirstRunForm
             existing={mine.bots[0]}
@@ -80,8 +82,8 @@ function Welcome() {
             </Button>
           </div>
         ) : (
-          <div aria-hidden className="flex flex-col items-center gap-4">
-            <Skeleton className="size-32 rounded-full" />
+          <div aria-hidden className="flex flex-col items-center gap-6">
+            <Skeleton className="h-8 w-40" />
             <Skeleton className="h-9 w-full" />
           </div>
         )}
@@ -96,13 +98,8 @@ function FirstRunForm({ existing }: { existing: AgentProfile | undefined }) {
   const createAgent = useMutation(createAgentMutationOptions(queryClient));
   const updateAgent = useMutation(updateAgentMutationOptions(queryClient));
   const [name, setName] = useState(() => existing?.name ?? nextBotName());
-  const [seed, setSeed] = useState(
-    () => existing?.avatarSeed ?? randomBotAvatarSeed(),
-  );
   const [problem, setProblem] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  // The colour being picked is the colour of 시작하기 already: the choice shows what it changes.
-  useAccentPreview(seed);
   const nameId = useId();
   /*
    * A REF, NOT `saving`, for the reason this screen has always had one: two clicks in the same
@@ -121,7 +118,6 @@ function FirstRunForm({ existing }: { existing: AgentProfile | undefined }) {
     setProblem(null);
     const input: AgentInput = {
       name: trimmed,
-      avatarSeed: seed,
       // Kept as it is on a Bot that already had one: a PATCH replaces what it carries.
       roleDescription: existing?.roleDescription ?? "",
     };
@@ -186,8 +182,6 @@ function FirstRunForm({ existing }: { existing: AgentProfile | undefined }) {
       <h1 className="text-center font-semibold text-2xl">
         {t("Meet your Bot")}
       </h1>
-
-      <BotAvatarChooser disabled={saving} onSelect={setSeed} seed={seed} />
 
       <div className="flex flex-col gap-2">
         <Label htmlFor={nameId}>{t("Name")}</Label>

@@ -89,7 +89,7 @@ import { cn } from "@/lib/utils";
  *  1. THE BOT, on one row of 44px: its face (32px), alive — the same presence as the conversation's
  *     header: working, waiting on the person, glad it finished — and its name. What it is doing is
  *     a dot beside the name; the word is drawn only when it is the person's turn (`BotIdentity`).
- *     Pressing the row opens the profile, the only place the name and the face change.
+ *     Pressing the row opens the profile, the only place the name changes.
  *  2. THE CONVERSATION AND THE PLACES A PERSON GOES TO LOOK: five rows of 36px, an icon and a name
  *     each — 대화 · 소식 · 아이디어 · 목표 · 만든 것. These keep their names because they are the
  *     navigation (`LOOK_ROWS`). 대화 no longer carries the last thing said or when

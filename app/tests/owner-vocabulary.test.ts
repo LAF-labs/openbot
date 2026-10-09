@@ -5,10 +5,6 @@ import { IDEAS } from "@shared/ideas/catalogue";
 import { CATEGORIES } from "@shared/persona";
 import { AGENT_REFUSALS } from "../src/lib/agents/mutations";
 import { WORK_PATTERNS } from "../src/lib/agents/work-patterns";
-import {
-  BOT_AVATAR_PALETTES,
-  BOT_AVATAR_SHAPES,
-} from "../src/lib/avatar/bot-avatar";
 import { ko } from "../src/lib/i18n-ko";
 import { CATALOGUE_COPY } from "../src/lib/plugins/catalogue-copy";
 import { ROUTINE_REFUSALS } from "../src/lib/routines/queries";
@@ -170,16 +166,9 @@ function ownerKorean(): [string, string][] {
     }
   }
   /*
-   * The face picker's two rows. Every one of these is read
-   * through `t(option.name)`, which the regex above cannot see — the same blind spot the work
-   * patterns have, and the same answer.
+   * The face picker's two rows of shapes and colours were walked here; the picker and its names
+   * went on 2026-10-08 (docs/laf/redesign-2026-10.md §8), and nothing names a face to a person now.
    */
-  for (const table of [BOT_AVATAR_SHAPES, BOT_AVATAR_PALETTES]) {
-    for (const option of table) {
-      const korean = ko[option.name];
-      if (korean) sentences.push([korean, `bot avatar: ${option.id}`]);
-    }
-  }
   for (const title of GALLERY_TITLES) {
     const korean = ko[title];
     if (korean) sentences.push([korean, `a gallery card: ${title}`]);

@@ -1,12 +1,16 @@
 /**
- * What a Bot's face is made of: a body and a colour, and the seed string that names them.
+ * What a Bot's face is made of: a body and a colour, read from the seed string that names them.
  *
- * The owner's rule (2026-09-05): shape and colour are the only two choices a person makes. No
- * accessories, no eye styles to pick — the eyes are the expression engine's, and change with what
- * the Bot is doing. This module follows Grok Bot's own tables: its bodies (twelve kept, eight of which
- * are dealt to a Bot nobody chose a face for), its eleven colours with a light and a dark value each,
- * and the two hashes it uses to deal a face from a name, so a Bot that was never given a face gets
- * the same one Grok would give it.
+ * Shape and colour, and nothing else: the eyes are the expression engine's, and change with what
+ * the Bot is doing. This module follows Grok Bot's own tables: its bodies (twelve kept, eight of
+ * which are dealt to a Bot whose seed names none), its eleven colours, and the two hashes it uses to
+ * deal a face from a name, so a Bot that was never given a named face gets the same one Grok would
+ * give it.
+ *
+ * NOBODY CHOOSES A FACE SINCE 2026-10-08 (docs/laf/redesign-2026-10.md §8). A Bot made from then on
+ * has its own id as its seed (`server/src/agents/profile-store.ts`), which is dealt a face below;
+ * the picker that wrote named seeds, and the tables of names it showed, went that day. The named
+ * grammar is still read, because every Bot that was given a face by the picker keeps it.
  *
  * SEED GRAMMAR: `s:<shape>.<colour>`, both names (`s:cloud.green`). Older seeds still resolve: the
  * `f:` and `g:` grammars of the generated avatars that preceded this one map their numeric shape
@@ -20,16 +24,6 @@ import {
   SHAPE_IDS,
   type ShapeId,
 } from "./grok-shapes";
-
-export type BotAvatarColor = {
-  id: ColorId;
-  /** English, translated through `t()` at the picker. */
-  name: string;
-  /** The body fill on a light page. */
-  light: string;
-  /** The body fill on a dark page: a shade deeper, so the same colour reads the same. */
-  dark: string;
-};
 
 export const COLOR_IDS = [
   "black",
@@ -47,55 +41,16 @@ export const COLOR_IDS = [
 
 export type ColorId = (typeof COLOR_IDS)[number];
 
-const COLORS: Record<ColorId, BotAvatarColor> = {
-  black: { id: "black", name: "Black", light: "#000000", dark: "#FFFFFF" },
-  brown: { id: "brown", name: "Brown", light: "#A27952", dark: "#855C36" },
-  red: { id: "red", name: "Red", light: "#FF3E51", dark: "#E02135" },
-  orange: { id: "orange", name: "Orange", light: "#FF781C", dark: "#FF6700" },
-  yellow: { id: "yellow", name: "Yellow", light: "#FFAF38", dark: "#FF9800" },
-  green: { id: "green", name: "Green", light: "#00C972", dark: "#009957" },
-  cyan: { id: "cyan", name: "Cyan", light: "#1CC3B0", dark: "#00A592" },
-  blue: { id: "blue", name: "Blue", light: "#2A92FE", dark: "#0E74E0" },
-  violet: { id: "violet", name: "Violet", light: "#A97EFE", dark: "#804EE0" },
-  magenta: {
-    id: "magenta",
-    name: "Magenta",
-    light: "#FF5EB1",
-    dark: "#E02A88",
-  },
-  gray: { id: "gray", name: "Gray", light: "#959595", dark: "#777777" },
-};
-
 /**
- * The colours a person can pick. Black is left out here as Grok leaves it out: a black body in
+ * The colours a face can be drawn in. Black is left out as Grok leaves it out: a black body in
  * light mode is a white body in dark mode, which is a Bot that changes colour with the room.
+ *
+ * Names only. The fill each one has on a light and on a dark page is the stylesheet's
+ * (`.bot-avatar-color-*` in `styles.css`), which is where the face is drawn from.
  */
-export const BOT_AVATAR_PALETTES: readonly BotAvatarColor[] = COLOR_IDS.filter(
+export const FACE_COLOR_IDS: readonly ColorId[] = COLOR_IDS.filter(
   (id) => id !== "black",
-).map((id) => COLORS[id]);
-
-export type BotAvatarShape = { id: ShapeId; name: string };
-
-const SHAPE_NAMES: Record<ShapeId, string> = {
-  blob: "Blob",
-  pebble: "Pebble",
-  egg: "Egg",
-  squircle: "Squircle",
-  tablet: "Tablet",
-  capsule: "Capsule",
-  hex: "Hex",
-  gem: "Gem",
-  wedge: "Wedge",
-  shield: "Shield",
-  cloud: "Cloud",
-  teardrop: "Teardrop",
-};
-
-/** Every body, defaults first so the picker's first row is the eight a Bot is usually dealt. */
-export const BOT_AVATAR_SHAPES: readonly BotAvatarShape[] = [
-  ...DEFAULT_SHAPE_IDS,
-  ...SHAPE_IDS.filter((id) => !DEFAULT_SHAPE_IDS.includes(id)),
-].map((id) => ({ id, name: SHAPE_NAMES[id] }));
+);
 
 export type BotAvatarParams = { shape: ShapeId; palette: ColorId };
 
@@ -124,13 +79,11 @@ const mulberry = (seed: number) => {
   };
 };
 
-const PICKABLE = COLOR_IDS.filter((id) => id !== "black");
-
-/** Grok's colour deal: FNV of the key, salted, one PRNG draw over the pickable colours. */
+/** Grok's colour deal: FNV of the key, salted, one PRNG draw over the colours a face can have. */
 export const dealColor = (key: string): ColorId => {
   const salted = (fnv1a(key) ^ Math.imul(1, 2654435769)) >>> 0;
   const draw = mulberry((salted ^ Math.imul(1, 2654435769)) >>> 0);
-  return PICKABLE[Math.floor(draw() * PICKABLE.length)] ?? "gray";
+  return FACE_COLOR_IDS[Math.floor(draw() * FACE_COLOR_IDS.length)] ?? "gray";
 };
 
 /** Grok's shape deal: an avalanche over FNV, modulo the eight default bodies. */
@@ -181,22 +134,6 @@ export function botAvatarParams(seed: string | undefined): BotAvatarParams {
     };
   }
   return { shape: dealShape(text), palette: dealColor(text) };
-}
-
-export function botAvatarSeed(params: BotAvatarParams): string {
-  return `s:${params.shape}.${params.palette}`;
-}
-
-/** A face nobody has yet: any body, any pickable colour. */
-export function randomBotAvatarSeed(rng: () => number = Math.random): string {
-  const pick = <T>(list: readonly T[]): T => {
-    const index = Math.min(
-      list.length - 1,
-      Math.max(0, Math.floor(rng() * list.length)),
-    );
-    return list[index] as T;
-  };
-  return botAvatarSeed({ shape: pick(SHAPE_IDS), palette: pick(PICKABLE) });
 }
 
 export { DEFAULT_SHAPE_IDS, SHAPE_IDS, type ShapeId };

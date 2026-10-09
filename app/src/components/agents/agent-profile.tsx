@@ -4,7 +4,6 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useId, useState } from "react";
 import { AllowancesCard } from "@/components/agents/allowances-card";
 import { Mascot } from "@/components/agents/mascot";
-import { BotAvatarPicker } from "@/components/avatar/bot-avatar-picker";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import { LiveRegion } from "@/components/layout/live-region";
 import { ReadNotice } from "@/components/layout/read-states";
@@ -65,7 +64,7 @@ function saveFailure(error: unknown): string {
 }
 
 /**
- * The shape of the profile, not a generic one: the face's tile, then the name.
+ * The shape of the profile, not a generic one: the face, then the name.
  */
 function ProfileSkeleton() {
   return (
@@ -84,13 +83,15 @@ function ProfileSkeleton() {
 }
 
 /**
- * A BOT'S PROFILE IS ITS NAME AND ITS FACE (2026-09-24).
+ * A BOT'S PROFILE IS ITS NAME (2026-10-08), AND ITS FACE IS SHOWN, NOT CHOSEN.
  *
- * The owner: "프로필 설정은 이름과 봇 프로필 이미지만 만들면 끝인 걸로(언제든지 바꿀 수 있음). 무슨
- * 일을 시킬건지도 적지 않는다." The job title under the name, the "how it works" paragraph and the
- * row of kinds of work to pick from are gone from here and from every other screen: what the Bot
- * is for is settled by talking to it. The rows still hold what older Bots were given, and the
- * server still accepts them; nothing on the surface writes or shows them.
+ * The owner, 2026-09-24: "프로필 설정은 이름과 봇 프로필 이미지만 만들면 끝인 걸로(언제든지 바꿀 수
+ * 있음). 무슨 일을 시킬건지도 적지 않는다." The job title under the name, the "how it works"
+ * paragraph and the row of kinds of work to pick from went that day: what the Bot is for is settled
+ * by talking to it. The rows still hold what older Bots were given, and the server still accepts
+ * them; nothing on the surface writes or shows them. Then on 2026-10-08 the face stopped being a
+ * setting too (docs/laf/redesign-2026-10.md §8): it is the mascot the Bot was given when it was
+ * made, drawn here as everywhere else, with nothing to press.
  *
  * WHAT STAYS BELOW THE NAME IS NOT PROFILE, IT IS HOW THE BOT BEHAVES: how hard it thinks, what it
  * may do without asking, what it remembers, the skills it holds, and whether it may notify. None of
@@ -108,7 +109,6 @@ export function AgentProfile({
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   // State is keyed by the Bot's id because this panel can remain open while its target changes.
-  const [pickingFace, setPickingFace] = useState(false);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(
     null,
   );
@@ -156,10 +156,9 @@ export function AgentProfile({
   /*
    * THE FACE ON A SOFT WASH OF ITS OWN COLOUR, NOT IN A GREY BOX (UI/UX audit 0.5.3, item 21).
    *
-   * It sat in a 4:3 grey tile that was also, invisibly, the button to change it — "얼굴 바꾸기"
-   * showed only on hover, which a phone has none of. Now the face stands on its own and the words
-   * to change it are a button under it, always there. The wash is the accent at 10%, so the
-   * profile shows the colour the rest of the app has taken from this face.
+   * It sat in a 4:3 grey tile that was also, invisibly, the button to change it. The face is not
+   * changed any more (2026-10-08), so it stands on its own and is only a face. The wash is the
+   * accent at 10%, so the profile shows the colour the rest of the app has taken from this face.
    */
   const face = (
     <span className="relative flex items-center justify-center py-2">
@@ -178,7 +177,7 @@ export function AgentProfile({
    * the description included, which nothing here shows but the Bot may have written itself.
    * `endpoint` is deliberately absent: an absent one leaves the stored configuration alone.
    */
-  const save = (patch: { name?: string; avatarSeed?: string }) =>
+  const save = (patch: { name?: string }) =>
     updateAgent.mutateAsync({
       agentId,
       input: {
@@ -192,30 +191,12 @@ export function AgentProfile({
     <div className={`flex w-full flex-col gap-6 ${className}`}>
       {notice}
       <header className="flex flex-col items-center gap-3 text-center">
+        {face}
+
         {/*
-         * The face is the control. A Bot the deployment shipped is not editable here at all — the
+         * The name is the control. A Bot the deployment shipped is not editable here at all — the
          * server refuses — so it offers nothing it cannot deliver.
          */}
-        {face}
-        {profile.canManage ? (
-          <Button
-            onClick={() => setPickingFace(true)}
-            size="sm"
-            variant="outline"
-          >
-            <IconPencil />
-            {t("Change the face")}
-          </Button>
-        ) : null}
-        <BotAvatarPicker
-          onOpenChange={setPickingFace}
-          // Left open on purpose: one press applies, 완료 closes.
-          onSelect={(avatarSeed) => save({ avatarSeed })}
-          open={pickingFace}
-          pending={updateAgent.isPending}
-          seed={profile.avatarSeed}
-        />
-
         {profile.canManage ? (
           /* Keyed on the stored name, so a rename saved elsewhere replaces what the field shows. */
           <NameField
@@ -379,7 +360,7 @@ function NameField({
  * long they are willing to wait. That is a question only they can answer, and the one that genuinely
  * differs between "summarise this" and "work out what happened".
  *
- * Applied on the press, like the face and the notification switch, because it is a setting and not
+ * Applied on the press, like the notification switch, because it is a setting and not
  * a draft. It goes through `/profile`, which merges into what is stored, so pressing it cannot
  * overwrite something half-typed in the form above.
  *
@@ -404,7 +385,7 @@ function EffortCard({
   return (
     <section className="flex flex-col gap-2 rounded-xl bg-muted p-3">
       {/*
-       * A fieldset, and `aria-pressed` on the buttons — the same grammar the face picker uses. One
+       * A fieldset, and `aria-pressed` on the buttons. One
        * choice out of three, and a reader arriving on the middle button should hear which one is
        * already made rather than three identical-sounding options.
        */}
@@ -817,7 +798,7 @@ function AutoReviewCard({
               await updateAgent.mutateAsync({
                 agentId,
                 // A PATCH replaces what it carries, so the fields the parser requires go back
-                // unchanged — the same reason the face picker sends them.
+                // unchanged — the same reason the name field sends them.
                 input: {
                   autoReview: draft.trim(),
                   name: profile.name,

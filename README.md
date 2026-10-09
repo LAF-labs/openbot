@@ -34,8 +34,9 @@ A Bot is a colleague you can hand a job to. It drives a real browser with your
 logins in it, reads the files you give it, looks things up, and keeps a notebook
 of what you told it.
 
-**One VM per person, and one Bot on it.** The Bot's profile is a name and a
-face; everything else — what it is for included — is settled by talking to it.
+**One VM per person, and one Bot on it.** The Bot's profile is a name, beside a
+face it is given; everything else — what it is for included — is settled by
+talking to it.
 The computer, its files, its logins and its browser sessions are that person's
 and nobody else's, and the thing that keeps the Bot in bounds is the gateway in
 front of the computer. That decision shapes the code, and it is written down in

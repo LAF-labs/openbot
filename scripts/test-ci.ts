@@ -2194,13 +2194,28 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * By hand: 529 less 54 is 475; 2187 less 34 is 2153; 3896 less 4 is 3892. `root` lost and gained
  * none.
  *
+ * LOWERED 2026-10-09, `app` from 2153 to 2151, by exactly the two tests that held the face picker
+ * alone, and RAISED `server` from 3892 to 3893 by the one that holds its absence. The owner removed
+ * the choosing of a Bot's face on 2026-10-08 (docs/laf/redesign-2026-10.md §8): the profile's
+ * picker, the first run's chooser and the API's field went; the face stays, dealt from the Bot's id
+ * when it is made. Gone, both from `bot-avatar.test.ts` and both with nothing left to describe: the
+ * eight default bodies leading the picker's row (`BOT_AVATAR_SHAPES`, that row's order) and the
+ * shuffle being deterministic and in range (`randomBotAvatarSeed`). Rewritten and counted as
+ * before: a named seed's round trip, which now reads the spelling a picked face is stored in rather
+ * than the writer that went; the first run's three, which hold that no face is offered or sent; and
+ * the profile's identity, which holds that the face is drawn and not changed. Added: one in
+ * `agent-routes.test.ts`, the face taken at no door — create, the edit form's save and `/profile`
+ * each answering as before, the field never reaching the store. Counted by running the changed
+ * files before and after the change: app 66 to 64, server 114 to 115.
+ * By hand: 2153 less 2 is 2151; 3892 and 1 are 3893.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
  */
 const GROUPS = [
-  { name: "server", floor: 3892, roots: ["server"] },
-  { name: "app", floor: 2153, roots: ["app"] },
+  { name: "server", floor: 3893, roots: ["server"] },
+  { name: "app", floor: 2151, roots: ["app"] },
   { name: "agent-computer", floor: 475, roots: ["agent-computer"] },
   { name: "root", floor: 918, roots: ["tests", "agent-bot"] },
 ] as const;
