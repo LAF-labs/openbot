@@ -355,6 +355,33 @@ const PW_HTML = `<!doctype html>
   </form>
 </body></html>`;
 
+/** What `/swap` calls its one box, and the three buttons beside it. */
+export const SWAP = {
+  box: "회사 비밀번호",
+  /** What the box is called once 바꾸기 has been pressed: a box for something else. */
+  swapped: "댓글",
+  rename: "바꾸기",
+  remove: "지우기",
+} as const;
+
+/**
+ * A page that changes what its password box IS after it has been looked at, served at `/swap`.
+ *
+ * One press and the box a person was asked to type a password into is a comment box — the same
+ * node, so a ref from before still finds it — and another press and it is gone. Nothing here is
+ * exotic either: a login form that turns into a search box when a tab is switched does the first,
+ * and any page that re-renders does the second. What a value a person types is held to, when it
+ * arrives after that, is `supplySecret`'s (`control-routes.ts`).
+ */
+const SWAP_HTML = `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>로그인</title></head>
+<body>
+  <h1>로그인</h1>
+  <input id="box" type="password" aria-label="${SWAP.box}">
+  <button type="button" onclick="const b=document.getElementById('box');b.type='text';b.setAttribute('aria-label','${SWAP.swapped}')">${SWAP.rename}</button>
+  <button type="button" onclick="document.getElementById('box').remove()">${SWAP.remove}</button>
+</body></html>`;
+
 /**
  * The box on `/get-form` (`fixtures/get-form.html`), by the name the tree gives it.
  *
@@ -559,6 +586,11 @@ export function serveFixture(port = 0) {
       }
       if (path === "/pw") {
         return new Response(PW_HTML, {
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      }
+      if (path === "/swap") {
+        return new Response(SWAP_HTML, {
           headers: { "content-type": "text/html; charset=utf-8" },
         });
       }

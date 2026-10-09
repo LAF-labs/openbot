@@ -127,6 +127,7 @@ export type AskSubject = {
     | "list_files"
     | "upload"
     | "run_script"
+    | "fill_secret"
     | "call_tool"
     | "act";
   host?: string;
@@ -211,6 +212,7 @@ const INTENTS = new Set<AskSubject["intent"]>([
   "list_files",
   "upload",
   "run_script",
+  "fill_secret",
   "call_tool",
   "act",
 ]);
@@ -294,6 +296,33 @@ function actionPhrase(subject: AskSubject): Phrase {
         ? { key: "It wants to type into a field on {host}.", params: { host } }
         : {
             key: "It wants to type into a field on the page it has open.",
+            params: {},
+          };
+    /*
+     * The Bot asking YOU for a value, to be typed by you into the masked box: a password, a code.
+     * Said as that, and not as typing — the Bot types nothing here and is shown nothing, and a
+     * card that read "it wants to type into 비밀번호" would be asking about a thing it cannot do.
+     */
+    case "fill_secret":
+      if (name && host) {
+        return {
+          key: "It wants to ask you for a value to put into “{name}” on {host}.",
+          params: named,
+        };
+      }
+      if (name) {
+        return {
+          key: "It wants to ask you for a value to put into “{name}”.",
+          params: named,
+        };
+      }
+      return host
+        ? {
+            key: "It wants to ask you for a value to put into a field on {host}.",
+            params: { host },
+          }
+        : {
+            key: "It wants to ask you for a value to put into a field on the page it has open.",
             params: {},
           };
     case "navigate":
@@ -620,6 +649,19 @@ export function actionNounPhrase(subject: AskSubject | undefined): Phrase {
       return host
         ? { key: "typing into a field on {host}", params: { host } }
         : { key: "typing into a field on the page", params: {} };
+    case "fill_secret":
+      if (name && host) {
+        return {
+          key: "asking you for a value for “{name}” on {host}",
+          params: { name, host },
+        };
+      }
+      if (name) {
+        return { key: "asking you for a value for “{name}”", params: { name } };
+      }
+      return host
+        ? { key: "asking you for a value on {host}", params: { host } }
+        : { key: "asking you for a value on the page", params: {} };
     case "navigate":
       return host
         ? {

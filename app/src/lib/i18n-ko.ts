@@ -183,6 +183,14 @@ export const ko: Record<string, string> = {
   "It wants to open a page.": "어떤 페이지를 열려 해요.",
   "It wants to open {host}.": "{host} 사이트를 열려 해요.",
   "It wants to open {host}{path}.": "{host}{path} 페이지를 열려 해요.",
+  "It wants to ask you for a value to put into a field on the page it has open.":
+    "열어 둔 페이지의 입력칸에 넣을 값을 여쭤보려 해요.",
+  "It wants to ask you for a value to put into a field on {host}.":
+    "{host}의 입력칸에 넣을 값을 여쭤보려 해요.",
+  "It wants to ask you for a value to put into “{name}”.":
+    "‘{name}’ 칸에 넣을 값을 여쭤보려 해요.",
+  "It wants to ask you for a value to put into “{name}” on {host}.":
+    "{host}의 ‘{name}’ 칸에 넣을 값을 여쭤보려 해요.",
   "It wants to type into a field on the page it has open.":
     "열어 둔 페이지의 어떤 칸에 입력하려 해요.",
   "It wants to type into a field on {host}.":
@@ -2124,6 +2132,8 @@ export const ko: Record<string, string> = {
    * SECRET_REFUSALS·BOUNDARY_REFUSALS(`lib/computer/refusals.ts`), SCREEN_PROBLEM_SAID, OUTCOME_LABELS이고
    * 각자의 테스트가 걷는다.
    */
+  "The box changed after the Bot asked, so what you typed was not put in. Ask the Bot to request it again.":
+    "봇이 부탁한 뒤에 그 칸이 바뀌어서, 입력하신 값을 넣지 않았어요. 봇에게 다시 요청해 달라고 해 주세요.",
   "Nothing is waiting for that value any more.":
     "그 값을 기다리는 요청이 이제 없어요.",
   "The box for that value is no longer on the page. Ask the Bot to request it again.":
@@ -2493,6 +2503,12 @@ export const ko: Record<string, string> = {
   "pressing “{name}”": "‘{name}’ 누르기",
   "pressing something on {host}": "{host}에서 무언가 누르기",
   "pressing something on the page": "열린 페이지에서 무언가 누르기",
+  "asking you for a value for “{name}” on {host}":
+    "{host}의 ‘{name}’에 넣을 값을 여쭤보기",
+  "asking you for a value for “{name}”": "‘{name}’에 넣을 값을 여쭤보기",
+  "asking you for a value on {host}": "{host}의 입력칸에 넣을 값을 여쭤보기",
+  "asking you for a value on the page":
+    "열린 페이지의 입력칸에 넣을 값을 여쭤보기",
   "typing into “{name}” on {host}": "{host}의 ‘{name}’에 입력하기",
   "typing into “{name}”": "‘{name}’에 입력하기",
   "typing into a field on {host}": "{host}의 입력칸에 입력하기",

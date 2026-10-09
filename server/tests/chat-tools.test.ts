@@ -210,6 +210,82 @@ describe("a computer call, answered as the window answered it", () => {
     expect(presented).toEqual([undefined, question.id]);
   });
 
+  test("asking for a value is an act a rule can ask about: the turn waits for the answer and asks again with it, and only then for the value", async () => {
+    /*
+     * A request for a value went to the computer past the gate until 2026-10-10. It is decided
+     * there like a click now, so where a deployment's rule asks about it there are two things a
+     * person answers, in order: whether the Bot may ask, and then the value itself.
+     */
+    const approvals = createApprovalRegistry();
+    const question = await approvals.request({
+      botId: "bot-1",
+      actor: owner.id,
+      rule: 'intent == "fill_secret"',
+      subject: {
+        kind: "browser",
+        intent: "fill_secret",
+        host: "nid.naver.com",
+        element: { role: "textbox", name: "비밀번호" },
+        reason: "policy_ask",
+      },
+      fingerprint: "f",
+      step: { threadId: "thread-1", toolCallId: "call-9" },
+      target: { type: "computer", id: "bot-1" },
+    });
+    const presented: Array<string | undefined> = [];
+    const stops: unknown[] = [];
+    const control = createControl();
+    const gateway = {
+      requestSecret: async (
+        _computer: string,
+        _bot: string,
+        _actor: unknown,
+        input: { label: string; ref: string; snapshotId: number },
+        approvalId?: string,
+        signal?: unknown,
+      ) => {
+        presented.push(approvalId);
+        stops.push(signal);
+        if (!approvalId) throw new ActionNeedsApprovalError(question);
+        return control.requestSecret(input);
+      },
+      control: async () => control.get(),
+    } as unknown as ComputerGateway;
+    const toolkit = await createChatTools({
+      gateway,
+      approvals,
+      people: createPersonAnswers(),
+      controlPollMs: 20,
+    })(context, [tool("computer_request_secret")]);
+    const step = call("call-9");
+    const pending = toolkit.execute(
+      "computer_request_secret",
+      { label: "네이버 비밀번호", ref: "e2", snapshotId: 3 },
+      step,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Nothing is asked of the computer, and no masked box is drawn, until the first answer.
+    expect(presented).toEqual([undefined]);
+    expect(control.get().secretWanted).toBeUndefined();
+
+    await approvals.answer(question.id, "bot-1", owner.id, true);
+    for (let turn = 0; turn < 100 && presented.length < 2; turn += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(presented).toEqual([undefined, question.id]);
+    expect(control.get().secretWanted).toBe("네이버 비밀번호");
+    // The caller's Stop travels with both attempts.
+    expect(stops).toEqual([step.signal, step.signal]);
+
+    // And then the value, typed by the person: the call ends as one that was entered.
+    control.secretSupplied();
+    expect(await pending).toEqual({
+      ok: true,
+      code: "laf:secret_entered",
+      result: toolResultText("laf:secret_entered"),
+    });
+  });
+
   test("a no from the person is the person's no", async () => {
     const approvals = createApprovalRegistry();
     const question = await approvals.request({

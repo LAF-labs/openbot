@@ -172,6 +172,8 @@ export type AskIntent =
    * same run comes round again: the shipped policy allows and records it.
    */
   | "run_script"
+  /** A value a person is asked to put into a field themselves (`computer_request_secret`). */
+  | "fill_secret"
   /** A tool on somebody else's server. Read and write are not phrased apart; the guard is. */
   | "call_tool"
   /**

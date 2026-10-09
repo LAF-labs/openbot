@@ -1926,10 +1926,202 @@ describe("what a snapshot carries into this process", () => {
 
     expect(failure).toBeInstanceOf(ElementNotFoundError);
     expect(calls).toEqual(["requestSecret", "supplySecret"]);
+    // The request's own two rows — the gate's decision, and the note of what was asked for —
+    // and nothing saying a value went in.
     expect(rows.map((row) => row.eventType)).toEqual([
+      "computer.action_allowed",
       "computer.secret_requested",
     ]);
     expect(JSON.stringify(rows)).not.toContain("hunter2-NOT-TYPED");
+  });
+
+  /*
+   * THE REQUEST GOES THROUGH THE GATE (2026-10-10). It went to the computer on a look at the
+   * snapshot and nothing else: no rule was asked, the repeat count never saw it, and a Bot could
+   * ask a person for a value on a site the deployment had forbidden it to act on.
+   */
+  test("asking for a value is decided as an intent of its own: the shipped policy refuses a Bot typing into a password box and lets it ask a person to", async () => {
+    const SHIPPED: ActionPolicy = {
+      deny: [SECRET_FIELD_RULE],
+      ask: [],
+      allow: ["true"],
+    };
+    const { gateway, calls, rows } = scripted(SHIPPED, LOGIN);
+    await gateway.snapshot("default");
+
+    // The Bot's own typing into that box: refused, as it has been.
+    const typed = await gateway
+      .type("default", "bot-1", ACTOR, {
+        ref: "e2",
+        snapshotId: 3,
+        text: "hunter2",
+      })
+      .catch((caught: unknown) => caught);
+    expect(typed).toBeInstanceOf(ActionRefusedError);
+    expect(calls).toEqual([]);
+
+    // Asking a person to put it there: let through, and it leaves the row every act leaves.
+    await gateway.requestSecret("default", "bot-1", ACTOR, {
+      label: "네이버 비밀번호",
+      ref: "e2",
+      snapshotId: 3,
+    });
+    expect(calls).toEqual(["requestSecret"]);
+    const decided = rows.filter(
+      (row) => row.payload.action === "computer_request_secret",
+    );
+    expect(decided.map((row) => [row.eventType, row.payload.page])).toEqual([
+      ["computer.action_allowed", "https://example.com/login"],
+    ]);
+    // The field as this server's snapshot has it — and no value: there is none to have.
+    expect(decided[0]?.payload.element).toMatchObject({
+      role: "textbox",
+      name: "비밀번호",
+    });
+  });
+
+  test("a rule that forbids it refuses the request with a row, before anybody is asked for anything", async () => {
+    const { gateway, calls, rows } = scripted(
+      {
+        ...PERMISSIVE,
+        deny: ['intent == "fill_secret" && page.host == "example.com"'],
+      },
+      LOGIN,
+    );
+    await gateway.snapshot("default");
+
+    const refused = await gateway
+      .requestSecret("default", "bot-1", ACTOR, {
+        label: "네이버 비밀번호",
+        ref: "e2",
+        snapshotId: 3,
+      })
+      .catch((caught: unknown) => caught);
+
+    expect(refused).toBeInstanceOf(ActionRefusedError);
+    expect(calls).toEqual([]);
+    expect(rows.map((row) => row.eventType)).toEqual([
+      "computer.action_refused",
+    ]);
+    // No masked box is drawn for a request that was never made.
+    expect((await gateway.control("default")).secretInto).toBeUndefined();
+    // And a value typed at it has no judged field to go into.
+    const supplied = await gateway
+      .supplySecret("default", "bot-1", ACTOR, "hunter2-NOT-TYPED")
+      .catch((caught: unknown) => caught);
+    expect(supplied).toBeInstanceOf(StaleSnapshotError);
+    expect((supplied as Error).message).toBe("laf:secret_not_pending");
+    expect(calls).toEqual([]);
+    expect(JSON.stringify(rows)).not.toContain("hunter2-NOT-TYPED");
+  });
+
+  test("a rule that asks puts the question first, and the request is made on a yes — and not on a no", async () => {
+    const policy = { ...PERMISSIVE, ask: ['intent == "fill_secret"'] };
+    const request = { label: "네이버 비밀번호", ref: "e2", snapshotId: 3 };
+
+    const yes = scripted(policy, LOGIN);
+    await yes.gateway.snapshot("default");
+    const asked = (await yes.gateway
+      .requestSecret("default", "bot-1", ACTOR, request)
+      .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
+    expect(asked).toBeInstanceOf(ActionNeedsApprovalError);
+    // What the card is drawn from: the act, the site and the field. Never a value — there is none.
+    expect(asked.subject).toMatchObject({
+      kind: "browser",
+      intent: "fill_secret",
+      host: "example.com",
+      element: { role: "textbox", name: "비밀번호" },
+    });
+    expect(yes.calls).toEqual([]);
+    await yes.approvals.answer(asked.approvalId, "bot-1", MANAGER.id, true);
+    const state = await yes.gateway.requestSecret(
+      "default",
+      "bot-1",
+      ACTOR,
+      request,
+      asked.approvalId,
+    );
+    expect(yes.calls).toEqual(["requestSecret"]);
+    expect(state.secretInto).toEqual({
+      host: "example.com",
+      element: { role: "textbox", name: "비밀번호" },
+    });
+
+    const no = scripted(policy, LOGIN);
+    await no.gateway.snapshot("default");
+    const again = (await no.gateway
+      .requestSecret("default", "bot-1", ACTOR, request)
+      .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
+    await no.approvals.answer(again.approvalId, "bot-1", MANAGER.id, false);
+    const declined = await no.gateway
+      .requestSecret("default", "bot-1", ACTOR, request, again.approvalId)
+      .catch((caught: unknown) => caught);
+    expect(declined).toBeInstanceOf(ActionRefusedError);
+    expect(no.calls).toEqual([]);
+  });
+
+  test("the same request over and over is counted like any act, and the shipped rule about repeating asks", async () => {
+    // A Bot stuck on a login used to be able to put the masked box in front of a person for ever.
+    const { gateway, calls } = scripted(
+      { deny: [], ask: ["repeat.count >= 3"], allow: ["true"] },
+      LOGIN,
+    );
+    await gateway.snapshot("default");
+    const request = { label: "네이버 비밀번호", ref: "e2", snapshotId: 3 };
+    await gateway.requestSecret("default", "bot-1", ACTOR, request);
+    await gateway.requestSecret("default", "bot-1", ACTOR, request);
+    const third = await gateway
+      .requestSecret("default", "bot-1", ACTOR, request)
+      .catch((caught: unknown) => caught);
+    expect(third).toBeInstanceOf(ActionNeedsApprovalError);
+    expect((third as ActionNeedsApprovalError).subject).toMatchObject({
+      intent: "fill_secret",
+      reason: "repeat",
+    });
+    expect(calls).toEqual(["requestSecret", "requestSecret"]);
+  });
+
+  test("the value travels with the field the gate judged, and with nothing a caller said of it", async () => {
+    /*
+     * The computer puts a value into the box it is told was judged, or nowhere
+     * (`agent-computer/src/control-routes.ts`, `holdToLabel`). What it is told is this server's
+     * own reading of its own snapshot at the moment the request was decided.
+     */
+    const { client, calls } = scriptedClient(LOGIN);
+    const sent: unknown[][] = [];
+    (
+      client as unknown as { supplySecret: (...call: unknown[]) => unknown }
+    ).supplySecret = async (...call: unknown[]) => {
+      calls.push("supplySecret");
+      sent.push(call);
+      return { supplied: true, characters: 7, url: LOGIN.url };
+    };
+    const { store } = fakeAudit();
+    const gateway = createComputerGateway({
+      client,
+      auditStore: store,
+      policy: () => PERMISSIVE,
+    });
+    await gateway.snapshot("default");
+    await gateway.requestSecret("default", "bot-1", ACTOR, {
+      label: "the comment box, honestly",
+      ref: "e2",
+      snapshotId: 3,
+    });
+    await gateway.supplySecret("default", "bot-1", ACTOR, "hunter2");
+
+    expect(sent).toEqual([
+      [
+        "hunter2",
+        { snapshotId: 3, element: { role: "textbox", name: "비밀번호" } },
+      ],
+    ]);
+    // Spent with the value: a second one has nothing to be held to.
+    const second = await gateway
+      .supplySecret("default", "bot-1", ACTOR, "again")
+      .catch((caught: unknown) => caught);
+    expect((second as Error).message).toBe("laf:secret_not_pending");
+    expect(calls).toEqual(["requestSecret", "supplySecret"]);
   });
 
   test("a ref that is a button, or nothing, is refused with a row and reaches no computer", async () => {

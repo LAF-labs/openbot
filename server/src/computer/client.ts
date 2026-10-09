@@ -130,6 +130,8 @@ export const CLIENT_FACTS = [
  */
 /** The refs a call carried are not the page's any more. A fresh snapshot is the whole fix. */
 export const STALE_REFS = "laf:stale_refs";
+/** What the computer says of a value nothing is waiting for; the gateway says it too. */
+export const NO_SECRET_PENDING = "laf:secret_not_pending";
 /** An address the floor will not open, or a hop or a landing that went inside this deployment. */
 export const NAVIGATION_REFUSED = "laf:navigation_refused";
 /** The page never finished loading by the computer's deadline. */
@@ -878,8 +880,18 @@ export function createComputerClient(options: ComputerClientOptions) {
         };
       },
 
-      async supplySecret(text: string): Promise<SecretResult> {
-        return (await post("/human/secret", { text })) as SecretResult;
+      /**
+       * `into` is the field the gateway judged the request on, for the computer to hold the value
+       * to (`gateway/secrets.ts`). The value passes through this call and is kept nowhere.
+       */
+      async supplySecret(
+        text: string,
+        into?: { snapshotId: number; element: { role: string; name: string } },
+      ): Promise<SecretResult> {
+        return (await post("/human/secret", {
+          text,
+          ...(into ?? {}),
+        })) as SecretResult;
       },
 
       /** The same computer, addressed as a particular Bot. */

@@ -898,14 +898,21 @@ export function createChatTools(deps: ChatToolsDeps) {
         case "computer_request_secret": {
           const target = asRef(args);
           if (!target) return invalidArguments();
-          const asked = await governed(signal, () =>
-            gateway.requestSecret(c, botId, actor, {
-              label:
-                typeof args.label === "string" && args.label.trim()
-                  ? args.label.trim()
-                  : "the value this page is asking for",
-              ...target,
-            }),
+          const asked = await governed(signal, (approvalId) =>
+            gateway.requestSecret(
+              c,
+              botId,
+              actor,
+              {
+                label:
+                  typeof args.label === "string" && args.label.trim()
+                    ? args.label.trim()
+                    : "the value this page is asking for",
+                ...target,
+              },
+              approvalId,
+              signal,
+            ),
           );
           if (!asked.ok) return asked;
           // Completion is `secretWanted` clearing; the value never returns to the model.

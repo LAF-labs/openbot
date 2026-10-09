@@ -65,9 +65,13 @@ describe("the computer refusal copy", () => {
     const failures = await container("failures.ts");
     expect(failures).toContain("fact(ELEMENT_NOT_ACTIONABLE");
 
+    // And the hold to the judged field, which the door asks before a value goes anywhere.
+    expect(supply).toContain("holdToLabel(field, body?.element)");
+    expect(failures).toContain("LabelChangedError");
     for (const code of [
       "laf:secret_not_pending",
       "laf:element_not_actionable",
+      "laf:label_changed",
     ]) {
       expect({ code, listed: code in COMPUTER_CODES }).toEqual({
         code,

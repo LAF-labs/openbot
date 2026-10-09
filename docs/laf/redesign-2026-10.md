@@ -332,7 +332,12 @@ Hark의 project와 같다.
 - 채우기는 게이트웨이를 거친다: 판단과 감사(계정, 사이트, 칸 — 값은 없이). 새 의도(intent)이고
   `type`이 아니다(`type`이면 `SECRET_FIELD_RULE`이 거절한다). 지금의 비밀번호 카드
   (`server/src/computer/gateway/secrets.ts` `supplySecret`)도 `govern`을 건너뛰고 판단한 칸에 묶이지 않는다 — 같이
-  고친다.
+  고친다. **비밀번호 카드 쪽이 들어감: 2026-10-10** — 값을 부탁하는 일(`computer_request_secret`)이
+  `govern`을 지나고(의도 `fill_secret`: 막는 규칙이면 거절, 묻는 규칙이면 질문, 반복도 센다), 사람이 넣는
+  값은 관문이 판단한 칸의 역할과 이름을 달고 가서, 그 사이 다른 이름이 된 칸에는 들어가지 않는다
+  (`agent-computer/src/control-routes.ts` `holdToLabel`, `laf:label_changed`). 판단은 봇이 부탁하는 일에
+  하고, 사람이 치는 값 자체에는 규칙을 두지 않는다(폴더의 `person-files.ts`와 같은 선). 저장한 값으로
+  채우기(2-4)는 봇의 행동이므로 채우는 순간에 판단한다.
 - 비밀번호 카드는 여러 칸을 받는다(지금은 하나, `computer_request_secret`).
 
 **카드 — 우리 서버에는 두지 않고, 사람의 기기에만 둔다** (2026-10-09 김기범)

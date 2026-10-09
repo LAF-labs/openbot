@@ -2300,6 +2300,24 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * told it changed nothing, where it was answered 200 over a row nobody had touched.
  * By hand: 2133 and 1 are 2134; 920 and 1 are 921.
  *
+ * RAISED 2026-10-10, `server` from 3894 to 3901 and `agent-computer` from 488 to 491, for a value
+ * asked of a person going through the gate (record §6, piece 2-1a). Seven to `server`. Five in
+ * `computer-gateway.test.ts`: asking for a value is an intent of its own — the shipped policy
+ * refuses a Bot typing into a password box and lets it ask a person to, with the row every act
+ * leaves; a rule that forbids it refuses with a row before anybody is asked for anything, and a
+ * value typed at it has no field to go into; a rule that asks puts the question first, and the
+ * request is made on a yes and not on a no; the same request over and over is counted like any
+ * act; and the value travels with the field the gate judged, spent with it. One in
+ * `computer-routes.test.ts`: a value nothing asked for reaches no computer. One in
+ * `chat-tools.test.ts`: the turn waits for the first answer, asks again with it, and only then
+ * for the value. Three to `agent-computer` in `secret-snapshot.test.ts`, a real Chromium on a
+ * page that changes its box after it was looked at: a value goes into the box the gate judged
+ * while it is still that box; a box the page renamed gets none, and the request is over; a box
+ * that is gone gets none either. (With the hold taken out, the second of those types a person's
+ * password into a comment box.) `app` keeps its count: the two walks of every intent's words and
+ * the masked box's table each hold one more member. Nine mutations each fail one of these.
+ * By hand: 5, 1 and 1 are 7, and 3894 and 7 are 3901; 488 and 3 are 491.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2328,11 +2346,11 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 3894, roots: ["server"] },
+  { name: "server", floor: 3901, roots: ["server"] },
   { name: "app", floor: 2134, roots: ["app"] },
   {
     name: "agent-computer",
-    floor: 488,
+    floor: 491,
     roots: ["agent-computer"],
     processes: 1,
   },

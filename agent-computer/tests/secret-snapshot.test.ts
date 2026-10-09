@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
-import { PW_FIELDS, serveFixture } from "./fixture-site";
+import { PW_FIELDS, SWAP, serveFixture } from "./fixture-site";
 
 /**
  * A VALUE TYPED THROUGH `computer_request_secret` NEVER REACHES THE NEXT SNAPSHOT.
@@ -257,6 +257,101 @@ describe.skipIf(!HAS_BROWSER)(
       expect(named(fresh.elements, PW_FIELDS.renames)).not.toHaveProperty(
         "type",
       );
+    }, 60_000);
+
+    /*
+     * INTO THE FIELD THAT WAS JUDGED, OR NOWHERE (2026-10-10). The value arrives some time after
+     * the request was decided — a person had to find their phone — and the page is not obliged to
+     * have stood still. The server sends the role and the name its gate judged the request on,
+     * and these are a real page changing under a real request.
+     */
+    const ask = async () => {
+      expect(
+        (await post("/navigate", { url: `${fixture?.url}swap` })).status,
+      ).toBe(200);
+      const seen = await snapshot();
+      const box = named(seen.elements, SWAP.box);
+      const asked = await post("/control/secret", {
+        label: "회사 비밀번호",
+        ref: box.ref,
+        snapshotId: seen.snapshotId,
+      });
+      expect(asked.status).toBe(200);
+      return { seen, judged: { role: box.role, name: box.name } };
+    };
+    const press = async (
+      seen: Awaited<ReturnType<typeof snapshot>>,
+      name: string,
+    ) => {
+      const pressed = await post("/click", {
+        ref: named(seen.elements, name).ref,
+        snapshotId: seen.snapshotId,
+      });
+      expect(pressed.status).toBe(200);
+    };
+    const control = async () =>
+      (await call("/control")).body as {
+        secretWanted?: string;
+        unanswered?: boolean;
+      };
+
+    test("a value goes into the box the gate judged while it is still that box", async () => {
+      const VALUE = "HELD-TO-ITS-FIELD-2210";
+      const { judged } = await ask();
+      const supplied = await post("/human/secret", {
+        text: VALUE,
+        element: judged,
+      });
+      expect([supplied.status, supplied.body.characters]).toEqual([
+        200,
+        VALUE.length,
+      ]);
+      expect(supplied.text).not.toContain(VALUE);
+      const after = await snapshot();
+      expect(after.text).not.toContain(VALUE);
+      expect(named(after.elements, SWAP.box)).toMatchObject({ value: "" });
+      expect((await control()).secretWanted).toBeUndefined();
+    }, 60_000);
+
+    test("a box the page renamed after the request gets no value, and the request is over", async () => {
+      // The same node, so the ref from before still finds it: what stops the value is the name.
+      const VALUE = "NOT-FOR-A-COMMENT-BOX-7731";
+      const { seen, judged } = await ask();
+      await press(seen, SWAP.rename);
+
+      const refused = await post("/human/secret", {
+        text: VALUE,
+        element: judged,
+      });
+      expect([refused.status, refused.body.code]).toEqual([
+        409,
+        "laf:label_changed",
+      ]);
+      expect(refused.text).not.toContain(VALUE);
+      // Nothing was typed: the box that is a comment box now is empty, and the value is nowhere.
+      const after = await snapshot();
+      expect(after.text).not.toContain(VALUE);
+      expect(named(after.elements, SWAP.swapped).value ?? "").toBe("");
+      // The request did not survive it: the Bot is told nobody put the value in, and looks again.
+      expect(await control()).toMatchObject({ unanswered: true });
+      expect((await control()).secretWanted).toBeUndefined();
+    }, 60_000);
+
+    test("a box that is gone gets none either, said as a page that moved on", async () => {
+      const VALUE = "NOWHERE-TO-GO-5519";
+      const { seen, judged } = await ask();
+      await press(seen, SWAP.remove);
+      const refused = await post("/human/secret", {
+        text: VALUE,
+        element: judged,
+      });
+      expect([refused.status, refused.body.code]).toEqual([
+        409,
+        "laf:stale_refs",
+      ]);
+      expect(refused.text).not.toContain(VALUE);
+      expect((await snapshot()).text).not.toContain(VALUE);
+      expect((await control()).secretWanted).toBeUndefined();
     }, 60_000);
   },
 );

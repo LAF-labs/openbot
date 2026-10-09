@@ -67,7 +67,16 @@ The computer itself does not decide policy. The server gateway is the action bou
 Policy rules can inspect:
 
 - `tool.name`
-- `intent`
+- `intent` — what the act is, whichever tool makes it: `navigate`, `activate` (a press, and a key
+  that activates), `type`, `read`, `upload`, `read_file`, `write_file`, `list_files`,
+  `run_script`, and `fill_secret`: the Bot ASKING A PERSON to put a value into a field themselves
+  (`computer_request_secret`). The last is its own intent and not `type` on purpose. The shipped
+  policy refuses a Bot typing into a password field (`intent == "type"` and the field's type or
+  name), and that field is exactly where a person's value is for; a rule about asking is written
+  `intent == "fill_secret"` — with `page.host` for a site, `element.name` for a field. What such a
+  rule decides is whether the Bot may ask. The value is the person's, typed into a masked box,
+  and no rule stands between a person and a field they were shown; what the gateway gives that
+  typing is the field — it goes into the one the request was judged on, or nowhere
 - `bot.id`
 - `actor.id`
 - `page.url`, `page.host` — of the page an act is made ON: a press, typing, a key, a scroll, a
