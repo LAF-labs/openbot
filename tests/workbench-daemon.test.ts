@@ -794,10 +794,24 @@ test("a caller that gives up ends the run, which is cleaned up after all the sam
   const { workbench, workRoot, swept } = bench();
   const gaveUp = new AbortController();
   const run = workbench.run(
-    { script: "await Bun.sleep(30_000)", files: [], timeoutMs: 60_000 },
+    {
+      script: 'await Bun.write("started", ""); await Bun.sleep(30_000)',
+      files: [],
+      timeoutMs: 60_000,
+    },
     gaveUp.signal,
   );
-  await until(async () => (await workbench.health())?.busy === true);
+  /*
+   * Given up on once the script is running, which is what this is about. Busy is said from the
+   * moment the request arrives, and a run given up on before its script started has nothing to end
+   * and nothing to sweep (`run.ts`) — which a busy machine reached first, one gate run in two
+   * (measured 2026-10-09, with four workers sharing the cores).
+   */
+  await until(async () =>
+    (readdirSync(workRoot, { recursive: true }) as string[]).some((path) =>
+      path.endsWith("started"),
+    ),
+  );
   gaveUp.abort();
   expect(await run).toEqual({ ok: false, failure: "stopped" });
   await until(async () => (await workbench.health())?.busy === false);
