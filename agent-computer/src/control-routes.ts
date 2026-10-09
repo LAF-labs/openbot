@@ -7,6 +7,7 @@
  * is no door here, or anywhere in this process, by which a person clicks or types on the Bot's page
  * themselves (owner, 2026-10-09).
  */
+import { isSameAsk, secretFieldsOf } from "../../shared/secret-ask";
 import type { BotRoute } from "./computer";
 import { ControlRequestError, NO_SECRET_PENDING } from "./control";
 import { actionFailure } from "./failures";
@@ -39,7 +40,8 @@ export const requestHelp: BotRoute = async (
 };
 
 /**
- * The Bot asking for one value it must not be told, into a field it names by a ref.
+ * The Bot asking for values it must not be told, each into a field it names by a ref: one card,
+ * with a box for each (`shared/secret-ask.ts`).
  *
  * A REF OF THE SNAPSHOT THE BOT IS ON, LIKE EVERY OTHER CALL THAT NAMES ONE. This door took any
  * ref with any snapshot id and wrote both down. Measured 2026-10-05: a Bot whose sign-in popup had
@@ -55,21 +57,23 @@ export const requestSecret: BotRoute = async (
   { profiles },
 ) => {
   const body = await bodyOf<{
+    fields?: unknown;
     label?: unknown;
     ref?: unknown;
     snapshotId?: unknown;
   }>(request);
-  // The one thing a request for a secret must say is which field it goes in.
-  if (typeof body?.ref !== "string" || !body.ref.trim()) return invalid("ref");
+  // The one thing a request for a secret must say is which field each value goes in: at least
+  // one, no more than a card holds, and no box twice.
+  if (!secretFieldsOf(body)) return invalid("ref");
   try {
     const tab = await profiles.page(botId);
     // The ref may be from before the Bot's tab went from under it: it names something on a page
     // that is gone, or on the tab the Bot is on now, which it has not seen.
     assertLooked(session);
-    if (body.snapshotId !== session.snapshotId) {
+    if (body?.snapshotId !== session.snapshotId) {
       throw new StaleSnapshotError(STALE_REFS);
     }
-    const state = session.control.requestSecret(body);
+    const state = session.control.requestSecret(body ?? {});
     session.secretTab = tab;
     return json(state);
   } catch (error) {
@@ -99,26 +103,55 @@ export const supplySecret: BotRoute = async (
   const pending = session.control.pendingSecret();
   if (!pending) return fact(NO_SECRET_PENDING);
   const body = await bodyOf<{
+    values?: unknown;
+    fields?: unknown;
     text?: unknown;
     ref?: unknown;
     snapshotId?: unknown;
     element?: unknown;
   }>(request);
   /*
-   * THE VALUE SAYS WHICH ASK IT ANSWERS, AND IS TAKEN ONLY FOR THAT ONE. The server names the ask
-   * it judged — the ref and the snapshot it was made with — and an ask standing here that is not
-   * that one (taken back a moment too late and made again, or made by a server that has since
-   * forgotten it) is not answered by somebody else's value, and is not ended by it either. The
-   * snapshot is the ASK's, compared with the ask's own; the Bot is still free to have looked
-   * again since (below). An older server names neither and is held to neither.
+   * EITHER SHAPE: a value for every box of the card, in the card's order — or the one `text`, with
+   * the one `ref` and `element` beside it, that a server from before a card held several sends.
    */
+  const named: { ref?: unknown; element?: unknown }[] | undefined =
+    Array.isArray(body?.fields)
+      ? body.fields.map((field) =>
+          field && typeof field === "object"
+            ? (field as { ref?: unknown; element?: unknown })
+            : {},
+        )
+      : body?.ref !== undefined || body?.element !== undefined
+        ? [{ ref: body?.ref, element: body?.element }]
+        : undefined;
+  /*
+   * THE VALUES SAY WHICH ASK THEY ANSWER, AND ARE TAKEN ONLY FOR THAT ONE. The server names the
+   * ask it judged — its boxes, in order, and the snapshot it was made with — and an ask standing
+   * here that is not that one (taken back a moment too late and made again, or made by a server
+   * that has since forgotten it) is not answered by somebody else's values, and is not ended by
+   * them either. The snapshot is the ASK's, compared with the ask's own; the Bot is still free to
+   * have looked again since (below). An older server names neither and is held to neither.
+   */
+  const namedRefs = named?.map((field) => field.ref);
   const namesAnother =
-    (typeof body?.ref === "string" && body.ref !== pending.ref) ||
+    (namedRefs?.every((ref) => typeof ref === "string") === true &&
+      !isSameAsk(
+        { refs: namedRefs as string[] },
+        { refs: pending.fields.map((field) => field.ref) },
+      )) ||
     (typeof body?.snapshotId === "number" &&
       body.snapshotId !== pending.snapshotId);
   if (namesAnother) return fact(NO_SECRET_PENDING);
-  const text = body?.text;
-  if (typeof text !== "string" || !text) return invalid("text");
+  const values = Array.isArray(body?.values) ? body.values : [body?.text];
+  // A value for every box, and something in each: a card answered in part is not answered, and
+  // which box an absent value belonged to is not something this may guess.
+  if (
+    values.length !== pending.fields.length ||
+    !values.every((value) => typeof value === "string" && value)
+  ) {
+    return invalid("text");
+  }
+  const texts = values as string[];
   try {
     const target = await profiles.page(botId);
     /*
@@ -130,8 +163,8 @@ export const supplySecret: BotRoute = async (
      */
     assertLooked(session);
     if (session.secretTab !== target) throw new StaleSnapshotError(STALE_REFS);
-    // Focus the field the Bot named, and let this throw if it cannot be found. A secret must not
-    // be reported as delivered unless a field receives it.
+    // Find each field the Bot named, and let this throw if one cannot be found. A secret must
+    // not be reported as delivered unless a field receives it.
     //
     // No generation check here: a Bot may take another snapshot after asking for a secret, while
     // the ref remains protected by Playwright's `aria-ref` rules.
@@ -151,53 +184,78 @@ export const supplySecret: BotRoute = async (
     // judged the request on, and a field that is called something else by now — or is no longer
     // there to be asked — gets no value: a person's password goes into the box they were shown
     // the name of, or nowhere. An older server sends neither and is held to neither.
-    const field = await resolveRef(session, target, pending.ref, undefined);
-    await holdToLabel(field, body?.element);
-    await onElement(() => field.click({ timeout: config.actionTimeoutMs }));
-    // ASKED AGAIN, AFTER THE CLICK AND BEFORE THE VALUE. The click is this process's own, and a
-    // page may answer it: a box whose focus handler turns it into something else passed the hold
-    // above as a password box and would have been filled as a comment box (Codex's read of this
-    // change). What a value is held to is what the box is when the value goes in.
-    await holdToLabel(field, body?.element);
-    // A failure here must not say what it was filling: Playwright's message for it does.
-    await onElement(() =>
-      field.fill(text, { timeout: config.actionTimeoutMs }),
-    );
-    /*
-     * THE NODE, NOT THE REF AND NOT THE VALUE. The next snapshot has to blank this field
-     * whatever the page calls it, and a ref is re-minted the moment the page renames the box
-     * while the value is the one thing this process must not keep. The element itself is
-     * neither: it is where the secret is, until the page is gone. The short wait is for a page
-     * that left on the keystroke — the value left with it, and the person is waiting.
-     *
-     * AND A DIGEST OF THE VALUE, which is not the value: the page this box is on may send it
-     * away in an address — a form sent by GET — after the box itself is gone (audit R3-03), and
-     * the digest is how that address is blanked (`typed-values.ts`).
-     */
-    const handle = await field
-      .elementHandle({ timeout: SECRET_JOIN_TIMEOUT_MS })
-      .catch(() => null);
-    const frame = handle
-      ? await within(SECRET_JOIN_TIMEOUT_MS, handle.ownerFrame())
-      : null;
-    rememberSecretField(session, handle, pending.ref, {
-      ...(frame ? { frame } : {}),
-      digest: digestOf(text),
-    });
-    const characters = text.length;
-    // Cleared only after it actually landed.
+    //
+    // EVERY BOX IS ASKED BEFORE ANY VALUE GOES IN. A card whose second box has changed is not
+    // half answered: a page that had already moved on when the person pressed gets none of what
+    // they typed. What is left for the loop below is a page that changes a later box in answer to
+    // an earlier one being filled, and that ends the same way a single box's does — closed, and
+    // said to be unfilled (`control.ts`).
+    const boxes = [];
+    for (const [index, asked] of pending.fields.entries()) {
+      const field = await resolveRef(session, target, asked.ref, undefined);
+      const judged = named?.[index]?.element;
+      await holdToLabel(field, judged);
+      boxes.push({ field, judged, ref: asked.ref });
+    }
+    let characters = 0;
+    for (const [index, { field, judged, ref }] of boxes.entries()) {
+      const text = texts[index] ?? "";
+      await onElement(() => field.click({ timeout: config.actionTimeoutMs }));
+      // ASKED AGAIN, AFTER THE CLICK AND BEFORE THE VALUE. The click is this process's own, and a
+      // page may answer it: a box whose focus handler turns it into something else passed the
+      // hold above as a password box and would have been filled as a comment box (Codex's read of
+      // the change that began holding it). What a value is held to is what the box is when the
+      // value goes in — and, on a card of several, after the boxes before it were filled.
+      await holdToLabel(field, judged);
+      // A failure here must not say what it was filling: Playwright's message for it does.
+      await onElement(() =>
+        field.fill(text, { timeout: config.actionTimeoutMs }),
+      );
+      /*
+       * THE NODE, NOT THE REF AND NOT THE VALUE. The next snapshot has to blank this field
+       * whatever the page calls it, and a ref is re-minted the moment the page renames the box
+       * while the value is the one thing this process must not keep. The element itself is
+       * neither: it is where the secret is, until the page is gone. The short wait is for a page
+       * that left on the keystroke — the value left with it, and the person is waiting.
+       *
+       * AND A DIGEST OF THE VALUE, which is not the value: the page this box is on may send it
+       * away in an address — a form sent by GET — after the box itself is gone (audit R3-03), and
+       * the digest is how that address is blanked (`typed-values.ts`).
+       *
+       * BOX BY BOX, AS EACH LANDS: a card that fails at its third box has put two values into
+       * the page, and those two are blanked from the next snapshot like any that went in.
+       */
+      const handle = await field
+        .elementHandle({ timeout: SECRET_JOIN_TIMEOUT_MS })
+        .catch(() => null);
+      const frame = handle
+        ? await within(SECRET_JOIN_TIMEOUT_MS, handle.ownerFrame())
+        : null;
+      rememberSecretField(session, handle, ref, {
+        ...(frame ? { frame } : {}),
+        digest: digestOf(text),
+      });
+      characters += text.length;
+    }
+    // Cleared only after every value actually landed.
     session.control.secretSupplied();
     session.secretTab = undefined;
-    return json({ supplied: true, characters, url: target.url() });
+    // How much arrived, in how many boxes — never which box held how much of it.
+    return json({
+      supplied: true,
+      characters,
+      fields: boxes.length,
+      url: target.url(),
+    });
   } catch (error) {
     /*
-     * THE VALUE REACHED NO FIELD, AND THE BOT IS NOT TOLD IT DID. The field is gone, which is
-     * unretryable, so the request is closed rather than left open: the person would retype their
-     * password into the same dead ref for ever. But closed as what it was. This called
-     * `secretSupplied`, and an ask that is simply gone is read by the Bot's wait as answered — the
-     * Bot heard "이 사람이 그 값을 칸에 직접 입력했다" and went on to press the button under an
-     * empty box. Closed as nobody's answer (`ControlState.unanswered`), the wait says the value
-     * was not entered, and the person's own card has this failure's code to say why.
+     * THE VALUES DID NOT ALL REACH A FIELD, AND THE BOT IS NOT TOLD THEY DID. The field is gone,
+     * which is unretryable, so the request is closed rather than left open: the person would
+     * retype their password into the same dead ref for ever. But closed as what it was. This
+     * called `secretSupplied`, and an ask that is simply gone is read by the Bot's wait as answered
+     * — the Bot heard "이 사람이 그 값을 칸에 직접 입력했다" and went on to press the button under
+     * an empty box. Closed as nobody's answer and marked unfilled (`ControlState`), the wait says
+     * the values did not go in, and the person's own card has this failure's code to say why.
      */
     session.control.secretNotSupplied();
     session.secretTab = undefined;
@@ -220,7 +278,11 @@ export const releaseControl: BotRoute = ({ session }) =>
  * is not an error, it is the ask having ended some other way first.
  */
 export const withdrawSecret: BotRoute = async ({ request, session }) => {
-  const body = await bodyOf<{ ref?: unknown; snapshotId?: unknown }>(request);
+  const body = await bodyOf<{
+    refs?: unknown;
+    ref?: unknown;
+    snapshotId?: unknown;
+  }>(request);
   if (session.control.withdrawSecret(body ?? {})) session.secretTab = undefined;
   return json(session.control.get());
 };

@@ -38,6 +38,7 @@ const SNAPSHOT: SnapshotResult = {
   elements: [
     { ref: "e9", role: "button", name: "Submit order" },
     { ref: "e4", role: "textbox", name: "Customer name" },
+    { ref: "e5", role: "textbox", name: "Phone" },
   ],
 };
 
@@ -120,11 +121,11 @@ function fakeClient() {
       calls.push("stopComputer");
       return { wasRunning: true } as never;
     },
-    supplySecret: async (text: string) => {
+    supplySecret: async (values: string[]) => {
       calls.push("supplySecret");
       // The one place the value legitimately exists: on its way through to the browser.
-      sentToComputer.push({ suppliedSecret: text });
-      return { characters: text.length } as never;
+      sentToComputer.push({ suppliedSecret: values });
+      return { characters: values.join("").length } as never;
     },
     forBot() {
       return client;
@@ -1142,8 +1143,9 @@ describe("a secret being asked for and supplied", () => {
     expect(asked?.payload).toMatchObject({
       reason: '은행 비밀번호 (into textbox "Customer name" on example.com)',
     });
+    // The card as the computer is handed it: its one box, in the list a card's boxes are in.
     expect(sentToComputer).toEqual([
-      { label: "은행 비밀번호", ref: "e4", snapshotId: 7 },
+      { fields: [{ label: "은행 비밀번호", ref: "e4" }], snapshotId: 7 },
     ]);
   });
 
@@ -1181,6 +1183,68 @@ describe("a secret being asked for and supplied", () => {
     });
     // Every row, not only that one: nothing else along the way may have picked it up either.
     expect(carrying(rows)).not.toContain(SECRET);
+  });
+
+  test("a card of several boxes goes through the same two doors: a value for every box, or none reaches the computer", async () => {
+    const OTHER = "010-CANARY-4477";
+    const { app, calls, rows, seen } = surface(ADMIN);
+    await seen();
+    const post = (path: string, body: unknown) =>
+      app.request(path, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const asked = await post("/bot-1/control/secret", {
+      fields: [
+        { ref: "e4", label: "이름" },
+        { ref: "e5", label: "전화번호" },
+      ],
+      snapshotId: 7,
+    });
+    expect(asked.status).toBe(200);
+    expect(
+      rows.find((row) => row.eventType === "computer.secret_requested")?.payload
+        .reason,
+    ).toBe(
+      '이름 (into textbox "Customer name" on example.com); 전화번호 (into textbox "Phone" on example.com)',
+    );
+
+    // One value is what a window from before a card held several sends: not this card's answer.
+    // Nor is a list with a hole in it, or with something that is not a value.
+    for (const body of [
+      { text: SECRET },
+      { values: [SECRET] },
+      { values: [SECRET, ""] },
+      { values: [SECRET, 7] },
+      { values: [] },
+    ]) {
+      const short = await post("/bot-1/human/secret", body);
+      expect([short.status, await short.json()]).toEqual([
+        400,
+        {
+          error: "laf:secret_value_required",
+          code: "laf:secret_value_required",
+        },
+      ]);
+    }
+    expect(calls).not.toContain("supplySecret");
+
+    const response = await post("/bot-1/human/secret", {
+      values: [SECRET, OTHER],
+    });
+    expect(response.status).toBe(200);
+    const answered = (await response.json()) as { characters?: number };
+    expect(answered.characters).toBe(SECRET.length + OTHER.length);
+    expect(
+      rows.find((row) => row.eventType === "computer.secret_supplied")?.payload,
+    ).toMatchObject({
+      reason: `${SECRET.length + OTHER.length} characters in 2 fields`,
+    });
+    for (const value of [SECRET, OTHER]) {
+      expect(carrying(answered)).not.toContain(value);
+      expect(carrying(rows)).not.toContain(value);
+    }
   });
 
   test("a value nothing asked for reaches no computer: the door answers what the computer says of one", async () => {

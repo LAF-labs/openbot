@@ -133,7 +133,7 @@ describe.skipIf(!HAS_BROWSER)("a secret typed through the request", () => {
       ref: box?.ref as string,
       snapshotId: before.snapshotId,
     });
-    await gateway.supplySecret(BOT, BOT, ACTOR, SECRET);
+    await gateway.supplySecret(BOT, BOT, ACTOR, [SECRET]);
 
     // What a tool route answers and what the unattended runner returns, serialised whole.
     const after = await gateway.snapshot(BOT);

@@ -270,11 +270,18 @@ describe("a card that was waiting on the person, when its conversation is drawn 
   };
   const FOR_A_SECRET = {
     call: asking("computer_request_secret", {
-      label: LABEL,
-      ref: "e12",
+      fields: [{ ref: "e12", label: LABEL }],
       snapshotId: 3,
     }),
-    control: { requested: false, secretWanted: LABEL },
+    // As the computer says it: which box, of which snapshot. That — and not the words — is how
+    // a card drawn again knows the ask is its own (`help-card.tsx`, `isOwnRequestOpen`).
+    control: {
+      requested: false,
+      secretWanted: LABEL,
+      secretRef: "e12",
+      secretSnapshotId: 3,
+      secretFields: [{ ref: "e12", label: LABEL }],
+    },
   };
 
   /** A turn that is waiting on its last call, and the computer holding that request. */

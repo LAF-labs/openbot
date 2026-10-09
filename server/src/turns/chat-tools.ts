@@ -21,6 +21,7 @@
  */
 import type { Tool } from "@ag-ui/client";
 import { askOutcome, PERSON_WAIT_MS } from "../../../shared/person-wait";
+import { secretFieldsOf } from "../../../shared/secret-ask";
 import { isPersona } from "../../../shared/persona";
 import {
   noteCodesOf,
@@ -653,7 +654,9 @@ export function createChatTools(deps: ChatToolsDeps) {
       toolCallId: string,
       signal: AbortSignal,
       done: (state: Record<string, unknown>) => boolean,
-    ): Promise<"answered" | "gave up" | "cancelled" | "skipped"> => {
+    ): Promise<
+      "answered" | "gave up" | "unfilled" | "cancelled" | "skipped"
+    > => {
       const deadline = Date.now() + personWaitMs;
       while (Date.now() < deadline) {
         if (signal.aborted) return "cancelled";
@@ -896,20 +899,19 @@ export function createChatTools(deps: ChatToolsDeps) {
           };
         }
         case "computer_request_secret": {
-          const target = asRef(args);
-          if (!target) return invalidArguments();
+          // One card, with a box for each value — or the one box the tool took until a card held
+          // several, which a conversation from before that may still write (`secret-ask.ts`).
+          const fields = secretFieldsOf(args);
+          const { snapshotId } = args;
+          if (!fields || typeof snapshotId !== "number") {
+            return invalidArguments();
+          }
           const asked = await governed(signal, (approvalId) =>
             gateway.requestSecret(
               c,
               botId,
               actor,
-              {
-                label:
-                  typeof args.label === "string" && args.label.trim()
-                    ? args.label.trim()
-                    : "the value this page is asking for",
-                ...target,
-              },
+              { fields, snapshotId },
               approvalId,
               signal,
             ),
@@ -923,6 +925,8 @@ export function createChatTools(deps: ChatToolsDeps) {
               (state) => state.secretWanted === undefined,
             ),
           );
+          // "Unfilled" is somebody having come and the page not being what the card said: not
+          // "nobody entered anything", which is what the Bot was told for it (`person-wait.ts`).
           const code =
             outcome === "answered"
               ? "laf:secret_entered"
@@ -930,7 +934,9 @@ export function createChatTools(deps: ChatToolsDeps) {
                 ? "laf:secret_skipped"
                 : outcome === "cancelled"
                   ? "laf:request_cancelled"
-                  : "laf:secret_not_entered";
+                  : outcome === "unfilled"
+                    ? "laf:secret_not_filled"
+                    : "laf:secret_not_entered";
           return {
             ok: true,
             code,

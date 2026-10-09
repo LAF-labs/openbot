@@ -138,6 +138,12 @@ export function askSubjectOf(input: {
   pageUrl: string;
   filePath: string | undefined;
   element: SnapshotElement | undefined;
+  /**
+   * The other boxes of one card that asks a person for several values (`govern`, `alsoRefs`). The
+   * question is about the card, so it names every box: a person who says yes to "아이디" has not
+   * said yes to a card that also asks for their card number.
+   */
+  also?: readonly (SnapshotElement | undefined)[] | undefined;
   /** The expression that asked, to tell a question about repetition from any other. */
   matched: string | null;
   repeatCount: number;
@@ -187,7 +193,9 @@ export function askSubjectOf(input: {
       ? {
           element: {
             role: input.element.role,
-            name: readableName(input.element.name),
+            name: [input.element, ...(input.also ?? [])]
+              .flatMap((box) => (box ? [readableName(box.name)] : []))
+              .join(", "),
           },
         }
       : {}),

@@ -15,6 +15,7 @@ import {
 } from "../../../shared/workspace-files";
 import type { BrowserWhereabouts } from "../account/whereabouts";
 import { BotIdRefusedError, isBotId } from "./bot-id";
+import type { SecretField } from "../../../shared/secret-ask";
 import type {
   ActionResult,
   BotsLook,
@@ -33,7 +34,6 @@ import type {
   ReadResult,
   ScreenshotResult,
   ScrollInput,
-  SecretRequest,
   SecretResult,
   SnapshotResult,
   SwitchTabInput,
@@ -826,12 +826,24 @@ export function createComputerClient(options: ComputerClientOptions) {
         return (await post("/control/release", {})) as ControlState;
       },
 
-      /** Ask for a secret. Carries the label and the field, never a value. */
+      /**
+       * Ask for values, one card with a box for each. Carries each box's label and field, never a
+       * value.
+       *
+       * ONE BOX IS ALSO SAID THE SHORT WAY, which is the only way a computer from before a card
+       * held several reads it — the two images are pulled together and restarted one after the
+       * other, and a sign-in asked for in between is still one box.
+       */
       async requestSecret(
-        input: SecretRequest,
+        input: { fields: SecretField[]; snapshotId: number },
         caller?: AbortSignal,
       ): Promise<ControlState> {
-        return (await post("/control/secret", input, caller)) as ControlState;
+        const only = input.fields.length === 1 ? input.fields[0] : undefined;
+        return (await post(
+          "/control/secret",
+          { ...input, ...(only ? { label: only.label, ref: only.ref } : {}) },
+          caller,
+        )) as ControlState;
       },
 
       /**
@@ -884,36 +896,43 @@ export function createComputerClient(options: ComputerClientOptions) {
       },
 
       /**
-       * Take back a value this server asked for, for a caller that stopped before anybody
-       * answered. Only that one ask — by the ref and the snapshot it was made with — and never a
-       * hand somebody else is waiting on (`gateway/secrets.ts`).
+       * Take back values this server asked for, for a caller that stopped before anybody
+       * answered. Only that one ask — by its boxes, in order, and the snapshot it was made with —
+       * and never a hand somebody else is waiting on (`gateway/secrets.ts`).
        */
       async withdrawSecret(
-        asked: { ref: string; snapshotId: number },
+        asked: { refs: string[]; snapshotId: number },
         caller?: AbortSignal,
       ): Promise<ControlState> {
+        const only = asked.refs.length === 1 ? asked.refs[0] : undefined;
         return (await post(
           "/control/secret/withdraw",
-          asked,
+          { ...asked, ...(only ? { ref: only } : {}) },
           caller,
         )) as ControlState;
       },
 
       /**
-       * `into` is the field the gateway judged the request on, for the computer to hold the value
-       * to (`gateway/secrets.ts`). The value passes through this call and is kept nowhere.
+       * A value for every box of the card, in the card's order. `into` is the ask they answer and
+       * what the gateway judged each box as, for the computer to hold each value to
+       * (`gateway/secrets.ts`). The values pass through this call and are kept nowhere.
+       *
+       * One value is also sent the short way, for a computer from before a card held several.
        */
       async supplySecret(
-        text: string,
+        values: string[],
         into?: {
-          ref: string;
+          fields: { ref: string; element: { role: string; name: string } }[];
           snapshotId: number;
-          element: { role: string; name: string };
         },
       ): Promise<SecretResult> {
+        const only = values.length === 1 ? values[0] : undefined;
         return (await post("/human/secret", {
-          text,
+          values,
           ...(into ?? {}),
+          ...(only === undefined
+            ? {}
+            : { text: only, ...(into?.fields[0] ?? {}) }),
         })) as SecretResult;
       },
 

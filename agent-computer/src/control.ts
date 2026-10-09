@@ -15,6 +15,12 @@
  * stays in `index.ts`.
  */
 import { PERSON_WAIT_MS } from "../../shared/person-wait";
+import {
+  isSameAsk,
+  type SecretField,
+  secretAskName,
+  secretFieldsOf,
+} from "../../shared/secret-ask";
 
 export type ControlState = {
   /**
@@ -46,6 +52,15 @@ export type ControlState = {
   secretRef?: string;
   secretSnapshotId?: number;
   /**
+   * Every box of the card, in the order a person is shown them: the field each value goes in, and
+   * what the Bot called it (2026-10-10, `shared/secret-ask.ts`).
+   *
+   * `secretWanted` and `secretRef` stay beside it and say the same thing shorter — the boxes'
+   * names in one line, and the first box — because that is what every reader of this state was
+   * written against: "is a value being asked for" is still `secretWanted`, in twenty places.
+   */
+  secretFields?: SecretField[];
+  /**
    * The last ask was let go of with nobody having answered it, because the tab it was about went
    * from under the Bot ({@link Control.tabLost}).
    *
@@ -56,6 +71,17 @@ export type ControlState = {
    * the state has to say which it was. There until the next ask or answer.
    */
   unanswered?: true;
+  /**
+   * That ask ended because a person DID answer and their values did not all go in: a box was gone
+   * or called something else by the time its value arrived ({@link Control.secretNotSupplied}).
+   *
+   * SAID BESIDE `unanswered`, BECAUSE THE BOT WAS TOLD "아무도 그 값을 입력하지 않았다" FOR IT.
+   * With one box that was near enough true — nothing was in the page. With several, a card can
+   * fail on its second box after its first was filled, and "nobody entered anything" over a page
+   * holding half a sign-in is the Bot pressing a button it should not. The wait reads this
+   * (`shared/person-wait.ts`) and says what happened; there until the next ask or answer.
+   */
+  unfilled?: true;
 };
 
 /** What a caller must say to ask for a secret. Rejected as a request error, not thrown. */
@@ -222,11 +248,29 @@ export function createControl(
           secretWanted: undefined,
           secretRef: undefined,
           secretSnapshotId: undefined,
+          secretFields: undefined,
         };
         lapsed = true;
       }
     }
     if (lapsed) changed();
+  };
+
+  /**
+   * The state with no value being asked for. Every ending of an ask starts from this and adds
+   * what it was, so that a field added to the ask is dropped by all of them at once — there were
+   * four copies of this list, one per ending. (How the LAST ask ended — `unanswered`, `unfilled`
+   * — is cleared where a new one is made, and an ask is what every ending here ends.)
+   */
+  const withoutSecretAsk = (): ControlState => {
+    const {
+      secretWanted: _was,
+      secretRef: _ref,
+      secretSnapshotId: _id,
+      secretFields: _fields,
+      ...rest
+    } = state;
+    return rest;
   };
 
   return {
@@ -247,6 +291,7 @@ export function createControl(
       state = {
         ...state,
         unanswered: undefined,
+        unfilled: undefined,
         requested: true,
         reason:
           typeof reason === "string" && reason.trim()
@@ -256,28 +301,34 @@ export function createControl(
       return changed();
     },
 
-    /** The Bot asking for one value it must not be told, naming the field it goes in. */
+    /**
+     * The Bot asking for values it must not be told, naming the field each goes in: one card,
+     * with a box for each (`shared/secret-ask.ts`). Either shape of the request is read — the
+     * list, or the one `label` and `ref` an older server sends.
+     */
     requestSecret(input: {
+      fields?: unknown;
       label?: unknown;
       ref?: unknown;
       snapshotId?: unknown;
     }): ControlState {
-      if (typeof input.ref !== "string" || !input.ref.trim()) {
+      const fields = secretFieldsOf(input);
+      const first = fields?.[0];
+      if (!fields || !first) {
         throw new ControlRequestError(
-          "Say which field the value goes in, using a ref from your snapshot.",
+          "Say which field each value goes in, using refs from your snapshot.",
         );
       }
       secretAskedAt = Date.parse(now());
       state = {
         ...state,
         unanswered: undefined,
-        secretWanted:
-          typeof input.label === "string" && input.label.trim()
-            ? input.label.trim()
-            : "the value this page is asking for",
-        secretRef: input.ref.trim(),
+        unfilled: undefined,
+        secretWanted: secretAskName(fields),
+        secretRef: first.ref,
         secretSnapshotId:
           typeof input.snapshotId === "number" ? input.snapshotId : undefined,
+        secretFields: fields,
       };
       return changed();
     },
@@ -292,10 +343,16 @@ export function createControl(
      * stopped being shown must stop being answerable at the same moment, or a value typed into one
      * left open in an old window still goes to a page whose turn ended.
      */
-    pendingSecret(): { ref: string; snapshotId?: number } | null {
+    pendingSecret(): { fields: SecretField[]; snapshotId?: number } | null {
       lapse();
       if (!state.secretWanted || !state.secretRef) return null;
-      return { ref: state.secretRef, snapshotId: state.secretSnapshotId };
+      return {
+        // A state from before the list was kept names its one box the short way.
+        fields: state.secretFields ?? [
+          { ref: state.secretRef, label: state.secretWanted },
+        ],
+        snapshotId: state.secretSnapshotId,
+      };
     },
 
     /**
@@ -311,27 +368,26 @@ export function createControl(
         secretWanted: undefined,
         secretRef: undefined,
         secretSnapshotId: undefined,
+        secretFields: undefined,
       };
       changed();
     },
 
     /**
-     * The value could not be put in the field, and the request is closed as nobody's answer.
+     * The values could not all be put in their fields, and the request is closed as nobody's
+     * answer.
      *
      * CLOSED, because the field is gone and a person would retype their password into the same
      * dead ref for ever. AS NOBODY'S ANSWER, because closing it any other way is read as the value
      * having been typed: until 2026-10-05 this was `secretSupplied`, and the Bot was told "이
      * 사람이 그 값을 칸에 직접 입력했다" about a value that reached no field.
+     *
+     * AND MARKED AS WHAT IT WAS ({@link ControlState.unfilled}): somebody came, and the page was
+     * not what the card said. That is not "nobody entered anything", which is what the Bot heard.
      */
     secretNotSupplied(): void {
       if (secretAskedAt !== undefined) secretAskedAt = undefined;
-      const {
-        secretWanted: _was,
-        secretRef: _ref,
-        secretSnapshotId: _id,
-        ...rest
-      } = state;
-      state = { ...rest, unanswered: true };
+      state = { ...withoutSecretAsk(), unanswered: true, unfilled: true };
       changed();
     },
 
@@ -347,19 +403,34 @@ export function createControl(
      *
      * Says whether there was one to take back.
      */
-    withdrawSecret(asked: { ref?: unknown; snapshotId?: unknown }): boolean {
+    withdrawSecret(asked: {
+      refs?: unknown;
+      ref?: unknown;
+      snapshotId?: unknown;
+    }): boolean {
       lapse();
-      if (!state.secretWanted || state.secretRef !== asked.ref) return false;
-      if (state.secretSnapshotId !== asked.snapshotId) return false;
+      if (!state.secretWanted || !state.secretRef) return false;
+      // The boxes the caller asked for, in its order — or the one box an older server names.
+      const refs = Array.isArray(asked.refs)
+        ? asked.refs.filter((ref): ref is string => typeof ref === "string")
+        : typeof asked.ref === "string"
+          ? [asked.ref]
+          : [];
+      const standing = {
+        refs: state.secretFields?.map((field) => field.ref) ?? [
+          state.secretRef,
+        ],
+        snapshotId: state.secretSnapshotId,
+      };
+      const named = {
+        refs,
+        snapshotId:
+          typeof asked.snapshotId === "number" ? asked.snapshotId : undefined,
+      };
+      if (!isSameAsk(standing, named)) return false;
       secretAskedAt = undefined;
-      const {
-        secretWanted: _was,
-        secretRef: _ref,
-        secretSnapshotId: _id,
-        ...rest
-      } = state;
       // Nobody's answer, like every ask that ends without one: nothing reads this as a value.
-      state = { ...rest, unanswered: true };
+      state = { ...withoutSecretAsk(), unanswered: true };
       changed();
       return true;
     },
@@ -384,14 +455,8 @@ export function createControl(
       if (helpAsked) helpAskedAt = undefined;
       if (secretAsked) secretAskedAt = undefined;
       // The value's label goes with the field it named, as everywhere an ask for one ends.
-      const {
-        secretWanted: _was,
-        secretRef: _ref,
-        secretSnapshotId: _id,
-        ...rest
-      } = state;
       state = {
-        ...rest,
+        ...withoutSecretAsk(),
         ...(helpAsked ? { requested: false, reason: undefined } : {}),
         unanswered: true,
       };

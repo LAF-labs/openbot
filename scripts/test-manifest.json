@@ -590,6 +590,7 @@
   "tests/person-prompt.test.ts",
   "tests/restore-script.test.ts",
   "tests/screen-frame.test.ts",
+  "tests/secret-ask.test.ts",
   "tests/shop-prompt.test.ts",
   "tests/skill-index.test.ts",
   "tests/smoke/journey.test.ts",

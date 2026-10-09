@@ -388,6 +388,57 @@ const SWAP_HTML = `<!doctype html>
   <input type="password" aria-label="${SWAP.onFocus}" onfocus="this.type='text';this.setAttribute('aria-label','${SWAP.focused}')">
 </body></html>`;
 
+/** What `/card` calls its three boxes and its two buttons. */
+export const CARD = {
+  id: "아이디",
+  password: "비밀번호",
+  /**
+   * A third box that nothing marks as a secret — not its type, not its name. What a person put
+   * in it is blanked from the next look only because the box itself is remembered.
+   */
+  again: "메모",
+  /** Renames the third box, now: what a page that re-rendered while a person typed has done. */
+  rename: "확인 칸 바꾸기",
+  /** Arms the page: from then on, anything put in the first box renames the second. */
+  follow: "따라 바뀌게",
+  /** What a renamed box is called. */
+  changed: "한마디",
+  /** How the page says what is in its boxes: three lengths, and nothing of the values. */
+  lengths: (id: number, password: number, again: number) =>
+    `칸에 든 글자 수 ${id}/${password}/${again}`,
+} as const;
+
+/**
+ * A form of three boxes that one card asks for at once, served at `/card` (2026-10-10).
+ *
+ * It says how long the value in each box is and nothing else — which is how a test knows each
+ * value went into its own box, in order, without the page ever showing one (a box a person's value
+ * went into reads as empty from then on, by design). Its two buttons are the two ways a page is
+ * not what a card said by the time the values arrive: a box renamed before the person pressed, and
+ * a box renamed BY the box before it being filled — which no look at the page beforehand can see.
+ */
+const CARD_HTML = `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>가입</title></head>
+<body>
+  <h1>가입</h1>
+  <input id="id" type="text" aria-label="${CARD.id}">
+  <input id="pw" type="password" aria-label="${CARD.password}">
+  <input id="again" type="text" aria-label="${CARD.again}">
+  <p id="lengths">${CARD.lengths(0, 0, 0)}</p>
+  <button type="button" onclick="rename('again')">${CARD.rename}</button>
+  <button type="button" onclick="following=true">${CARD.follow}</button>
+  <script>
+    let following = false;
+    const box = (id) => document.getElementById(id);
+    function rename(id) { box(id).type = 'text'; box(id).setAttribute('aria-label', '${CARD.changed}'); }
+    function say() {
+      box('lengths').textContent = '칸에 든 글자 수 ' + ['id', 'pw', 'again'].map((id) => box(id).value.length).join('/');
+    }
+    for (const id of ['id', 'pw', 'again']) box(id).addEventListener('input', say);
+    box('id').addEventListener('input', () => { if (following) rename('pw'); });
+  </script>
+</body></html>`;
+
 /**
  * The box on `/get-form` (`fixtures/get-form.html`), by the name the tree gives it.
  *
@@ -597,6 +648,11 @@ export function serveFixture(port = 0) {
       }
       if (path === "/swap") {
         return new Response(SWAP_HTML, {
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      }
+      if (path === "/card") {
+        return new Response(CARD_HTML, {
           headers: { "content-type": "text/html; charset=utf-8" },
         });
       }

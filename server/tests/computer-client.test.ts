@@ -543,7 +543,7 @@ describe("a refusal from the computer", () => {
       }),
     );
     expect(
-      (await failureOf(nothingAsked.supplySecret(SECRET_VALUE))).message,
+      (await failureOf(nothingAsked.supplySecret([SECRET_VALUE]))).message,
     ).toBe("laf:secret_not_pending");
     const gone = clientWith(
       answering(409, {
@@ -553,7 +553,7 @@ describe("a refusal from the computer", () => {
       }),
     );
     // The container's name, where this client used to say `laf:secret_field_gone` of its own.
-    expect((await failureOf(gone.supplySecret(SECRET_VALUE))).message).toBe(
+    expect((await failureOf(gone.supplySecret([SECRET_VALUE]))).message).toBe(
       "laf:element_not_actionable",
     );
   });
@@ -634,7 +634,7 @@ describe("a refusal from the computer", () => {
             : path === "/snapshot"
               ? client.snapshot()
               : path === "/human/secret"
-                ? client.supplySecret(SECRET_VALUE)
+                ? client.supplySecret([SECRET_VALUE])
                 : client.readFile({ path: "notes" });
       const failure = await failureOf(call);
       expect({ path, fact: failure.message.startsWith("laf:") }).toEqual({
@@ -906,8 +906,11 @@ describe("the header that says which Bot", () => {
     await client.control();
     await client.requestControl("stuck");
     await client.releaseControl();
-    await client.requestSecret({ label: "PIN", ref: "e1", snapshotId: 1 });
-    await client.supplySecret("hunter2");
+    await client.requestSecret({
+      fields: [{ label: "PIN", ref: "e1" }],
+      snapshotId: 1,
+    });
+    await client.supplySecret(["hunter2"]);
     await client.computers();
     await client.stopComputer();
     await client.resetComputer();
@@ -1543,5 +1546,88 @@ describe("a file taken whole, and bytes put where nothing is", () => {
 
     expect(failure).toBeInstanceOf(ComputerUnavailableError);
     expect(failure.message).toBe("laf:computer_unreachable");
+  });
+});
+
+/**
+ * A CARD OF SEVERAL BOXES, AS IT GOES OVER THE WIRE (2026-10-10, `shared/secret-ask.ts`).
+ *
+ * The two images are pulled together and restarted one after the other, so for a moment a server
+ * that knows a card holds several talks to a computer that takes one `label` and `ref`. One box
+ * is said both ways for that moment; several can only be said the new way, and are.
+ */
+describe("a card that asks for values, on the wire", () => {
+  const bodies = () => {
+    const sent: Array<{ path: string; body: unknown }> = [];
+    const client = clientWith((url, init) => {
+      sent.push({
+        path: new URL(url).pathname,
+        body: JSON.parse(String(init?.body ?? "null")),
+      });
+      return ok({ holder: "bot", characters: 3 });
+    }, true);
+    return { client: client.forBot("bot-7"), sent };
+  };
+  const judged = { role: "textbox", name: "비밀번호" };
+
+  test("one box is said the list's way and the old way; its value and its taking-back too", async () => {
+    const { client, sent } = bodies();
+    const fields = [{ ref: "e2", label: "비밀번호" }];
+    await client.requestSecret({ fields, snapshotId: 3 });
+    await client.supplySecret(["hunter2"], {
+      fields: [{ ref: "e2", element: judged }],
+      snapshotId: 3,
+    });
+    await client.withdrawSecret({ refs: ["e2"], snapshotId: 3 });
+    expect(sent).toEqual([
+      {
+        path: "/control/secret",
+        body: { fields, snapshotId: 3, label: "비밀번호", ref: "e2" },
+      },
+      {
+        path: "/human/secret",
+        body: {
+          values: ["hunter2"],
+          fields: [{ ref: "e2", element: judged }],
+          snapshotId: 3,
+          text: "hunter2",
+          ref: "e2",
+          element: judged,
+        },
+      },
+      {
+        path: "/control/secret/withdraw",
+        body: { refs: ["e2"], snapshotId: 3, ref: "e2" },
+      },
+    ]);
+  });
+
+  test("several are said only as a list: no one box stands for the card to a computer that would take it for the whole", async () => {
+    const { client, sent } = bodies();
+    const fields = [
+      { ref: "e1", label: "아이디" },
+      { ref: "e2", label: "비밀번호" },
+    ];
+    const into = {
+      fields: [
+        { ref: "e1", element: { role: "textbox", name: "아이디" } },
+        { ref: "e2", element: judged },
+      ],
+      snapshotId: 3,
+    };
+    await client.requestSecret({ fields, snapshotId: 3 });
+    await client.supplySecret(["sajang", "hunter2"], into);
+    await client.withdrawSecret({ refs: ["e1", "e2"], snapshotId: 3 });
+    expect(sent).toEqual([
+      { path: "/control/secret", body: { fields, snapshotId: 3 } },
+      {
+        path: "/human/secret",
+        body: { values: ["sajang", "hunter2"], ...into },
+      },
+      {
+        path: "/control/secret/withdraw",
+        body: { refs: ["e1", "e2"], snapshotId: 3 },
+      },
+    ]);
   });
 });

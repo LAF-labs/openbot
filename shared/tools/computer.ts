@@ -18,6 +18,7 @@
  * - `report_refusal` — 스스로 "거절했다"고 감사 로그를 남기는 툴. 아무것도 막지 않으면서 턴마다
  *   150토큰을 쓰고, 거절하고 아무 말 없는 모델은 어차피 아무것도 남기지 않았다.
  */
+import { SECRET_FIELDS_MAX } from "../secret-ask";
 import type { JsonSchema } from "./standard-schema";
 
 export type ComputerTool = {
@@ -165,17 +166,38 @@ export const COMPUTER_TOOLS: readonly ComputerTool[] = [
   {
     name: "computer_request_secret",
     needsPerson: true,
+    /*
+     * ONE CARD, SEVERAL BOXES (2026-10-10, record §6). It was one value a call: a sign-in was two
+     * calls, each waiting on a person, with a look at the page in between — and "click the box
+     * first" before each, which the computer has done itself since the value began to be held to
+     * the judged field. The shape is read in one place (`shared/secret-ask.ts`), which still
+     * reads the one `label` and `ref` this took before, for a conversation that remembers it.
+     */
     description:
-      "네가 알아서는 안 되는 값 **하나**를 사람에게 부탁한다: 로그인 아이디, 비밀번호, 일회용 인증번호, 카드번호. 먼저 computer_click으로 그 칸에 초점을 두고, 그 칸의 ref와 무엇이 필요한지 짧은 라벨을 붙여 부른다. 사람이 가려진 상자에 입력하면 값은 페이지로 바로 들어가고, 이 도구도 대화도 그 값을 너에게 주지 않는다. 아이디처럼 페이지가 그 값을 다시 보여 주면 읽다가 보일 수 있다 — 그래도 대화에 옮겨 적지 않는다. 이 값을 다른 방법으로 물어서는 안 된다. 사람이 페이지에 무엇을 넣는 길은 이것 하나다 — 칸이 여럿이면 칸마다 따로 부른다. 값은 칸에 **입력만** 되므로, 제출이 필요하면 computer_click으로 네가 한다.",
+      "네가 알아서는 안 되는 값을 사람에게 부탁한다: 로그인 아이디, 비밀번호, 일회용 인증번호, 카드번호. 값이 들어갈 칸마다 그 칸의 ref와 무엇이 필요한지 짧은 라벨을 fields에 적는다. 아이디와 비밀번호처럼 한 화면에 함께 있는 칸은 **한 번에** 부탁한다 — 사람은 카드 하나에서 한 번에 답한다. 사람이 가려진 상자에 입력하면 값은 페이지의 그 칸으로 바로 들어가고, 이 도구도 대화도 그 값을 너에게 주지 않는다. 아이디처럼 페이지가 그 값을 다시 보여 주면 읽다가 보일 수 있다 — 그래도 대화에 옮겨 적지 않는다. 이 값을 다른 방법으로 물어서는 안 된다. 사람이 페이지에 무엇을 넣는 길은 이것 하나다. 값은 칸에 **입력만** 되므로, 제출이 필요하면 computer_click으로 네가 한다.",
     parameters: object(
       {
-        label: {
-          type: "string",
-          description: "무엇이 필요한지 몇 단어로. 예: '문자로 온 인증번호'",
+        fields: {
+          type: "array",
+          minItems: 1,
+          maxItems: SECRET_FIELDS_MAX,
+          description:
+            "값이 들어갈 칸들. 사람에게 보이는 순서대로, 칸 하나에 한 번씩만.",
+          items: object(
+            {
+              ref: REF.ref,
+              label: {
+                type: "string",
+                description:
+                  "그 칸에 무엇이 필요한지 몇 단어로. 예: '문자로 온 인증번호'",
+              },
+            },
+            ["ref", "label"],
+          ),
         },
-        ...REF,
+        snapshotId: REF.snapshotId,
       },
-      ["label", "ref", "snapshotId"],
+      ["fields", "snapshotId"],
     ),
   },
   {

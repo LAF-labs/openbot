@@ -1,5 +1,6 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { secretFieldsOf } from "../../../shared/secret-ask";
 import { contentTypeOf } from "../../../shared/workspace-files";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
@@ -40,6 +41,7 @@ import {
   TOOL_CALL_HEADER,
 } from "./gateway";
 import type { HandedFile } from "./gateway/person-files";
+import { SecretValuesError } from "./gateway/secrets";
 import {
   type PolicyStore,
   type PolicyWrite,
@@ -380,16 +382,18 @@ export function createComputerRoutes(
       ),
   );
 
-  /** The Bot asking for a value it must not be told. */
+  /**
+   * The Bot asking for values it must not be told: one card, with a box for each. Either shape —
+   * the list, or the one `label` and `ref` it was until a card held several (2026-10-10).
+   */
   routes.post(
     "/:botId/control/secret",
     requireUser,
     requireBotAccess(),
     (context) =>
       act(context, (botId, actor, body) => {
-        if (typeof body?.ref !== "string" || !body.ref) {
-          return ARGUMENTS_INVALID_BODY;
-        }
+        const fields = secretFieldsOf(body);
+        if (!fields) return ARGUMENTS_INVALID_BODY;
         if (typeof body?.snapshotId !== "number") {
           return ARGUMENTS_INVALID_BODY;
         }
@@ -397,14 +401,7 @@ export function createComputerRoutes(
           botId,
           botId,
           actor,
-          {
-            label:
-              typeof body?.label === "string" && body.label.trim()
-                ? body.label.trim()
-                : "the value this page is asking for",
-            ref: body.ref,
-            snapshotId: body.snapshotId,
-          },
+          { fields, snapshotId: body.snapshotId },
           // Decided by the gate like any act of the Bot's, so an answer travels with it like any.
           asApprovalId(body),
         );
@@ -424,14 +421,25 @@ export function createComputerRoutes(
     requireUser,
     requireBotAccess(),
     (context) =>
-      act(context, (botId, actor, body) => {
-        if (typeof body?.text !== "string" || !body.text) {
-          return {
-            error: "laf:secret_value_required",
-            code: "laf:secret_value_required",
-          };
+      act(context, async (botId, actor, body) => {
+        /*
+         * A VALUE FOR EVERY BOX OF THE CARD, in the card's order — or the one `text` a window
+         * from before a card held several sends, which answers a card of one box and no other.
+         */
+        const sent = Array.isArray(body?.values) ? body.values : [body?.text];
+        const values = sent.filter(
+          (value): value is string => typeof value === "string" && value !== "",
+        );
+        if (values.length === 0 || values.length !== sent.length) {
+          return SECRET_VALUE_REQUIRED;
         }
-        return gateway.supplySecret(botId, botId, actor, body.text);
+        try {
+          return await gateway.supplySecret(botId, botId, actor, values);
+        } catch (error) {
+          // Not as many values as the card has boxes: the same fact as a body with none.
+          if (error instanceof SecretValuesError) return SECRET_VALUE_REQUIRED;
+          throw error;
+        }
       }),
   );
 
@@ -667,6 +675,12 @@ const ARGUMENTS_INVALID = "laf:tool_arguments_invalid";
 const ARGUMENTS_INVALID_BODY: BadRequest = {
   error: ARGUMENTS_INVALID,
   code: ARGUMENTS_INVALID,
+};
+
+/** A person's answer with no value in it, or not one for every box of the card that stands. */
+const SECRET_VALUE_REQUIRED: BadRequest = {
+  error: "laf:secret_value_required",
+  code: "laf:secret_value_required",
 };
 
 /**

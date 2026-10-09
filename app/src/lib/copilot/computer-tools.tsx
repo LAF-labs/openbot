@@ -1,4 +1,5 @@
 import { useFrontendTool } from "@copilotkit/react-core/v2";
+import { secretAskName, secretFieldsOf } from "@shared/secret-ask";
 import { computerTool } from "@shared/tools/computer";
 import { asStandardSchema } from "@shared/tools/standard-schema";
 import { ApprovalRequest } from "@/components/channels/approval-request";
@@ -128,20 +129,37 @@ export function ComputerTools() {
   );
 
   useFrontendTool({
-    ...fromCatalogue<{ label: string; ref: string; snapshotId: number }>(
-      "computer_request_secret",
-    ),
+    ...fromCatalogue<{
+      fields?: { ref: string; label: string }[];
+      // What the tool took until a card held several (2026-10-10): one box, said the short way.
+      label?: string;
+      ref?: string;
+      snapshotId: number;
+    }>("computer_request_secret"),
     // A card in the conversation with the masked box, where the Bot asked — never a pop-up. It is
     // not told whose computer: this closure is drawn through a memo and would hand it a stale
     // holder, so the card reads the declared Bot itself (`help-card.tsx`). The same below.
-    render: ({ args, result, status, toolCallId }) => (
-      <SecretRequestCard
-        result={result}
-        said={typeof args?.label === "string" ? args.label : undefined}
-        status={status}
-        toolCallId={toolCallId}
-      />
-    ),
+    render: ({ args, result, status, toolCallId }) => {
+      // Read once, the way the server reads it (`@shared/secret-ask`): while the arguments are
+      // still arriving it is no card yet, and the card says nothing until it is one.
+      const fields = secretFieldsOf(args);
+      return (
+        <SecretRequestCard
+          ask={
+            fields && typeof args?.snapshotId === "number"
+              ? {
+                  refs: fields.map((field) => field.ref),
+                  snapshotId: args.snapshotId,
+                }
+              : undefined
+          }
+          result={result}
+          said={fields ? secretAskName(fields) : undefined}
+          status={status}
+          toolCallId={toolCallId}
+        />
+      );
+    },
   });
 
   useFrontendTool({
