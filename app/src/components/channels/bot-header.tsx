@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { useHeaderSlots } from "@/components/layout/header-slots";
 import type { Presence } from "@/lib/agents/presence";
 import { t } from "@/lib/i18n";
+import { useHasTopRow } from "@/lib/use-wide-viewport";
 import { cn } from "@/lib/utils";
 import { usePresence } from "./use-presence";
 
@@ -28,6 +31,13 @@ import { usePresence } from "./use-presence";
  * works. The word is still the dot's name, for a screen reader and on hover, and the dot still
  * opens the drawer. Only one state keeps its word on the screen — the person's turn
  * (`saysItsWord`).
+ *
+ * IN THE ROW AT THE TOP, WHERE THERE IS ONE (2026-10-09). The layout has a row of its own now — the
+ * home button, the switcher, the profile button (`app-header.tsx`) — and this one stood directly
+ * under it: two rows of chrome over one conversation. So on a window wide enough for that row the
+ * name and the dot are drawn at its left and the buttons at its right (`header-slots.tsx`), and no
+ * row is drawn here. On a phone, and anywhere this is drawn without the layout around it, it is the
+ * row it always was.
  */
 export function BotHeader({
   actions,
@@ -46,6 +56,40 @@ export function BotHeader({
   pill?: (presence: Presence) => ReactNode;
 }) {
   const presence = usePresence(agentId);
+  const slots = useHeaderSlots();
+  const hasTopRow = useHasTopRow();
+
+  const identity = (
+    <>
+      <h1
+        className="min-w-0 truncate font-semibold text-sm leading-5"
+        data-tauri-drag-region
+      >
+        {name}
+      </h1>
+      {pill ? pill(presence) : <PresencePill presence={presence} />}
+    </>
+  );
+
+  if (slots && hasTopRow) {
+    return (
+      <>
+        {slots.leading
+          ? createPortal(
+              <div
+                className="flex min-w-0 items-center gap-2"
+                data-bot-identity
+                data-tauri-drag-region
+              >
+                {identity}
+              </div>,
+              slots.leading,
+            )
+          : null}
+        {slots.actions && actions ? createPortal(actions, slots.actions) : null}
+      </>
+    );
+  }
 
   return (
     <header
@@ -57,13 +101,7 @@ export function BotHeader({
         className="flex min-w-0 flex-1 items-center gap-2"
         data-tauri-drag-region
       >
-        <h1
-          className="min-w-0 truncate font-semibold text-sm leading-5"
-          data-tauri-drag-region
-        >
-          {name}
-        </h1>
-        {pill ? pill(presence) : <PresencePill presence={presence} />}
+        {identity}
       </div>
       {actions ? (
         <div className="flex shrink-0 items-center gap-1">{actions}</div>

@@ -1,4 +1,5 @@
 import { inShell } from "@/lib/notifications/shell";
+import { platformOf } from "@/lib/version";
 
 /**
  * THE 44px THE INSTALLED APP'S WINDOW BUTTONS SIT IN.
@@ -24,6 +25,15 @@ export const ShellTitleBar = () =>
       data-tauri-drag-region
     />
   ) : null;
+
+/**
+ * The padding that starts a row to the right of the traffic lights. They are drawn over the
+ * window's top left corner on macOS only — Windows keeps its buttons in a bar of its own — and the
+ * home button is the first thing to stand in that corner: the sidebar's title row kept it empty.
+ * Empty in a browser tab and on every other system.
+ */
+export const shellLightsInset = (): string =>
+  inShell() && platformOf(navigator) === "macOS" ? "pl-20" : "";
 
 /** The padding that keeps content out from under `ShellTitleBar`. Empty in a browser tab. */
 export const shellTopInset = (): string =>

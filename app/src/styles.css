@@ -132,6 +132,20 @@ html {
   --sand-fill-ghost-selected: #71788226;
   --sand-fill-elevated: #ffffff;
   --sand-fill-bubble-user: #26292e;
+  /*
+   * THE WINDOW'S GROUND AND WHAT STANDS ON IT (2026-10-09; `docs/laf/redesign-2026-10.md` names
+   * Hark as the reference, and Hark's window is a sky with panes of frosted glass on it). The
+   * backdrop is drawn, not a photograph: three soft lights over a fall of pale blue, so nothing
+   * ships that is somebody else's picture and the ink keeps its contrast everywhere on it. The
+   * glass is the elevated fill at seven tenths, with an edge a little brighter than itself.
+   */
+  --sand-backdrop:
+    radial-gradient(110% 70% at 12% -10%, #b7d0ee 0%, #b7d0ee00 62%),
+    radial-gradient(80% 60% at 92% 18%, #e3ecf8 0%, #e3ecf800 66%),
+    radial-gradient(90% 70% at 60% 110%, #edf2f9 0%, #edf2f900 60%),
+    linear-gradient(180deg, #c9daf0 0%, #d8e3f2 48%, #e7edf6 100%);
+  --sand-glass: #ffffffb3;
+  --sand-glass-border: #ffffffa6;
   --sand-fill-accent: #1084fe;
   --sand-text-accent: #0c64c1;
   --sand-shadow-composer:
@@ -248,6 +262,13 @@ html {
   --sand-fill-ghost-selected: #8a909942;
   --sand-fill-elevated: #2a2c31;
   --sand-fill-bubble-user: #3a3d44;
+  /* The same sky at night, and glass that is the elevated fill of this theme. */
+  --sand-backdrop:
+    radial-gradient(110% 70% at 12% -10%, #1d2c47 0%, #1d2c4700 62%),
+    radial-gradient(80% 60% at 92% 18%, #1a2233 0%, #1a223300 66%),
+    linear-gradient(180deg, #10151f 0%, #0f1218 55%, #0f1012 100%);
+  --sand-glass: #2a2c31b8;
+  --sand-glass-border: #f2f3f51a;
   --sand-fill-accent: #1084fe;
   --sand-text-accent: #459ffe;
   --sand-shadow-composer: 0 0 0 var(--sand-hairline) var(--sand-border-weak);
@@ -393,6 +414,10 @@ body {
    * test — so leaving them unnamed guaranteed the escape hatch stayed open for the aliased ones too.
    */
   --color-bubble-user: var(--sand-fill-bubble-user);
+  /* The window's ground as `bg-backdrop`, and the panes on it as `bg-glass` / `border-glass-border`. */
+  --background-image-backdrop: var(--sand-backdrop);
+  --color-glass: var(--sand-glass);
+  --color-glass-border: var(--sand-glass-border);
   /* Deliberately does NOT invert with the theme; see the note on --sand-text-on-color. */
   --color-on-color: var(--sand-text-on-color);
   --color-primary-hover: var(--app-accent-hover);
@@ -466,6 +491,19 @@ body {
 
   /* The sidebar's width, as `w-sidebar`, so the column carries no inline style. */
   --spacing-sidebar: var(--sand-sidebar-width);
+
+  /*
+   * THE HOME PANEL'S WIDTH, as `w-home-panel` (`docs/laf/redesign-2026-10.md` §1): what the person
+   * dragged it to (`--home-panel-chosen`, a fifth of the window before they ever have), held
+   * between `max(20%, 280px)` and `min(70%, window − 360px)`. Held HERE so a window made narrower
+   * narrows the panel with no script listening for it. In `vw` because the panel's parent is the
+   * window; where the two bounds cross, on a window too narrow for both, `clamp()` keeps the least.
+   */
+  --spacing-home-panel: clamp(
+    max(20vw, 280px),
+    var(--home-panel-chosen, 20vw),
+    min(70vw, 100vw - 360px)
+  );
 }
 
 @layer base {

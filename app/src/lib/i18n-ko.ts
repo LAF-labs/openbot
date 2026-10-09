@@ -3384,4 +3384,13 @@ export const ko: Record<string, string> = {
   Markdown: "마크다운",
   "For a spreadsheet": "엑셀에 붙여 넣기",
   "View fullscreen": "크게 보기",
+  // 2026-10 화면 틀: 홈 패널, 홈 버튼, 채팅 | 프로젝트 전환기 (`docs/laf/redesign-2026-10.md` §1).
+  Home: "홈",
+  "Open the home panel": "홈 패널 펴기",
+  "Close the home panel": "홈 패널 접기",
+  "Home panel width": "홈 패널 너비",
+  "Chat or projects": "채팅 또는 프로젝트",
+  Chat: "채팅",
+  Projects: "프로젝트",
+  "Projects cannot be made yet.": "아직 프로젝트를 만들 수 없어요.",
 };

@@ -99,6 +99,7 @@ export const SCREEN_ROUTES = [
   "/no-access",
   "/notebook",
   "/privacy",
+  "/projects",
   "/routines",
   "/settings",
   "/settings/",
