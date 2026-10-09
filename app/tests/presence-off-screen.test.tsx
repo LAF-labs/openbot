@@ -124,13 +124,23 @@ function server(options: {
   return { api, turns, state, releaseFirstList: () => releaseFirstList() };
 }
 
-/** What the pill beside the Bot's name says: the sidebar's own row, outside the conversation. */
+/**
+ * What the row at the top says the Bot is doing. On any screen but its conversation that is the
+ * Bot's mark (`bot-mark.tsx`), a link named for the Bot and its state; on the conversation it is
+ * the state's own button beside the name, which the conversation draws into the same row.
+ */
 const pill = (host: HTMLElement) => {
-  const row = [...host.querySelectorAll("a[aria-label]")].find((link) =>
+  const mark = [...host.querySelectorAll("a[aria-label]")].find((link) =>
     link.getAttribute("aria-label")?.startsWith("닻 · "),
   );
-  const label = row?.getAttribute("aria-label") ?? "";
-  return label.slice("닻 · ".length).replace(/\. Bot profile$/, "");
+  if (mark) {
+    const label = mark.getAttribute("aria-label") ?? "";
+    return label.slice("닻 · ".length).replace(/\. Conversation$/, "");
+  }
+  return (
+    host.querySelector("[data-bot-identity] [title]")?.getAttribute("title") ??
+    ""
+  );
 };
 
 describe("the pill, once the conversation has left the screen", () => {

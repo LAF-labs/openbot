@@ -43,7 +43,10 @@
  * `unhandled_rejection` is a promise nobody awaited.
  */
 export const SCREEN_SECTIONS = [
+  // Nothing draws it since 2026-10-09; a window still open on an older build reports it.
   "sidebar",
+  "home_panel",
+  "top_row",
   "main",
   "conversation",
   "transcript",

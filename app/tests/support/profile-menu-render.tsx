@@ -12,7 +12,8 @@
  * never collects it on its own — and nothing may import a value from it, which would run it: types
  * only.
  *
- *     bun app/tests/support/profile-menu-render.tsx
+ *     bun app/tests/support/profile-menu-render.tsx            # an account with its one Bot
+ *     bun app/tests/support/profile-menu-render.tsx several    # one from before the cap, with three
  */
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
@@ -23,6 +24,8 @@ export type ProfileMenuShown = {
     text: string;
     menu: { label: string | null; title: string | null; text: string };
   };
+  /** The Bot's mark in the row: what it is named, and where it goes. */
+  mark: { label: string | null; to: string | null };
   /** What the button opens, in order: each item's words and, for one that goes somewhere, where. */
   items: [name: string, to: string | null][];
 };
@@ -56,14 +59,57 @@ const { QueryClient, QueryClientProvider } = await import(
 );
 const { RouterProvider } = await import("@tanstack/react-router");
 
+/** An account from before the cap keeps every Bot it had, a hidden one too. */
+const isSeveral = process.argv[2] === "several";
+
+const conversation = (id: string, agentId: string, at: string) => ({
+  id,
+  name: agentId,
+  agentIds: [agentId],
+  threadId: `thread-${id}`,
+  active: true,
+  lastMessage: "…",
+  lastMessageAt: at,
+  lastMessageAgentId: agentId,
+  unread: false,
+  createdAt: at,
+});
+
 globalThis.fetch = stubFetch(async (input) => {
   const url = String(input);
   if (url === "/api/agents") {
-    return json({ agents: [agentFixture({ id: "bot-1", name: "초롱" })] });
+    return json({
+      agents: isSeveral
+        ? [
+            agentFixture({ id: "bot-1", name: "초롱" }),
+            agentFixture({ id: "bot-2", name: "두리" }),
+          ]
+        : [agentFixture({ id: "bot-1", name: "초롱" })],
+    });
   }
-  if (url === "/api/agents?hidden=true") return json({ agents: [] });
+  if (url === "/api/agents?hidden=true") {
+    return json({
+      agents: isSeveral
+        ? [agentFixture({ id: "bot-3", name: "세모", hidden: true })]
+        : [],
+    });
+  }
   if (url === "/api/agents/working") return json({ working: [] });
-  if (url === "/api/channels") return json({ channels: [] });
+  if (url === "/api/channels") {
+    return json({
+      channels: isSeveral
+        ? [
+            conversation("c-1", "bot-1", "2026-09-20T00:00:00Z"),
+            conversation("c-2", "bot-2", "2026-09-21T00:00:00Z"),
+            // A room from before: it is neither Bot's conversation, and it is not listed.
+            {
+              ...conversation("room", "bot-1", "2026-09-22T00:00:00Z"),
+              agentIds: ["bot-1", "bot-2"],
+            },
+          ]
+        : [],
+    });
+  }
   if (url === "/api/me") {
     return json({
       user: {
@@ -99,6 +145,7 @@ const PATHS = [
   "/ideas",
   "/goals",
   "/made",
+  "/projects",
   "/channel/$channelId",
   "/channel/new",
   "/sign",
@@ -147,6 +194,11 @@ const items = () => [
 const shown: ProfileMenuShown = await mounted(async (host) => {
   const row = host.querySelector("[data-app-header]");
   const menu = host.querySelector("[data-profile-menu]");
+  const botMark = host.querySelector("[data-bot-mark]");
+  const mark = {
+    label: botMark?.getAttribute("aria-label") ?? null,
+    to: botMark?.getAttribute("href") ?? null,
+  };
   const standing = {
     text: row?.textContent ?? "",
     menu: {
@@ -160,7 +212,7 @@ const shown: ProfileMenuShown = await mounted(async (host) => {
     item.textContent ?? "",
     item.getAttribute("href"),
   ]);
-  return { row: standing, items: opened };
+  return { row: standing, mark, items: opened };
 });
 
 console.log(`PROFILE_MENU ${JSON.stringify(shown)}`);

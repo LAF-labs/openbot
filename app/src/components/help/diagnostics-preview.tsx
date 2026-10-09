@@ -34,6 +34,10 @@ const sectionName = (section: string): string => {
   switch (section) {
     case "sidebar":
       return t("The list of Bots");
+    case "home_panel":
+      return t("The home panel");
+    case "top_row":
+      return t("The row at the top");
     case "main":
       return t("The main screen");
     case "conversation":

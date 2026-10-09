@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
+import { useRouterState } from "@tanstack/react-router";
 import { HomeButton } from "@/components/home/home-panel";
 import { HeaderSlot } from "@/components/layout/header-slots";
+import { BotMark } from "@/components/layout/bot-mark";
 import { ProfileMenu } from "@/components/layout/profile-menu";
 import { ReadNotice } from "@/components/layout/read-states";
 import { shellLightsInset } from "@/components/layout/shell-titlebar";
@@ -26,7 +28,8 @@ import { cn } from "@/lib/utils";
  *
  * WHAT THE SCREEN PUTS IN IT. The conversation draws the Bot's face, name and state into the left
  * of the row and its own buttons into the right (`header-slots.tsx`); it had a row of its own under
- * this one until 2026-10-09. A screen that is not about the Bot leaves both empty.
+ * this one until 2026-10-09. On every other screen the row draws the Bot's name and state itself
+ * (`bot-mark.tsx`), so what the Bot is doing is said in the same place whichever screen is open.
  *
  * NO GROUND OF ITS OWN: the window's backdrop shows through, as it does behind the panel.
  *
@@ -45,6 +48,11 @@ export function AppHeader() {
   const agents = useQuery(agentListQueryOptions());
   const channels = useQuery(channelListQueryOptions());
   const panel = useHomePanel();
+  const isConversation = useRouterState({
+    select: (state) =>
+      state.location.pathname === "/" ||
+      state.location.pathname.startsWith("/channel"),
+  });
   /*
    * What is drawn is what was read — the answer, or the one from before when refreshing it failed —
    * and never data a refusal has said this account cannot have.
@@ -76,6 +84,7 @@ export function AppHeader() {
       >
         {panel.isOpen ? null : <HomeButton />}
         <HeaderSlot className="flex min-w-0 items-center" name="leading" />
+        {isConversation ? null : <BotMark />}
       </div>
       <ViewSwitcher />
       <div

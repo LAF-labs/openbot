@@ -25,9 +25,9 @@ import {
  * never drawn — a Korean reader got English with a status in it, on the one press where being
  * understood matters (somebody who believes they signed out of a shared computer and did not).
  *
- * Mounted on the settings screen, where 로그아웃 is a plain button. The sidebar's is behind a menu
- * that this shared test process cannot open (`sidebar-foot-render.tsx` says why); it calls the same
- * mutation and catches it the same way.
+ * Mounted on the settings screen, where 로그아웃 is a plain button. The profile button's is behind a
+ * menu that this shared test process cannot open (`profile-menu-render.tsx` says why); it calls the
+ * same mutation and catches it the same way.
  */
 
 beforeAll(installAppDom, APP_DOM_TIMEOUT_MS);

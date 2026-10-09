@@ -491,8 +491,10 @@ test("a file dropped on the window is left to the page", () => {
  * the pane laid over a conversation that had nowhere left to go. The two numbers are written down
  * in different files in different languages, so this is the one place they are read together.
  *
- * The layout's minimum is 960 since 2026-10-04, when the roster went from 280px to 216: the
- * window's own was left at 1024, so at its smallest the conversation has 64px more than it needs.
+ * The layout's minimum is 1024 since 2026-10-09, when the 216px roster gave its place to the home
+ * panel, which is never under 280px while it is open (`--sand-home-panel-min-width`): exactly the
+ * window's own minimum, with nothing to spare. A person who folds the panel away gets its width
+ * back for the conversation.
  */
 test("the window cannot be dragged smaller than the layout it holds", () => {
   const styles = read("app/src/styles.css");
@@ -502,7 +504,7 @@ test("the window cannot be dragged smaller than the layout it holds", () => {
     return Number(found?.[1]);
   };
   const layoutMinimum =
-    px("sidebar-width") + px("info-pane-width") + px("chat-min-width");
+    px("home-panel-min-width") + px("info-pane-width") + px("chat-min-width");
   // Asserted rather than assumed: a variable renamed to nothing would otherwise make this pass.
   expect(layoutMinimum).toBeGreaterThan(900);
 
@@ -529,12 +531,17 @@ test("every row that reserves the title bar's height can move the window", () =>
   expect(style).toBe("Overlay");
 
   // The reservation and the handle on the same element: the attribute has to sit inside the tag
-  // that opened with that height, before that tag closes. The sidebar's row is `h-titlebar` — the
-  // 44px as a name since 2026-09-24, where it used to be spelled `h-[var(--sand-titlebar-block)]`.
-  const sidebarRow = read(
-    "app/src/components/app-sidebar/bot-sidebar.tsx",
-  ).match(/<div[^>]*\bh-titlebar\b[^>]*>/);
-  expect(sidebarRow?.[0]).toContain("data-tauri-drag-region");
+  // that opened with that height, before that tag closes. Two rows are `h-titlebar` — the 44px as a
+  // name since 2026-09-24 — since the sidebar went (2026-10-09): the row across the top of the
+  // screen, and the home panel's own first row, which is under the traffic lights while it is open.
+  const topRow = read("app/src/components/layout/app-header.tsx").match(
+    /<header[^>]*\bh-titlebar\b[^>]*>/,
+  );
+  expect(topRow?.[0]).toContain("data-tauri-drag-region");
+  const panelRow = read("app/src/components/home/home-panel.tsx").match(
+    /<div[^>]*\bh-titlebar\b[^>]*>/,
+  );
+  expect(panelRow?.[0]).toContain("data-tauri-drag-region");
 
   /*
    * The conversation's header is the Bot's presence now (`bot-header.tsx`), 56px rather than 44 —

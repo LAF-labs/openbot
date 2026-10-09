@@ -52,8 +52,8 @@ afterAll(async () => {
   await removeAppDom();
 });
 
-describe("the roster, broken under an open window", () => {
-  test("fails alone, is reported as the roster on its route's template, and comes back with 다시 불러오기", async () => {
+describe("the row at the top, broken under an open window", () => {
+  test("fails without the page under it, is reported by its own name on its route's template, and comes back with 다시 불러오기", async () => {
     const { channelKeys } = await import("../src/lib/channels/queries");
     const { configureScreenErrorReports, routeTemplateOf } = await import(
       "../src/lib/support/screen-errors"
@@ -76,10 +76,10 @@ describe("the roster, broken under an open window", () => {
         return undefined;
       },
     });
-    const roster = () => view.host.querySelector('nav[aria-label="Your Bot"]');
+    const roster = () => view.host.querySelector("[data-app-header]");
     const failedRoster = () =>
-      view.host.querySelector('[data-failed-section="sidebar"]');
-    await view.waitFor(() => roster() !== null, "the roster");
+      view.host.querySelector('[data-failed-section="top_row"]');
+    await view.waitFor(() => roster() !== null, "the row at the top");
 
     const reports: ScreenErrorReport[] = [];
     configureScreenErrorReports({
@@ -92,43 +92,54 @@ describe("the roster, broken under an open window", () => {
       },
     });
 
-    // The server's answer changes under the open window, and the roster throws on it.
+    // The server's answer changes under the open window, and the row throws on it.
     channels = BROKEN_CHANNELS;
     await view.queryClient.invalidateQueries({ queryKey: channelKeys.list() });
-    await view.waitFor(() => failedRoster() !== null, "the roster to fail");
+    await view.waitFor(() => failedRoster() !== null, "the row to fail");
 
     expect(roster()).toBeNull();
     expect(failedRoster()?.querySelector('[role="alert"]')?.textContent).toBe(
       "This part of the screen ran into an unexpected problem.",
     );
-    // The page beside it is still drawn.
+    // The page under it is still drawn.
     expect(view.main()?.textContent).toContain("Help");
-    await view.waitFor(() => reports.length === 1, "the report");
-    expect(reports[0]).toMatchObject({
-      section: "sidebar",
+    const reportOf = (section: string) =>
+      reports.find((report) => report.section === section);
+    await view.waitFor(() => reportOf("top_row") !== undefined, "the report");
+    expect(reportOf("top_row")).toMatchObject({
+      section: "top_row",
       route: "/help",
       kind: "TypeError",
       build: "edge",
       surface: "shell",
     });
+    /*
+     * The home panel reads the same conversations and failed on the same answer — behind a seam of
+     * its own, so under its own name: one report for each part, and neither took the other with it.
+     */
+    await view.waitFor(() => reports.length === 2, "the panel's report");
+    expect(reports.map((report) => report.section).sort()).toEqual([
+      "home_panel",
+      "top_row",
+    ]);
 
-    // And the rest of the window still goes places: the page beside the roster changes.
+    // And the rest of the window still goes places: the page under the row changes.
     await view.navigate("/skills");
     expect(routeTemplateOf(view.router)).toBe("/skills");
     expect(view.main()?.textContent).toContain("Skills");
-    // The route changed, so the roster tried again — on the same broken answer, and failed again,
-    // from the same place, which is not a second report.
+    // The route changed, so the row tried again — on the same broken answer, and failed again,
+    // from the same place, which is not another report.
     expect(failedRoster()).not.toBeNull();
-    expect(reports).toHaveLength(1);
+    expect(reports).toHaveLength(2);
 
-    // The answer is right again; 다시 불러오기 fetches it and draws the roster.
+    // The answer is right again; 다시 불러오기 fetches it and draws the row.
     channels = [];
     const reload = [...(failedRoster()?.querySelectorAll("button") ?? [])].find(
       (button) => button.textContent === "Reload",
     );
-    if (!reload) throw new Error("no 다시 불러오기 where the roster was");
+    if (!reload) throw new Error("no 다시 불러오기 where the row was");
     await view.click(reload);
-    await view.waitFor(() => roster() !== null, "the roster to come back");
+    await view.waitFor(() => roster() !== null, "the row to come back");
     expect(failedRoster()).toBeNull();
 
     await view.unmount();
@@ -162,7 +173,7 @@ describe("the roster, broken under an open window", () => {
       queryKey: ["routines"],
       brokenBody: { routines: [null] },
       goodBody: { routines: [] },
-      stillThere: 'nav[aria-label="Your Bot"]',
+      stillThere: "[data-app-header]",
     },
     {
       path: "/settings/connected-accounts",

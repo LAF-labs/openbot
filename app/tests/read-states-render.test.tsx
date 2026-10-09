@@ -80,7 +80,7 @@ describe("the roster", () => {
         failing ? refused("laf:internal", 500) : json({ agents: [BOT] }),
       ),
     });
-    const nav = () => view.host.querySelector('nav[aria-label="Your Bot"]');
+    const nav = () => view.host.querySelector("[data-app-header]");
     await view.waitFor(
       () =>
         (nav()?.textContent ?? "").includes("Your Bot could not be loaded."),
@@ -108,13 +108,13 @@ describe("the roster", () => {
 
   /*
    * NO "아직 봇이 없습니다" AND NO 새 봇 (2026-09-24). A person has one Bot, and somebody with none
-   * is sent to the first run to make it; the sidebar has nothing to offer about making another.
+   * is sent to the first run to make it; the row at the top has nothing to offer about making another.
    */
-  test("with no Bot, the sidebar draws no row and no way to make one", async () => {
+  test("with no Bot, the row at the top draws no Bot and no way to make one", async () => {
     const view = await mountApp({ path: "/skills" });
-    const nav = view.host.querySelector('nav[aria-label="Your Bot"]');
+    const nav = view.host.querySelector("[data-app-header]");
     expect(nav).not.toBeNull();
-    expect(nav?.querySelectorAll("ul a")).toHaveLength(0);
+    expect(nav?.querySelector("[data-bot-mark]")).toBeNull();
     expect(nav?.textContent).not.toContain("New Bot");
     expect(nav?.querySelector("[data-roster-notice]")).toBeNull();
   });

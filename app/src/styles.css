@@ -167,6 +167,7 @@ html {
    * rails.
    */
   --sand-sidebar-width: 216px;
+  --sand-home-panel-min-width: 280px;
   --sand-info-pane-width: 320px;
   --sand-chat-min-width: 424px;
   --sand-titlebar-block: 44px;
@@ -500,7 +501,7 @@ body {
    * window; where the two bounds cross, on a window too narrow for both, `clamp()` keeps the least.
    */
   --spacing-home-panel: clamp(
-    max(20vw, 280px),
+    max(20vw, var(--sand-home-panel-min-width)),
     var(--home-panel-chosen, 20vw),
     min(70vw, 100vw - 360px)
   );

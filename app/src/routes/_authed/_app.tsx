@@ -64,7 +64,7 @@ function RouteComponent() {
       <SectionBoundary
         className="h-full w-home-panel shrink-0 max-md:order-last max-md:h-auto max-md:w-full max-md:border-border max-md:border-t max-md:bg-sidebar"
         queryKeys={ROSTER_QUERIES}
-        section="sidebar"
+        section="home_panel"
       >
         <HomePanel />
         <PhoneTabBar />
@@ -73,9 +73,9 @@ function RouteComponent() {
       <HeaderSlotsProvider>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <SectionBoundary
-            className="h-titlebar w-full shrink-0 max-md:hidden"
+            className="flex h-titlebar w-full shrink-0 items-center justify-end gap-2 overflow-hidden px-2.5 max-md:hidden"
             queryKeys={ROSTER_QUERIES}
-            section="sidebar"
+            section="top_row"
           >
             <AppHeader />
           </SectionBoundary>
