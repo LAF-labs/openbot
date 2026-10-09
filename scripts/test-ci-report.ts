@@ -61,11 +61,20 @@ export function fileVerdict(
  * The sum of its test cases' own times: what the file costs a worker once its modules are loaded.
  * Read for `scripts/test-durations.json`, which spreads the files over the workers; nothing judges
  * a run by it.
+ *
+ * A SKIPPED TEST IS NO TIME, NOT ZERO TIME. The browser suites skip themselves where Playwright has
+ * no Chromium, which a developer's machine often lacks and CI never does; counted as taking
+ * nothing, they were all packed into one of agent-computer's runs, which CI then ran end to end
+ * (review of pull request 131). A file whose every test skipped is left out, so the time it last
+ * had stands, or the middle one if it never had one.
  */
 export function secondsPerFile(report: string): Map<string, number> {
   const seconds = new Map<string, number>();
-  for (const match of report.matchAll(/<testcase\b([^>]*)>/g)) {
+  for (const match of report.matchAll(
+    /<testcase\b([^>]*?)(?:\/>|>([\s\S]*?)<\/testcase>)/g,
+  )) {
     const attributes = match[1] as string;
+    if (/<skipped\b/.test(match[2] ?? "")) continue;
     const file = /\bfile="([^"]+)"/.exec(attributes)?.[1];
     const time = Number.parseFloat(
       /\btime="([0-9.eE+-]+)"/.exec(attributes)?.[1] ?? "",
@@ -77,13 +86,26 @@ export function secondsPerFile(report: string): Map<string, number> {
 }
 
 /**
+ * What a file costs a worker beyond its tests' own time, in seconds: loading its modules, starting
+ * what it starts — a browser, a server, a child process.
+ *
+ * A file's measured time leaves that out, and a file measured where its tests were skipped has no
+ * time at all. Without it the gate packed the browser suites — skipped on a machine with no
+ * Chromium, timed as nothing — into one of agent-computer's four runs: 34 of 37 files, which CI then
+ * ran end to end (review of pull request 131). Half a second a file makes a run of many small files
+ * weigh what it does, and spreads files nobody could time by their number.
+ */
+export const PER_FILE_SECONDS = 0.5;
+
+/**
  * The files spread over `bins` lists whose times are as even as the files allow.
  *
  * Longest first, each into the list that is shortest so far — what a scheduler calls LPT, never
- * more than a third over the best spread there is. A file with no time of its own is given the
- * middle one of the times there are: a new file is an ordinary file until it has been measured.
- * Lists that would be empty are not made, and each list keeps its files in path order, which is
- * the order bun would have run them in.
+ * more than a third over the best spread there is. A file weighs its time plus
+ * {@link PER_FILE_SECONDS}; one with no time of its own is given the middle one of the times there
+ * are, since a new file is an ordinary file until it has been measured. Lists that would be empty
+ * are not made, and each list keeps its files in path order, which is the order bun would have run
+ * them in.
  */
 export function spread(
   files: readonly string[],
@@ -93,7 +115,10 @@ export function spread(
   const known = [...seconds.values()].sort((a, b) => a - b);
   const typical = known.length > 0 ? (known[known.length >> 1] as number) : 1;
   const weighed = files
-    .map((file) => ({ file, weight: seconds.get(file) ?? typical }))
+    .map((file) => ({
+      file,
+      weight: (seconds.get(file) ?? typical) + PER_FILE_SECONDS,
+    }))
     .sort((a, b) => b.weight - a.weight || a.file.localeCompare(b.file));
   const lists = Array.from(
     { length: Math.max(1, Math.min(bins, files.length)) },
