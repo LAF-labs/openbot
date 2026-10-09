@@ -52,12 +52,18 @@ describe("the pill says the person's turn before anything else", () => {
     expect(kind({ isHelpWanted: true, turn: "answering" })).toBe("help");
   });
 
-  test("both are amber and both put the face in its asking expression", () => {
-    for (const facts of [{ approvals: 2 }, { isHelpWanted: true }]) {
+  /*
+   * Both put the Bot's face in its asking expression until 2026-10-09. The Bot has no face now, so
+   * the word is what says what is wanted, and the tone is what says it is the person's turn.
+   */
+  test("both are amber, and each says in its own word what it wants", () => {
+    const said = [{ approvals: 2 }, { isHelpWanted: true }].map((facts) => {
       const presence = presenceOf({ ...QUIET, ...facts });
       expect(presence.tone).toBe("attention");
-      expect(presence.face).toBe("blocked");
-    }
+      expect(presence).not.toHaveProperty("face");
+      return presence.label;
+    });
+    expect(said).toEqual(["Needs your OK", "Needs your help"]);
   });
 });
 
@@ -65,7 +71,10 @@ describe("then the work, most visible first", () => {
   test("the browser open is working, whatever the turn says", () => {
     expect(kind({ isBrowsing: true })).toBe("working");
     expect(kind({ isBrowsing: true, turn: "answering" })).toBe("working");
-    expect(presenceOf({ ...QUIET, isBrowsing: true }).face).toBe("searching");
+    expect(presenceOf({ ...QUIET, isBrowsing: true })).toMatchObject({
+      tone: "active",
+      label: "Busy working",
+    });
   });
 
   test("a tool call in flight is working too", () => {
@@ -85,12 +94,10 @@ describe("then the work, most visible first", () => {
     expect(presenceOf({ ...QUIET, turn: "thinking" })).toMatchObject({
       kind: "thinking",
       tone: "active",
-      face: "thinking",
     });
     expect(presenceOf(QUIET)).toMatchObject({
       kind: "idle",
       tone: "quiet",
-      face: "idle",
     });
   });
 
@@ -99,7 +106,6 @@ describe("then the work, most visible first", () => {
       kind: "working",
       label: "Busy working",
       tone: "active",
-      face: "working",
     });
   });
 

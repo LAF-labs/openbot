@@ -8,7 +8,6 @@ import { ShellSync } from "../components/layout/shell-sync";
 import { TrialBanner } from "../components/layout/trial-banner";
 import { loadCurrentUser } from "../lib/auth/load-current-user";
 import { useSessionGate } from "../lib/auth/use-session-gate";
-import { useBotAccent } from "../lib/avatar/accent";
 import { watchBuild } from "../lib/build-watch";
 import { useChannelEvents } from "../lib/channels/use-channel-events";
 import { inShell } from "../lib/notifications/shell";
@@ -82,8 +81,6 @@ function AuthedShell() {
   // What the Bot is waiting on the person for, known on every screen and not only in its conversation.
   useShellQuestions();
   useSessionGate();
-  // The Bot's colour is the accent on every signed-in screen, Settings and Admin included.
-  useBotAccent();
   // In the desktop shell, a `target="_blank"` link has nowhere to go; hand it to the browser.
   useEffect(handleShellLinks, []);
   /*

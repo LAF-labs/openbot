@@ -91,7 +91,6 @@ function server() {
             id: BOT,
             name: "초롱",
             roleDescription: "",
-            avatarSeed: BOT,
             autoReview: "",
             endpoint: null,
             hasAuth: false,

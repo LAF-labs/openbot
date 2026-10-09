@@ -34,9 +34,9 @@ A Bot is a colleague you can hand a job to. It drives a real browser with your
 logins in it, reads the files you give it, looks things up, and keeps a notebook
 of what you told it.
 
-**One VM per person, and one Bot on it.** The Bot's profile is a name, beside a
-face it is given; everything else — what it is for included — is settled by
-talking to it.
+**One VM per person, and one Bot on it.** The Bot's profile is a name — it has
+no face — and everything else, what it is for included, is settled by talking
+to it.
 The computer, its files, its logins and its browser sessions are that person's
 and nobody else's, and the thing that keeps the Bot in bounds is the gateway in
 front of the computer. That decision shapes the code, and it is written down in
@@ -332,8 +332,8 @@ in the comments:
 
 No code was taken from either. What was taken was a decision each of them had already made well,
 measured against what was here before it was adopted. Bot avatars used to be third-party character
-art and carried their own attribution; they are generated here now
-(`app/src/lib/avatar/bot-avatar.ts`), so nothing in this repository is somebody else's work.
+art and carried their own attribution; generated faces replaced them, and since 2026-10-09 a Bot
+has no face at all, so nothing in this repository is somebody else's work.
 
 ## Contributing
 

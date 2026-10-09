@@ -11,7 +11,6 @@ function profile(overrides: Partial<AgentProfile> = {}): AgentProfile {
     id: "agent-1",
     name: "Researcher",
     roleDescription: "Finds and summarizes information.",
-    avatarSeed: "researcher",
     autoReview: "",
     ownerUserId: creator.id,
     systemOwned: false,

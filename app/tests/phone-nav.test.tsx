@@ -44,7 +44,6 @@ const bot = (id: string, name: string) => ({
   id,
   name,
   roleDescription: "",
-  avatarSeed: id,
   autoReview: "",
   endpoint: null,
   hasAuth: false,

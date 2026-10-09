@@ -14,9 +14,10 @@ A deployment belongs to one person, who has
 **one Bot**: its profile is a name, changed any time, and everything
 else — what it is for included — is settled by talking to it (2026-09-24,
 `docs/laf/deployment-model.md` "봇은 하나다"). Rooms and Bots asking each other
-were removed that day and live in git history. Its face is given, drawn from
-`avatar_seed`, and nobody picks it; how hard it thinks is the deployment's, fixed,
-shown nowhere and set by nobody, the Bot included (2026-10-08, landed 2026-10-09).
+were removed that day and live in git history. The Bot has no face: the profile
+is a name, and nothing draws a face or takes a colour from one (2026-10-09). How
+hard it thinks is the deployment's, fixed, shown nowhere and set by nobody, the
+Bot included (2026-10-08, landed 2026-10-09).
 
 **Decided 2026-10-08, not yet built** (`docs/laf/redesign-2026-10.md`): a home
 panel of widgets replaces the sidebar; projects sit beside the one main

@@ -25,8 +25,8 @@ const ANIMATION_DURATION_SECONDS = 0.3;
  * The pane holds a screen thumbnail and a list of routines, neither of which needs 400px; what
  * needed it was the conversation next door, which is where a person is actually reading.
  *
- * A CALLER MAY ASK FOR MORE, and one does: a Bot's profile is a face, an editable name, cards of
- * settings and a menu, and at 320 its buttons and the skill switches were being laid out on a
+ * A CALLER MAY ASK FOR MORE, and one does: a Bot's profile is an editable name, cards of settings
+ * and a menu, and at 320 its buttons and the skill switches were being laid out on a
  * column narrower than the sentence explaining them. `detailWidth` is that override,
  * not a suggestion — the pane animates its width and hands the content that width outright.
  */

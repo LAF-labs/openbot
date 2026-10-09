@@ -11,8 +11,8 @@
  *
  * It was `presets.ts`, and held thirty-two ready-made Bots — a name, a job title and a standing
  * instruction each — for a row of "kinds of work" on a new Bot's card. That card and those presets
- * were removed on 2026-09-24: a person has one Bot, its profile is a name and a face, and what it
- * does is settled by talking to it (docs/laf/deployment-model.md, "봇은 하나다").
+ * were removed on 2026-09-24: a person has one Bot, its profile is a name, and what it does is
+ * settled by talking to it (docs/laf/deployment-model.md, "봇은 하나다").
  */
 
 import {

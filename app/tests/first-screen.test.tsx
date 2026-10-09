@@ -33,10 +33,10 @@ import {
  * 수 있음). 무슨 일을 시킬건지도 적지 않는다. 그냥 모든걸 채팅으로 처리한다."
  *
  * So: a person with no Bot sees one screen — a name already filled in and the button — and lands in
- * the conversation. (The face was chosen on that screen too, until 2026-10-08: the server gives it
- * now, and nothing chooses it — docs/laf/redesign-2026-10.md §8.) Home is that conversation. The sidebar is that Bot and
- * the places to change how it works; an account from before, with several, gets a short list of them
- * and nothing else that behaves as if there were several.
+ * the conversation. (A face was chosen on that screen too, until 2026-10-08; the Bot has had none
+ * since 2026-10-09 — docs/laf/redesign-2026-10.md §8.) Home is that conversation. The sidebar is
+ * that Bot and the places to change how it works; an account from before, with several, gets a
+ * short list of them and nothing else that behaves as if there were several.
  *
  * AND THE RUNTIME STAYS WHERE A BOT IS RUN. MEASURED 2026-09-10 (audit A4, finding 5): every signed-in
  * screen statically loaded the CopilotKit runtime because the provider wrapped `_authed`'s outlet.
@@ -139,7 +139,6 @@ describe("the first run", () => {
         if (pathname === "/api/me/consent" && method === "POST") {
           return new Response(null, { status: 204 });
         }
-        // The seed the server gives a Bot it makes: its own id (`agents/profile-store.ts`).
         if (pathname === "/api/agents" && method === "POST") {
           made = body as Record<string, unknown>;
           return json(
@@ -147,7 +146,6 @@ describe("the first run", () => {
               agent: agentFixture({
                 id: "bot-new",
                 name: String(made.name),
-                avatarSeed: "bot-new",
               }),
             },
             201,
@@ -159,7 +157,6 @@ describe("the first run", () => {
               agentFixture({
                 id: "bot-new",
                 name: String(made.name),
-                avatarSeed: "bot-new",
               }),
             ],
           });
@@ -275,6 +272,34 @@ describe("home", () => {
       "the conversation to start the runtime",
       8000,
     );
+  });
+
+  /*
+   * NO FACE, AND NO COLOUR FROM ONE (2026-10-09). The header led with the Bot's face and the app
+   * took its accent from the face's palette, put on <html> as `data-accent`. The Bot has no face
+   * now: the header is its name and the dot, and the app is drawn in the one accent everybody has.
+   */
+  test("the conversation's header is the Bot's name and its dot — no face anywhere — and the app takes no colour from the Bot", async () => {
+    const view = await mountApp({
+      path: "/",
+      api: ({ pathname }) =>
+        pathname === "/api/agents"
+          ? json({ agents: [agentFixture({ id: "bot-1", name: "초롱" })] })
+          : undefined,
+    });
+    const title = () =>
+      [...view.host.querySelectorAll("header h1")].find(
+        (heading) => heading.textContent === "초롱",
+      );
+    await view.waitFor(() => title() !== undefined, "the Bot's name");
+    await view.settle(200);
+    const header = title()?.closest("header");
+    expect(header?.querySelector("svg.bot-avatar")).toBeNull();
+    // The name first in its row: nothing drawn before it but what a phone puts there.
+    expect(title()?.previousElementSibling).toBeNull();
+    expect(view.host.querySelector("svg.bot-avatar")).toBeNull();
+    const html = view.host.ownerDocument.documentElement;
+    expect(html.hasAttribute("data-accent")).toBe(false);
   });
 
   test("a Bot nobody has spoken to yet opens on its empty conversation", async () => {

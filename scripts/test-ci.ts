@@ -2245,6 +2245,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * each answering as before, the field never reaching the store. Counted by running the changed
  * files before and after the change: app 66 to 64, server 114 to 115.
  * By hand: 2153 less 2 is 2151; 3892 and 1 are 3893.
+ *
  * LOWERED AGAIN 2026-10-09, `server` from 3893 to 3892: four tests went and three came, for §8's
  * other half — how hard the main conversation thinks is fixed, shown nowhere, and set by neither a
  * person nor the Bot. Gone, the four of `agent-routes.test.ts`'s "how hard a Bot thinks", which
@@ -2259,6 +2260,36 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * of its own, and the profile's test now holds that it is gone. Counted by running the changed
  * files before and after the change: server 330 to 329, app 240 to 240.
  * By hand: 3893 less 4 is 3889, and 3 more are 3892.
+ *
+ * LOWERED 2026-10-09, `app` from 2151 to 2132, and RAISED `server` from 3892 to 3893: the owner took
+ * the face away from the Bot altogether (the profile is a name), and the colour the app took from
+ * it went too. Gone from `app`: all eighteen of `bot-avatar.test.ts`, with the file — the seed
+ * grammar, the bodies, the eyes and the frame-loop engine they measured were deleted whole — and
+ * nine of `accent-contrast.test.ts`: a block per palette, the three promises per theme measured over
+ * ten palettes, the neutral control's own test, and the palette read from a seed. In their place
+ * are seven: the same three promises per theme measured on the one accent left, and one that the
+ * sheet has no palette per Bot and `index.html` reads no Bot's colour back before the first paint.
+ * And one more in `first-screen.test.tsx`: the conversation's header is the name and its dot, no
+ * face is drawn anywhere on the screen, and `<html>` is given no `data-accent`. One to `server`, in
+ * `agent-routes.test.ts`: the Bot the API answers with, alone or in the list, carries no face even
+ * from a row that still has a seed. Rewritten and counted as before: the rail's rows drawn as the
+ * name's first letter, the identity row whose only picture is its pencil, the presence kinds said
+ * by word and tone with no expression, the empty routines and skills with no face over them, and
+ * the profile's identity with no face in its source. Counted by running the changed files before
+ * and after the change: app 183 to 164 (the deleted file run before), server 118 to 119.
+ * By hand: 18 and 9 are 27, less 7 and 1 is 19, and 2151 less 19 is 2132; 3892 and 1 are 3893.
+ *
+ * RAISED 2026-10-09, by one each, for three review findings on the same branch. Each comes with a
+ * test that fails without its fix:
+ *  - `agent-computer` 475 → 476: `korean-browser.test.ts`, an ask for a hand that a restart cut
+ *    short reads as nobody's answer;
+ *  - `server` 3892 → 3893: `connections-overview.test.ts`, a site is a switch a card may draw only
+ *    once it is on;
+ *  - `app` 2153 → 2154: `connection-choices.test.tsx`, the card offers a site only once it is on.
+ *
+ * On this branch the three land on its own floors: 3893 and 1 are 3894; 2132 and 1 are 2133; 475 and
+ * 1 are 476.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2287,8 +2318,8 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 3893, roots: ["server"] },
-  { name: "app", floor: 2152, roots: ["app"] },
+  { name: "server", floor: 3894, roots: ["server"] },
+  { name: "app", floor: 2133, roots: ["app"] },
   {
     name: "agent-computer",
     floor: 488,
