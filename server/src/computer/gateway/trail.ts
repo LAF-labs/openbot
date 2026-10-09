@@ -79,6 +79,11 @@ export async function write(
     computerId: string;
     element: SnapshotElement | undefined;
     ref: string | undefined;
+    /**
+     * Every box of a card that asks a person for several values, first to last — `element` and
+     * `ref` above are then the one the decision turned on (`govern.ts`, `alsoRefs`).
+     */
+    fields?: readonly { ref: string; role: string; name: string }[] | undefined;
     /** Which key, for a keypress. Recorded because a keypress can act without naming a button. */
     key?: string | undefined;
     filePath: string | undefined;
@@ -141,6 +146,7 @@ export async function write(
       actor: entry.actor.id,
       page: pageForTrail(entry.pageUrl),
       ref: entry.ref ?? null,
+      ...(entry.fields ? { fields: entry.fields } : {}),
       /*
        * The key, where there is one. A keypress can submit a form from inside a text field, so the
        * element it was aimed at is not always the thing it acted on. Without the key, the trail

@@ -4,7 +4,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
-import { PW_FIELDS, SWAP, serveFixture } from "./fixture-site";
+import { askOutcome } from "../../shared/person-wait";
+import { CARD, PW_FIELDS, SWAP, serveFixture } from "./fixture-site";
 
 /**
  * A VALUE TYPED THROUGH `computer_request_secret` NEVER REACHES THE NEXT SNAPSHOT.
@@ -447,6 +448,160 @@ describe.skipIf(!HAS_BROWSER)(
       expect(refused.text).not.toContain(VALUE);
       expect((await snapshot()).text).not.toContain(VALUE);
       expect((await control()).secretWanted).toBeUndefined();
+    }, 60_000);
+
+    /*
+     * ONE CARD, SEVERAL BOXES (2026-10-10, record §6). A person answers a whole form once, and
+     * every value is held to its own box the way the one value was. The page says how long the
+     * value in each box is and never what it is, which is how these know which box got which.
+     */
+    const VALUES = ["ID-7", "PW-CANARY", "AGAIN-CANARY-3"] as const;
+    const askCard = async () => {
+      expect(
+        (await post("/navigate", { url: `${fixture?.url}card` })).status,
+      ).toBe(200);
+      const seen = await snapshot();
+      const boxes = [CARD.id, CARD.password, CARD.again].map((name) =>
+        named(seen.elements, name),
+      );
+      const asked = await post("/control/secret", {
+        fields: boxes.map((box) => ({ ref: box.ref, label: box.name })),
+        snapshotId: seen.snapshotId,
+      });
+      expect(asked.status).toBe(200);
+      expect(asked.body.secretWanted).toBe("아이디, 비밀번호, 메모");
+      return {
+        seen,
+        // What the server sends beside the values: each box, and what its gate judged it as.
+        fields: boxes.map((box) => ({
+          ref: box.ref,
+          element: { role: box.role, name: box.name },
+        })),
+      };
+    };
+    const state = async () =>
+      (await call("/control")).body as {
+        secretWanted?: string;
+        unanswered?: boolean;
+        unfilled?: boolean;
+      };
+    /**
+     * Nothing a person typed is in anything the Bot is handed next: the tree, and the page as
+     * read — which is where the page says how long each box's value is.
+     */
+    const nowhere = async () => {
+      const next = await snapshot();
+      const read = await call("/read");
+      for (const value of VALUES) {
+        expect(next.text).not.toContain(value);
+        expect(read.text).not.toContain(value);
+      }
+      return { next, read: read.text };
+    };
+
+    test("a card of three boxes: one answer, and each value goes into its own box", async () => {
+      const { seen, fields } = await askCard();
+      const supplied = await post("/human/secret", {
+        values: VALUES,
+        fields,
+        snapshotId: seen.snapshotId,
+      });
+      expect(supplied.status).toBe(200);
+      // How much arrived and in how many boxes — never which box held how much, and no value.
+      expect(supplied.body).toMatchObject({
+        supplied: true,
+        characters: VALUES.join("").length,
+        fields: 3,
+      });
+      for (const value of VALUES) expect(supplied.text).not.toContain(value);
+
+      const { next, read } = await nowhere();
+      // In order: the first value in the first box, the second in the second, the third in the third.
+      expect(read).toContain(CARD.lengths(4, 9, 14));
+      // Every box a value went into reads as a secret from here on — the id's box as well, and
+      // the last one, which nothing in the markup marks: each is remembered as it is filled.
+      for (const name of [CARD.id, CARD.password, CARD.again]) {
+        expect(named(next.elements, name)).toMatchObject({
+          type: "password",
+          value: "",
+        });
+      }
+      expect(askOutcome(await state())).toBe("answered");
+      expect((await state()).secretWanted).toBeUndefined();
+    }, 60_000);
+
+    test("a value for every box or none goes in, and values that name other boxes — or these in another order — are not this card's", async () => {
+      const { seen, fields } = await askCard();
+      for (const values of [VALUES.slice(0, 2), [VALUES[0], "", VALUES[2]]]) {
+        const short = await post("/human/secret", {
+          values,
+          fields,
+          snapshotId: seen.snapshotId,
+        });
+        expect(short.status).toBe(400);
+      }
+      const reordered = await post("/human/secret", {
+        values: VALUES,
+        fields: [fields[1], fields[0], fields[2]],
+        snapshotId: seen.snapshotId,
+      });
+      expect([reordered.status, reordered.body.code]).toEqual([
+        409,
+        "laf:secret_not_pending",
+      ]);
+      // One value, sent the way a server from before a card held several sends it.
+      const one = await post("/human/secret", { text: VALUES[1] });
+      expect(one.status).toBe(400);
+
+      // Nothing went in, and the card still stands for the answer that is this card's.
+      expect((await nowhere()).read).toContain(CARD.lengths(0, 0, 0));
+      expect((await state()).secretWanted).toBe("아이디, 비밀번호, 메모");
+    }, 60_000);
+
+    test("a box that changed before the person pressed: nothing of the card goes in", async () => {
+      const { seen, fields } = await askCard();
+      await press(seen, CARD.rename);
+      const refused = await post("/human/secret", {
+        values: VALUES,
+        fields,
+        snapshotId: seen.snapshotId,
+      });
+      expect([refused.status, refused.body.code]).toEqual([
+        409,
+        "laf:label_changed",
+      ]);
+      for (const value of VALUES) expect(refused.text).not.toContain(value);
+      // The third box was the one that changed, and the first two were asked before anything was
+      // typed: not one character of the card is in the page.
+      expect((await nowhere()).read).toContain(CARD.lengths(0, 0, 0));
+      // Over — and said to be what it was: somebody came, and it did not go in.
+      const after = await state();
+      expect(after.secretWanted).toBeUndefined();
+      expect(askOutcome(after)).toBe("unfilled");
+    }, 60_000);
+
+    test("a page that changes the second box when the first is filled: the second value goes nowhere, and the Bot is not told nobody came", async () => {
+      const { seen, fields } = await askCard();
+      await press(seen, CARD.follow);
+      const refused = await post("/human/secret", {
+        values: VALUES,
+        fields,
+        snapshotId: seen.snapshotId,
+      });
+      expect([refused.status, refused.body.code]).toEqual([
+        409,
+        "laf:label_changed",
+      ]);
+      const { next, read } = await nowhere();
+      // The id went into the box it was judged for; the password went into nothing — least of all
+      // the box that had just stopped being a password box.
+      expect(read).toContain(CARD.lengths(4, 0, 0));
+      // The box that did take a value is blanked like any a value went into.
+      expect(named(next.elements, CARD.id)).toMatchObject({
+        type: "password",
+        value: "",
+      });
+      expect(askOutcome(await state())).toBe("unfilled");
     }, 60_000);
   },
 );

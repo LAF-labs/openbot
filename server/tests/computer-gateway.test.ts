@@ -25,6 +25,7 @@ import {
   createComputerGateway,
   isTextKey,
 } from "../src/computer/gateway";
+import { SecretValuesError } from "../src/computer/gateway/secrets";
 import type { ActionPolicy } from "../src/computer/policy";
 import {
   createRepeatDetector,
@@ -1604,14 +1605,17 @@ function scriptedClient(
       calls.push("navigate");
       return { url: landing, title: "Landed" } as never;
     },
-    requestSecret: async (input: { label: string; ref: string }) => {
+    requestSecret: async (input: {
+      fields: { label: string; ref: string }[];
+    }) => {
       calls.push("requestSecret");
       return {
         holder: "bot",
         since: "2026-09-06T00:00:00.000Z",
         requested: false,
-        secretWanted: input.label,
-        secretRef: input.ref,
+        secretWanted: input.fields.map((field) => field.label).join(", "),
+        secretRef: input.fields[0]?.ref,
+        secretFields: input.fields,
       } as never;
     },
     supplySecret: async () => {
@@ -1877,6 +1881,15 @@ describe("what a snapshot carries into this process", () => {
     expect(state.secretInto).toEqual({
       host: "example.com",
       element: { role: "textbox", name: "비밀번호" },
+      // Every box of the card — here, one — by the control's own name beside the Bot's words.
+      fields: [
+        {
+          ref: "e2",
+          label: "네이버 비밀번호",
+          role: "textbox",
+          name: "비밀번호",
+        },
+      ],
     });
     expect((await gateway.control("default")).secretInto).toEqual(
       state.secretInto,
@@ -1890,7 +1903,7 @@ describe("what a snapshot carries into this process", () => {
     );
 
     // Supplying it clears the target, so a stale one cannot describe a later request.
-    await gateway.supplySecret("default", "bot-1", ACTOR, "hunter2");
+    await gateway.supplySecret("default", "bot-1", ACTOR, ["hunter2"]);
     expect((await gateway.control("default")).secretInto).toBeUndefined();
   });
 
@@ -1921,7 +1934,7 @@ describe("what a snapshot carries into this process", () => {
     });
 
     const failure = await gateway
-      .supplySecret("default", "bot-1", ACTOR, "hunter2-NOT-TYPED")
+      .supplySecret("default", "bot-1", ACTOR, ["hunter2-NOT-TYPED"])
       .catch((caught: unknown) => caught);
 
     expect(failure).toBeInstanceOf(ElementNotFoundError);
@@ -2007,7 +2020,7 @@ describe("what a snapshot carries into this process", () => {
     expect((await gateway.control("default")).secretInto).toBeUndefined();
     // And a value typed at it has no judged field to go into.
     const supplied = await gateway
-      .supplySecret("default", "bot-1", ACTOR, "hunter2-NOT-TYPED")
+      .supplySecret("default", "bot-1", ACTOR, ["hunter2-NOT-TYPED"])
       .catch((caught: unknown) => caught);
     expect(supplied).toBeInstanceOf(StaleSnapshotError);
     expect((supplied as Error).message).toBe("laf:secret_not_pending");
@@ -2045,6 +2058,15 @@ describe("what a snapshot carries into this process", () => {
     expect(state.secretInto).toEqual({
       host: "example.com",
       element: { role: "textbox", name: "비밀번호" },
+      // Every box of the card — here, one — by the control's own name beside the Bot's words.
+      fields: [
+        {
+          ref: "e2",
+          label: "네이버 비밀번호",
+          role: "textbox",
+          name: "비밀번호",
+        },
+      ],
     });
 
     const no = scripted(policy, LOGIN);
@@ -2134,7 +2156,7 @@ describe("what a snapshot carries into this process", () => {
         )
         .catch((caught: unknown) => caught);
       const typed = await gateway
-        .supplySecret("default", "bot-1", ACTOR, "hunter2-NOT-TYPED")
+        .supplySecret("default", "bot-1", ACTOR, ["hunter2-NOT-TYPED"])
         .catch((caught: unknown) => caught);
       return { outcome, typed, calls, handed, withdrawn, stop, rows, gateway };
     };
@@ -2144,7 +2166,7 @@ describe("what a snapshot carries into this process", () => {
       requested: false,
       secretWanted: request.label,
     };
-    const thatAsk = [[{ ref: "e2", snapshotId: 3 }, true]];
+    const thatAsk = [[{ refs: ["e2"], snapshotId: 3 }, true]];
 
     // The computer answers after the Stop: the request it made is taken back, and nothing is kept.
     const late = await stoppedBy(async (stop) => {
@@ -2207,24 +2229,271 @@ describe("what a snapshot carries into this process", () => {
       ref: "e2",
       snapshotId: 3,
     });
-    await gateway.supplySecret("default", "bot-1", ACTOR, "hunter2");
+    await gateway.supplySecret("default", "bot-1", ACTOR, ["hunter2"]);
 
     expect(sent).toEqual([
       [
-        "hunter2",
+        ["hunter2"],
         {
-          ref: "e2",
           snapshotId: 3,
-          element: { role: "textbox", name: "비밀번호" },
+          fields: [
+            { ref: "e2", element: { role: "textbox", name: "비밀번호" } },
+          ],
         },
       ],
     ]);
     // Spent with the value: a second one has nothing to be held to.
     const second = await gateway
-      .supplySecret("default", "bot-1", ACTOR, "again")
+      .supplySecret("default", "bot-1", ACTOR, ["again"])
       .catch((caught: unknown) => caught);
     expect((second as Error).message).toBe("laf:secret_not_pending");
     expect(calls).toEqual(["requestSecret", "supplySecret"]);
+  });
+
+  /*
+   * ONE CARD, SEVERAL BOXES (2026-10-10, record §6). A sign-in was two requests a person answered
+   * one after the other. It is one card now, and one act of the Bot's: decided once, counted
+   * once, one row a person is told by — and every value held to its own box.
+   */
+  const SIGN_IN = {
+    fields: [
+      { ref: "e1", label: "네이버 아이디" },
+      { ref: "e2", label: "네이버 비밀번호" },
+    ],
+    snapshotId: 3,
+  };
+  const BOTH = [
+    { ref: "e1", role: "textbox", name: "아이디" },
+    { ref: "e2", role: "textbox", name: "비밀번호" },
+  ];
+
+  test("a card of several boxes is one act — one decision, one request, one row a person is told by — and each value is held to its own box", async () => {
+    const ID = "ID-CANARY-77";
+    const SECRET = "hunter2-CANARY";
+    const { client, calls } = scriptedClient(LOGIN);
+    const asked: unknown[] = [];
+    const sent: unknown[][] = [];
+    Object.assign(client, {
+      requestSecret: async (input: unknown) => {
+        calls.push("requestSecret");
+        asked.push(input);
+        return { holder: "bot", since: "", requested: false };
+      },
+      supplySecret: async (...call: unknown[]) => {
+        calls.push("supplySecret");
+        sent.push(call);
+        return {
+          supplied: true,
+          characters: ID.length + SECRET.length,
+          fields: 2,
+          url: LOGIN.url,
+        };
+      },
+    });
+    const { store, rows } = fakeAudit();
+    const gateway = createComputerGateway({
+      client,
+      auditStore: store,
+      policy: () => PERMISSIVE,
+    });
+    await gateway.snapshot("default");
+
+    const state = await gateway.requestSecret(
+      "default",
+      "bot-1",
+      ACTOR,
+      SIGN_IN,
+    );
+    expect(asked).toEqual([SIGN_IN]);
+    // Every box as THIS SERVER resolved it, beside what the Bot called it; the first one also the
+    // way a window from before a card held several reads it.
+    expect(state.secretInto).toEqual({
+      host: "example.com",
+      element: { role: "textbox", name: "아이디" },
+      fields: [
+        { ...BOTH[0], label: "네이버 아이디" },
+        { ...BOTH[1], label: "네이버 비밀번호" },
+      ],
+    });
+    // One decision for the card, naming every box, and one note of the ask.
+    expect(rows.map((row) => row.eventType)).toEqual([
+      "computer.action_allowed",
+      "computer.secret_requested",
+    ]);
+    expect(rows[0]?.payload.fields).toEqual(BOTH);
+    expect(rows[1]?.payload.reason).toBe(
+      '네이버 아이디 (into textbox "아이디" on example.com); 네이버 비밀번호 (into textbox "비밀번호" on example.com)',
+    );
+
+    // A value for every box, or nothing is sent: which box an absent one belonged to is not
+    // this server's to guess.
+    for (const values of [[ID], [ID, ""], [ID, SECRET, "one-too-many"]]) {
+      expect(
+        await gateway
+          .supplySecret("default", "bot-1", ACTOR, values)
+          .catch((caught: unknown) => caught),
+      ).toBeInstanceOf(SecretValuesError);
+    }
+    expect(calls).toEqual(["requestSecret"]);
+
+    await gateway.supplySecret("default", "bot-1", ACTOR, [ID, SECRET]);
+    // In the card's order, each beside the box it is for and what that box was judged as.
+    expect(sent).toEqual([
+      [
+        [ID, SECRET],
+        {
+          snapshotId: 3,
+          fields: BOTH.map(({ ref, role, name }) => ({
+            ref,
+            element: { role, name },
+          })),
+        },
+      ],
+    ]);
+    const supplied = rows.find(
+      (row) => row.eventType === "computer.secret_supplied",
+    );
+    // How much, over the whole card — never box by box, and never what.
+    expect(supplied?.payload.reason).toBe(
+      `${ID.length + SECRET.length} characters in 2 fields`,
+    );
+    const trail = JSON.stringify(rows);
+    expect(trail).not.toContain(ID);
+    expect(trail).not.toContain(SECRET);
+
+    // Both boxes read as secrets from here on — the id's too, which nothing in the markup marks.
+    const next = await gateway.snapshot("default");
+    for (const ref of ["e1", "e2"]) {
+      expect(
+        next.elements.find((element) => element.ref === ref),
+      ).toMatchObject({ type: "password", value: "" });
+    }
+    // And the card is spent with its values.
+    expect((await gateway.control("default")).secretInto).toBeUndefined();
+
+    // Every box of a card is remembered, not only its first: the code box, which nothing in
+    // the markup marks either, in the last place of the next card.
+    await gateway.requestSecret("default", "bot-1", ACTOR, {
+      fields: [
+        { ref: "e2", label: "비밀번호" },
+        { ref: "e3", label: "문자로 온 인증번호" },
+      ],
+      snapshotId: 3,
+    });
+    await gateway.supplySecret("default", "bot-1", ACTOR, [SECRET, "482913"]);
+    const later = await gateway.snapshot("default");
+    expect(
+      later.elements.find((element) => element.ref === "e3"),
+    ).toMatchObject({ type: "password", value: "" });
+  });
+
+  test("a rule about any box of a card is a rule about the card: refused beside the box it was about, or asked about once, with every box named", async () => {
+    const aboutThePassword =
+      'intent == "fill_secret" && element.name == "비밀번호"';
+
+    // Forbidden for the second box: the card asks nobody, and the row names that box.
+    const denied = scripted({ ...PERMISSIVE, deny: [aboutThePassword] }, LOGIN);
+    await denied.gateway.snapshot("default");
+    const refused = await denied.gateway
+      .requestSecret("default", "bot-1", ACTOR, SIGN_IN)
+      .catch((caught: unknown) => caught);
+    expect(refused).toBeInstanceOf(ActionRefusedError);
+    expect(denied.calls).toEqual([]);
+    expect(
+      denied.rows.map((row) => [
+        row.eventType,
+        (row.payload.element as { name?: string }).name,
+        row.payload.ref,
+      ]),
+    ).toEqual([["computer.action_refused", "비밀번호", "e2"]]);
+    expect(denied.rows[0]?.payload.fields).toEqual(BOTH);
+    // The same card with the boxes the other way round is refused the same: order hides nothing.
+    const reversed = await denied.gateway
+      .requestSecret("default", "bot-1", ACTOR, {
+        ...SIGN_IN,
+        fields: [...SIGN_IN.fields].reverse(),
+      })
+      .catch((caught: unknown) => caught);
+    expect(reversed).toBeInstanceOf(ActionRefusedError);
+    expect(denied.calls).toEqual([]);
+
+    // Asked about: ONE question for the card, and it names every box a yes would cover.
+    const asking = scripted({ ...PERMISSIVE, ask: [aboutThePassword] }, LOGIN);
+    await asking.gateway.snapshot("default");
+    const question = (await asking.gateway
+      .requestSecret("default", "bot-1", ACTOR, SIGN_IN)
+      .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
+    expect(question).toBeInstanceOf(ActionNeedsApprovalError);
+    expect(question.subject).toMatchObject({
+      kind: "browser",
+      intent: "fill_secret",
+      host: "example.com",
+      element: { role: "textbox", name: "아이디, 비밀번호" },
+    });
+    expect(asking.calls).toEqual([]);
+    await asking.approvals.answer(
+      question.approvalId,
+      "bot-1",
+      MANAGER.id,
+      true,
+    );
+    // One yes, and the card is made — once, with both boxes.
+    const state = await asking.gateway.requestSecret(
+      "default",
+      "bot-1",
+      ACTOR,
+      SIGN_IN,
+      question.approvalId,
+    );
+    expect(asking.calls).toEqual(["requestSecret"]);
+    expect(state.secretInto?.fields).toHaveLength(2);
+
+    // A yes to that card is not a yes to another: one more box is not what was approved.
+    const wider = scripted({ ...PERMISSIVE, ask: [aboutThePassword] }, LOGIN);
+    await wider.gateway.snapshot("default");
+    const first = (await wider.gateway
+      .requestSecret("default", "bot-1", ACTOR, SIGN_IN)
+      .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
+    await wider.approvals.answer(first.approvalId, "bot-1", MANAGER.id, true);
+    const stretched = await wider.gateway
+      .requestSecret(
+        "default",
+        "bot-1",
+        ACTOR,
+        {
+          ...SIGN_IN,
+          fields: [...SIGN_IN.fields, { ref: "e3", label: "인증번호" }],
+        },
+        first.approvalId,
+      )
+      .catch((caught: unknown) => caught);
+    expect(stretched).toBeInstanceOf(Error);
+    expect(wider.calls).toEqual([]);
+  });
+
+  test("a card that names something that is not a field, one box twice, more than a card holds, or none asks nobody", async () => {
+    const [id] = SIGN_IN.fields;
+    if (!id) throw new Error("the card has a first box");
+    const seven = Array.from({ length: 7 }, () => id);
+    for (const fields of [
+      [id, { ref: "e4", label: "로그인 버튼" }],
+      [id, { ref: "e99", label: "없는 칸" }],
+      [id, { ...id, label: "같은 칸 한 번 더" }],
+      seven,
+      [],
+    ]) {
+      const { gateway, calls, rows } = scripted(PERMISSIVE, LOGIN);
+      await gateway.snapshot("default");
+      const refusal = (await gateway
+        .requestSecret("default", "bot-1", ACTOR, { fields, snapshotId: 3 })
+        .catch((caught: unknown) => caught)) as ActionRefusedError;
+      expect(refusal).toBeInstanceOf(ActionRefusedError);
+      expect(refusal.code).toBe("laf:secret_target_not_a_field");
+      expect(calls).toEqual([]);
+      expect(rows.map((row) => row.eventType)).toEqual([
+        "computer.action_refused",
+      ]);
+    }
   });
 
   test("a ref that is a button, or nothing, is refused with a row and reaches no computer", async () => {
@@ -2319,7 +2588,7 @@ describe("a field a person typed a secret into", () => {
     );
     await gateway.snapshot("default");
     await gateway.requestSecret("default", "bot-1", ACTOR, asked);
-    await gateway.supplySecret("default", "bot-1", ACTOR, CODE);
+    await gateway.supplySecret("default", "bot-1", ACTOR, [CODE]);
 
     // The same document, moved on by a single-page app: the box is still there, still holding it.
     live.url = "https://shop.example/login/verify?step=2";
@@ -2357,7 +2626,7 @@ describe("a field a person typed a secret into", () => {
     const { gateway } = scripted(PERMISSIVE, live);
     await gateway.snapshot("default");
     await gateway.requestSecret("default", "bot-1", ACTOR, asked);
-    await gateway.supplySecret("default", "bot-1", ACTOR, CODE);
+    await gateway.supplySecret("default", "bot-1", ACTOR, [CODE]);
 
     // A browser that closed while idle counts its refs from `e1` again.
     live.url = "https://market.example/search";
@@ -2384,7 +2653,7 @@ describe("a field a person typed a secret into", () => {
     const { gateway } = scripted(PERMISSIVE, live);
     await gateway.snapshot("default");
     await gateway.requestSecret("default", "bot-1", ACTOR, asked);
-    await gateway.supplySecret("default", "bot-1", ACTOR, CODE);
+    await gateway.supplySecret("default", "bot-1", ACTOR, [CODE]);
     await gateway.stopComputer("default", "bot-1", ACTOR);
 
     live.snapshotId = 4;

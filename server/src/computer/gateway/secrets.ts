@@ -9,6 +9,8 @@
  * against the snapshot, a field followed by identity rather than wording, a value that never
  * crosses this process.
  */
+
+import { secretFieldsOf } from "../../../../shared/secret-ask";
 import type { AuditStore } from "../../audit";
 import {
   type ComputerClient,
@@ -20,7 +22,12 @@ import {
 } from "../client";
 import { isSecretFieldElement } from "../default-policy";
 import type { PolicyDecision } from "../policy";
-import type { SecretRequest, SnapshotElement, SnapshotResult } from "../schema";
+import type {
+  SecretInto,
+  SecretRequest,
+  SnapshotElement,
+  SnapshotResult,
+} from "../schema";
 import { hostOf, originOf } from "./addresses";
 import { type ActionActor, ActionRefusedError } from "./caller";
 import type { Govern } from "./govern";
@@ -33,11 +40,21 @@ type TypedInto = { ref: string; origin: string; role: string; name: string };
 /** How long the computer is given to hear that a stopped caller's ask is taken back. */
 const WITHDRAW_MS = 5_000;
 
-/** A field a value is waiting for: where it was judged, and as what. See `supplySecret`. */
-type Requested = TypedInto & { snapshotId: number };
+/**
+ * A card values are waiting for: the snapshot it was judged in, where, and each box as what it
+ * was judged as, in the card's order. See `supplySecret`.
+ */
+type Requested = {
+  snapshotId: number;
+  origin: string;
+  fields: { ref: string; role: string; name: string }[];
+};
 
-/** How many such fields one computer's snapshots are masked against. */
-const TYPED_INTO_LIMIT = 8;
+/**
+ * How many such fields one computer's snapshots are masked against. Two cards of the most boxes
+ * a card holds (`SECRET_FIELDS_MAX`) and a few besides: it was eight when a card held one.
+ */
+const TYPED_INTO_LIMIT = 16;
 
 /** The roles a value can be typed into. What `computer_request_secret` may name. */
 const SECRET_ENTRY_ROLES = new Set([
@@ -62,6 +79,19 @@ function withoutSecretValue(element: SnapshotElement): SnapshotElement {
   return { ...element, value: "" };
 }
 
+/**
+ * A person's answer that is not an answer to the card that stands: not one value for each of its
+ * boxes. Its own error because nothing was wrong with the page or the request — the route says it
+ * as the same fact it says for a body with no value at all (`routes.ts`).
+ */
+export class SecretValuesError extends Error {
+  readonly code = "laf:secret_value_required";
+  constructor() {
+    super("laf:secret_value_required");
+    this.name = "SecretValuesError";
+  }
+}
+
 export function createSecrets(deps: {
   /** The computer, addressed as the Bot that is asking. See `createComputerGateway`. */
   as: (botId: string) => ComputerClient;
@@ -81,10 +111,7 @@ export function createSecrets(deps: {
    * and the ref and nothing else — and the host and the control's own name are what a person needs
    * beside a label a model wrote. Cleared when the value is supplied.
    */
-  const secretTargets = new Map<
-    string,
-    { host: string; element: { role: string; name: string } }
-  >();
+  const secretTargets = new Map<string, SecretInto>();
   /**
    * The field the open secret request names, and the fields a person has already typed one into —
    * the second is what every later snapshot is masked against.
@@ -183,8 +210,24 @@ export function createSecrets(deps: {
     if (!cached || cached.stale || cached.snapshotId !== input.snapshotId) {
       throw new StaleSnapshotError(STALE_REFS);
     }
-    const element = cached.elements.get(input.ref);
-    if (!element || !SECRET_ENTRY_ROLES.has(element.role)) {
+    /*
+     * EVERY BOX OF THE CARD, EACH RESOLVED THE SAME WAY (2026-10-10, `shared/secret-ask.ts`). A
+     * card with no box, with more than a card holds, or with one box twice is not a card: said as
+     * a ref that names no field, which is what it is to the model that wrote it.
+     */
+    const asked = secretFieldsOf(input);
+    const resolved = (asked ?? []).map((field) => ({
+      ...field,
+      element: cached.elements.get(field.ref),
+    }));
+    const notAField = asked
+      ? resolved.find(
+          (field) =>
+            !field.element || !SECRET_ENTRY_ROLES.has(field.element.role),
+        )
+      : { ref: "", element: undefined };
+    if (notAField) {
+      const { element } = notAField;
       const refusal: PolicyDecision = {
         allowed: false,
         matched: null,
@@ -198,19 +241,30 @@ export function createSecrets(deps: {
         actor,
         computerId,
         element,
-        ref: input.ref,
+        ref: notAField.ref || undefined,
         filePath: undefined,
         pageUrl: cached.url,
         decision: refusal,
       });
       throw new ActionRefusedError(null, "laf:secret_target_not_a_field");
     }
-    const into = {
-      host: hostOf(cached.url),
-      element: { role: element.role, name: element.name },
-    };
-    // One line, bounded: it is rendered on the masked box and written into the trail.
-    const label = input.label.replace(/\s+/g, " ").trim().slice(0, 120);
+    // Each label is one line, bounded (`secretFieldsOf`): it is drawn above a masked box and
+    // written into the trail.
+    const fields = resolved.flatMap((field) =>
+      field.element
+        ? [
+            {
+              ref: field.ref,
+              label: field.label,
+              role: field.element.role,
+              name: field.element.name,
+            },
+          ]
+        : [],
+    );
+    const [first, ...rest] = fields;
+    if (!first) throw new StaleSnapshotError(STALE_REFS);
+    const host = hostOf(cached.url);
     /*
      * THROUGH THE GATE, LIKE EVERY OTHER ACT OF THE BOT'S (2026-10-10, record §6).
      *
@@ -232,11 +286,27 @@ export function createSecrets(deps: {
       botId,
       actor,
       {
-        ref: input.ref,
+        ref: first.ref,
+        // One card, decided once: a rule about any of its boxes is a rule about the card.
+        ...(rest.length > 0
+          ? { alsoRefs: rest.map((field) => field.ref) }
+          : {}),
         ...(signal ? { signal } : {}),
         ...(approvalId ? { approvalId } : {}),
       },
-      async () => {
+      async (judgedFirst, _path, judgedRest) => {
+        /*
+         * WHAT WAS JUDGED IS WHAT IS KEPT. The boxes above were read off the snapshot to refuse a
+         * card that names no field; what a person's values are later held to is the gate's own
+         * reading of each box, handed here, and not a second reading of the same snapshot.
+         */
+        const judged = [judgedFirst, ...judgedRest];
+        for (const [index, field] of fields.entries()) {
+          const as = judged[index];
+          if (!as) throw new StaleSnapshotError(STALE_REFS);
+          field.role = as.role;
+          field.name = as.name;
+        }
         /*
          * THE CALLER'S STOP GOES WITH THE CALL, AND A REQUEST MADE FOR A CALLER THAT HAS STOPPED
          * IS TAKEN BACK. The signal reached the gate and not the computer, so a slow computer
@@ -251,20 +321,29 @@ export function createSecrets(deps: {
          * was still waiting on went with it, unmarked, and that turn was told the person had done
          * it. And it awaited the letting-go under the client's own deadline, so a stopped turn
          * still hung on a slow computer — the thing this is here to end (both, Codex's second
-         * read). The computer is told which ask — the ref and the snapshot it was made with — and
-         * leaves anything else as it is; the telling is given a few seconds of its own and is not
+         * read). The computer is told which ask — its boxes and the snapshot it was made with —
+         * and leaves anything else as it is; the telling is given a few seconds of its own and is not
          * waited for. A computer that cannot be reached lets the ask go by its own clock.
          */
         const madeFor = as(botId);
         const takeBack = () =>
           void madeFor
             .withdrawSecret(
-              { ref: input.ref, snapshotId: input.snapshotId },
+              {
+                refs: fields.map((field) => field.ref),
+                snapshotId: input.snapshotId,
+              },
               AbortSignal.timeout(WITHDRAW_MS),
             )
             .catch(() => undefined);
         try {
-          const made = await madeFor.requestSecret({ ...input, label }, signal);
+          const made = await madeFor.requestSecret(
+            {
+              fields: fields.map(({ ref, label }) => ({ ref, label })),
+              snapshotId: input.snapshotId,
+            },
+            signal,
+          );
           if (!signal?.aborted) return made;
         } catch (error) {
           if (signal?.aborted) takeBack();
@@ -274,19 +353,31 @@ export function createSecrets(deps: {
         throw new ComputerUnavailableError(STOPPED);
       },
     );
+    const into: SecretInto = {
+      host,
+      // The first box, for a window from before a card held several.
+      element: { role: first.role, name: first.name },
+      fields,
+    };
     secretTargets.set(computerId, into);
     secretRequests.set(computerId, {
-      ref: input.ref,
       snapshotId: input.snapshotId,
       origin: originOf(cached.url),
-      role: element.role,
-      name: element.name,
+      fields: fields.map(({ ref, role, name }) => ({ ref, role, name })),
     });
+    // ONE ROW FOR ONE CARD — it is also what tells a person a Bot is waiting on them
+    // (`notifications/from-audit.ts`), and a card of three boxes is one thing to come back to.
     await writeControlEvent(auditStore, "computer.secret_requested", {
       botId,
       actor,
       computerId,
-      reason: `${label} (into ${element.role} "${element.name}" on ${into.host})`,
+      // One box reads as it always has; a card's boxes follow one another.
+      reason: fields
+        .map(
+          (field) =>
+            `${field.label} (into ${field.role} "${field.name}" on ${host})`,
+        )
+        .join("; "),
     });
     return { ...state, secretInto: into };
   }
@@ -295,44 +386,65 @@ export function createSecrets(deps: {
     computerId: string,
     botId: string,
     actor: ActionActor,
-    text: string,
+    /** A value for every box of the card, in the card's order. */
+    values: readonly string[],
   ) {
     /*
-     * INTO THE FIELD THAT WAS JUDGED, OR NOWHERE.
+     * INTO THE FIELDS THAT WERE JUDGED, OR NOWHERE.
      *
      * The value used to be sent with nothing beside it, and the computer put it into whatever its
      * own note of the request named. The field the gate judged — its role and its name, on the
      * snapshot it was judged in — travels with the value now, and the computer refuses where the
      * control is called something else by then or the page has moved on (`holdToLabel`, the hold
      * a click has had since 2026-09-07). A page that swaps its password box for a comment box
-     * between the question and the answer gets no value.
+     * between the question and the answer gets no value. A card of several boxes is held box by
+     * box, each to its own.
      *
      * WITH NO JUDGEMENT HELD HERE, NOTHING IS SENT. This server restarted between the question and
      * the answer, or the request was let go: the turn that asked is gone, and a value typed now
      * would land in a page nobody is reading, into a field nothing here vouches for. It is told
      * what the computer says of a value nothing is waiting for.
+     *
+     * AND A VALUE FOR EVERY BOX, OR NOTHING IS SENT. Which box an absent value belonged to is not
+     * something this may guess — a window from before a card held several sends one value for a
+     * card of two, and that is a card it cannot answer.
      */
     const request = secretRequests.get(computerId);
     if (!request) throw new StaleSnapshotError(NO_SECRET_PENDING);
-    const result = await as(botId).supplySecret(text, {
-      // Which ask this answers — the computer takes a value for that one and no other —
-      ref: request.ref,
+    if (
+      values.length !== request.fields.length ||
+      values.some((value) => !value)
+    ) {
+      throw new SecretValuesError();
+    }
+    const result = await as(botId).supplySecret([...values], {
+      // Which ask this answers — the computer takes values for that one and no other —
       snapshotId: request.snapshotId,
-      // — and what the field was judged as, which is what it must still be.
-      element: { role: request.role, name: request.name },
+      // — and what each box was judged as, which is what it must still be.
+      fields: request.fields.map(({ ref, role, name }) => ({
+        ref,
+        element: { role, name },
+      })),
     });
     secretTargets.delete(computerId);
     secretRequests.delete(computerId);
     // Bounded: a session that asks for a hundred secrets is not one this should remember.
     const known = typedInto.get(computerId) ?? [];
-    const { snapshotId: _judgedIn, ...field } = request;
-    typedInto.set(computerId, [...known, field].slice(-TYPED_INTO_LIMIT));
+    const filled = request.fields.map((field) => ({
+      ...field,
+      origin: request.origin,
+    }));
+    typedInto.set(computerId, [...known, ...filled].slice(-TYPED_INTO_LIMIT));
     await writeControlEvent(auditStore, "computer.secret_supplied", {
       botId,
       actor,
       computerId,
-      // Length, never content. Enough to show something real was entered.
-      reason: `${result.characters} characters`,
+      // Length, never content — and over the whole card, never box by box. Enough to show
+      // something real was entered.
+      reason:
+        request.fields.length === 1
+          ? `${result.characters} characters`
+          : `${result.characters} characters in ${request.fields.length} fields`,
     });
     return result;
   }

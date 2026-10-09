@@ -111,6 +111,18 @@ export function createGovern(options: {
     actor: ActionActor,
     subject: {
       ref?: string;
+      /**
+       * The other boxes of ONE CARD THAT ASKS A PERSON FOR SEVERAL VALUES
+       * (`computer_request_secret`, 2026-10-10), beside `ref`, which is its first.
+       *
+       * ONE ACT ABOUT SEVERAL ELEMENTS, DECIDED ONCE. A card is one thing a person is shown and
+       * answers once, so it is one question when a rule asks, one count when it comes round
+       * again, and one row — and a rule about any of its boxes is a rule about the card: every
+       * box is put to the policy and the strictest answer stands (the same reading a folder gets
+       * under its two names, below). Judged box by box as calls of their own, a rule that asks
+       * would have asked once per box, and a turn carries one answer.
+       */
+      alsoRefs?: readonly string[];
       filePath?: string;
       /** Which part of `filePath` a read asked for; counted apart, like a page's query. */
       part?: string;
@@ -174,6 +186,8 @@ export function createGovern(options: {
     run: (
       judged: JudgedElement | undefined,
       judgedPath: string | undefined,
+      /** What each of `alsoRefs` was judged as, in their order. Empty for every other act. */
+      judgedAlso: readonly (JudgedElement | undefined)[],
     ) => Promise<T>,
   ): Promise<T> {
     /*
@@ -205,6 +219,10 @@ export function createGovern(options: {
     const unreadable =
       subject.filePath !== undefined && hasNoOneReading(subject.filePath);
     const element = resolve(computerId, ref);
+    const alongside = (subject.alsoRefs ?? []).map((other) => ({
+      ref: other,
+      element: resolve(computerId, other),
+    }));
     const cached = snapshots.get(computerId);
     const intent = intentOf(toolName, subject.key);
     /*
@@ -287,7 +305,12 @@ export function createGovern(options: {
           targetUrl: subject.targetUrl,
           // Five runs of five scripts are five different calls; five of one script over the same
           // files are the same call five times, and over other files they are not.
-          part: script ? namedFiles.join("\u0000") : subject.part,
+          // And a card of the same boxes is the same card: asked for again, it is counted again.
+          part: script
+            ? namedFiles.join("\u0000")
+            : alongside.length > 0
+              ? alongside.map((other) => other.ref).join("\u0000")
+              : subject.part,
           ...(script ? { script: script.sha256 } : {}),
         });
 
@@ -443,6 +466,36 @@ export function createGovern(options: {
         ? asFolder
         : asNamed;
     };
+    /*
+     * EVERY BOX OF A CARD IS PUT TO THE POLICY, AND THE STRICTEST ANSWER IS THE CARD'S
+     * (`alsoRefs`). A rule that forbids asking for a card number forbids the card that asks for
+     * one in its third box; a rule that asks about one box asks about the card. Which box decided
+     * is kept, because it is the one the row has to name: "refused" beside the first box of a
+     * card, when the rule was about the third, sends whoever reads the trail to the wrong field.
+     */
+    let decidedOn: { ref: string | undefined; element: typeof element } = {
+      ref,
+      element,
+    };
+    const everyBox = (asFirst: PolicyDecision): PolicyDecision => {
+      let strictest = asFirst;
+      for (const other of alongside) {
+        const asOther = evaluateActionPolicy(policy, {
+          ...context,
+          element: {
+            ref: other.element?.ref ?? "",
+            role: other.element?.role ?? "",
+            name: other.element?.name ?? "",
+            type: other.element?.type ?? "",
+          },
+        });
+        if (READ_IN_ORDER[asOther.source] < READ_IN_ORDER[strictest.source]) {
+          strictest = asOther;
+          decidedOn = other;
+        }
+      }
+      return strictest;
+    };
     const decision = textKey
       ? ({
           allowed: false,
@@ -467,7 +520,7 @@ export function createGovern(options: {
               forward: false,
               code: "laf:blind_action",
             } satisfies PolicyDecision)
-          : folderToo(evaluateActionPolicy(policy, context));
+          : folderToo(everyBox(evaluateActionPolicy(policy, context)));
 
     /**
      * A DECISION THAT WANTS A PERSON, SETTLED IN THE ONE PLACE THAT SETTLES THEM.
@@ -510,9 +563,32 @@ export function createGovern(options: {
                 : { timeoutMs: subject.timeoutMs }),
             },
           }
-        : {}),
+        : alongside.length > 0
+          ? /*
+             * A yes to a card is a yes to THAT card: the same boxes, called what they were
+             * called. One more box, or one of them renamed, is another question.
+             */
+            {
+              arguments: {
+                fields: alongside.map((other) => ({
+                  ref: other.ref,
+                  role: other.element?.role ?? "",
+                  name: other.element?.name ?? "",
+                })),
+              },
+            }
+          : {}),
       element: element ? { role: element.role, name: element.name } : undefined,
     });
+    /** The card's boxes as a row names them, first to last. Absent for every act about one thing. */
+    const boxes =
+      alongside.length > 0
+        ? [{ ref, element }, ...alongside].map((box) => ({
+            ref: box.ref ?? "",
+            role: box.element?.role ?? "",
+            name: box.element?.name ?? "",
+          }))
+        : undefined;
     /*
      * What a standing allowance for this action would have to cover.
      *
@@ -573,6 +649,9 @@ export function createGovern(options: {
           pageUrl,
           filePath,
           element,
+          ...(alongside.length > 0
+            ? { also: alongside.map((other) => other.element) }
+            : {}),
           matched: decision.matched,
           repeatCount: repetition.count,
           ...(script ? { files: script.files } : {}),
@@ -644,8 +723,9 @@ export function createGovern(options: {
         botId,
         actor,
         computerId,
-        element,
-        ref,
+        element: decidedOn.element,
+        ref: decidedOn.ref,
+        ...(boxes ? { fields: boxes } : {}),
         ...(subject.key ? { key: subject.key } : {}),
         filePath,
         script,
@@ -678,8 +758,9 @@ export function createGovern(options: {
       botId,
       actor,
       computerId,
-      element,
-      ref,
+      element: decidedOn.element,
+      ref: decidedOn.ref,
+      ...(boxes ? { fields: boxes } : {}),
       ...(subject.key ? { key: subject.key } : {}),
       filePath,
       script,
@@ -713,6 +794,11 @@ export function createGovern(options: {
       result = await run(
         element ? { role: element.role, name: element.name } : undefined,
         filePath,
+        alongside.map((other) =>
+          other.element
+            ? { role: other.element.role, name: other.element.name }
+            : undefined,
+        ),
       );
     } catch (error) {
       /**
@@ -730,8 +816,9 @@ export function createGovern(options: {
         botId,
         actor,
         computerId,
-        element,
-        ref,
+        element: decidedOn.element,
+        ref: decidedOn.ref,
+        ...(boxes ? { fields: boxes } : {}),
         filePath,
         script,
         forScript: subject.forScript,

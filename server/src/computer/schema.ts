@@ -9,6 +9,7 @@
  * so each is policy checked and written to the audit trail before it runs. Names are never
  * repurposed: this file only ever grows.
  */
+import type { SecretField } from "../../../shared/secret-ask";
 
 /*
  * THE TOOL NAME LISTS THAT USED TO BE HERE ARE GONE.
@@ -376,12 +377,26 @@ export type ControlState = {
   secretWanted?: string;
   /** The field it goes in, as a ref from the snapshot the request named. */
   secretRef?: string;
+  /** The snapshot that request named. With the refs, which ask this is (`shared/secret-ask.ts`). */
+  secretSnapshotId?: number;
+  /**
+   * Every box of the card, in order: where each value goes and what the Bot called it. The two
+   * above say the same thing shorter — one line for the whole card, and its first box — which is
+   * what a reader from before a card held several was written against.
+   */
+  secretFields?: SecretField[];
   /**
    * The last ask was let go of with nobody having answered it: the tab it was about went from
    * under the Bot (`agent-computer/src/control.ts`). A wait that finds its ask gone reads this
    * before it says somebody came (`shared/person-wait.ts`, `askOutcome`).
    */
   unanswered?: true;
+  /**
+   * That ask ended because a person answered and their values did not all go in — a box was gone,
+   * or called something else, by the time its value arrived. Not "nobody came", which is what
+   * `unanswered` alone is read as (`shared/person-wait.ts`).
+   */
+  unfilled?: true;
   /**
    * Where that field is, as THIS SERVER resolved it — never as the Bot described it.
    *
@@ -390,7 +405,18 @@ export type ControlState = {
    * person needs beside it, and they come from the snapshot this process took, so the masked box
    * can say which page is asking.
    */
-  secretInto?: { host: string; element: { role: string; name: string } };
+  secretInto?: SecretInto;
+};
+
+/**
+ * Where a card's values go, as this server resolved it: the page's host, and each box by the
+ * control's own role and name beside what the Bot called it. `element` is the first box, which is
+ * all a window loaded before a card held several knows to draw.
+ */
+export type SecretInto = {
+  host: string;
+  element: { role: string; name: string };
+  fields: { ref: string; label: string; role: string; name: string }[];
 };
 
 /**
@@ -400,7 +426,11 @@ export type ControlState = {
  * recorded. `ref` names the field it goes in, because a secret typed into whatever happens to have
  * focus goes nowhere when nothing does, and reports success while doing it.
  */
-export type SecretRequest = { label: string; ref: string; snapshotId: number };
+export type SecretRequest = { snapshotId: number } & (
+  | { fields: SecretField[] }
+  // One box, written the short way: what the tool took until a card held several (2026-10-10).
+  | { label: string; ref: string }
+);
 
 /**
  * What supplying a secret reports back.
@@ -430,7 +460,10 @@ export type ComputerProfile = {
 
 export type SecretResult = {
   supplied: boolean;
+  /** How many characters arrived, over every box together. Never which box held how many. */
   characters: number;
+  /** How many boxes they went into. Absent from a computer from before a card held several. */
+  fields?: number;
   url: string;
 };
 

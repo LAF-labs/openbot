@@ -5,6 +5,7 @@
  * The file keeps its old name. It also took the wheel, and converted a click on the picture to a
  * point on the Bot's page, until nobody could drive the Bot's browser (owner, 2026-10-09).
  */
+import type { SecretField } from "@shared/secret-ask";
 import { refusalText, SECRET_REFUSALS } from "@/lib/computer/refusals";
 import { t } from "@/lib/i18n";
 
@@ -17,13 +18,26 @@ export type ControlState = {
   /** What the Bot is waiting for, by name only. Present means show the masked prompt. */
   secretWanted?: string;
   /**
+   * Which ask that is: every box of the card, in order, and the snapshot it was made with
+   * (`@shared/secret-ask`). `secretRef` is the first box, which is all a computer from before a
+   * card held several says.
+   */
+  secretRef?: string;
+  secretSnapshotId?: number;
+  secretFields?: SecretField[];
+  /**
    * Where the value goes, as the SERVER resolved it — never as the Bot described it.
    *
    * `secretWanted` is a label the model wrote, and a model steered by a page can write "네이버
    * 비밀번호" above a box on any site at all. The host and the control's own label come from the
    * snapshot the server holds, so the masked box can say which page is asking.
    */
-  secretInto?: { host: string; element: { role: string; name: string } };
+  secretInto?: {
+    host: string;
+    element: { role: string; name: string };
+    /** Every box of the card, by the control's own name beside what the Bot called it. */
+    fields?: { ref: string; label: string; role: string; name: string }[];
+  };
 };
 
 /**
@@ -115,18 +129,19 @@ export function releaseControl(computerId: string) {
 }
 
 /**
- * Supply a secret synchronously and never echo the value back to the UI.
+ * Supply a card's values synchronously — one for every box, in the card's order — and never echo
+ * a value back to the UI.
  */
 export async function supplySecret(
   computerId: string,
-  text: string,
+  values: readonly string[],
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     const response = await fetch(`/api/computers/${computerId}/human/secret`, {
       method: "POST",
       credentials: "include",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ values }),
     });
     if (response.ok) return { ok: true };
     const body = (await response.json().catch(() => null)) as {

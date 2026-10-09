@@ -127,7 +127,10 @@ describe("the crappy paths: secrets", () => {
     expect(state.secretWanted).toBe("the six-digit code");
     expect(state.secretRef).toBe("e12");
     expect(state.secretSnapshotId).toBe(3);
-    expect(control.pendingSecret()).toEqual({ ref: "e12", snapshotId: 3 });
+    expect(control.pendingSecret()).toEqual({
+      fields: [{ ref: "e12", label: "the six-digit code" }],
+      snapshotId: 3,
+    });
   });
 
   test("an unlabelled request still says something honest", () => {
@@ -189,7 +192,97 @@ describe("the crappy paths: secrets", () => {
       Object.keys(control.get())
         .filter((k) => /secret/i.test(k))
         .sort(),
-    ).toEqual(["secretRef", "secretSnapshotId", "secretWanted"]);
+    ).toEqual([
+      "secretFields",
+      "secretRef",
+      "secretSnapshotId",
+      "secretWanted",
+    ]);
+    // And the list of boxes holds where each value goes and what it is called — nothing else.
+    for (const field of control.get().secretFields ?? []) {
+      expect(Object.keys(field).sort()).toEqual(["label", "ref"]);
+    }
+  });
+});
+
+/**
+ * ONE CARD, SEVERAL BOXES (2026-10-10, record §6). The ask keeps every box in the order a person
+ * is shown them, and still says the two things its twenty readers were written against: that a
+ * value is wanted, and which box comes first.
+ */
+describe("a card that asks for several values", () => {
+  const SIGN_IN = {
+    fields: [
+      { ref: "e7", label: "아이디" },
+      { ref: "e9", label: "비밀번호" },
+    ],
+    snapshotId: 4,
+  };
+
+  test("keeps every box in order, and is named in one line by all of them", () => {
+    const { control } = fixture();
+    const state = control.requestSecret(SIGN_IN);
+    expect(state.secretFields).toEqual(SIGN_IN.fields);
+    expect(state.secretWanted).toBe("아이디, 비밀번호");
+    expect(state.secretRef).toBe("e7");
+    expect(control.pendingSecret()).toEqual(SIGN_IN);
+
+    // Answered, lapsed, lost or let go of: the list goes with the ask every way one ends.
+    control.secretSupplied();
+    expect(control.get().secretFields).toBeUndefined();
+    control.requestSecret(SIGN_IN);
+    control.tabLost();
+    expect(control.get().secretFields).toBeUndefined();
+    control.requestSecret(SIGN_IN);
+    control.release();
+    expect(control.get().secretFields).toBeUndefined();
+  });
+
+  test("refuses a card with no box, with more than a card holds, or with one box twice", () => {
+    const { control } = fixture();
+    const seven = Array.from({ length: 7 }, (_, index) => ({
+      ref: `e${index}`,
+      label: "값",
+    }));
+    for (const fields of [
+      [],
+      seven,
+      [
+        { ref: "e7", label: "비밀번호" },
+        { ref: "e7", label: "비밀번호 확인" },
+      ],
+      [{ label: "ref가 없는 칸" }],
+    ]) {
+      expect(() => control.requestSecret({ fields, snapshotId: 4 })).toThrow(
+        ControlRequestError,
+      );
+    }
+    // Six is a card.
+    expect(
+      control.requestSecret({ fields: seven.slice(0, 6), snapshotId: 4 })
+        .secretFields,
+    ).toHaveLength(6);
+  });
+
+  test("is taken back by the caller that names the same boxes in the same order, and by no other", () => {
+    const { control } = fixture();
+    control.requestSecret(SIGN_IN);
+    // Another order is another card's values going into these boxes; one box of two is not it.
+    expect(control.withdrawSecret({ refs: ["e9", "e7"], snapshotId: 4 })).toBe(
+      false,
+    );
+    expect(control.withdrawSecret({ refs: ["e7"], snapshotId: 4 })).toBe(false);
+    expect(control.withdrawSecret({ ref: "e7", snapshotId: 4 })).toBe(false);
+    expect(control.withdrawSecret({ refs: ["e7", "e9"], snapshotId: 5 })).toBe(
+      false,
+    );
+    expect(control.pendingSecret()).toEqual(SIGN_IN);
+
+    expect(control.withdrawSecret({ refs: ["e7", "e9"], snapshotId: 4 })).toBe(
+      true,
+    );
+    expect(control.pendingSecret()).toBeNull();
+    expect(askOutcome(control.get())).toBe("gave up");
   });
 });
 
@@ -252,7 +345,10 @@ describe("an ask nobody answered", () => {
     control.requestSecret({ ref: "e12", label: "인증번호", snapshotId: 4 });
     after(PERSON_WAIT_MS - SECOND);
     expect(control.get().secretWanted).toBe("인증번호");
-    expect(control.pendingSecret()).toEqual({ ref: "e12", snapshotId: 4 });
+    expect(control.pendingSecret()).toEqual({
+      fields: [{ ref: "e12", label: "인증번호" }],
+      snapshotId: 4,
+    });
   });
 
   test("still stands when the Bot's wait gives up, so giving up is never read as a hand-back", () => {
@@ -345,7 +441,7 @@ describe("an ask nobody answered", () => {
       secretWanted: "인증번호 다시",
     });
     expect(control.pendingSecret()).toEqual({
-      ref: "e40",
+      fields: [{ ref: "e40", label: "인증번호 다시" }],
       snapshotId: undefined,
     });
   });
@@ -472,13 +568,44 @@ describe("a value that could not be put in its field", () => {
     expect(control.pendingSecret()).toBeNull();
     expect(control.get().secretWanted).toBeUndefined();
     expect(control.get().secretRef).toBeUndefined();
-    expect(askOutcome(control.get())).toBe("gave up");
+    // Nobody's answer — and said to be what it was: somebody came, and it did not go in.
+    expect(control.get().unanswered).toBe(true);
+    expect(askOutcome(control.get())).toBe("unfilled");
 
     // The same ask, answered: gone the same way, and read as answered.
     control.requestSecret({ ref: "e7", label: "비밀번호", snapshotId: 5 });
     control.secretSupplied();
     expect(control.pendingSecret()).toBeNull();
     expect(askOutcome(control.get())).toBe("answered");
+  });
+
+  /*
+   * "Unfilled" is about ONE ask. Left standing it would be read into the next one's ending: a
+   * card nobody came to, after one that failed, told to the Bot as values that did not go in.
+   */
+  test("is said of that ask only: the next one's ending is its own", () => {
+    const { control } = fixture();
+    const ASK = { ref: "e7", label: "비밀번호", snapshotId: 4 };
+    for (const end of [
+      () => control.tabLost(),
+      () => control.withdrawSecret({ ref: "e7", snapshotId: 4 }),
+    ]) {
+      control.requestSecret(ASK);
+      control.secretNotSupplied();
+      expect(control.get().unfilled).toBe(true);
+      // Asked again: nothing is said about the last one any more.
+      expect(control.requestSecret(ASK).unfilled).toBeUndefined();
+      end();
+      expect(control.get().unfilled).toBeUndefined();
+      expect(askOutcome(control.get())).toBe("gave up");
+    }
+    // A hand asked for after it starts clean too, and so does a person's own answer.
+    control.requestSecret(ASK);
+    control.secretNotSupplied();
+    expect(control.requestHelp("앱에서 승인").unfilled).toBeUndefined();
+    control.requestSecret(ASK);
+    control.secretNotSupplied();
+    expect(control.release().unfilled).toBeUndefined();
   });
 });
 
@@ -546,7 +673,10 @@ describe("a value whose caller stopped before anybody answered", () => {
     // A later ask replaced it: the stopped caller's late word does not take the new one back.
     control.requestSecret({ ...ASK, ref: "e9", label: "인증번호" });
     expect(control.withdrawSecret({ ref: "e7", snapshotId: 4 })).toBe(false);
-    expect(control.pendingSecret()).toEqual({ ref: "e9", snapshotId: 4 });
+    expect(control.pendingSecret()).toEqual({
+      fields: [{ ref: "e9", label: "인증번호" }],
+      snapshotId: 4,
+    });
 
     // And one a person already answered is not turned into one nobody did.
     control.secretSupplied();

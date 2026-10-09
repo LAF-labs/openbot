@@ -2342,6 +2342,33 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * By hand: 5, 1 and 1 are 7, and 1 more is 8, and 3894 and 8 are 3902; 3 and 1 and 4 are 8, and
  * 488 and 8 are 496; 2134 and 1 and 1 are 2136.
  *
+ * RAISED 2026-10-10 AGAIN, `server` from 3902 to 3909, `agent-computer` from 496 to 504, `app`
+ * from 2136 to 2138 and `root` from 921 to 927, for a card that asks a person for several values
+ * at once (record §6, piece 2-1b; `shared/secret-ask.ts`). Seven to `server`. Three in
+ * `computer-gateway.test.ts`: a card of several boxes is one act — one decision, one request,
+ * one row a person is told by — with each value held to its own box and every box remembered;
+ * a rule about any box is a rule about the card, refused beside the box it was about or asked
+ * about once with every box named, and a yes to one card is not a yes to a wider one; a card
+ * that names something that is not a field, one box twice, too many or none asks nobody. One in
+ * `chat-tools.test.ts`: the tool's two shapes are one card by the time the gate is asked, and a
+ * list that is no card reaches nothing. One in `computer-routes.test.ts`: a value for every box
+ * or none reaches the computer. Two in `computer-client.test.ts`: one box is said both ways on
+ * the wire, for a computer from before a card held several, and several only as a list. Eight to
+ * `agent-computer`. Four in `control.test.ts`: every box kept in order under one line; no card
+ * from none, too many or one box twice; taken back only by the same boxes in the same order; and
+ * "unfilled" said of one ask only. Four in `secret-snapshot.test.ts`, a real Chromium on a form
+ * that says only how long each box's value is: each value into its own box in one answer; a
+ * value for every box or none, and values naming other boxes are not this card's; a box that
+ * changed before the person pressed means nothing of the card goes in; a page that changes its
+ * second box when the first is filled gets no second value, and the Bot is not told nobody came.
+ * Two to `app`, in `help-card-reload.test.tsx`: a box for each value by the page's own name,
+ * sent together once every box holds something; and an answer that did not all go in is not
+ * drawn as done. Six to `root`, in the new `tests/secret-ask.test.ts`: how a card's boxes are
+ * read by everybody who reads them, what is no card, which ask an ask is, and the shape the
+ * model is handed. Twenty-four mutations each fail one of these.
+ * By hand: 3, 1, 1 and 2 are 7, and 3902 and 7 are 3909; 4 and 4 are 8, and 496 and 8 are 504;
+ * 2136 and 2 are 2138; 921 and 6 are 927.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2370,15 +2397,15 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 3902, roots: ["server"] },
-  { name: "app", floor: 2136, roots: ["app"] },
+  { name: "server", floor: 3909, roots: ["server"] },
+  { name: "app", floor: 2138, roots: ["app"] },
   {
     name: "agent-computer",
-    floor: 496,
+    floor: 504,
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 921, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 927, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

@@ -1,3 +1,4 @@
+import { isSameAsk } from "@shared/secret-ask";
 import { IconHandStop } from "@tabler/icons-react";
 import { useId, useState, useSyncExternalStore } from "react";
 import { ApprovalRequest } from "@/components/channels/approval-request";
@@ -50,13 +51,16 @@ export function HelpCard({
   toolCallId,
   kind,
   said,
+  ask,
   status,
   result,
 }: {
   toolCallId: string;
   kind: "help" | "secret";
-  /** The Bot's own words for what it needs: the reason, or the secret's label. */
+  /** The Bot's own words for what it needs: the reason, or the names of the card's boxes. */
   said: string | undefined;
+  /** For a value: which ask this card is — its boxes, in order, and the snapshot they are of. */
+  ask?: SecretAsk | undefined;
   status: "inProgress" | "executing" | "complete";
   result: string | undefined;
 }) {
@@ -93,10 +97,18 @@ export function HelpCard({
   const serverOwned = useServerOwnsTurn();
   const isWaiting =
     status === "executing" ||
-    (status === "inProgress" && isOwnRequestOpen(kind, said, control));
+    (status === "inProgress" && isOwnRequestOpen(kind, said, control, ask));
   const [isPressing, setIsPressing] = useState(false);
+  /*
+   * ONE CARD, A BOX FOR EVERY VALUE (2026-10-10). The boxes are the SERVER's reading of the ask —
+   * each by the control's own name on the page — and a computer or a server from before a card
+   * held several says one, the way it always has.
+   */
+  const boxes = boxesOf(kind === "secret" ? control : null);
   /** Held only until it is sent. Never lifted into a URL, a log, or anything that outlives this form. */
-  const [secret, setSecret] = useState("");
+  const [typed, setTyped] = useState<readonly string[]>([]);
+  const values = boxes.map((_, index) => typed[index] ?? "");
+  const isAnswered = values.every((value) => value !== "");
   const [secretProblem, setSecretProblem] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const secretFieldId = useId();
@@ -193,47 +205,57 @@ export function HelpCard({
       {said ? <p className="text-pretty ps-6">{said}</p> : null}
 
       {/* The masked box: only while the computer is actually waiting for this value. */}
-      {kind === "secret" && isWaiting && control?.secretWanted ? (
+      {kind === "secret" && isWaiting && boxes.length > 0 ? (
         <form
           className="flex flex-col gap-1.5 ps-6"
           onSubmit={async (event) => {
             event.preventDefault();
-            if (!botId || !secret || isSending) return;
+            if (!botId || !isAnswered || isSending) return;
             setIsSending(true);
-            const sent = await supplySecret(botId, secret);
+            const sent = await supplySecret(botId, values);
             setIsSending(false);
             // Cleared even on failure, so the plaintext is not left in the page.
-            setSecret("");
+            setTyped([]);
             setSecretProblem(sent.ok ? null : (sent.error ?? null));
             await readControl(botId);
             pokeControl(botId);
           }}
         >
-          <label
-            className="text-muted-foreground text-xs"
-            htmlFor={secretFieldId}
-          >
-            {control.secretInto
-              ? t("Goes into {field} on {site}", {
-                  field:
-                    control.secretInto.element.name || control.secretWanted,
-                  site: control.secretInto.host,
-                })
-              : control.secretWanted}
-          </label>
-          <div className="flex gap-2">
-            <input
-              autoComplete="off"
-              autoCorrect="off"
-              className={`min-w-0 flex-1 rounded-md border bg-background px-2 py-1 text-sm ${focusRing}`}
-              id={secretFieldId}
-              onChange={(event) => setSecret(event.target.value)}
-              placeholder={t("Typed here, never shown to the Bot")}
-              spellCheck={false}
-              type="password"
-              value={secret}
-            />
-            <Button disabled={!secret || isSending} size="sm" type="submit">
+          {boxes.map((box, index) => (
+            <div className="flex flex-col gap-1" key={box.ref || index}>
+              <label
+                className="text-muted-foreground text-xs"
+                htmlFor={`${secretFieldId}-${index}`}
+              >
+                {box.site
+                  ? t("Goes into {field} on {site}", {
+                      field: box.name || box.label,
+                      site: box.site,
+                    })
+                  : box.label}
+              </label>
+              <input
+                autoComplete="off"
+                autoCorrect="off"
+                className={`min-w-0 rounded-md border bg-background px-2 py-1 text-sm ${focusRing}`}
+                id={`${secretFieldId}-${index}`}
+                onChange={(event) =>
+                  setTyped(
+                    boxes.map((_, at) =>
+                      at === index ? event.target.value : (typed[at] ?? ""),
+                    ),
+                  )
+                }
+                placeholder={t("Typed here, never shown to the Bot")}
+                spellCheck={false}
+                type="password"
+                value={values[index] ?? ""}
+              />
+            </div>
+          ))}
+          {/* One press for the whole card, and only once every box holds something. */}
+          <div className="flex">
+            <Button disabled={!isAnswered || isSending} size="sm" type="submit">
               {isSending ? t("Sending…") : t("Send to the page")}
             </Button>
           </div>
@@ -339,12 +361,56 @@ export function isOwnRequestOpen(
   kind: "help" | "secret",
   said: string | undefined,
   control: ControlState | null,
+  ask?: SecretAsk,
 ): boolean {
-  const asked = said?.trim();
-  if (!control || !asked) return false;
-  return kind === "help"
-    ? control.requested && control.reason === asked
-    : control.secretWanted === asked;
+  if (!control) return false;
+  if (kind === "help") {
+    const asked = said?.trim();
+    return !!asked && control.requested && control.reason === asked;
+  }
+  /*
+   * A VALUE'S CARD IS KNOWN BY ITS BOXES, NOT BY ITS WORDS (2026-10-10). This compared the label
+   * the model wrote with the one the computer holds — which the server has tidied on the way
+   * (one line, bounded), so a label with a line break in it never matched its own card. The boxes
+   * and the snapshot they are of are exact, and are what a value says it answers
+   * (`@shared/secret-ask`).
+   */
+  if (!ask || !control.secretWanted) return false;
+  const refs =
+    control.secretFields?.map((field) => field.ref) ??
+    (control.secretRef ? [control.secretRef] : []);
+  return isSameAsk({ refs, snapshotId: control.secretSnapshotId }, ask);
+}
+
+/** Which ask a card for a value is: its boxes, in order, and the snapshot they are of. */
+export type SecretAsk = { refs: readonly string[]; snapshotId?: number };
+
+/** A box of the card as it is drawn: what to call it, and whose page it is on when that is known. */
+type SecretBox = { ref: string; label: string; name: string; site?: string };
+
+/**
+ * The boxes to draw for the value the computer is waiting for: every one the server resolved, or
+ * — from a server or a computer that says only one — that one, as it has always been drawn.
+ */
+function boxesOf(control: ControlState | null): SecretBox[] {
+  if (!control?.secretWanted) return [];
+  const into = control.secretInto;
+  if (into?.fields?.length) {
+    return into.fields.map((field) => ({
+      ref: field.ref,
+      label: field.label,
+      name: field.name,
+      site: into.host,
+    }));
+  }
+  return [
+    {
+      ref: control.secretRef ?? "",
+      label: control.secretWanted,
+      name: into?.element.name ?? "",
+      ...(into ? { site: into.host } : {}),
+    },
+  ];
 }
 
 type HelpEnding =
@@ -372,6 +438,10 @@ function endingOf(result: string | undefined): HelpEnding {
     case "laf:request_cancelled":
     case "laf:stopped":
       return "stopped";
+    // Somebody came, and the page was not what the card said: not "done", which is how an
+    // ending this did not know was drawn.
+    case "laf:secret_not_filled":
+      return "failed";
     default:
       return outcome.ok === false ? "failed" : "done";
   }

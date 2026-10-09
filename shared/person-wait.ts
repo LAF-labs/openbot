@@ -22,9 +22,16 @@ export const PERSON_WAIT_MS = 10 * 60_000;
  * typed after that would go into another page (`agent-computer/src/tab-loss.ts`). That ask was not
  * answered either, and the computer's state says so (`unanswered`). The wait reads it here, so the
  * Bot — and the card a person is looking at — is not told that somebody came and did it.
+ *
+ * AND ONE ENDS BECAUSE SOMEBODY DID COME, AND THEIR VALUES DID NOT ALL GO IN (`unfilled`,
+ * 2026-10-10): a box was gone, or called something else, by the time its value arrived. That is
+ * neither of the other two. Read as "nobody came" the Bot was told nobody had entered anything —
+ * over a page that, since a card holds several boxes, may be holding the first of them.
  */
 export function askOutcome(state: {
   unanswered?: unknown;
-}): "answered" | "gave up" {
-  return state.unanswered === true ? "gave up" : "answered";
+  unfilled?: unknown;
+}): "answered" | "gave up" | "unfilled" {
+  if (state.unanswered !== true) return "answered";
+  return state.unfilled === true ? "unfilled" : "gave up";
 }

@@ -286,6 +286,95 @@ describe("a computer call, answered as the window answered it", () => {
     });
   });
 
+  test("one card, however it is written: a list of boxes, or the one box the tool took before — and a list that is no card reaches nothing", async () => {
+    /*
+     * The tool takes every box of a form at once since 2026-10-10 (`shared/secret-ask.ts`). A
+     * conversation from before that holds the old shape in its history, and a model reading it
+     * may write it again: both are one card by the time the gate is asked.
+     */
+    const handed: unknown[] = [];
+    const control = createControl();
+    const gateway = {
+      requestSecret: async (
+        _computer: string,
+        _bot: string,
+        _actor: unknown,
+        input: Parameters<typeof control.requestSecret>[0],
+      ) => {
+        handed.push(input);
+        return control.requestSecret(input);
+      },
+      control: async () => control.get(),
+    } as unknown as ComputerGateway;
+    const toolkit = await createChatTools({
+      gateway,
+      people: createPersonAnswers(),
+      controlPollMs: 20,
+    })(context, [tool("computer_request_secret")]);
+    const answered = async (args: Record<string, unknown>, id: string) => {
+      const pending = toolkit.execute(
+        "computer_request_secret",
+        args,
+        call(id),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      control.secretSupplied();
+      return pending;
+    };
+
+    expect(
+      await answered(
+        {
+          fields: [
+            { ref: "e1", label: "아이디" },
+            { ref: "e2", label: "  네이버\n비밀번호 " },
+          ],
+          snapshotId: 3,
+        },
+        "a-card",
+      ),
+    ).toMatchObject({ code: "laf:secret_entered" });
+    expect(
+      await answered(
+        { label: "인증번호", ref: "e3", snapshotId: 4 },
+        "one-box",
+      ),
+    ).toMatchObject({ code: "laf:secret_entered" });
+    expect(handed).toEqual([
+      {
+        fields: [
+          { ref: "e1", label: "아이디" },
+          // One line, as it is drawn above a box and written into the trail.
+          { ref: "e2", label: "네이버 비밀번호" },
+        ],
+        snapshotId: 3,
+      },
+      { fields: [{ ref: "e3", label: "인증번호" }], snapshotId: 4 },
+    ]);
+
+    // No box, one box twice, more than a card holds, no snapshot, or not a list at all.
+    const box = { ref: "e1", label: "값" };
+    for (const args of [
+      { fields: [], snapshotId: 3 },
+      { fields: [box, { ...box, label: "같은 칸" }], snapshotId: 3 },
+      {
+        fields: Array.from({ length: 7 }, (_, n) => ({ ...box, ref: `e${n}` })),
+        snapshotId: 3,
+      },
+      { fields: [box] },
+      { fields: "e1", snapshotId: 3 },
+    ]) {
+      const refused = await toolkit.execute(
+        "computer_request_secret",
+        args,
+        call("not-a-card"),
+      );
+      expect(JSON.stringify(refused)).toContain("laf:tool_arguments_invalid");
+    }
+    expect(handed).toHaveLength(2);
+    expect(control.get().secretWanted).toBeUndefined();
+  });
+
   test("a no from the person is the person's no", async () => {
     const approvals = createApprovalRegistry();
     const question = await approvals.request({
@@ -542,19 +631,39 @@ describe("a computer call, answered as the window answered it", () => {
      * page. The computer closes that ask too, and until 2026-10-05 closed it as it closes one that
      * was answered: this said `laf:secret_entered`, and the Bot pressed the button under an empty
      * box.
+     *
+     * NOR IS IT "NOBODY ENTERED ANYTHING" (2026-10-10), which is what it said after that. Somebody
+     * came, and the page was not what the card said: with a card of several boxes the first may
+     * be holding its value, and the Bot is told so — and told not to press on.
      */
-    test("a value that could not be put in its field is not a value that was entered", async () => {
+    test("a value that could not be put in its field is not a value that was entered — and not nobody having come", async () => {
+      const unfilled = await lostUnder(
+        "computer_request_secret",
+        { label: "인증번호", ref: "e12", snapshotId: 4 },
+        (control) => control.secretNotSupplied(),
+      );
+      expect(unfilled).toEqual({
+        ok: true,
+        code: "laf:secret_not_filled",
+        result: toolResultText("laf:secret_not_filled"),
+      });
+      expect((unfilled as { result?: string }).result).not.toBe(
+        toolResultText("laf:secret_not_entered"),
+      );
+      // The same ending for a card of several, asked the way a card is asked.
       expect(
         await lostUnder(
           "computer_request_secret",
-          { label: "인증번호", ref: "e12", snapshotId: 4 },
+          {
+            fields: [
+              { ref: "e12", label: "아이디" },
+              { ref: "e13", label: "비밀번호" },
+            ],
+            snapshotId: 4,
+          },
           (control) => control.secretNotSupplied(),
         ),
-      ).toEqual({
-        ok: true,
-        code: "laf:secret_not_entered",
-        result: toolResultText("laf:secret_not_entered"),
-      });
+      ).toMatchObject({ code: "laf:secret_not_filled" });
     });
   });
 

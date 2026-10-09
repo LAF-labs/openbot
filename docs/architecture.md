@@ -76,7 +76,10 @@ Policy rules can inspect:
   `intent == "fill_secret"` — with `page.host` for a site, `element.name` for a field. What such a
   rule decides is whether the Bot may ask. The value is the person's, typed into a masked box,
   and no rule stands between a person and a field they were shown; what the gateway gives that
-  typing is the field — it goes into the one the request was judged on, or nowhere
+  typing is the field — it goes into the one the request was judged on, or nowhere.
+  One request may name several fields (a card with a box for each, `shared/secret-ask.ts`): it is
+  still one act, decided once — every field is put to the policy and the strictest answer is the
+  card's, so a rule about any of its fields is a rule about the card
 - `bot.id`
 - `actor.id`
 - `page.url`, `page.host` — of the page an act is made ON: a press, typing, a key, a scroll, a

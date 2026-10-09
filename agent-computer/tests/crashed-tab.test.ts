@@ -1456,7 +1456,9 @@ describe.skipIf(!HAS_BROWSER)("a value a person typed", () => {
     expect(state.body.secretWanted).toBeUndefined();
     // What the Bot's wait reads: gone, and not because anybody's value went in.
     expect(state.body.unanswered).toBe(true);
-    expect(askOutcome(state.body)).toBe("gave up");
+    // Nobody's answer — and said to be what it was (2026-10-10): somebody came, and the value
+    // did not go in. Not "nobody came", which is what the Bot heard for it.
+    expect(askOutcome(state.body)).toBe("unfilled");
     // Nowhere on the page, which has no box left to hold it.
     expect(await tab.evaluate(() => document.body.innerHTML)).not.toContain(
       TYPED,
