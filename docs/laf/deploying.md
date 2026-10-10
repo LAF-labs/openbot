@@ -487,8 +487,8 @@ routine — is judged before it leaves: once the
 day's `model.usage` rows reach the budget, the run is refused with
 `laf:daily_budget_reached`, which the screen says in Korean, until midnight in
 Seoul. The judgement is made when a run starts, so a day can overrun by what the
-runs already streaming go on to spend, each bounded by agent-bot's 600,000-token
-question budget. To see what a VM was given, sign in and read
+runs already streaming go on to spend, each bounded by agent-bot's own bound on
+one question (30 steps or $0.20, `agent-bot/src/guards.ts`). To see what a VM was given, sign in and read
 `GET /api/me` → `deployment.trial` — the four values as `.env` wrote them, plus
 `budgetReachedToday`. A budget of `1` is how a push is proven to have arrived:
 the next question is refused.

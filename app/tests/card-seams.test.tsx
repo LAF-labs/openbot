@@ -197,4 +197,44 @@ describe("a card drawn for a tool call", () => {
     // The name a gallery component was given is a word nobody vouches for, and is not sent.
     expect(JSON.stringify(reports)).not.toContain("hunter2");
   });
+
+  test('outside a conversation (홈) one that throws leaves only its place: no line about "this conversation", and it is still reported', async () => {
+    consoleError = spyOn(console, "error").mockImplementation(() => {});
+    const { ToolRenderBoundary } = await import(
+      "../src/components/channels/tool-boundary"
+    );
+    const { configureScreenErrorReports } = await import(
+      "../src/lib/support/screen-errors"
+    );
+    const reports: ScreenErrorReport[] = [];
+    configureScreenErrorReports({
+      route: () => "/feed",
+      build: async () => null,
+      surface: () => "browser",
+      isSignedIn: () => true,
+      send: async (report) => {
+        reports.push(report);
+      },
+    });
+    const Checklist = (): never => {
+      throw new RangeError(
+        "a card the arguments passed and the drawing did not",
+      );
+    };
+    const DrawnCard = () => <Checklist />;
+    const view = await drawn(
+      <div>
+        <p>이사 준비</p>
+        <ToolRenderBoundary fallback={null} name="showChecklist">
+          <DrawnCard />
+        </ToolRenderBoundary>
+        <p>the next card</p>
+      </div>,
+    );
+    await view.settle(30);
+
+    expect(view.host.textContent).toBe("이사 준비the next card");
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).toMatchObject({ section: "tool_card" });
+  });
 });

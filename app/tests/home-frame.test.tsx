@@ -183,6 +183,11 @@ describe("홈, the panel at the left of the window", () => {
     expect(button(view).getAttribute("aria-label")).toBe("Open Home");
     expect(button(view).getAttribute("aria-expanded")).toBe("false");
     expect(readHomePanel()).toEqual({ isOpen: false, width: null });
+    // And once the slide is over it holds nothing, so nothing in it asks the server for anything.
+    await view.waitFor(
+      () => panel(view).querySelectorAll("h2").length === 0,
+      "홈 to let go of 오늘",
+    );
 
     // A reload: the window is gone, and what was kept is all there is.
     await view.unmount();
@@ -194,6 +199,10 @@ describe("홈, the panel at the left of the window", () => {
     await again.click(button(again));
     expect(drawn(again)).toBe("280px");
     expect(panel(again).inert).toBe(false);
+    await again.waitFor(
+      () => panel(again).querySelectorAll("h2").length > 0,
+      "오늘, back",
+    );
     expect([ko["Fold Home"], ko["Open Home"]]).toEqual([
       "홈 접기",
       "홈 펼치기",

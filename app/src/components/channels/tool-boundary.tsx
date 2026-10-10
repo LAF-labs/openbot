@@ -9,9 +9,12 @@ import { reportScreenError } from "@/lib/support/screen-errors";
  * Browser-authored components render in the transcript from model-supplied arguments, sometimes
  * while a tool call is still streaming. A render failure is isolated to the component card and shown
  * as a user-readable failure line; stacks stay in the developer console.
+ *
+ * `fallback`, where the card is drawn somewhere that is not a conversation (홈): what stands in its
+ * place instead of the line, which speaks of "this conversation".
  */
 export class ToolRenderBoundary extends Component<
-  { name: string; children: ReactNode },
+  { name: string; children: ReactNode; fallback?: ReactNode },
   { failed: boolean }
 > {
   state = { failed: false };
@@ -39,6 +42,7 @@ export class ToolRenderBoundary extends Component<
 
   render() {
     if (this.state.failed) {
+      if (this.props.fallback !== undefined) return this.props.fallback;
       return (
         <p className="my-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
           {/*
