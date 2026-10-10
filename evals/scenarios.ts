@@ -1600,6 +1600,64 @@ export const SCENARIOS: Scenario[] = [
  *  - The words a person reads while the run works are the product's words, not the machinery's.
  */
 const MOONLIGHT = "달빛공방";
+
+/** 네이버 for one name: the front page, and the results once the name has been looked for. */
+function naverFor(name: string): (call: ObservedCall) => string | undefined {
+  let searched = false;
+  const named = (raw: string) => {
+    const spaced = raw.replace(/\+/g, " ");
+    try {
+      return decodeURIComponent(spaced).includes(name);
+    } catch {
+      return spaced.includes(name);
+    }
+  };
+  const front = {
+    ok: true,
+    title: "NAVER",
+    url: "https://www.naver.com/",
+    text: "NAVER\n검색어를 입력해 주세요.\n메일 · 카페 · 블로그 · 쇼핑 · 뉴스 · 증권 · 부동산 · 지도",
+    truncated: false,
+  };
+  const results = {
+    ok: true,
+    title: `${name} : 네이버 검색`,
+    url: `https://search.naver.com/search.naver?query=${encodeURIComponent(name)}`,
+    text: `${name} 검색 결과\n\n플레이스\n${name} 도자기 공방 · 서울 마포구 · 영업 중\n\n쇼핑\n${name} 수제 머그컵 — 스마트스토어 · 18,000원\n\n블로그\n${name} 원데이 클래스 후기`,
+    truncated: false,
+  };
+  return (call) => {
+    if (call.name === NAVIGATE.name) {
+      // A run starts from wherever its first address takes it: an attempt begins here.
+      searched = named(call.rawArguments);
+      return JSON.stringify(searched ? results : front);
+    }
+    if (call.name === TYPE.name) {
+      if (named(call.rawArguments)) searched = true;
+      return JSON.stringify(searched ? results : { ok: true });
+    }
+    if (call.name === READ.name) {
+      return JSON.stringify(searched ? results : front);
+    }
+    if (call.name === SNAPSHOT.name) {
+      return JSON.stringify(
+        searched
+          ? {
+              snapshotId: 2,
+              count: 3,
+              elements: `[e1] link "${name} 도자기 공방"\n[e2] link "${name} 수제 머그컵"\n[e3] link "${name} 원데이 클래스 후기"`,
+            }
+          : {
+              snapshotId: 1,
+              count: 2,
+              elements:
+                '[e1] searchbox "검색어를 입력해 주세요."\n[e2] button "검색"',
+            },
+      );
+    }
+    return undefined;
+  };
+}
 const TUMBLER_PRICE = "23,900";
 const TUMBLER_SELLER = "한빛상회";
 SCENARIOS.push(
@@ -1618,17 +1676,13 @@ SCENARIOS.push(
       ),
     ],
     tools: [DELEGATE, REMEMBER],
-    // 네이버's results for the shop's name, whichever way the run gets there.
-    stub: (call) =>
-      call.name === NAVIGATE.name || call.name === READ.name
-        ? JSON.stringify({
-            ok: true,
-            title: `${MOONLIGHT} : 네이버 검색`,
-            url: `https://search.naver.com/search.naver?query=${encodeURIComponent(MOONLIGHT)}`,
-            text: `${MOONLIGHT} 검색 결과\n\n플레이스\n달빛공방 도자기 공방 · 서울 마포구 · 영업 중\n\n쇼핑\n달빛공방 수제 머그컵 — 스마트스토어 · 18,000원\n\n블로그\n달빛공방 원데이 클래스 후기`,
-            truncated: false,
-          })
-        : undefined,
+    /*
+     * 네이버 as it answers: its front page until somebody has looked for the shop by name — in the
+     * address or typed into the box — and the results after. A page of results for whatever was
+     * opened let a run that never searched pass for having "seen" them (two runs in three, the
+     * first time this was measured).
+     */
+    stub: naverFor(MOONLIGHT),
     check: (turn) => {
       const tasks = handedOver(turn);
       return verdict([
