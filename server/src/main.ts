@@ -887,10 +887,11 @@ const interruptedReported = reportInterruptedRuns({
 });
 
 /*
- * THE SERVER OWNS THE TURN (`turns/engine.ts`). A chat turn runs here, on the loop and the Bot lane
- * a routine runs on, with the Bot's tools carried out here; a window hands over what the person
- * said and then only watches. Always: the window-driven path this was once a switch away from was
- * removed 2026-10-05 (`config.ts`, `SERVER_TURNS`).
+ * THE SERVER OWNS THE TURN (`turns/engine.ts`). A chat turn runs here, on the loop a routine runs
+ * on and — from its first call that uses the browser — on the lane a routine holds for its whole
+ * run (`runner/bot-lane.ts`), with the Bot's tools carried out here; a window hands over what the
+ * person said and then only watches. Always: the window-driven path this was once a switch away
+ * from was removed 2026-10-05 (`config.ts`, `SERVER_TURNS`).
  */
 const turnHub = createTurnHub();
 /*
