@@ -22,6 +22,7 @@ import { isFirstMoveEnding } from "../../../shared/first-move";
 import { jsonObjectOf } from "../../../shared/json-object";
 import { streamCutResult } from "../../../shared/stream-cut";
 import { UNANSWERED_RESULT } from "../../../shared/task-ending";
+import { computerTool } from "../../../shared/tools/computer";
 import { isDelegated } from "../../../shared/tools/delegate";
 import { withheldToolsForwarded } from "../../../shared/tools/paused";
 import type { AgentActor } from "../agents/profile-types";
@@ -31,7 +32,11 @@ import {
 } from "../channels/turn-failures";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
-import type { BotLane, LaneHold } from "../runner/bot-lane";
+import {
+  type BotLane,
+  drivesTheBrowser,
+  type LaneHold,
+} from "../runner/bot-lane";
 import type { WorkInFlight } from "../runner/in-flight";
 import { chatLabelOf, type RunLedger } from "../runner/run-ledger";
 import {
@@ -142,6 +147,12 @@ export type TurnEngineOptions = {
   }) => ReturnType<FirstMoveFor>;
   maxSteps?: number;
   timeoutMs?: number;
+  /**
+   * A conversation's Bot holds none of the browser's tools: its browsing is a run's it delegates
+   * to (`ChatToolsDeps.delegatesBrowsing`, piece 6-2). What it is handed of its own past then
+   * leaves out the browser steps it once took itself — see `withoutBrowserSteps`.
+   */
+  handsBrowsingOver?: boolean;
   /** How long to wait before each further try at a turn's last write. A test's are shorter. */
   persistRetryMs?: readonly number[];
   /**
@@ -187,6 +198,65 @@ function forTheBot(message: Message): Message {
     ...rest
   } = message as StoredMessage;
   return rest as Message;
+}
+
+/** The conversation a conversation's delegated runs are made in: one, named after it. */
+export const delegatedThreadOf = (threadId: string): string =>
+  `${threadId}.browse`;
+
+/** Whether a call is one of the browser's own: a tool of the computer's that drives a page. */
+const isBrowserStep = (name: string | undefined): boolean =>
+  name !== undefined &&
+  computerTool(name) !== undefined &&
+  drivesTheBrowser(name);
+
+/**
+ * A thread as a Bot that hands its browsing over is handed it: without the browser steps it took
+ * itself, before it handed them over.
+ *
+ * A CONVERSATION IS ONE FOR LIFE, AND ITS PAST IS FULL OF THE BOT OPENING PAGES. Handed that past
+ * with the browser's tools gone from its list, the Bot did what its own history showed it doing:
+ * on the first message after the change it called `computer_navigate`, was told there is no such
+ * tool, and only then delegated — a wasted request, and a card on the person's screen for a task
+ * that "did not finish" (pressed on the real stack, 2026-10-11). What it had read on those pages
+ * is in what it said afterwards, which stays; the steps go, the way a delegated run's steps are
+ * never handed to it (`isDelegated`). A pure reading of what is stored — the rows are not
+ * rewritten, and the same rows always read the same, so the head of the conversation it is
+ * handed does not move from one turn to the next.
+ *
+ * A reply that only took such a step, and said nothing, goes whole. Its other calls stay.
+ */
+export function withoutBrowserSteps(messages: Message[]): Message[] {
+  const gone = new Set<string>();
+  for (const message of messages) {
+    if (message.role !== "assistant") continue;
+    for (const call of message.toolCalls ?? []) {
+      if (isBrowserStep(call.function?.name)) gone.add(call.id);
+    }
+  }
+  if (gone.size === 0) return messages;
+  const kept: Message[] = [];
+  for (const message of messages) {
+    if (message.role === "tool") {
+      if (!gone.has(message.toolCallId)) kept.push(message);
+      continue;
+    }
+    if (message.role !== "assistant" || !message.toolCalls?.length) {
+      kept.push(message);
+      continue;
+    }
+    const calls = message.toolCalls.filter((call) => !gone.has(call.id));
+    if (calls.length === message.toolCalls.length) {
+      kept.push(message);
+      continue;
+    }
+    const { toolCalls: _taken, ...said } = message;
+    if (calls.length > 0) kept.push({ ...said, toolCalls: calls });
+    else if (typeof said.content === "string" && said.content.trim()) {
+      kept.push(said);
+    }
+  }
+  return kept;
 }
 
 /**
@@ -624,10 +694,11 @@ export function createTurnEngine(options: TurnEngineOptions) {
        * reads the one answer it was handed back, which is its call's result. Handed the steps
        * too, every later turn would pay for the browsing it was spared the tools of.
        */
+      const kept = (await messagesFor(options.database, threadId))
+        .filter((message) => !isDelegated(message))
+        .map(forTheBot);
       const stored = repairUnanswered(
-        (await messagesFor(options.database, threadId))
-          .filter((message) => !isDelegated(message))
-          .map(forTheBot),
+        options.handsBrowsingOver ? withoutBrowserSteps(kept) : kept,
       );
       target.setMessages(stored);
       // The turn's own messages start at what the person asked, which the send already filed.
@@ -690,8 +761,19 @@ export function createTurnEngine(options: TurnEngineOptions) {
         if (!worker) throw new Error("laf:bot_not_found");
         delegations += 1;
         const ordinal = delegations;
-        // Its own conversation, as a routine's run is: nothing of the person's thread is in it.
-        worker.threadId = randomUUID();
+        /*
+         * ITS OWN CONVERSATION — AND THE SAME ONE EVERY TIME THIS CONVERSATION DELEGATES. Nothing
+         * of the person's thread is in it, and nothing of the last delegation either: it starts
+         * from the instruction alone. But it is named after the person's thread rather than at
+         * random, because the provider's cache is kept by conversation (`agent-bot/src/turn.ts`,
+         * `prompt_cache_key`): under a new name each time, the tools and the prompt at its head
+         * — 5.4K tokens, the same bytes every time — were billed whole on every delegation
+         * (measured 2026-10-11: 0 of 5,384 read from the cache on the second of two delegations
+         * four minutes apart, $0.00057 of a turn that cost $0.0018). The prompt layer keeps a
+         * conversation that is not a chat for six hours and freezes its words once
+         * (`context/conversations.ts`), which is what makes the head the same bytes.
+         */
+        worker.threadId = delegatedThreadOf(threadId);
         worker.setMessages([
           { id: randomUUID(), role: "user", content: run.instruction },
         ]);

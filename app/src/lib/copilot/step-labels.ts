@@ -29,6 +29,9 @@ export const STEP_LABELS: Readonly<Record<string, string>> = {
   manage_routine: "Managing routines",
   skill_view: "Opening a skill",
   routine_note: "Leaving a note for the routine",
+  // The conversation's Bot handing its browsing over (`shared/tools/delegate.ts`). What is done
+  // with it is drawn under this line, as the browsing it is.
+  delegate: "Handing the browsing over",
   computer_navigate: "Opening a page",
   computer_read: "Reading the page",
   computer_snapshot: "Looking at the page",
@@ -57,6 +60,7 @@ export const STEP_LABELS: Readonly<Record<string, string>> = {
  */
 export const STEP_DONE_LABELS: Readonly<Record<string, string>> = {
   tool_call: "Used a tool",
+  delegate: "Used the browser",
 };
 
 /**

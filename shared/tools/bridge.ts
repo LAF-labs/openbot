@@ -37,6 +37,7 @@
  * 제안(issue #49645)이다. 그래서 Hermes Agent의 다리를 따른 이 작은 구현을 유지한다.
  */
 import { COMPUTER_TOOLS } from "./computer";
+import { DELEGATE } from "./delegate";
 import { FEED_POST } from "./feed-post";
 import {
   accountStatesIn,
@@ -123,6 +124,9 @@ export const WEATHER_TOOL_NAME = `${DEFERRED_TOOL_PREFIX}kma-weather__get_weathe
  */
 export const CORE_TOOL_NAMES: ReadonlySet<string> = new Set([
   ...COMPUTER_TOOLS.map((tool) => tool.name),
+  // 대화가 브라우징을 맡기는 툴(`delegate.ts`, 조각 6-2). 다리 뒤에 서면 대화하는 봇이 자기가 쓸
+  // 단 하나의 길을 찾아다녀야 한다.
+  DELEGATE.name,
   ...SELF_TOOLS.map((tool) => tool.name),
   SKILL_VIEW.name,
   ROUTINE_NOTE.name,

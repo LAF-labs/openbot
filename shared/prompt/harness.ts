@@ -77,6 +77,7 @@ export const HARNESS_VERSION = createHash("sha256")
     JSON.stringify([
       staticPrompt("chat"),
       staticPrompt("routine"),
+      staticPrompt("browse"),
       contextLayerText(FIXTURE),
       contextLayerText(FIXTURE, "메모장"),
       earlierSummaryText("- 9/24 택배 두 건을 보냈다.", FIXTURE.day),

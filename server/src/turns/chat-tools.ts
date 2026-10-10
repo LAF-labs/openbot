@@ -616,8 +616,17 @@ export function createChatTools(deps: ChatToolsDeps) {
       ...own.filter((tool) => !offered.some((one) => one.name === tool.name)),
     ].map(told);
     if (declared) {
+      /*
+       * Not the browser's own tools where the turn hands its browsing over: every window declares
+       * them — its registrations are what draw a delegated run's password and help cards — and
+       * every turn would log the same eleven names.
+       */
       const dropped = declared
-        .filter((tool) => !names.has(tool.name))
+        .filter(
+          (tool) =>
+            !names.has(tool.name) &&
+            !(delegates(deps) && computerTool(tool.name)),
+        )
         .map((tool) => tool.name);
       if (dropped.length > 0) {
         // Names, never arguments: what a window offered that nothing here would carry out.

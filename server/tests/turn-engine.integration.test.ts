@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { BaseEvent, Message } from "@ag-ui/client";
 import { eq, inArray } from "drizzle-orm";
 import { isFirstMove } from "../../shared/first-move";
+import { COMPUTER_TOOLS } from "../../shared/tools/computer";
 import { createDatabase } from "../src/db/client";
 import {
   agents,
@@ -21,7 +22,12 @@ import { createRunLedger } from "../src/runner/run-ledger";
 import { appendMessages, messagesFor } from "../src/runner/thread-store";
 import type { LoopAgent } from "../src/runner/turn-loop";
 import type { ChatToolkit, ChatTurnContext } from "../src/turns/chat-tools";
-import { createTurnEngine, repairUnanswered } from "../src/turns/engine";
+import {
+  createTurnEngine,
+  delegatedThreadOf,
+  repairUnanswered,
+  withoutBrowserSteps,
+} from "../src/turns/engine";
 import type { FirstMove, FirstMoveFor } from "../src/turns/first-move";
 import { historyPage } from "../src/turns/history";
 import {
@@ -224,6 +230,8 @@ function engineWith(
     withheld?: NonNullable<ChatToolkit["withheld"]>;
     /** Who is told the turn's run is over (`TurnEngineOptions.runEnded`). */
     runEnded?: (run: { botId: string; threadId: string }) => Promise<void>;
+    /** The Bot holds no browser tool of its own (`TurnEngineOptions.handsBrowsingOver`). */
+    handsBrowsingOver?: boolean;
     /** What records the Bot's answer at the turn's end, where a case holds it open. */
     announce?: () => Promise<void>;
   } = {},
@@ -268,6 +276,7 @@ function engineWith(
     ...(options.now ? { now: options.now } : {}),
     ...(options.admits ? { admits: options.admits } : {}),
     ...(options.runEnded ? { runEnded: options.runEnded } : {}),
+    ...(options.handsBrowsingOver ? { handsBrowsingOver: true } : {}),
     announce: async ({ text }) => {
       announced.push(text);
       await options.announce?.();
@@ -1341,8 +1350,10 @@ describe("a run the turn delegated to", () => {
     expect(made[0]?.runIds).toEqual([turnId, `${turnId}.1`]);
     const threadOf = (bot: unknown) => (bot as { threadId?: string }).threadId;
     expect(threadOf(made[0])).toBe(conversation.threadId);
+    // Not the person's thread, and the same one each time this conversation delegates: the
+    // provider keeps its cache by conversation, and the head of this one never changes.
+    expect(threadOf(worker)).toBe(delegatedThreadOf(conversation.threadId));
     expect(threadOf(worker)).not.toBe(conversation.threadId);
-    expect(typeof threadOf(worker)).toBe("string");
   });
 
   test("the Bot that delegated is never handed the steps: not in the turn, not on the next one", async () => {
@@ -1452,6 +1463,165 @@ describe("a run the turn delegated to", () => {
     expect(main.runs).toBe(1);
     expect(made[1]?.runs).toBe(1);
     expect(engine.busy(conversation.threadId)).toBe(false);
+  });
+});
+
+/*
+ * THE BOT'S OWN OLD BROWSER STEPS ARE NOT HANDED TO A BOT THAT NO LONGER BROWSES (piece 6-2). A
+ * conversation is one for life: on the day its Bot stops holding the browser's tools, its past is
+ * full of that Bot opening pages. Handed that, the first thing it did on the real stack was call
+ * `computer_navigate` — a tool it had just lost — and be refused.
+ */
+describe("a thread as a Bot that hands its browsing over is handed it", () => {
+  const says = (id: string, content: string, calls: [string, string][] = []) =>
+    ({
+      id,
+      role: "assistant",
+      content,
+      ...(calls.length > 0
+        ? {
+            toolCalls: calls.map(([callId, name]) => ({
+              id: callId,
+              type: "function",
+              function: { name, arguments: "{}" },
+            })),
+          }
+        : {}),
+    }) as Message;
+  const answers = (id: string, toolCallId: string) =>
+    ({ id, role: "tool", toolCallId, content: '{"ok":true}' }) as Message;
+  const shapeOf = (messages: Message[]) =>
+    messages.map((message) =>
+      message.role === "assistant"
+        ? [
+            message.id,
+            message.content,
+            ...(message.toolCalls ?? []).map((call) => call.function.name),
+          ]
+        : message.role === "tool"
+          ? [message.id, message.toolCallId]
+          : [message.id],
+    );
+
+  test("what it said stays, and the step it took and what came back go", () => {
+    const thread = [
+      asked("서울 날씨 찾아줘"),
+      says("a1", "찾아볼게요.", [["c1", "computer_navigate"]]),
+      answers("t1", "c1"),
+      says("a2", "서울은 21도예요."),
+    ];
+    expect(shapeOf(withoutBrowserSteps(thread))).toEqual([
+      [thread[0]?.id],
+      ["a1", "찾아볼게요."],
+      ["a2", "서울은 21도예요."],
+    ]);
+  });
+
+  test("a reply that only took a step and said nothing goes whole", () => {
+    const thread = [
+      says("a1", "", [["c1", "computer_snapshot"]]),
+      answers("t1", "c1"),
+      says("a2", "   ", [["c2", "computer_click"]]),
+      answers("t2", "c2"),
+      says("a3", "눌렀어요."),
+    ];
+    expect(shapeOf(withoutBrowserSteps(thread))).toEqual([["a3", "눌렀어요."]]);
+  });
+
+  test("its other calls stay where they were: the folder's, its own, a hand-over", () => {
+    const thread = [
+      says("a1", "적어 둘게요.", [
+        ["c1", "computer_navigate"],
+        ["c2", "remember"],
+        ["c3", "computer_read_file"],
+      ]),
+      answers("t1", "c1"),
+      answers("t2", "c2"),
+      answers("t3", "c3"),
+      says("a2", "", [["c4", "delegate"]]),
+      answers("t4", "c4"),
+    ];
+    expect(shapeOf(withoutBrowserSteps(thread))).toEqual([
+      ["a1", "적어 둘게요.", "remember", "computer_read_file"],
+      ["t2", "c2"],
+      ["t3", "c3"],
+      ["a2", "", "delegate"],
+      ["t4", "c4"],
+    ]);
+  });
+
+  // One case a tool: every tool of the computer's that drives a page, and none of the folder's.
+  test.each(COMPUTER_TOOLS.map((tool) => tool.name))(
+    "%s: a step of the browser's goes, one of the folder's stays",
+    (name) => {
+      const thread = [says("a1", "", [["c1", name]]), answers("t1", "c1")];
+      const folder = [
+        "computer_list_files",
+        "computer_read_file",
+        "computer_write_file",
+      ].includes(name);
+      expect(withoutBrowserSteps(thread)).toHaveLength(folder ? 2 : 0);
+    },
+  );
+
+  test("a thread with no such step is handed back as the very messages it was", () => {
+    const thread = [
+      asked("안녕"),
+      says("a1", "안녕하세요.", [["c1", "remember"]]),
+      answers("t1", "c1"),
+    ];
+    expect(withoutBrowserSteps(thread)).toBe(thread);
+  });
+
+  test("the turn after the change: the Bot reads what it said, and not the page it opened to say it", async () => {
+    const conversation = await aConversation();
+    // Before: a Bot that browses for itself, and a thread that holds it doing so.
+    const before = engineWith(scriptedBot("서울은 21도예요."), async () => ({
+      ok: true,
+      title: "서울 날씨",
+    }));
+    const first = await before.engine.send({
+      ...conversation,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("서울 날씨 찾아줘")],
+      tools: null,
+    });
+    if (!first.ok) throw new Error("not sent");
+    await until(async () => (await statusOf(first.turnId)) === "done");
+    const next = async (handsBrowsingOver: boolean) => {
+      const bot = scriptedBot("그럼요.");
+      const { engine } = engineWith(bot, async () => ({ ok: true }), {
+        handsBrowsingOver,
+      });
+      const sent = await engine.send({
+        ...conversation,
+        owner: { id: OWNER, role: "user" },
+        botId: BOT,
+        messages: [asked("고마워")],
+        tools: null,
+      });
+      if (!sent.ok) throw new Error("not sent");
+      await until(async () => (await statusOf(sent.turnId)) === "done");
+      return JSON.stringify(
+        (bot.inputs[0] ?? []).filter(
+          (message) => message.role !== "user" || message.content !== "고마워",
+        ),
+      );
+    };
+    // As it was, the Bot is handed its step; handing its browsing over, it is not.
+    const kept = await next(false);
+    expect(kept).toContain("computer_navigate");
+    expect(kept).toContain("서울 날씨");
+    const handed = await next(true);
+    expect(handed).not.toContain("computer_navigate");
+    expect(handed).not.toContain('"role":"tool"');
+    expect(handed).toContain("찾아볼게요.");
+    expect(handed).toContain("서울은 21도예요.");
+    // Read, not rewritten: the thread still holds the step.
+    expect(
+      JSON.stringify(await messagesFor(database, conversation.threadId)),
+    ).toContain("computer_navigate");
   });
 });
 
