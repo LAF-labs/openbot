@@ -548,6 +548,21 @@ test("every row that reserves the title bar's height can move the window", () =>
   expect(read("app/src/routes/_authed/_app.tsx")).toContain("<AppTopBar");
 
   /*
+   * While the home panel is open the window's top left corner is the panel's (2026-10-10, piece
+   * 3-2), so the lights are over the panel's first row and that row is where a hand lands: the
+   * same height, the same attribute, the same width left empty. The top row gives its own up only
+   * beside an open panel, and the layout mounts the panel on every screen.
+   */
+  const homePanel = read("app/src/components/home/home-panel.tsx");
+  const firstRow =
+    homePanel.match(/<div[^>]*h-titlebar[^>]*>/)?.[0] ??
+    "no row of the title bar's height in the home panel";
+  expect(firstRow).toContain("data-tauri-drag-region");
+  expect(firstRow).toContain("inShell() ? LIGHTS_CLEARANCE");
+  expect(opening).toContain('panel.isOpen && "md:ps-3"');
+  expect(read("app/src/routes/_authed/_app.tsx")).toContain("<HomePanel");
+
+  /*
    * The conversation's header is the Bot's presence now (`bot-header.tsx`), 56px rather than 44 —
    * and Tauri drags only from an element that carries the attribute ITSELF, not from its children,
    * so the header, the face-and-name group and the name each carry it. Both conversation screens

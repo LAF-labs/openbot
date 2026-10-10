@@ -1,4 +1,5 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { HOME_PANEL_PLACE, HomePanel } from "@/components/home/home-panel";
 import { AppTopBar } from "@/components/layout/app-top-bar";
 import { PhoneTabBar } from "@/components/layout/phone-tab-bar";
 import { SectionBoundary } from "@/components/layout/section-boundary";
@@ -28,11 +29,18 @@ function RouteComponent() {
      * behind the person's picture at the right of the top row (`layout/profile-menu.tsx`), and
      * the screen is the whole width.
      *
-     * IN A NARROW WINDOW THE BAR UNDER THE SCREEN IS STILL DRAWN (`phone-tab-bar.tsx`). A phone's
-     * browser is not a surface this app is made for (owner, 2026-10-10: mobile is an app of its
-     * own); what was there is left as it was, neither worked on nor taken out.
+     * THE HOME PANEL STANDS BESIDE THAT COLUMN (2026-10-10, piece 3-2): at the window's left, its
+     * whole height, folded away and brought back by the home button (`home/home-panel.tsx`). It
+     * comes first in the document as it does for the eye, so the Tab key goes through it and then
+     * into the row. It has a seam of its own: what it shows is read apart from the menu and the
+     * screen, and a panel that cannot be drawn leaves both working.
+     *
+     * IN A NARROW WINDOW THE BAR UNDER THE SCREEN IS STILL DRAWN (`phone-tab-bar.tsx`) and the
+     * panel is not. A phone's browser is not a surface this app is made for (owner, 2026-10-10:
+     * mobile is an app of its own); what was there is left as it was, neither worked on nor taken
+     * out.
      */
-    <div className="flex h-svh w-full flex-col overflow-hidden">
+    <div className="flex h-svh w-full overflow-hidden">
       {/*
        * THE COMPOSER IS MANY TAB STOPS DEEP. This is the standard way past what comes before it,
        * and it is the first thing in the tab order: invisible until focused, then a real button
@@ -57,18 +65,23 @@ function RouteComponent() {
        * the whole layout through the bar instead (measured by `section-seams.test.tsx`). It is
        * handed to the row, which draws it from that seam and lays it out under the screen.
        */}
-      <AppTopBar narrowBar={<PhoneTabBar />} rosterQueries={ROSTER_QUERIES}>
-        <main
-          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
-          id="main"
-          // Focusable only as a skip-link target, never as a tab stop of its own.
-          tabIndex={-1}
-        >
-          <SectionBoundary className="flex-1" section="main">
-            <Outlet />
-          </SectionBoundary>
-        </main>
-      </AppTopBar>
+      <SectionBoundary className={HOME_PANEL_PLACE} section="home_panel">
+        <HomePanel />
+      </SectionBoundary>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <AppTopBar narrowBar={<PhoneTabBar />} rosterQueries={ROSTER_QUERIES}>
+          <main
+            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+            id="main"
+            // Focusable only as a skip-link target, never as a tab stop of its own.
+            tabIndex={-1}
+          >
+            <SectionBoundary className="flex-1" section="main">
+              <Outlet />
+            </SectionBoundary>
+          </main>
+        </AppTopBar>
+      </div>
     </div>
   );
 }

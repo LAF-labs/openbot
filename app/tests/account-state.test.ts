@@ -57,6 +57,15 @@ const DEVICE_SCOPED = [
    */
   "lib/computer/screen-panel.ts",
   /*
+   * Whether the home panel is folded away, and how wide the person dragged it (`lib/home-panel.ts`).
+   *
+   * A DECISION, and the record made it by name (`docs/laf/redesign-2026-10.md` §1, "고른 너비는
+   * 기기마다 기억한다"): a width is a fact about one window on one screen, and a laptop's is not a
+   * monitor's. Missing, the panel is open at a fifth of the window, which is where everybody
+   * starts; nothing a Bot does reads it.
+   */
+  "lib/home-panel.ts",
+  /*
    * The line an answered approval card leaves — "거부함 · toss.im에서 ‘비즈니스’ 누르기"
    * (`lib/approvals.ts`, UI/UX audit 0.5.3, item 3).
    *

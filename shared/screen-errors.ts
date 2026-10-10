@@ -34,7 +34,7 @@
 /**
  * Every part of the screen a report can name.
  *
- * The first eleven are the seams a section boundary sits on, and the diagnostics preview's
+ * The first twelve are the seams a section boundary sits on, and the diagnostics preview's
  * `sectionName` says each one in the person's words. `tool_card` is one card in a conversation,
  * which fails alone inside `ToolRenderBoundary` and until 2026-09-24 was the one failure on screen
  * that was never reported. The last three are not sections:
@@ -44,6 +44,7 @@
  */
 export const SCREEN_SECTIONS = [
   "sidebar",
+  "home_panel",
   "main",
   "conversation",
   "transcript",

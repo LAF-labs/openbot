@@ -2773,6 +2773,11 @@ export const ko: Record<string, string> = {
   Places: "이동",
   Updates: "소식",
   Menu: "메뉴",
+  Home: "홈",
+  "Open the home panel": "홈 패널 펴기",
+  "Close the home panel": "홈 패널 접기",
+  "Home panel width": "홈 패널 너비",
+  "The home panel": "홈 패널",
   "Something new": "새로 온 것 있음",
   "Nothing yet today. What you hand over in the conversation shows up here.":
     "오늘은 아직 한 일이 없어요. 대화에서 맡기신 일이 여기에 모여요.",

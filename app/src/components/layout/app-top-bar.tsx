@@ -2,6 +2,7 @@ import { type QueryKey, useQuery } from "@tanstack/react-query";
 import { useRouterState } from "@tanstack/react-router";
 import { createContext, type ReactNode, useContext, useState } from "react";
 import { createPortal } from "react-dom";
+import { HomeButton } from "@/components/home/home-button";
 import { BotPresenceLink } from "@/components/layout/bot-presence-link";
 import { ProfileMenu } from "@/components/layout/profile-menu";
 import { ReadNotice } from "@/components/layout/read-states";
@@ -10,6 +11,7 @@ import { UpdateNotice } from "@/components/layout/update-notice";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { rosterNotice } from "@/lib/agents/roster-state";
 import { channelListQueryOptions } from "@/lib/channels/queries";
+import { useHomePanel } from "@/lib/home-panel";
 import { inShell } from "@/lib/notifications/shell";
 import { useReading } from "@/lib/reading";
 import { cn } from "@/lib/utils";
@@ -36,12 +38,16 @@ import { cn } from "@/lib/utils";
  * a place the screen below fills (`useTopBarSlot`), and a conversation puts its header there.
  * A screen with a title of its own in its page leaves it empty, which is a longer handle.
  *
- * WHAT IS NOT HERE YET, each with a piece of its own: the switch between 채팅 and 프로젝트, the
- * search, and the home button with the panel it opens (pieces 3-2, 4-2, 4-3).
+ * THE HOME BUTTON IS AT ITS LEFT WHILE THE HOME PANEL IS FOLDED (2026-10-10, piece 3-2). Open, the
+ * panel stands beside this row, the window's top left corner is the panel's, and the button and
+ * the room for the lights are in the panel's own first row (`home/home-panel.tsx`).
+ *
+ * WHAT IS NOT HERE YET, each with a piece of its own: the switch between 채팅 and 프로젝트, and the
+ * search (pieces 4-2, 4-3).
  */
 
 /** The width the macOS window buttons take at the row's left, in the shell: three lights and air. */
-const LIGHTS_CLEARANCE = "ps-20";
+export const LIGHTS_CLEARANCE = "ps-20";
 
 const TopBarSlot = createContext<HTMLElement | null>(null);
 
@@ -87,6 +93,7 @@ export function AppTopBar({
   });
   const agents = useQuery(agentListQueryOptions());
   const channels = useQuery(channelListQueryOptions());
+  const panel = useHomePanel();
   /*
    * A LIST THAT COULD NOT BE READ IS SAID, AND CAN BE ASKED FOR AGAIN. The column said so above
    * its rows; the menu draws from the same two lists and is closed most of the time, so the line
@@ -107,10 +114,13 @@ export function AppTopBar({
           // At least the height the window buttons sit in; taller only while a line stands in it.
           "flex min-h-titlebar shrink-0 select-none items-center gap-2 bg-background pe-2",
           inShell() ? LIGHTS_CLEARANCE : "ps-3",
+          // Beside an open panel the lights are over the panel's first row, not over this one.
+          panel.isOpen && "md:ps-3",
         )}
         data-app-top-bar
         data-tauri-drag-region
       >
+        {panel.isOpen ? null : <HomeButton />}
         <div
           className="flex h-full min-w-0 flex-1 items-center gap-2"
           data-tauri-drag-region

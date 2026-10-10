@@ -208,8 +208,11 @@ describe("the phone's bar", () => {
       "utf8",
     );
     // A column at every width since the column beside the screen went (2026-10-10): the top
-    // row, the screen, and — in a narrow window — the bar, handed to the row's seam.
-    expect(layout).toContain("flex h-svh w-full flex-col");
+    // row, the screen, and — in a narrow window — the bar, handed to the row's seam. The home
+    // panel stands beside that column in a wide window and is not drawn in a narrow one.
+    expect(layout).toContain(
+      '<div className="flex min-h-0 min-w-0 flex-1 flex-col">',
+    );
     expect(layout).toContain("<PhoneTabBar />");
   });
 
