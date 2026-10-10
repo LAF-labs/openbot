@@ -109,13 +109,20 @@ export function savedLoginsQueryOptions() {
         logins?: unknown;
         max?: unknown;
       } | null;
-      const logins = Array.isArray(answer?.logins)
-        ? answer.logins.filter(isSavedLogin)
-        : [];
-      return {
-        logins,
-        max: typeof answer?.max === "number" ? answer.max : logins.length,
-      };
+      /*
+       * AN ANSWER THAT IS NOT THE LIST IS NOT AN EMPTY LIST. Read leniently, a body without
+       * `logins` drew "no login is saved yet" and a row this could not read was simply left out —
+       * the screen saying nothing is saved to a person who saved three, who then saves them again
+       * (Codex's read). What cannot be read whole is the list not having loaded, said as that.
+       */
+      if (
+        !Array.isArray(answer?.logins) ||
+        !answer.logins.every(isSavedLogin) ||
+        typeof answer.max !== "number"
+      ) {
+        throw new LoginRefusal(LOGINS_UNREACHABLE);
+      }
+      return { logins: answer.logins, max: answer.max };
     },
   });
 }

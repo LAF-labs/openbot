@@ -56,6 +56,7 @@ import {
   LoginRefusal,
   type LoginWritten,
   LOGINS_UNREACHABLE,
+  loginKeys,
   removeLogin,
   type SavedLogin,
   savedLoginsQueryOptions,
@@ -200,6 +201,11 @@ function LoginForm({
               caught instanceof LoginRefusal
                 ? caught
                 : new LoginRefusal(LOGINS_UNREACHABLE);
+            // Gone under the form — another window deleted it. The list behind this is read
+            // again, so the row is not there to be opened a second time (Codex's read).
+            if (refusal.code === "laf:login_not_found") {
+              void queryClient.invalidateQueries({ queryKey: loginKeys.all });
+            }
             setProblem({
               text: loginRefusalText(refusal.code),
               ...(refusal.field ? { field: refusal.field } : {}),
