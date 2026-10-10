@@ -320,10 +320,12 @@ describe("a login a person saves", () => {
     expect(at.unreadable).toEqual([]);
     // The password and not the name: a sign-in name is on every page of its site.
     expect(JSON.stringify([...at.shown])).not.toContain(USERNAME);
-    // Nobody else's, and nothing where nothing is asked about.
-    expect(
-      (await vault.passwordsAt(other, ["https://nid.naver.com"])).shown.size,
-    ).toBe(0);
+    // Nobody else's — not opened, and not so much as tried: a row that is somebody else's is
+    // not one this person's reading "could not read". And nothing where nothing is asked about.
+    expect(await vault.passwordsAt(other, ["https://nid.naver.com"])).toEqual({
+      shown: new Map(),
+      unreadable: [],
+    });
     expect((await vault.passwordsAt(owner, [])).shown.size).toBe(0);
     // A read: no row of the trail, and it is not a use.
     expect(rows.length).toBe(written);
