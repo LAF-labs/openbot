@@ -81,6 +81,12 @@ export type SettleInput = {
    * allowance anybody could be granted.
    */
   step?: ApprovalStep | undefined;
+  /**
+   * The run the action is a step of, where one is behind it (`ActionActor.runId`). Goes on a
+   * question whatever `settleWithoutAsking` says, as `step` does: it is whose question this is,
+   * not an allowance anybody could be granted.
+   */
+  runId?: string | undefined;
   /** The caller's own policy verdict, evaluated against the caller's own context. */
   policyVerdict: PolicyDecision;
   /**
@@ -324,6 +330,7 @@ export async function settle(
     ...(wider && input.threadId ? { threadId: input.threadId } : {}),
     ...(wider && input.threadId && taskId ? { taskId } : {}),
     ...(input.step ? { step: input.step } : {}),
+    ...(input.runId ? { runId: input.runId } : {}),
     target: input.target,
   });
   return {
@@ -384,6 +391,7 @@ async function settleAllowed(
     ...(input.preview ? { preview: input.preview } : {}),
     fingerprint: input.fingerprint,
     ...(input.step ? { step: input.step } : {}),
+    ...(input.runId ? { runId: input.runId } : {}),
     target: input.target,
   });
   return {

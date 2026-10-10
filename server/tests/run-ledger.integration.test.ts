@@ -10,9 +10,10 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import { createDatabase } from "../src/db/client";
-import { agents, lafThreadRuns } from "../src/db/schema";
+import { agents, auditEvents, lafThreadRuns } from "../src/db/schema";
 import { createRunLedger } from "../src/runner/run-ledger";
 import { createWorkingReader } from "../src/runner/working";
+import { ENDING_CODES, STEP_NOT_RETURNED } from "../src/telemetry/run-ending";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describeDb = databaseUrl ? describe : describe.skip;
@@ -35,6 +36,10 @@ describeDb("run ledger", () => {
     "shared-bot",
     "abandoned",
     "double",
+    "two-at-once",
+    "several-runs-one-turn",
+    "before-runs-were-named",
+    "somebody-elses",
   ];
   const seeded: string[] = [];
 
@@ -186,5 +191,127 @@ describeDb("run ledger", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.origin).toBe("routine");
     expect(rows[0]?.label).toBe("Nightly receipts");
+  });
+
+  /*
+   * WHOSE QUESTION IT WAS (2026-10-10, `docs/laf/redesign-2026-10.md` §5, piece 5-1).
+   *
+   * A run that ends counts the questions asked about its Bot's actions, and files an ending that
+   * never came back as waiting on the owner while one of them is unanswered. It counted every
+   * question about the Bot since the turn began, which was the turn's own only because the Bot's
+   * lane let one thing run at a time. The rows are planted here as the gateway writes them
+   * (`gateway/trail.ts`): the trail is append-only, so every id is this run of the suite's own.
+   */
+  const question = (payload: Record<string, unknown>, createdAt?: Date) => ({
+    eventType: "approval.requested",
+    targetType: "computer",
+    targetId: "computer-ledger-test",
+    payload,
+    ...(createdAt ? { createdAt } : {}),
+  });
+  const answer = (approval: string, bot: string) => ({
+    eventType: "approval.granted",
+    targetType: "computer",
+    targetId: "computer-ledger-test",
+    payload: { bot, approval },
+  });
+  const settled = async (runId: string) => {
+    const [row] = await database
+      .select({
+        asked: lafThreadRuns.approvalsAsked,
+        granted: lafThreadRuns.approvalsGranted,
+        ending: lafThreadRuns.ending,
+        code: lafThreadRuns.endingCode,
+      })
+      .from(lafThreadRuns)
+      .where(eq(lafThreadRuns.runId, runId));
+    return row;
+  };
+
+  test("two runs of one Bot at once each count the questions they raised, and one's unanswered question is not the other's wait", async () => {
+    const bot = "two-at-once";
+    const turn = await begin({
+      agentId: bot,
+      origin: "chat",
+      threadId: `thread-${randomUUID()}`,
+    });
+    const routine = await begin({ agentId: bot, origin: "routine" });
+    const yes = `asked-and-answered-${randomUUID()}`;
+    const silence = `asked-and-left-${randomUUID()}`;
+    await database.insert(auditEvents).values([
+      // The conversation's turn asked once, and was told yes.
+      question({ bot, approval: yes, run: turn }),
+      answer(yes, bot),
+      // The routine asked once, and nobody has answered.
+      question({ bot, approval: silence, run: routine }),
+    ]);
+
+    // Both end the same way: a step that never came back.
+    const cut = { status: "stopped", error: STEP_NOT_RETURNED } as const;
+    await ledger.settle(routine, cut);
+    await ledger.settle(turn, cut);
+
+    // The routine is waiting on its owner: its own question is the open one.
+    expect(await settled(routine)).toEqual({
+      asked: 1,
+      granted: 0,
+      ending: "owner",
+      code: ENDING_CODES.approvalUnanswered,
+    });
+    // The turn is not. By Bot and time it was two asked, one open, and waiting on the owner —
+    // for a question a different run had raised.
+    expect(await settled(turn)).toEqual({
+      asked: 1,
+      granted: 1,
+      ending: "unfinished",
+      code: STEP_NOT_RETURNED,
+    });
+  });
+
+  test("a turn counts what every run of it raised", async () => {
+    const bot = "several-runs-one-turn";
+    const threadId = `thread-${randomUUID()}`;
+    const first = await begin({ agentId: bot, origin: "chat", threadId });
+    // A run that carries the turn on: its own row, the same turn.
+    const second = `carried-on-${randomUUID()}`;
+    started.push(second);
+    await database.insert(lafThreadRuns).values({
+      runId: second,
+      threadId,
+      agentId: bot,
+      userId: owner,
+      status: "running",
+      origin: "chat",
+      turnId: first,
+    });
+    await database
+      .insert(auditEvents)
+      .values([
+        question({ bot, approval: `first-${randomUUID()}`, run: first }),
+        question({ bot, approval: `second-${randomUUID()}`, run: second }),
+      ]);
+
+    await ledger.settle(second, { status: "done" });
+    expect((await settled(second))?.asked).toBe(2);
+  });
+
+  test("a question whose row names no run is counted as it was, by Bot and since the turn began", async () => {
+    const bot = "before-runs-were-named";
+    const runId = await begin({ agentId: bot });
+    await database.insert(auditEvents).values([
+      // Written before rows named a run, or by a call with no run behind it.
+      question({ bot, approval: `unnamed-${randomUUID()}` }),
+      // Another Bot's, and this Bot's from before the turn began: neither is this turn's.
+      question({ bot: "somebody-elses", approval: `other-${randomUUID()}` }),
+      question(
+        { bot, approval: `earlier-${randomUUID()}` },
+        new Date(Date.now() - 60 * 60 * 1000),
+      ),
+      // And one that names a different run of the same Bot is that run's, however recent.
+      question({ bot, approval: `named-${randomUUID()}`, run: "another-run" }),
+    ]);
+
+    await ledger.settle(runId, { status: "done" });
+    expect((await settled(runId))?.asked).toBe(1);
   });
 });

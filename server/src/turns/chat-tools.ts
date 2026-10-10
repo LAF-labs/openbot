@@ -568,6 +568,8 @@ export function createChatTools(deps: ChatToolsDeps) {
       // The local actor is not a row in `users`, so it is named without claiming to be one.
       ...(owner.id === DEV_ACTOR.id ? {} : { userId: owner.id }),
       threadId,
+      // The turn's run, so a question this call raises is counted as this turn's and no other's.
+      runId,
       toolCallId,
     });
 
@@ -1002,6 +1004,7 @@ export function createChatTools(deps: ChatToolsDeps) {
           botId,
           actorId: owner.id,
           threadId,
+          runId,
           toolCallId: call.id,
           actorIsAdmin: owner.role === "admin",
           ...(approvalId ? { approvalId } : {}),

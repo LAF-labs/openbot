@@ -502,6 +502,8 @@ function payloadFor(approval: PendingApproval, answeredBy: string) {
     bot: approval.botId,
     actor: answeredBy,
     approval: approval.id,
+    // The run that asked, as the question's own row names it: an answer is read beside its question.
+    ...(approval.runId ? { run: approval.runId } : {}),
     rule: approval.rule,
     // What they were shown, in the same facts the card was drawn from. A sentence here would be a
     // second description of the question, written by a server that does not speak the language the

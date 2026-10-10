@@ -693,6 +693,7 @@ export function createGovern(options: {
         ...(actor.threadId && actor.toolCallId
           ? { step: { threadId: actor.threadId, toolCallId: actor.toolCallId } }
           : {}),
+        ...(actor.runId ? { runId: actor.runId } : {}),
         policyVerdict: decision,
         ...(gate && riskFacts
           ? {

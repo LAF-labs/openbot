@@ -258,6 +258,34 @@ describe("answering a question", () => {
     expect(decision.approvedBy).toBe("manager-user");
   });
 
+  test("the question's row and its answer's both name the run that asked, and neither invents one", async () => {
+    const { app, rows, gateway } = await surface();
+    const askAs = async (actor: { id: string; runId?: string }) =>
+      (await gateway
+        .click("bot-1", "bot-1", actor, { ref: "e9", snapshotId: 7 })
+        .catch((caught: unknown) => caught)) as ActionNeedsApprovalError;
+
+    // A turn's call: the run is what its ledger row counts this question under when it ends.
+    const inATurn = await askAs({ ...DRIVER, runId: "run-7" });
+    // Not on the card: a window draws the question from its step, and a run's id is not a
+    // person's to read.
+    const listed = JSON.stringify(await (await app.request("/bot-1")).json());
+    expect(listed).toContain(inATurn.approvalId);
+    expect(listed).not.toContain("run-7");
+    await answer(app)("bot-1", inATurn.approvalId, true);
+    // A call with no run behind it: nothing is written, rather than a run nobody opened.
+    const outside = await askAs(DRIVER);
+    await answer(app)("bot-1", outside.approvalId, false);
+
+    expect(rows.map((row) => [row.eventType, row.payload.run])).toEqual([
+      ["approval.requested", "run-7"],
+      ["approval.granted", "run-7"],
+      ["approval.requested", undefined],
+      ["approval.denied", undefined],
+    ]);
+    expect("run" in (rows[2]?.payload ?? {})).toBe(false);
+  });
+
   test("files the answer against the Bot the question was about, not the address it arrived at", async () => {
     // The Bot in the path is whatever the caller typed. Taking it from the request would put a grant
     // in the trail under one Bot and the action it paid for under another, joined by an id that

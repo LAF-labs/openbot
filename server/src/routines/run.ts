@@ -466,6 +466,9 @@ async function askTheBot(
         // What is held in the Bot's browser for this run is let go of at this run's end, and at
         // no conversation's (`ActionActor.runKey`).
         runKey: runKeyOf(runId),
+        // And the run as the ledger names it: a question it raises is this run's
+        // (`ActionActor.runId`).
+        runId,
       };
       /*
        * The notepad, read here — inside the Bot's lane, not when the routine was claimed. Run now

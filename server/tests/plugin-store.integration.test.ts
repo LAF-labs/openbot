@@ -376,6 +376,7 @@ describe("a boundary can ask a person about a tool call", () => {
         args: { query: "open bugs" },
         botId: holderId,
         actorId: "someone@laf.local",
+        runId: "run-of-the-turn",
       });
     } catch (error) {
       thrown = error;
@@ -408,6 +409,11 @@ describe("a boundary can ask a person about a tool call", () => {
         (row.payload as { approval?: string }).approval === asked.approvalId,
     );
     expect(question).toHaveLength(1);
+    // And it names the run that asked, as a click's question does: that run counts it.
+    const [asking] = question;
+    expect((asking?.payload as { run?: string } | undefined)?.run).toBe(
+      "run-of-the-turn",
+    );
     // Nothing is recorded as rejected, because nothing was: the turn stopped at the question. A
     // deny rule earlier in this file leaves rejections behind, so what is asserted is that none of
     // them came from the ask list.

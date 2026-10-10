@@ -119,6 +119,15 @@ export type ActionActor = {
    * `threadId`: that is where a question about an act is asked and what a row is filed under.
    */
   runKey?: string;
+  /**
+   * The run the action is a step of, as the run ledger names it (`laf_thread_runs.run_id`): a
+   * conversation's turn, a routine's run. A question raised about the action is filed under it
+   * (`gateway/trail.ts`, `plugins/call.ts`), which is how a run counts its own questions and nobody
+   * else's when it ends (`runner/run-ledger.ts`). Named by the server that opened the run, never
+   * read off a request. Not `runKey`: that says when what the Bot's browser holds is let go of, and
+   * a conversation's turn has none. Absent where no run of the ledger's is behind the call.
+   */
+  runId?: string;
   /** The Bot's tool call the action carries out, when the surface named it. See TOOL_CALL_HEADER. */
   toolCallId?: string;
 };

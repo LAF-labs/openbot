@@ -176,16 +176,18 @@ describe("a computer call, answered as the window answered it", () => {
       click: async (
         _computer: string,
         _bot: string,
-        actor: { threadId?: string; toolCallId?: string },
+        actor: { threadId?: string; toolCallId?: string; runId?: string },
         _target: unknown,
         _signal: unknown,
         approvalId?: string,
       ) => {
         presented.push(approvalId);
-        // The call names its conversation and its step, so every window can draw the question.
+        // The call names its conversation and its step, so every window can draw the question —
+        // and the turn's run, so the question is counted as this turn's when it ends.
         expect(actor).toMatchObject({
           threadId: "thread-1",
           toolCallId: "call-7",
+          runId: "run-1",
         });
         if (!approvalId) throw new ActionNeedsApprovalError(question);
         return { action: "click", ok: true };
