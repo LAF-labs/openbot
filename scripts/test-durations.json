@@ -356,6 +356,7 @@
   "server/tests/consent-store.integration.test.ts": 0.07,
   "server/tests/conversation-contexts.integration.test.ts": 0.12,
   "server/tests/conversation-epochs.test.ts": 0.29,
+  "server/tests/conversation-kind-migration.integration.test.ts": 0.4,
   "server/tests/converter.test.ts": 3.37,
   "server/tests/copilot-guard.test.ts": 0,
   "server/tests/copilot.test.ts": 0.27,

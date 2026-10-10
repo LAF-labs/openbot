@@ -323,6 +323,7 @@ describe("a body has a ceiling", () => {
       agentIds: ["bot-1"],
       threadId: "thread-1",
       active: true,
+      kind: "main",
     };
     const withTheDoor = (auth: AuthService) =>
       createApp({

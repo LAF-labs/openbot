@@ -383,6 +383,7 @@ describe("the two doors", () => {
     agentIds: ["bot-1"],
     threadId: "thread-1",
     active: true,
+    kind: "main",
   };
   const kept: Array<{ userId: string; botId: string; claimedName: string }> =
     [];

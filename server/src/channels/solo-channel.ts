@@ -65,11 +65,19 @@ export async function soloConversationOf(
         eq(channelAgents.agentId, agentId),
       ),
     )
-    // A channel that also holds somebody else is a group, not this Bot's conversation.
+    /*
+     * THE MAIN ONE, BY WHAT IT SAYS IT IS (`channels.kind`, migration 0064). This was "the oldest
+     * channel holding only this Bot"; the migration wrote that answer down, channel by channel, so
+     * that a project — another conversation with the same Bot — is never taken for it.
+     */
     .where(
-      sql`(select count(*) from ${channelAgents} where ${channelAgents.channelId} = ${channels.id}) = 1`,
+      and(
+        eq(channels.kind, "main"),
+        // A channel that also holds somebody else is a group, not this Bot's conversation.
+        sql`(select count(*) from ${channelAgents} where ${channelAgents.channelId} = ${channels.id}) = 1`,
+      ),
     )
-    // The oldest is the one with the history in it, which is the point of returning here.
+    // One, by construction (`conversations.ts`). Were there ever two, the older has the history.
     .orderBy(asc(channels.createdAt), asc(channels.id))
     .limit(1);
   return solo ?? null;

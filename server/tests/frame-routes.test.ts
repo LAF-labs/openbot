@@ -34,6 +34,7 @@ function channel(id: string): AgentChannel {
     agentIds: ["agent-1"],
     threadId: `thread-of-${id}`,
     active: true,
+    kind: "main",
   };
 }
 

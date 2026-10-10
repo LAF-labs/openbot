@@ -67,6 +67,7 @@ function channelDto(channel: AgentChannel): AgentChannel {
     agentIds: channel.agentIds,
     threadId: channel.threadId,
     active: channel.active,
+    kind: channel.kind,
   };
 }
 
