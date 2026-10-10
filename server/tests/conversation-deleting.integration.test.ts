@@ -20,7 +20,6 @@ import {
   createProjectDeletion,
   NAMES_A_CONVERSATION,
   PROJECT_DELETING,
-  refuseWhileDeleting,
 } from "../src/channels/deleting";
 import {
   createChannelRoutes,
@@ -313,7 +312,6 @@ describe("deleting a project", () => {
         ended.push([threadId, by]);
       },
       stopThread: async () => {},
-      writes: createConversationWrites(),
     });
 
     const outcome = await deletion.delete({
@@ -363,7 +361,6 @@ describe("deleting a project", () => {
     const deletion = createProjectDeletion({
       database,
       stopThread: async () => {},
-      writes: createConversationWrites(),
     });
     expect(
       await deletion.delete({ channelId: MAIN.channel, userId: ME }),
@@ -382,7 +379,6 @@ describe("deleting a project", () => {
     const deletion = createProjectDeletion({
       database,
       stopThread: async () => {},
-      writes: createConversationWrites(),
     });
     expect(
       await deletion.delete({ channelId: project.channel, userId: OTHER }),
@@ -399,31 +395,48 @@ describe("deleting a project", () => {
     ).toBe(false);
   });
 
-  test("the order is mark, wait for the writes in flight, stop the turn, delete", async () => {
+  test("the order is mark, wait for the writes in flight, stop the turn, forget its context, delete", async () => {
     const project = await conversation("project");
-    const writes = createConversationWrites();
     const order: string[] = [];
     const isMarked = () =>
       anyBeingDeleted(database, {
         channelIds: [project.channel],
         threadIds: [],
       });
-    // A write that came through a door before the mark, and is still going.
-    const finishWrite = writes.begin({
-      channelIds: [project.channel],
-      threadIds: [],
-    });
+    const rows = async () => (await left(project)).messages;
     const deletion = createProjectDeletion({
       database,
-      stopThread: async (threadId) => {
+      dropContext: async (threadId) => {
         order.push(
-          `stop ${threadId === project.thread ? "its thread" : threadId}: rows ${
-            (await left(project)).messages
-          }`,
+          `forget ${threadId === project.thread ? "its thread" : threadId}: rows ${await rows()}`,
         );
       },
-      writes,
+      stopThread: async (threadId) => {
+        order.push(
+          `stop ${threadId === project.thread ? "its thread" : threadId}: rows ${await rows()}`,
+        );
+      },
     });
+    // A write that came through the gate before the mark, and is still going.
+    let finishWrite: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      finishWrite = resolve;
+    });
+    let entered: () => void = () => {};
+    const inside = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const app = new Hono();
+    app.use("/api/*", deletion.gate);
+    app.post("/api/channels/:channelId/read", async (context) => {
+      entered();
+      await held;
+      return context.json({ ok: true });
+    });
+    const write = app.request(`/api/channels/${project.channel}/read`, {
+      method: "POST",
+    });
+    await inside;
 
     const deleting = deletion.delete({
       channelId: project.channel,
@@ -431,18 +444,104 @@ describe("deleting a project", () => {
     });
     // Marked at once, and nothing removed or stopped while the write is still in flight.
     while (!(await isMarked())) await Promise.resolve();
-    order.push(`marked: rows ${(await left(project)).messages}`);
+    order.push(`marked: rows ${await rows()}`);
     expect(order).toEqual(["marked: rows 1"]);
     order.push("the write finishes");
     finishWrite();
+    await write;
     await deleting;
-    order.push(`deleted: rows ${(await left(project)).messages}`);
+    order.push(`deleted: rows ${await rows()}`);
     expect(order).toEqual([
       "marked: rows 1",
       "the write finishes",
       "stop its thread: rows 1",
+      "forget its thread: rows 1",
       "deleted: rows 0",
     ]);
+  });
+
+  test("a turn that has not ended is not deleted under: the mark stays, the person is told, and the clock finishes it", async () => {
+    const project = await conversation("project");
+    let end: () => void = () => {};
+    const ended = new Promise<void>((resolve) => {
+      end = resolve;
+    });
+    const deletion = createProjectDeletion({
+      auditStore,
+      database,
+      stopThread: () => ended,
+      turnSettleMs: 5,
+    });
+    expect(
+      await deletion.delete({ channelId: project.channel, userId: ME }),
+    ).toEqual({ ok: false, code: PROJECT_DELETING });
+    // Nothing removed, and every door still refusing.
+    expect((await left(project)).messages).toBe(1);
+    expect((await left(project)).channels).toBe(1);
+    expect(
+      await anyBeingDeleted(database, {
+        channelIds: [project.channel],
+        threadIds: [],
+      }),
+    ).toBe(true);
+    // The clock, while the turn is still going: still not removed.
+    await deletion.finishPending();
+    expect((await left(project)).channels).toBe(1);
+
+    end();
+    expect(await deletion.finishPending()).toBeGreaterThanOrEqual(1);
+    expect(await left(project)).toEqual(GONE);
+    expect(await auditOf(project.channel)).toHaveLength(1);
+  });
+
+  test("a deletion that failed after its mark is tried again, and asked for twice at once is done once", async () => {
+    const project = await conversation("project");
+    let fail = true;
+    const stops: string[] = [];
+    const ends: string[] = [];
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const deletion = createProjectDeletion({
+      database,
+      endApprovals: async (threadId) => {
+        ends.push(threadId);
+      },
+      stopThread: async (threadId) => {
+        stops.push(threadId);
+        await held;
+      },
+      dropContext: async () => {
+        if (fail) throw new Error("the context store: refused");
+      },
+    });
+    const first = deletion.delete({ channelId: project.channel, userId: ME });
+    const second = deletion.delete({ channelId: project.channel, userId: ME });
+    const both = Promise.allSettled([first, second]);
+    /*
+     * Both have asked before the first attempt is let go on. The second's arrival is two reads
+     * inside `delete` and no event of its own, so it is given time — and too little time fails
+     * this test (two stops) rather than passing it.
+     */
+    while (stops.length === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    release();
+    // Both are the one attempt, and it failed: said to both, with the mark left.
+    const outcomes = await both;
+    expect(outcomes.map((outcome) => outcome.status)).toEqual([
+      "rejected",
+      "rejected",
+    ]);
+    expect(stops).toEqual([project.thread]);
+    expect((await left(project)).channels).toBe(1);
+
+    fail = false;
+    expect(await deletion.finishPending()).toBeGreaterThanOrEqual(1);
+    expect(await left(project)).toEqual(GONE);
+    expect(ends).toEqual([project.thread]);
   });
 
   test("a write that never finishes does not hold a deletion for ever", async () => {
@@ -470,7 +569,6 @@ describe("deleting a project", () => {
       stopThread: async (threadId) => {
         stopped.push(threadId);
       },
-      writes: createConversationWrites(),
     });
     expect(await deletion.finishPending()).toBeGreaterThanOrEqual(1);
     expect(await left(project)).toEqual(GONE);
@@ -524,15 +622,13 @@ describe("while a project is being deleted", () => {
 
   test("every write door refuses with the fact, a read passes, and the door that deletes goes on answering", async () => {
     const project = await conversation("project");
-    const writes = createConversationWrites();
     const deletion = createProjectDeletion({
       database,
       stopThread: async () => {},
-      writes,
     });
     const reached: string[] = [];
     const app = new Hono<{ Variables: AppVariables }>();
-    app.use("/api/*", refuseWhileDeleting(database, writes));
+    app.use("/api/*", deletion.gate);
     app.route(
       "/api/channels",
       createChannelRoutes(
@@ -636,13 +732,46 @@ describe("while a project is being deleted", () => {
     );
   });
 
+  test("the door that deletes says the project is being deleted while its turn has not ended", async () => {
+    const project = await conversation("project");
+    const app = new Hono<{ Variables: AppVariables }>();
+    app.route(
+      "/api/channels",
+      createChannelRoutes(
+        store,
+        asMe,
+        undefined,
+        undefined,
+        [],
+        undefined,
+        createProjectDeletion({
+          database,
+          stopThread: () => new Promise<void>(() => {}),
+          turnSettleMs: 5,
+        }),
+      ),
+    );
+    const answer = await app.request(
+      `/api/channels/projects/${project.channel}`,
+      { method: "DELETE" },
+    );
+    expect(answer.status).toBe(409);
+    expect(((await answer.json()) as { code: string }).code).toBe(
+      PROJECT_DELETING,
+    );
+    // Finished by hand, as the clock would once the turn had ended.
+    await createProjectDeletion({
+      database,
+      stopThread: async () => {},
+    }).finishPending();
+    expect(await left(project)).toEqual(GONE);
+  });
+
   test("a write that is in a door when the mark is set is waited for, not cut off", async () => {
     const project = await conversation("project");
-    const writes = createConversationWrites();
     const deletion = createProjectDeletion({
       database,
       stopThread: async () => {},
-      writes,
     });
     let release: () => void = () => {};
     const held = new Promise<void>((resolve) => {
@@ -654,7 +783,7 @@ describe("while a project is being deleted", () => {
     });
     const seen: number[] = [];
     const app = new Hono();
-    app.use("/api/*", refuseWhileDeleting(database, writes));
+    app.use("/api/*", deletion.gate);
     app.post("/api/channels/:channelId/attachments", async (context) => {
       entered();
       await held;
@@ -765,13 +894,14 @@ describe("the two lists that keep the next one from being forgotten", () => {
     };
     walk(root);
 
-    const WRITES = /\.(post|put|patch|delete)\(\s*"([^"]*)"/g;
+    // Any quote: a path in a template (`/:id/${verb}`) was invisible to a walk that read only `"`.
+    const WRITES = /\.(post|put|patch|delete)\(\s*(["'`])((?:(?!\2).)*)\2/g;
     const ABOUT_A_CONVERSATION = /channel|thread|conversation|project|room/i;
     const routes: string[] = [];
     const strangers: string[] = [];
     for (const file of files) {
       const source = readFileSync(file, "utf8");
-      for (const [, method, path] of source.matchAll(WRITES)) {
+      for (const [, method, , path] of source.matchAll(WRITES)) {
         if (!path?.startsWith("/")) continue;
         routes.push(`${method} ${path}`);
         for (const parameter of path.match(/:[A-Za-z]+/g) ?? []) {
@@ -796,6 +926,8 @@ describe("the two lists that keep the next one from being forgotten", () => {
     expect(routes.length).toBeGreaterThan(50);
     expect(routes).toContain("post /:threadId");
     expect(routes).toContain("post /:channelId/attachments");
+    // The one route the server writes in a template today, seen.
+    expect(routes).toContain("post /:id/${verb}");
     expect(strangers).toEqual([]);
   });
 });

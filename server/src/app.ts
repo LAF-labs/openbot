@@ -180,12 +180,11 @@ export type CreateAppOptions = {
   /** Live channel activity. Absent leaves the routes working, just without the socket. */
   channelEvents?: ChannelEventHub;
   /**
-   * Deleting a project, and the gate that refuses every write into a conversation while it is
-   * being deleted (`channels/deleting.ts`). The gate is one middleware over the whole API, so no
-   * route has to ask; absent — the suites that mount a few routes — nothing is being deleted.
+   * Deleting a project, and with it the gate that refuses every write into a conversation while
+   * it is being deleted (`channels/deleting.ts`). The gate is one middleware over the whole API,
+   * so no route has to ask; absent — the suites that mount a few routes — nothing is being deleted.
    */
   projectDeletion?: ProjectDeletion;
-  conversationGate?: MiddlewareHandler;
   /**
    * Where a Bot's own refusal is written.
    *
@@ -477,7 +476,6 @@ export function createApp({
   channelStore,
   channelEvents,
   projectDeletion,
-  conversationGate,
   auditStore,
   componentStore,
   pluginStore,
@@ -643,7 +641,7 @@ export function createApp({
   });
 
   // Before every route: a write into a conversation being deleted is refused, whichever door.
-  if (conversationGate) app.use("/api/*", conversationGate);
+  if (projectDeletion) app.use("/api/*", projectDeletion.gate);
 
   /*
    * One route at two paths. The front door (`app/Caddyfile`) hands only `/api/*` to the API, and a

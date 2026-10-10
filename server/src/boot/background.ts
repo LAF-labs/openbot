@@ -1,5 +1,6 @@
 import { createRetentionJob } from "../account/retention";
 import type { MemoryCurator } from "../agents/memory-curation";
+import type { ProjectDeletion } from "../channels/deleting";
 import type { ConversationStore } from "../context/conversations";
 import type { Database } from "../db/client";
 import { describeFailure } from "../failure-text";
@@ -28,6 +29,9 @@ const FLEET_REDELIVERY_MS = 5 * 60_000;
 /** How often conversations are looked at for a day's close. */
 const DAY_CLOSE_TICK_MS = 60_000;
 
+/** How often a project's deletion that is marked and not done is tried again. */
+const DELETION_RETRY_MS = 60_000;
+
 /** The memory's curation: hourly, and once a minute after boot so a restart does not skip an hour. */
 const CURATION_TICK_MS = 60 * 60_000;
 const CURATION_FIRST_MS = 60_000;
@@ -53,6 +57,8 @@ export function startBackgroundWork(input: {
   pluginStore: PluginStore;
   /** The conversation store, whose day closes are looked for on a clock. */
   conversations?: Pick<ConversationStore, "tick">;
+  /** A project's deletion, whose unfinished ones are finished on a clock (`channels/deleting.ts`). */
+  projectDeletion?: Pick<ProjectDeletion, "finishPending">;
   /** The hourly check of a Bot's new memories against the owner's words (`agents/memory-curation.ts`). */
   memoryCurator?: MemoryCurator;
 }): void {
@@ -151,6 +157,28 @@ export function startBackgroundWork(input: {
         log.warn("day_close_tick_failed", { reason: describeFailure(error) });
       });
     }, DAY_CLOSE_TICK_MS).unref();
+  }
+
+  /*
+   * A PROJECT MARKED AND NOT DELETED IS FINISHED HERE. Its deletion stops at a turn that has not
+   * ended, or fails in its transaction, and the mark it leaves hides the project and refuses every
+   * write: without this it stayed that way until the next restart (review, 2026-10-10). One read
+   * of a small table a minute, which nearly always finds nothing.
+   */
+  const projectDeletion = input.projectDeletion;
+  if (projectDeletion) {
+    setInterval(() => {
+      void projectDeletion
+        .finishPending()
+        .then((count) => {
+          if (count > 0) log.info("project_deletions_finished", { count });
+        })
+        .catch((error) => {
+          log.warn("project_deletion_retry_failed", {
+            reason: describeFailure(error),
+          });
+        });
+    }, DELETION_RETRY_MS).unref();
   }
 
   /*

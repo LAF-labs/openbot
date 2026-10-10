@@ -219,6 +219,8 @@ function engineWith(
     withheld?: NonNullable<ChatToolkit["withheld"]>;
     /** Who is told the turn's run is over (`TurnEngineOptions.runEnded`). */
     runEnded?: (run: { botId: string; threadId: string }) => Promise<void>;
+    /** What records the Bot's answer at the turn's end, where a case holds it open. */
+    announce?: () => Promise<void>;
   } = {},
 ) {
   const hub = createTurnHub({ keepEndedMs: 50 });
@@ -263,6 +265,7 @@ function engineWith(
     ...(options.runEnded ? { runEnded: options.runEnded } : {}),
     announce: async ({ text }) => {
       announced.push(text);
+      await options.announce?.();
     },
   });
   return { engine, hub, announced };
@@ -1547,6 +1550,52 @@ describe("how a turn ends", () => {
     // A conversation with nothing going is stopped already; asking is not an error.
     await engine.stopThread(other.threadId);
     await engine.stopThread("no-such-thread");
+  });
+
+  test("a turn that has freed the conversation and is still writing its end is waited for", async () => {
+    /*
+     * The conversation is free for the next message before the turn has settled its row and
+     * recorded what the Bot said. A deletion that asked in that moment found no turn, removed the
+     * thread, and those rows landed after it (review, 2026-10-10).
+     */
+    const one = await aConversation();
+    const bot = scriptedBot();
+    let record: () => void = () => {};
+    const recording = new Promise<void>((resolve) => {
+      record = resolve;
+    });
+    let reached: () => void = () => {};
+    const atItsEnd = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const { engine } = engineWith(bot, async () => ({ ok: true }), {
+      announce: async () => {
+        reached();
+        await recording;
+      },
+    });
+    const sent = await engine.send({
+      ...one,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("짧은 일")],
+      tools: null,
+    });
+    if (!sent.ok) throw new Error("not sent");
+    await atItsEnd;
+    // Free for the next message, and not over.
+    expect(engine.busy(one.threadId)).toBe(false);
+    let stopped = false;
+    const stopping = engine.stopThread(one.threadId).then(() => {
+      stopped = true;
+    });
+    const forOwner = engine.stopFor(OWNER);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(stopped).toBe(false);
+    record();
+    await stopping;
+    await forOwner;
+    expect(await statusOf(sent.turnId)).toBe("done");
   });
 });
 
