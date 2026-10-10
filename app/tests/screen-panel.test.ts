@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { PANEL_SIZES } from "../src/components/computer/live-view";
 import {
+  CONVERSATION_MIN,
   DEFAULT_SCREEN_PANEL,
   forgetScreenPanel,
   parseScreenPanel,
@@ -171,14 +172,33 @@ describe("how wide the screen is allowed to be", () => {
     }
   });
 
-  test("a wide window that cannot spare the chosen size narrows it, never below the smallest", () => {
+  test("the PC app's smallest window spares every size, and the conversation keeps its least beside it", () => {
+    /*
+     * 1024 is the installed window's floor. Until 2026-10-10 a column stood at the left and this
+     * window narrowed the largest size to leave it room; the column is gone, and what stands
+     * there now (홈) gives way to the screen instead (`home-panel.test.ts`).
+     */
     const at1024 = (panel: ScreenPanel) =>
       screenPanelWidth(panel, { isWide: true, viewportWidth: 1024 });
-    expect(at1024(open("large"))).toBeLessThan(SCREEN_PANEL_WIDTHS.large);
-    expect(at1024(open("large"))).toBeGreaterThanOrEqual(
-      SCREEN_PANEL_WIDTHS.small,
-    );
-    expect(at1024(open("small"))).toBe(SCREEN_PANEL_WIDTHS.small);
+    for (const { size } of PANEL_SIZES) {
+      expect({ size, width: at1024(open(size)) }).toEqual({
+        size,
+        width: SCREEN_PANEL_WIDTHS[size],
+      });
+      expect(1024 - at1024(open(size))).toBeGreaterThanOrEqual(
+        CONVERSATION_MIN,
+      );
+    }
+  });
+
+  test("a wide window that cannot spare the chosen size narrows it, never below the smallest", () => {
+    const at900 = (panel: ScreenPanel) =>
+      screenPanelWidth(panel, { isWide: true, viewportWidth: 900 });
+    expect(at900(open("large"))).toBe(900 - CONVERSATION_MIN);
+    expect(at900(open("small"))).toBe(SCREEN_PANEL_WIDTHS.small);
+    expect(
+      screenPanelWidth(open("large"), { isWide: true, viewportWidth: 600 }),
+    ).toBe(SCREEN_PANEL_WIDTHS.small);
   });
 
   test("a window with no width to report is treated as one with room", () => {

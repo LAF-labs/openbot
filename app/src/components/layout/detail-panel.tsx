@@ -6,6 +6,7 @@ import { SectionBoundary } from "@/components/layout/section-boundary";
 import { useOverlayModal } from "@/components/layout/use-overlay-modal";
 import { Button } from "@/components/ui/button";
 import { useScreenPanelViewport } from "@/lib/computer/screen-panel";
+import { takeBesideMain } from "@/lib/home/home-panel";
 import { t } from "@/lib/i18n";
 
 /**
@@ -89,6 +90,18 @@ export function DetailPanel({
   useEffect(() => {
     if (isModal) closeRef.current?.focus();
   }, [isModal]);
+
+  /*
+   * 홈 GIVES WAY TO THIS PANE (2026-10-10, `lib/home/home-panel.ts`). Beside the conversation it
+   * is a column, and the panel at the left of the window is another: at the PC app's smallest
+   * window the two at their widest would leave the conversation nothing. This pane is what
+   * somebody just asked to see, so it says how much it took and 홈 is drawn in what is left. Below
+   * `lg` it lies over the screen and takes nothing — and there is no 홈 there to tell.
+   */
+  useEffect(() => {
+    if (!open || !isWide) return;
+    return takeBesideMain(detailWidth);
+  }, [open, isWide, detailWidth]);
 
   /*
    * ESCAPE CLOSES IT. Every dialog in the app does; this pane, which is where a profile, a form and

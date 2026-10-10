@@ -40,10 +40,22 @@ export const SCREEN_PANEL_WIDTHS: Readonly<Record<ScreenPanelSize, number>> = {
 };
 
 /**
- * What the rest of a wide window keeps beside the screen: the roster column and a conversation
- * still wide enough to read. A size the window cannot honour is narrowed to leave this.
+ * THE LEAST A CONVERSATION IS DRAWN AT. Its cards are laid out for a phone's width, about 360px
+ * (record §1), and nothing beside it — this screen, a detail pane, 홈 at the left — may take the
+ * window down past that.
  */
-const ROOM_FOR_THE_REST = 700;
+export const CONVERSATION_MIN = 360;
+
+/**
+ * What the rest of a wide window keeps beside the screen: the conversation, at its least. A size
+ * the window cannot honour is narrowed to leave this.
+ *
+ * It was 700 — the column that stood at the left of the window (340) and the conversation. The
+ * column went on 2026-10-10; what stands at the left now is 홈 (`lib/home/home-panel.ts`), and 홈
+ * gives way to this screen and not the other way round: somebody who asked to watch a page asked
+ * for that page at the size they chose, and 홈 is there all day.
+ */
+const ROOM_FOR_THE_REST = CONVERSATION_MIN;
 
 export const DEFAULT_SCREEN_PANEL: ScreenPanel = {
   size: "medium",

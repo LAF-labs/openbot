@@ -534,15 +534,30 @@ test("every row that reserves the title bar's height can move the window", () =>
    * gone and the app's one top row took the job over (`layout/app-top-bar.tsx`), on every screen
    * — a row at least `titlebar` tall (the 44px as a name), itself the handle, and so is the empty
    * stretch in it, because Tauri drags only from an element that carries the attribute itself.
-   * In the shell it also leaves the width of the window's buttons empty at its left.
+   *
+   * ITS FIRST CELL IS THE REST OF THE HANDLE (2026-10-10, 홈). The panel at the left of the window
+   * stands under the row, and the row's first cell is as wide as that panel: at 홈's widest it is
+   * seven tenths of the row. So the cell carries the attribute itself, and it is the cell — the
+   * element the window's buttons are drawn over — that leaves their width empty in the shell.
    */
   const topRow = read("app/src/components/layout/app-top-bar.tsx");
   const opening = topRow.match(/<header[^>]*>/)?.[0] ?? "";
   expect(opening).toContain("min-h-titlebar");
   expect(opening).toContain("data-tauri-drag-region");
-  expect(opening).toContain("inShell() ? LIGHTS_CLEARANCE");
+  const cell = topRow.match(/<div[^>]*data-top-bar-home[^>]*>/)?.[0] ?? "";
+  expect(cell).toContain("data-tauri-drag-region");
+  expect(cell).toContain("inShell() ? LIGHTS_CLEARANCE");
+  expect(cell).toContain("--home-panel-width");
+  // The cell is the row's first child: nothing stands between the window's edge and the clearance.
+  expect(topRow.indexOf("data-top-bar-home")).toBeLessThan(
+    topRow.indexOf("ref={setSlot}"),
+  );
   expect(topRow.match(/<div[^>]*ref=\{setSlot\}[^>]*>/)?.[0]).toContain(
     "data-tauri-drag-region",
+  );
+  // The home button is a button: it folds 홈, and a press on it does not move the window.
+  expect(read("app/src/components/layout/home-panel.tsx")).toMatch(
+    /<Button[^>]*data-home-button/,
   );
   // And it is mounted by the layout every screen of the app is drawn in.
   expect(read("app/src/routes/_authed/_app.tsx")).toContain("<AppTopBar");

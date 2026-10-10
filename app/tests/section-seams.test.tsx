@@ -79,6 +79,14 @@ describe("the roster, broken under an open window", () => {
     const roster = () => view.host.querySelector("[data-profile-menu]");
     const failedRoster = () =>
       view.host.querySelector('[data-failed-section="sidebar"]');
+    /*
+     * 홈 READS THE SAME CONVERSATIONS (오늘, since 2026-10-10), in a seam of its own beside the
+     * screen. The answer that breaks the roster breaks it too: two parts that could not be drawn,
+     * each saying so where it stands and each reported under its own name — and neither takes the
+     * screen, or the other's way back, with it.
+     */
+    const failedHome = () =>
+      view.host.querySelectorAll('[data-failed-section="home"]').length;
     await view.waitFor(() => roster() !== null, "the roster");
 
     const reports: ScreenErrorReport[] = [];
@@ -96,6 +104,7 @@ describe("the roster, broken under an open window", () => {
     channels = BROKEN_CHANNELS;
     await view.queryClient.invalidateQueries({ queryKey: channelKeys.list() });
     await view.waitFor(() => failedRoster() !== null, "the roster to fail");
+    await view.waitFor(() => failedHome() === 1, "홈 to fail beside it");
 
     expect(roster()).toBeNull();
     expect(failedRoster()?.querySelector('[role="alert"]')?.textContent).toBe(
@@ -103,14 +112,19 @@ describe("the roster, broken under an open window", () => {
     );
     // The page beside it is still drawn.
     expect(view.main()?.textContent).toContain("Help");
-    await view.waitFor(() => reports.length === 1, "the report");
-    expect(reports[0]).toMatchObject({
-      section: "sidebar",
-      route: "/help",
-      kind: "TypeError",
-      build: "edge",
-      surface: "shell",
-    });
+    await view.waitFor(() => reports.length === 2, "the two reports");
+    expect(reports.map((report) => report.section).sort()).toEqual([
+      "home",
+      "sidebar",
+    ]);
+    for (const report of reports) {
+      expect(report).toMatchObject({
+        route: "/help",
+        kind: "TypeError",
+        build: "edge",
+        surface: "shell",
+      });
+    }
 
     // And the rest of the window still goes places: the page beside the roster changes.
     await view.navigate("/skills");
@@ -119,7 +133,8 @@ describe("the roster, broken under an open window", () => {
     // The route changed, so the roster tried again — on the same broken answer, and failed again,
     // from the same place, which is not a second report.
     expect(failedRoster()).not.toBeNull();
-    expect(reports).toHaveLength(1);
+    expect(failedHome()).toBe(1);
+    expect(reports).toHaveLength(2);
 
     // The answer is right again; 다시 불러오기 fetches it and draws the roster.
     channels = [];
@@ -130,6 +145,18 @@ describe("the roster, broken under an open window", () => {
     await view.click(reload);
     await view.waitFor(() => roster() !== null, "the roster to come back");
     expect(failedRoster()).toBeNull();
+    // 홈 has its own way back, and takes it by itself.
+    const reloadHome = [
+      ...(view.host
+        .querySelector('[data-failed-section="home"]')
+        ?.querySelectorAll("button") ?? []),
+    ].find((button) => button.textContent === "Reload");
+    if (!reloadHome) throw new Error("no 다시 불러오기 where 홈 was");
+    await view.click(reloadHome);
+    await view.waitFor(() => failedHome() === 0, "홈 to come back");
+    expect(
+      view.host.querySelectorAll("[data-home-panel] h2").length,
+    ).toBeGreaterThan(0);
 
     await view.unmount();
   }, 30_000);

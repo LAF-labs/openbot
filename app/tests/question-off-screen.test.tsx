@@ -343,14 +343,22 @@ const pill = (host: HTMLElement) => {
   );
 };
 
-/** The rows under "Waiting on the owner", on a screen that draws 오늘: 소식, of the ones here. */
-const waitingRows = (host: HTMLElement) =>
+/**
+ * The rows under "Waiting on the owner", wherever 오늘 is drawn: in 홈, the panel at the left of the
+ * window, on every screen while it is open — and on 소식's own page when it is not.
+ */
+const waitingRows = (host: ParentNode) =>
   [...host.querySelectorAll("button")].filter((button) =>
     button.textContent?.includes("Approval needed"),
   );
+/** Those of them that are in 홈. */
+const waitingInHome = (host: HTMLElement) => {
+  const home = host.querySelector("[data-home-panel]");
+  return home ? waitingRows(home) : [];
+};
 
 describe("a question raised while another screen is open", () => {
-  test("the pill turns to the person's turn, and 소식 lists it with the way to the card", async () => {
+  test("the pill turns to the person's turn, and 홈 beside the screen lists it with the way to the card — once, on 소식 too", async () => {
     const { api, state } = server();
     const view = await mountApp({ path: "/made", api });
     await view.waitFor(() => pill(view.host) !== "", "the Bot's row", 6000);
@@ -365,15 +373,27 @@ describe("a question raised while another screen is open", () => {
       "the pill to say the Bot is waiting on the person",
       4000,
     );
-    // On 만든 것 the pill is all that says so: the column beside it lists nothing any more.
-    expect(waitingRows(view.host)).toHaveLength(0);
-
-    await view.navigate("/feed");
+    /*
+     * On 만든 것 the pill says so, and so does 홈 beside it (2026-10-10): from 2026-10-04 until
+     * then the pill was all there was on a screen that is not 소식, and the row that leads to the
+     * card was a screen away.
+     */
     await view.waitFor(
-      () => waitingRows(view.host).length === 1,
-      "소식 to list what is waiting",
+      () => waitingInHome(view.host).length === 1,
+      "홈 to list what is waiting",
       4000,
     );
+    expect(waitingRows(view.host)).toHaveLength(1);
+
+    // 소식 is drawn beside the same panel, and does not list it a second time.
+    await view.navigate("/feed");
+    await view.waitFor(
+      () => view.main()?.querySelector("h1")?.textContent === "Updates",
+      "소식",
+      4000,
+    );
+    expect(waitingRows(view.host)).toHaveLength(1);
+    expect(waitingInHome(view.host)).toHaveLength(1);
     // The row is the way to the card: the conversation, on the line of the call that asked.
     const row = waitingRows(view.host)[0] as HTMLButtonElement;
     await view.click(row);

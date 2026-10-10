@@ -36,6 +36,7 @@ import {
   markFeedSeen,
 } from "@/lib/feed/queries";
 import { offerFeedQuote } from "@/lib/feed/quote-offer";
+import { useIsHomeDrawn } from "@/lib/home/home-panel";
 import { t } from "@/lib/i18n";
 import { COMPOSE_SCREEN_KEY } from "@/components/channels/composer/prefill";
 import { failureSentence } from "@/lib/press";
@@ -48,8 +49,9 @@ import { useNow } from "@/lib/use-now";
  * 소식 — WHAT THE BOT DID TODAY, AND WHAT IT FOUND (muse-shape plan §3.2, phases 3 and 7).
  *
  * 오늘 on top, as it has been since phase 3 (`bot-day.tsx`): what waits on the person, what the Bot
- * did, what comes next. On the PC app this is the one place the last two are listed since
- * 2026-10-04: the sidebar's list went, and the header's drawer there shows only what is waiting.
+ * did, what comes next — wherever 홈 is not on the screen. Since 2026-10-10 the panel at the left
+ * of the window holds 오늘 (`layout/home-panel.tsx`), and this page, drawn beside it, leaves the
+ * list to it; folded, or in a window with no 홈, the page draws it as it always did.
  * Under it the posts a 소식 routine wrote — at most three a morning, each from pages its run opened
  * (`server/src/routines/feed.ts`) — with 좋아요, 숨기기 and 이야기하기.
  *
@@ -76,6 +78,13 @@ function FeedPageScreen() {
   const mine = useMyBots();
   const bots = mine.bots ?? [];
   const isSeveral = bots.length > 1;
+  /*
+   * 오늘 IS IN 홈 WHEN 홈 IS ON THE SCREEN (2026-10-10, `layout/home-panel.tsx`), and this page is
+   * drawn right beside it: the same rows twice, a hand's width apart. So the page leaves them to
+   * the panel while the panel is there, and draws them itself when it is folded, has stepped
+   * aside, or the window has none.
+   */
+  const isInHome = useIsHomeDrawn();
   const channels = useQuery(channelListQueryOptions());
   const bot = mine.bots ? primaryBot(mine.bots, channels.data) : undefined;
 
@@ -84,7 +93,7 @@ function FeedPageScreen() {
       {mine.bots === undefined && !mine.isError ? (
         <Skeleton className="h-32 rounded-xl" />
       ) : null}
-      {bots.map((one) => (
+      {(isInHome ? [] : bots).map((one) => (
         <PageSection key={one.id} title={isSeveral ? one.name : t("Today")}>
           <div className="rounded-xl border border-border">
             <BotDay
