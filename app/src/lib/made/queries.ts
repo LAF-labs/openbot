@@ -2,7 +2,7 @@ import { MADE_SHELVES, MARKDOWN_TABLE, type MadeShelf } from "@shared/made";
 import { infiniteQueryOptions } from "@tanstack/react-query";
 import { t } from "@/lib/i18n";
 import { own } from "@/lib/own";
-import { RequestRefusedError } from "@/lib/refusals";
+import { requestOrRefusal } from "@/lib/refusals";
 
 /**
  * 만든 것 on the wire, and the words the page says (muse-shape plan §3.5, phase 6).
@@ -30,14 +30,6 @@ export const madeKeys = {
   all: ["agents", "made"] as const,
   of: (botId: string, shelf: MadeShelf | null) =>
     ["agents", "made", botId, shelf ?? "all"] as const,
-};
-
-/** The refusals a door answers with, as the codes it sends. */
-export const MADE_REFUSALS: Readonly<Record<string, string>> = {
-  "laf:made_unavailable": "What your Bot made could not be read.",
-  "laf:made_shelf_unknown": "What your Bot made could not be read.",
-  "laf:made_cursor_invalid": "What your Bot made could not be read.",
-  "laf:agent_not_found": "That Bot is not yours to see.",
 };
 
 /** The filters above the list, in order: everything, then each shelf. */
@@ -122,23 +114,12 @@ export function kindBesideTime(item: Pick<MadeItem, "tool" | "shelf">) {
     : kindLabel(item.tool) || null;
 }
 
-async function madeRequest(path: string): Promise<MadePage> {
-  const response = await fetch(path, { credentials: "include" });
-  const body = (await response.json().catch(() => null)) as Record<
-    string,
-    unknown
-  > | null;
-  if (!response.ok) {
-    const code = typeof body?.code === "string" ? body.code : "";
-    const known = own(MADE_REFUSALS, code);
-    throw new RequestRefusedError(
-      known ? t(known) : t("What your Bot made could not be read."),
-      response.status,
-      code || null,
-    );
-  }
-  return body as unknown as MadePage;
-}
+/*
+ * No table of refusals: the page says its one sentence for any failure, and reads the code off
+ * the error for "not here" (`routes/_authed/_app/made.tsx`).
+ */
+const madeRequest = async (path: string) =>
+  (await requestOrRefusal(path, undefined)) as unknown as MadePage;
 
 export function madeQueryOptions(botId: string, shelf: MadeShelf | null) {
   return infiniteQueryOptions({

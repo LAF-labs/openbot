@@ -10,7 +10,6 @@ import {
 import type { SearchHit } from "../../shared/search";
 import type { ChannelSummary } from "../src/lib/channels/queries";
 import { ko } from "../src/lib/i18n-ko";
-import { SEARCH_REFUSALS } from "../src/lib/search/queries";
 import {
   APP_DOM_TIMEOUT_MS,
   agentFixture,
@@ -341,18 +340,24 @@ describe("the 검색 screen", () => {
     ["a list", []],
     ["hits that are not hits", { hits: [null, 3, { channelId: 1 }], next: 7 }],
   ])(
-    "an answer that is %s draws no hit and breaks nothing",
+    'an answer that is %s is a search that could not be made — never "no message has those words"',
     async (_name, body) => {
+      // A 200 that is no page says nothing about the person's conversations (review, 2026-10-10).
       const view = await mountApp({
         path: "/search",
         api: account(() => json(body)),
       });
       await view.type(box(view), "메뉴");
-      await view.waitFor(() => asked(view).length === 1, "the request");
       await view.waitFor(
-        () => view.host.querySelectorAll("[data-search-none]").length === 1,
-        "the one line",
+        () =>
+          view
+            .main()
+            ?.textContent?.includes(
+              "The conversations could not be searched.",
+            ) === true,
+        "the sentence",
       );
+      expect(view.host.querySelectorAll("[data-search-none]").length).toBe(0);
       expect(hits(view)).toEqual([]);
       expect(view.host.querySelectorAll("[data-search-box]").length).toBe(1);
     },
@@ -388,18 +393,5 @@ describe("the 검색 screen", () => {
       ),
       // A conversation the roster no longer lists is called what the server called it.
     ).toEqual(["두리", "옛 대화"]);
-  });
-});
-
-describe("the door's refusals", () => {
-  test("each is a sentence the dictionary holds", () => {
-    for (const sentence of Object.values(SEARCH_REFUSALS)) {
-      expect(ko[sentence as keyof typeof ko]).toBeString();
-    }
-    expect(Object.keys(SEARCH_REFUSALS).sort()).toEqual([
-      "laf:search_cursor_invalid",
-      "laf:search_query_invalid",
-      "laf:search_unavailable",
-    ]);
   });
 });

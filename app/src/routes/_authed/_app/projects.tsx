@@ -20,6 +20,7 @@ import {
   channelListQueryOptions,
 } from "@/lib/channels/queries";
 import { t } from "@/lib/i18n";
+import { failureSentence } from "@/lib/press";
 import { settledOf, useReading } from "@/lib/reading";
 import { cn } from "@/lib/utils";
 
@@ -96,12 +97,9 @@ function ProjectsOfBot({
     try {
       made = await create.mutateAsync({ agentId: botId, name });
     } catch (error) {
-      // The mutation's own sentence, already in the reader's language (`mutations.ts`).
-      setProblem(
-        error instanceof Error
-          ? error.message
-          : t("Could not make the project. Try again."),
-      );
+      // The mutation's own sentence — and never the engine's: a dropped connection is thrown as
+      // "Load failed", which was drawn here as it came (review, 2026-10-10).
+      setProblem(failureSentence(error));
       return;
     }
     setName("");

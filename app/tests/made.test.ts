@@ -15,7 +15,6 @@ import { ko } from "../src/lib/i18n-ko";
 import {
   KIND_LABELS,
   kindBesideTime,
-  MADE_REFUSALS,
   MADE_STARTERS,
   SHELF_LABELS,
   SHELF_ORDER,
@@ -126,12 +125,11 @@ describe("a table's title, from what the Bot wrote over it", () => {
 });
 
 describe("the page's words, in Korean", () => {
-  test("every shelf, every kind, every start and every refusal", () => {
+  test("every shelf, every kind and every start", () => {
     const keys = [
       ...SHELF_ORDER.map((shelf) => SHELF_LABELS[shelf]),
       ...Object.values(KIND_LABELS),
       ...MADE_STARTERS.flatMap((starter) => [starter.label, starter.draft]),
-      ...Object.values(MADE_REFUSALS),
     ];
     expect(keys.filter((key) => !ko[key])).toEqual([]);
   });
