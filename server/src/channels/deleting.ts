@@ -10,7 +10,8 @@
  *   1. MARK (`channels.deleting_at`, in Postgres). From here every write door refuses.
  *   2. WAIT for the writes that were already through a door when the mark was set.
  *   3. STOP the conversation's turn and wait until it has written its end; then have the context
- *      store forget the conversation, which would otherwise write its row back.
+ *      store forget the conversation, which would otherwise write its row back, and remove the
+ *      project's folder on the Bot's computer (`shared/file-scope.ts`).
  *   4. DELETE, in one transaction, by an explicit list of what names the conversation.
  *
  * A TURN THAT HAS NOT ENDED IS NOT DELETED UNDER. Step 3 has a bound, and when it runs out the
@@ -40,9 +41,9 @@
  * hand the gate one and the deletion another.
  *
  * WHAT IS NOT REMOVED, AND WHY, is written beside `NAMES_A_CONVERSATION` below and in the record:
- * the audit trail (append-only), and the readable copies of the project's attachments in the Bot's
- * folder — nothing on the computer removes one file, and a project has no folder of its own until
- * piece 4-2's second part.
+ * the audit trail (append-only), and the readable copies of attachments a project filed in the
+ * Bot's main folder before it had a folder of its own (2026-10-11) — moving those is piece 4-2's
+ * third part. Everything filed since is in `projects/<id>/` and goes with it.
  */
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
@@ -53,6 +54,7 @@ import {
   agentMemories,
   channelMemberships,
   channels,
+  channelAgents,
   channelThreads,
   lafConversationContexts,
   lafNotifications,
@@ -288,14 +290,31 @@ export function createProjectDeletion(dependencies: {
   stopThread: (threadId: string) => Promise<void>;
   /** Have the context store forget the conversation (`context/conversations.ts` `drop`). */
   dropContext?: (threadId: string) => Promise<void>;
+  /**
+   * Remove the project's folder on the Bot's computer, once nothing is writing into it
+   * (`shared/file-scope.ts`). Throws where it could not: the mark stays and the clock tries again,
+   * because rows removed with the folder left behind is a folder nothing will ever remove.
+   */
+  removeFolder?: (
+    channelId: string,
+    botIds: readonly string[],
+  ) => Promise<void>;
+  /** Told once the project is gone (`thread-projects.ts`). */
+  forgotten?: (channelId: string) => void;
   /** The bound on the turn's end. For the tests; a deployment takes `TURN_SETTLE_MS`. */
   turnSettleMs?: number;
   /** Withdraw what was allowed "for this conversation" (`computer/standing-approvals.ts`). */
   endApprovals?: (threadId: string, actor: string) => Promise<unknown>;
   auditStore?: AuditStore;
 }): ProjectDeletion {
-  const { database, stopThread, dropContext, endApprovals, auditStore } =
-    dependencies;
+  const {
+    database,
+    stopThread,
+    dropContext,
+    removeFolder,
+    endApprovals,
+    auditStore,
+  } = dependencies;
   const turnSettleMs = dependencies.turnSettleMs ?? TURN_SETTLE_MS;
   const writes = createConversationWrites();
 
@@ -342,6 +361,28 @@ export function createProjectDeletion(dependencies: {
     }
     // After the turn: its end is the last thing that keeps the conversation's context.
     for (const threadId of threadIds) await dropContext?.(threadId);
+    // And then its files: the turn's writes have landed, and the doors refuse new ones.
+    if (removeFolder) {
+      const bots = await database
+        .select({ agentId: channelAgents.agentId })
+        .from(channelAgents)
+        .where(eq(channelAgents.channelId, channelId));
+      const removed = await removeFolder(
+        channelId,
+        bots.map((row) => row.agentId),
+      ).then(
+        () => true,
+        (error: unknown) => {
+          log.warn("project_deletion_folder_not_removed", {
+            channel: channelId,
+            reason: describeFailure(error),
+          });
+          return false;
+        },
+      );
+      // The mark stays, and the clock asks again: the rows are the only thing that names the folder.
+      if (!removed) return null;
+    }
     for (const threadId of threadIds) {
       await endApprovals?.(threadId, by ?? "system").catch((error: unknown) => {
         log.warn("project_deletion_approvals_not_ended", {
@@ -412,6 +453,7 @@ export function createProjectDeletion(dependencies: {
     });
 
     if (counts.channels) {
+      dependencies.forgotten?.(channelId);
       await auditStore
         ?.insert({
           eventType: "project.deleted",

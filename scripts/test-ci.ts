@@ -2685,6 +2685,17 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * that is not the server's own fact is not a deletion) and one fewer in `search.test.tsx`, whose
  * table of refusals is gone with its test.
  *
+ * RAISED 2026-10-11 FOR A PROJECT'S FOLDER, `server` from 4187 to 4193 and `root` from 946 to 1034
+ * (record §3, piece 4-2's second part), by exactly what it brought. Root: sixty-three in
+ * `file-scope.test.ts`, the rule as a table — what a scope reaches, where a write goes, what a
+ * listing shows, what a header names, what an id may be — and twenty-five in
+ * `project-folder-wire.test.ts`, the server's real gateway against the computer's real routes on
+ * a real folder. Server: five in `conversation-deleting.integration.test.ts` (the folder removed
+ * after the turn's end and before the rows; one that could not be removed keeps the mark; which
+ * conversations are projects, loaded, asked and told) and one in
+ * `attachments.integration.test.ts`. By hand: 946 and 63 is 1009, and 25 is 1034; 4187 and 6 is
+ * 4193. (agent-computer's thirty are in its own note below.)
+ *
  * RAISED 2026-10-10 FOR A DELETION THAT LEAVES NOTHING BEHIND, `server` from 4182 to 4187 and `app`
  * from 2256 to 2257 (the review of piece 4-5). Three in `conversation-deleting.integration.test.ts`
  * (a turn that has not ended is not deleted under; a failed deletion is tried again and two at
@@ -2731,7 +2742,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4187, roots: ["server"] },
+  { name: "server", floor: 4193, roots: ["server"] },
   { name: "app", floor: 2259, roots: ["app"] },
   {
     name: "agent-computer",
@@ -2744,12 +2755,18 @@ const GROUPS: readonly {
      * `background-browsers.test.ts`, the computer itself with real browsers. By hand: 537 and 38
      * is 575, and 6 is 581. (Said here and not at the end of the note above: that end is where
      * every other piece's note goes, and two people adding to one line is a conflict a day.)
+     *
+     * RAISED 2026-10-11 FOR A PROJECT'S FOLDER, from 581 to 611 (record §3, piece 4-2's second
+     * part): twenty-eight in `workspace-scope.test.ts`, the folder holding to the rule at every
+     * way in and through a link, and two in `korean-sites.test.ts`, a real download landing in
+     * the project's folder and one nobody's run asked for not being kept. 581 and 28 is 609, and
+     * 2 is 611.
      */
-    floor: 581,
+    floor: 611,
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 946, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 1034, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

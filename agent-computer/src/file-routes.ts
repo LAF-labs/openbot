@@ -8,6 +8,11 @@
  * the two operations a Bot needs to keep notes between turns. Nothing here decides whether a Bot
  * MAY touch a path: the gateway in front of this process does that.
  */
+import {
+  FILE_SCOPE_HEADER,
+  fileScopeOf,
+  isProjectFolderId,
+} from "../../shared/file-scope";
 import { FILE_PATH_HEADER } from "../../shared/workspace-files";
 import type { BotRoute } from "./computer";
 import { fileFailure } from "./failures";
@@ -204,6 +209,36 @@ export const putFile: BotRoute = async ({ request }, { workspace }) => {
         declaredLengthOf(request.headers),
       ),
     );
+  } catch (error) {
+    return fileFailure(error);
+  }
+};
+
+/**
+ * `POST /files/project/remove`: a project's folder, and everything in it, gone. What deleting the
+ * project does last on this side (`server/src/channels/deleting.ts`).
+ *
+ * BY THE PROJECT'S ID, NEVER A PATH, AND ONLY AT THE PERSON'S OWN DOOR: no call a Bot's run makes
+ * says `person`, so nothing a Bot can be talked into reaches this.
+ */
+export const removeProjectFolder: BotRoute = async (
+  { request, session },
+  { workspace },
+) => {
+  if (fileScopeOf(request.headers.get(FILE_SCOPE_HEADER))?.kind !== "person") {
+    return invalid("fileScope");
+  }
+  const body = await bodyOf<{ projectId?: unknown }>(request);
+  if (!isProjectFolderId(body?.projectId)) return invalid("projectId");
+  // A download its last page is still sending would make the folder again, for nothing to remove.
+  if (
+    session.fileScope?.kind === "project" &&
+    session.fileScope.id === body.projectId
+  ) {
+    delete session.fileScope;
+  }
+  try {
+    return json({ removed: await workspace.removeProject(body.projectId) });
   } catch (error) {
     return fileFailure(error);
   }

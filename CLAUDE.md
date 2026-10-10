@@ -252,6 +252,18 @@ though it had worked. The live-screen socket is the one exception and only
 because a websocket upgrade carries no custom header: it accepts `?bot=`, and
 the header still wins.
 
+### A file call says whose files it touches
+
+A project has a folder of its own in the Bot's folder, `projects/<channel id>/`, and the rule for
+who reaches what is `shared/file-scope.ts`, once. Every file call to the computer carries
+`x-openbot-file-scope` — `main`, `project:<id>`, or `person` — and the computer **refuses a file
+call without it** (400 `laf:request_invalid`, `fileScope`), for the reason it refuses a call with no
+Bot: guessed as the main folder's, a project's file lands where nothing deletes it and the call
+answers as though it had worked. The server places a project's write in its folder before the
+boundary judges it; the computer only refuses and never rewrites a path. A new path that files
+something for a run — a tool, a download, a result — takes the scope from the run's conversation
+(`channels/thread-projects.ts`), never a default.
+
 ### Korean is not optional
 
 Every user-facing string goes through `t()` from `@/lib/i18n`, English as the

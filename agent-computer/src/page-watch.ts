@@ -162,9 +162,22 @@ export function watchPage(
   });
 
   page.on("download", (download) => {
+    /*
+     * INTO THE FOLDER OF THE LAST RUN TO SAY WHOSE FILES IT WRITES, as that stands when the file
+     * starts to arrive (`shared/file-scope.ts`, `sessions.ts`). Where none has: the file is not
+     * kept, and that is said — put in the main folder on a guess, a project's download would
+     * outlive the project.
+     */
+    const scope = session.fileScope;
+    if (!scope) {
+      note(session, { code: "laf:download_failed" });
+      log.error("download_not_saved", { bot: botId, reason: "no file scope" });
+      void Promise.resolve(download.delete()).catch(() => undefined);
+      return;
+    }
     void landDownload(
       download,
-      workspace,
+      workspace.within(scope),
       (entry) => note(session, entry),
       (reason) => log.error("download_not_saved", { bot: botId, reason }),
     );

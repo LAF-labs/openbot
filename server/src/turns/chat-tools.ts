@@ -1377,13 +1377,14 @@ export function createChatTools(deps: ChatToolsDeps) {
      */
     const fileCardRefused = async (
       args: Record<string, unknown>,
+      callId: string,
     ): Promise<LoopOutcome | null> => {
       const gateway = deps.gateway;
       if (!gateway) return refusal("laf:tool_unknown");
       const path = typeof args.path === "string" ? args.path.trim() : "";
       if (!path) return invalidArguments();
       try {
-        await gateway.fileFacts(botId, path);
+        await gateway.fileFacts(botId, path, actorFor(callId));
         return null;
       } catch (error) {
         return computerFailure(error);
@@ -1442,7 +1443,7 @@ export function createChatTools(deps: ChatToolsDeps) {
         return refuse(FUNCTION_NOT_GRANTED, { function: functionName });
       }
       if (name === FILE_CARD) {
-        const refused = await fileCardRefused(args);
+        const refused = await fileCardRefused(args, call.id);
         if (refused) return refused;
       }
       if (!GALLERY_DECISIONS.has(name)) {

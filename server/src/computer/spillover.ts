@@ -3,6 +3,12 @@ import {
   spillPath,
   TOOL_RESULT_CUT,
 } from "../../../shared/spillover";
+import {
+  type FileScope,
+  MAIN_SCOPE,
+  placedForWrite,
+  projectFolder,
+} from "../../../shared/file-scope";
 import { log } from "../log";
 import type { WriteFileInput, WriteFileResult } from "./schema";
 
@@ -42,7 +48,11 @@ import type { WriteFileInput, WriteFileResult } from "./schema";
 
 /** The one method this needs of the computer client, so a test can hand in a recorder. */
 export type ResultFiler = {
-  forBot(botId: string): {
+  forBot(
+    botId: string,
+    inBrowser?: string | null,
+    as?: FileScope,
+  ): {
     writeFile(input: WriteFileInput): Promise<WriteFileResult>;
   };
 };
@@ -52,9 +62,17 @@ export type ResultSpill = {
    * What the endpoint is shown for one tool result: the text itself while it is within the bound,
    * the head and the path when it is over — the same answer every time it is asked.
    */
-  forModel(botId: string, toolCallId: string, text: string): string;
+  forModel(
+    botId: string,
+    toolCallId: string,
+    text: string,
+    /** The conversation the result is in: a project's is filed in the project's own folder. */
+    threadId?: string,
+  ): string;
   /** Resolves once every write started so far has landed or failed. For tests and shutdown. */
   settled(): Promise<void>;
+  /** The same, for the writes into one project's folder: what deleting the project waits on. */
+  settledFor(projectId: string): Promise<void>;
 };
 
 /** How many filed results are remembered before the oldest are forgotten (and refiled if seen). */
@@ -65,7 +83,11 @@ const RETRY_AFTER_MS = 60_000;
 
 export function createResultSpill(
   client: ResultFiler,
-  options: { log?: (line: string) => void } = {},
+  options: {
+    log?: (line: string) => void;
+    /** Whose files a thread's run may touch (`channels/thread-projects.ts`). Absent: the main folder's. */
+    scopeOfThread?: (threadId: string | undefined) => FileScope;
+  } = {},
 ): ResultSpill {
   const say =
     options.log ??
@@ -75,9 +97,15 @@ export function createResultSpill(
   const inFlight = new Map<string, Promise<void>>();
   const failedAt = new Map<string, number>();
 
-  const file = (key: string, botId: string, path: string, text: string) => {
+  const file = (
+    key: string,
+    botId: string,
+    path: string,
+    text: string,
+    scope: FileScope,
+  ) => {
     const write = client
-      .forBot(botId)
+      .forBot(botId, undefined, scope)
       .writeFile({ path, contents: text })
       .then(() => {
         onFile.add(key);
@@ -100,21 +128,38 @@ export function createResultSpill(
   };
 
   return {
-    forModel(botId, toolCallId, text) {
+    forModel(botId, toolCallId, text, threadId) {
       if (text.length <= TOOL_RESULT_CUT) return text;
-      const path = spillPath(toolCallId);
+      /*
+       * A PROJECT'S RESULT IS FILED IN THE PROJECT'S FOLDER, and the line that closes the cut
+       * names it there: the whole of a result is the conversation's own words, and it goes when
+       * the project does (`shared/file-scope.ts`). The same place every time it is asked — a
+       * thread is a project's for as long as it exists.
+       */
+      const scope = options.scopeOfThread?.(threadId) ?? MAIN_SCOPE;
+      const path =
+        placedForWrite(scope, spillPath(toolCallId)) ?? spillPath(toolCallId);
       const key = `${botId}\n${path}`;
       const lastFailure = failedAt.get(key);
       const coolingDown =
         lastFailure !== undefined && Date.now() - lastFailure < RETRY_AFTER_MS;
       if (!onFile.has(key) && !inFlight.has(key) && !coolingDown) {
-        file(key, botId, path, text);
+        file(key, botId, path, text, scope);
       }
       return previewOf(text, path);
     },
 
     async settled() {
       await Promise.all([...inFlight.values()]);
+    },
+
+    async settledFor(projectId) {
+      const folder = `${projectFolder(projectId)}/`;
+      await Promise.all(
+        [...inFlight]
+          .filter(([key]) => (key.split("\n")[1] ?? "").startsWith(folder))
+          .map(([, write]) => write),
+      );
     },
   };
 }

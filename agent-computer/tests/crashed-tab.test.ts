@@ -220,6 +220,7 @@ async function call(
       "content-type": "application/json",
       "x-openbot-computer-token": TOKEN,
       "x-openbot-bot-id": bot,
+      "x-openbot-file-scope": "main",
       ...(look ? { [LOOK_HEADER]: look } : {}),
     },
   });

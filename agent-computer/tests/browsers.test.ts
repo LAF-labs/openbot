@@ -331,6 +331,7 @@ describe("the door", () => {
             "content-type": "application/json",
             "x-openbot-computer-token": TOKEN,
             "x-openbot-bot-id": BOT,
+            "x-openbot-file-scope": "main",
             ...headers,
           },
           body: "{}",

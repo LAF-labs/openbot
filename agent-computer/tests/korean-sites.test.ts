@@ -74,15 +74,18 @@ async function freePort(): Promise<number> {
 
 async function call(
   path: string,
-  init?: RequestInit & { bot?: string | null },
+  init?: RequestInit & { bot?: string | null; scope?: string | null },
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const bot = init?.bot === undefined ? BOT : init.bot;
+  // Whose files the call may touch (`shared/file-scope.ts`): the main conversation's, unless said.
+  const scope = init?.scope === undefined ? "main" : init.scope;
   const response = await fetch(`${base}${path}`, {
     ...init,
     headers: {
       "content-type": "application/json",
       "x-openbot-computer-token": TOKEN,
       ...(bot ? { "x-openbot-bot-id": bot } : {}),
+      ...(scope ? { "x-openbot-file-scope": scope } : {}),
     },
   });
   return {
@@ -430,6 +433,77 @@ describe.skipIf(!HAS_BROWSER)("the Bot's browser on a Korean page", () => {
     // And the Bot can find it the way it finds anything else it saved.
     const listed = await post("/files/list", {});
     expect(JSON.stringify(listed.body)).toContain(DOWNLOAD_NAME);
+  }, 40_000);
+
+  test("a download in a project's run lands in the project's own folder, where the main conversation does not find it", async () => {
+    const asProject = (path: string, payload: unknown) =>
+      call(path, {
+        method: "POST",
+        body: JSON.stringify(payload),
+        scope: "project:channel_dl",
+      });
+    await asProject("/navigate", { url: fixture?.url });
+    const shot = (await asProject("/snapshot", {})).body as Awaited<
+      ReturnType<typeof snapshot>
+    >;
+    const clicked = await asProject("/click", {
+      ref: refFor(shot.elements, "정산내역 내려받기"),
+      snapshotId: shot.snapshotId,
+    });
+    const note = await waitForNote("laf:downloaded", clicked.body);
+    expect(note?.path).toBe(`projects/channel_dl/downloads/${DOWNLOAD_NAME}`);
+    expect(
+      await readFile(
+        join(
+          workspaceDir,
+          "projects",
+          "channel_dl",
+          "downloads",
+          DOWNLOAD_NAME,
+        ),
+        "utf8",
+      ),
+    ).toBe(DOWNLOAD_BODY);
+
+    const forMain = await post("/files/list", {});
+    expect(JSON.stringify(forMain.body)).not.toContain("channel_dl");
+    const forProject = await asProject("/files/list", {});
+    expect(JSON.stringify(forProject.body)).toContain(
+      `projects/channel_dl/downloads/${DOWNLOAD_NAME}`,
+    );
+  }, 40_000);
+
+  test("a download nobody's run asked for is not kept, and that is said", async () => {
+    const before = JSON.stringify((await post("/files/list", {})).body);
+    // Told a run is over (as after one a person's value went into): nobody's, until a call says.
+    await post("/run/ended", {});
+    const unsaid = (path: string, payload: unknown) =>
+      call(path, {
+        method: "POST",
+        body: JSON.stringify(payload),
+        scope: null,
+      });
+    await unsaid("/navigate", { url: fixture?.url });
+    const shot = (await unsaid("/snapshot", {})).body as Awaited<
+      ReturnType<typeof snapshot>
+    >;
+    const clicked = await unsaid("/click", {
+      ref: refFor(shot.elements, "정산내역 내려받기"),
+      snapshotId: shot.snapshotId,
+    });
+    let note = notesOf(clicked.body).find(
+      (entry) => entry.code === "laf:download_failed",
+    );
+    for (let attempt = 0; !note && attempt < 40; attempt += 1) {
+      await Bun.sleep(100);
+      const read = await call("/read", { scope: null });
+      note = notesOf(read.body).find(
+        (entry) => entry.code === "laf:download_failed",
+      );
+    }
+    expect(note?.code).toBe("laf:download_failed");
+    // Nothing landed anywhere: put in the main folder on a guess, it would outlive its project.
+    expect(JSON.stringify((await post("/files/list", {})).body)).toBe(before);
   }, 40_000);
 
   test("a workspace file can be handed to a file input", async () => {

@@ -16,6 +16,7 @@ import {
   inlineImageTypeOf,
   isHiddenPath,
 } from "../../../../shared/workspace-files";
+import { type FileScope, PERSON_SCOPE } from "../../../../shared/file-scope";
 import type { AuditStore } from "../../audit";
 import type { ComputerClient } from "../client";
 import type { FileFacts, ListFilesResult } from "../schema";
@@ -37,7 +38,9 @@ export type HandedFile = {
 
 export function createPersonFiles(deps: {
   /** The computer, addressed as the Bot whose folder it is. See `createComputerGateway`. */
-  as: (computerId: string, botId?: string) => ComputerClient;
+  as: (computerId: string, botId?: string, scope?: FileScope) => ComputerClient;
+  /** Whose files a turn's actor may touch (`gateway.ts`, `fileScopeOf`). */
+  scopeOf: (actor: ActionActor) => Promise<FileScope>;
   auditStore: AuditStore;
 }) {
   const { as, auditStore } = deps;
@@ -55,7 +58,10 @@ export function createPersonFiles(deps: {
      * A read, so no row.
      */
     async personFiles(botId: string, path?: string): Promise<ListFilesResult> {
-      const listed = await as(botId).listFiles(path ? { path } : {});
+      // The person's own door, here and below: the whole folder, every project's files in it.
+      const listed = await as(botId, undefined, PERSON_SCOPE).listFiles(
+        path ? { path } : {},
+      );
       return {
         ...listed,
         entries: listed.entries.filter((entry) => !isHiddenPath(entry.path)),
@@ -68,9 +74,18 @@ export function createPersonFiles(deps: {
      * Asked by the file card before it draws a button, and by a turn before it tells the Bot its
      * card is on screen (`turns/chat-tools.ts`) — the runtime checking a fact, not the Bot reading
      * a file, which is why that check is not a `computer_read_file` in the trail either.
+     *
+     * AS WHOEVER IS ASKING. The card's own question is the person's. A turn's is its
+     * conversation's (`during`): asked as the person, a Bot in one project could put up a card for
+     * another project's file and learn from the answer that the file is there.
      */
-    fileFacts(botId: string, path: string): Promise<FileFacts> {
-      return as(botId).statFile(path);
+    async fileFacts(
+      botId: string,
+      path: string,
+      during?: ActionActor,
+    ): Promise<FileFacts> {
+      const scope = during ? await deps.scopeOf(during) : PERSON_SCOPE;
+      return as(botId, undefined, scope).statFile(path);
     },
 
     /**
@@ -97,7 +112,9 @@ export function createPersonFiles(deps: {
        * `workspacePathOf`). So the download is asked for, named and recorded in that spelling too.
        */
       const file = workspacePathOf(path) ?? path;
-      const bytes = await as(computerId, botId).downloadFile(file);
+      const bytes = await as(computerId, botId, PERSON_SCOPE).downloadFile(
+        file,
+      );
       const name = fileNameOf(file) || "file";
       const drawnAs = options.preview ? inlineImageTypeOf(name, bytes) : null;
       if (!drawnAs) {

@@ -20,6 +20,7 @@
  * A factory taking its root as an argument rather than reading the environment, so the confinement
  * can be tested against a temporary directory instead of being taken on trust.
  */
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createReadStream } from "node:fs";
 import {
   copyFile,
@@ -35,6 +36,13 @@ import {
 } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { ATTACHMENT_MAX_BYTES } from "../../shared/attachments";
+import {
+  type FileScope,
+  isProjectFolderId,
+  projectFolder,
+  scopeLists,
+  scopeRefusal,
+} from "../../shared/file-scope";
 import { HANDOFF_MAX_BYTES } from "../../shared/workspace-files";
 import { sliceOnCharacters } from "../../shared/sound-text";
 
@@ -226,6 +234,26 @@ export function createWorkspace(
   rootPath: string,
   limits: WorkspaceLimits = DEFAULT_WORKSPACE_LIMITS,
 ) {
+  /*
+   * WHOSE CALL THIS IS (`shared/file-scope.ts`): the main conversation's, a project's, the
+   * person's. Carried beside the call rather than as an argument of every function below, so that
+   * the one place a path is decided (`resolvePath`) reads it and nothing between has to remember
+   * to pass it on. `within(scope)` is how a caller says it; the doors do, for every request
+   * (`file-routes.ts`), and refuse a request that names none. Called with none — this object used
+   * directly, as the tests of its limits do — a path is confined to the folder and nothing more,
+   * as it always was.
+   */
+  const asking = new AsyncLocalStorage<FileScope>();
+  const refusedFor = (path: string, touch: "read" | "write"): void => {
+    const scope = asking.getStore();
+    if (!scope || scopeRefusal(scope, path, touch) === null) return;
+    throw new WorkspacePathError(
+      scope.kind === "project" && touch === "write"
+        ? `A project's files are written in its own folder, ${projectFolder(scope.id)}/.`
+        : "That file is another project's. Each project's files are its own.",
+    );
+  };
+
   /**
    * Turn a Bot's requested path into a real one inside the workspace, or refuse.
    *
@@ -285,6 +313,9 @@ export function createWorkspace(
       );
     }
 
+    // By the path as it was asked for: the spelling the server placed and the boundary judged.
+    refusedFor(wanted, forWrite ? "write" : "read");
+
     const root = await realpath(rootPath);
     const target = resolve(root, wanted);
     assertInside(root, target);
@@ -304,6 +335,19 @@ export function createWorkspace(
       realAnchor = await nearestExistingAncestor(root, anchor);
     }
     assertInside(root, realAnchor, wanted);
+    /*
+     * AND BY WHERE IT REALLY IS. A link in the folder — a script in the workbench can make one —
+     * that points into another project's folder is that project's file under a name of this one's.
+     * As a read whichever it is: what is asked of the place a link leads is only whether it is
+     * somebody else's. (A project's first write has its anchor at `projects/` or the root, which
+     * a project may read and not write, so asking "write" here would refuse every first write.)
+     *
+     * WHAT THAT LEAVES: a link in a project's folder to the Bot's own folder lets that project
+     * write there. Nothing a Bot is offered makes a link — only the workbench could, and it is
+     * offered to nobody — so this is closed when the workbench is: a write whose real anchor is
+     * neither its own folder, `projects/`, nor the root is then refused as a write.
+     */
+    refusedFor(relative(root, realAnchor).split(sep).join("/"), "read");
 
     // For a write, return the full lexical target. It is already proven contained lexically, and the
     // deepest existing directory is proven contained after symlinks, so `mkdir -p` can only create the
@@ -433,7 +477,13 @@ export function createWorkspace(
     }
 
     const name = safeDownloadName(suggested);
-    const directory = resolve(await realpath(rootPath), DOWNLOADS_DIRECTORY);
+    // A project's downloads are its own: in its folder, and gone with it.
+    const scope = asking.getStore();
+    const downloads =
+      scope?.kind === "project"
+        ? `${projectFolder(scope.id)}/${DOWNLOADS_DIRECTORY}`
+        : DOWNLOADS_DIRECTORY;
+    const directory = resolve(await realpath(rootPath), downloads);
     await mkdir(directory, { recursive: true });
 
     const dot = name.lastIndexOf(".");
@@ -448,7 +498,7 @@ export function createWorkspace(
 
     // Through the same confinement as everything else. The name is already safe; this is the layer
     // that stays true if it ever is not.
-    const relativePath = `${DOWNLOADS_DIRECTORY}/${chosen}`;
+    const relativePath = `${downloads}/${chosen}`;
     const full = await resolvePath(relativePath, true);
     try {
       await copyLanded(landed, full);
@@ -459,7 +509,7 @@ export function createWorkspace(
     return { path: relativePath, bytes: source.size };
   }
 
-  return {
+  const direct = {
     resolvePath,
 
     /**
@@ -615,6 +665,7 @@ export function createWorkspace(
         requested === "." || requested.trim() === ""
           ? root
           : await resolvePath(requested, false);
+      const scope = asking.getStore();
 
       const info = await stat(start).catch(() => null);
       if (!info) {
@@ -641,6 +692,8 @@ export function createWorkspace(
           const full = `${dir}/${item.name}`;
           // Relative to the workspace root, because that is the only form a Bot may name in a request.
           const shown = full.slice(root.length + 1);
+          // Not listed, and not walked into: another project's folder is not this call's to see.
+          if (scope && !scopeLists(scope, shown)) continue;
           if (item.isDirectory()) {
             entries.push({ path: shown, kind: "folder" });
             await walk(full);
@@ -819,7 +872,41 @@ export function createWorkspace(
       const free = await freeBytes().catch(() => null);
       return free === null || free >= spareBytes;
     },
+
+    /**
+     * Remove a project's folder and everything in it. What deleting the project does
+     * (`server/src/channels/deleting.ts`), and the only removal there is but `clear`: BY THE
+     * PROJECT'S ID, NEVER BY A PATH, so nothing that can name a file can aim this at one.
+     * Answers whether there was a folder.
+     */
+    async removeProject(id: string): Promise<boolean> {
+      if (!isProjectFolderId(id)) {
+        throw new WorkspacePathError("That is not a project's id.");
+      }
+      const folder = resolve(await realpath(rootPath), projectFolder(id));
+      const was = await stat(folder).catch(() => null);
+      await rm(folder, { recursive: true, force: true });
+      return was !== null;
+    },
   };
+
+  type Scoped = typeof direct & { within: (scope: FileScope) => Scoped };
+  /** The same folder, asked as `scope`: every path below is that scope's to reach or is refused. */
+  const within = (scope: FileScope): Scoped => {
+    const scoped = { within } as Record<string, unknown>;
+    for (const [name, member] of Object.entries(direct)) {
+      scoped[name] =
+        typeof member === "function"
+          ? (...given: unknown[]) =>
+              asking.run(scope, () =>
+                (member as (...all: unknown[]) => unknown)(...given),
+              )
+          : member;
+    }
+    return scoped as Scoped;
+  };
+
+  return { ...direct, within };
 }
 
 export type Workspace = ReturnType<typeof createWorkspace>;

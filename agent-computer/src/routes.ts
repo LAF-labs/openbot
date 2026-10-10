@@ -38,9 +38,11 @@ import {
   listFiles,
   putFile,
   readFile,
+  removeProjectFolder,
   statFile,
   writeFile,
 } from "./file-routes";
+import { FILE_SCOPE_HEADER, fileScopeOf } from "../../shared/file-scope";
 import { withoutFilledValues } from "./filled-values";
 import type { StreamData } from "./live-screen";
 import { fillLogin, whereFields } from "./login-routes";
@@ -67,6 +69,7 @@ const BOT_ROUTES = new Map<string, BotRoute>([
   ["POST /navigate", navigate],
   ["GET /screenshot", screenshot],
   ["POST /files/read", readFile],
+  ["POST /files/project/remove", removeProjectFolder],
   ["POST /files/list", listFiles],
   ["POST /files/write", writeFile],
   ["POST /files/stat", statFile],
@@ -205,6 +208,28 @@ export function computerFetch(browsers: Browsers) {
       try {
         const session = computer.sessions.sessionFor(botId);
         /*
+         * WHOSE FILES THIS CALL MAY TOUCH (`shared/file-scope.ts`): the main conversation's, a
+         * project's, the person's. A call that touches a file and does not say is REFUSED — taken
+         * for the main conversation's, a project's file would be written where nothing deletes it
+         * and answered as though it had worked. And the folder a route is handed is that scope's:
+         * no route below can reach a path the scope may not.
+         *
+         * REMEMBERED FOR THE BROWSER, because a download lands when the page says so and not when
+         * a call does: it goes where the last run to say so writes (`page-watch.ts`). Until
+         * another call says otherwise — the server tells this side a run is over only when a
+         * person's value was put in (`/run/ended`), so most runs' scope stands until the next
+         * run's first call, and a file its page sends late is still that run's. The person's own
+         * door holds no browser.
+         */
+        const said = request.headers.get(FILE_SCOPE_HEADER);
+        const scope = fileScopeOf(said);
+        const touchesFiles =
+          url.pathname.startsWith("/files/") || url.pathname === "/upload";
+        if ((said !== null || touchesFiles) && !scope) {
+          return invalid("fileScope");
+        }
+        if (scope && scope.kind !== "person") session.fileScope = scope;
+        /*
          * WHERE THE PERSON IS, BEFORE ANYTHING OPENS A PAGE. The server names its Bot's owner's zone
          * and coarse place on every call (whereabouts.ts), so the browser this call may be about to
          * start — or the page it is about to load — is on their clock and in their place, not the
@@ -234,7 +259,11 @@ export function computerFetch(browsers: Browsers) {
         );
         const answer = await route(
           { request, url, botId, session },
-          { ...computer, profiles },
+          {
+            ...computer,
+            profiles,
+            ...(scope ? { workspace: computer.workspace.within(scope) } : {}),
+          },
         );
         /*
          * A CALL THAT FAILED ON A DEAD TAB LETS GO OF THAT TAB. A renderer's death is heard as an

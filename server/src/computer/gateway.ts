@@ -47,6 +47,12 @@
  * Every name another directory imports from here is still exported from here.
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
+import {
+  type FileScope,
+  MAIN_SCOPE,
+  projectScope,
+} from "../../../shared/file-scope";
 import type { LoginVault } from "../logins/store";
 import type { AuditStore } from "../audit";
 import { type ApprovalRegistry, createApprovalRegistry } from "./approvals";
@@ -68,6 +74,8 @@ import {
   createStandingApprovalStore,
   type StandingApprovalStore,
 } from "./standing-approvals";
+
+import type { ActionActor } from "./gateway/caller";
 
 export {
   type ActionActor,
@@ -146,6 +154,13 @@ export type ComputerGatewayOptions = {
   logins?: Pick<LoginVault, "forOrigin" | "open" | "used"> &
     Partial<Pick<LoginVault, "save" | "acceptsOrigin">>;
   /**
+   * The project a conversation is, by its thread: the channel's id where its kind is `project`,
+   * null for the main conversation's thread or one that is no conversation's
+   * (`channels/thread-projects.ts`, which keeps the answer). What decides whose folder a run's
+   * files go in. Absent — a test of something else — every run is the main folder's.
+   */
+  projectOf?: (threadId: string) => Promise<string | null>;
+  /**
    * The high-risk check (`high-risk.ts`) and where it reads the owner's task from. Absent, nothing
    * is escalated — the gateway behaves as it did before the check existed.
    */
@@ -183,15 +198,29 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
    * main browser's is the Bot's id alone, which is what every caller passed before there were
    * others, so a call that names only a Bot is the main browser's as it always was.
    */
-  const as = (computerId: string, botId?: string) => {
+  /*
+   * AND AS WHOSE FILES (`shared/file-scope.ts`): the scope of the act that is going on, which
+   * `govern` reads from its actor and holds for as long as the act runs — so a call made by any
+   * module below says it without being handed it. Outside an act there is none, and a caller
+   * that touches files says its own (`person-files.ts`: the person's own door).
+   */
+  const acting = new AsyncLocalStorage<FileScope>();
+  const as = (computerId: string, botId?: string, scope?: FileScope) => {
+    const whose = scope ?? acting.getStore();
     // Where the caller says which Bot it is acting as, that is who is addressed, and a browser
     // the id names has to be that Bot's (`browserOf`). Where it hands over the id alone — a look
     // at the page — the id says both.
     if (botId !== undefined) {
-      return client.forBot(botId, browserOf(computerId, botId));
+      return client.forBot(botId, browserOf(computerId, botId), whose);
     }
     const named = computerOf(computerId);
-    return client.forBot(named.botId, named.browser);
+    return client.forBot(named.botId, named.browser, whose);
+  };
+  /** No thread — a routine, a check with no conversation — is the main folder's. */
+  const fileScopeOf = async (actor: ActionActor): Promise<FileScope> => {
+    if (!actor.threadId || !options.projectOf) return MAIN_SCOPE;
+    const projectId = await options.projectOf(actor.threadId);
+    return projectId ? projectScope(projectId) : MAIN_SCOPE;
   };
 
   const snapshots = createSnapshotCache();
@@ -211,6 +240,10 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
     standing: options.standing ?? createStandingApprovalStore(),
     ...(options.autoReview ? { autoReview: options.autoReview } : {}),
     snapshots,
+    fileScopes: {
+      of: fileScopeOf,
+      during: (scope, work) => acting.run(scope, work),
+    },
     ...(options.highRisk
       ? {
           highRisk: {
@@ -231,7 +264,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
       withoutSecrets: secrets.withoutSecrets,
     }),
     ...createHandovers({ client, as, auditStore, secrets, snapshots }),
-    ...createPersonFiles({ as, auditStore }),
+    ...createPersonFiles({ as, scopeOf: fileScopeOf, auditStore }),
     requestSecret: secrets.requestSecret,
     supplySecret: secrets.supplySecret,
     /** Whether a person's value is being held in this Bot's browser. See `gateway/secrets.ts`. */

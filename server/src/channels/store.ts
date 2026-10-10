@@ -29,6 +29,11 @@ export function createChannelStore(
    * roster query is authoritative and a client that hears nothing refetches. See `events.ts`.
    */
   announce?: AnnounceChannelActivity,
+  /**
+   * Told of a project once it has been made: what keeps "which conversations are projects" whole
+   * without asking the database (`thread-projects.ts`). Absent in tests of something else.
+   */
+  projectMade?: (channelId: string, threadId: string) => void,
 ): ChannelStore {
   const frames = createFrameStore(database);
   return {
@@ -38,13 +43,16 @@ export function createChannelStore(
         actor,
         agentIds,
       ),
-    createProject: (actor, agentId, name) =>
-      createProject(
+    createProject: async (actor, agentId, name) => {
+      const made = await createProject(
         { database, profileStore, threadIdentity },
         actor,
         agentId,
         name,
-      ),
+      );
+      projectMade?.(made.id, made.threadId);
+      return made;
+    },
     get: (actor, channelId) => readChannel(database, actor, channelId),
     list: (actor) => listChannels(database, actor),
     setLastRead: (actor, channelId, at, options) =>
