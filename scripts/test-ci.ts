@@ -2677,6 +2677,17 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * computer's own door and its own count of places, over a socket.
  * By hand: 4084 and 5 is 4089, and 35 is 4124; 940 and 6 is 946.
  *
+ * RAISED 2026-10-10 FOR THE LANE THAT IS A BROWSER'S, `server` from 4158 to 4182 (record §5, piece
+ * 5-4), by exactly the twenty-four it brought. Five in `turn-engine.integration.test.ts`, where
+ * three became eight: a turn that never uses the browser done while a routine has it, the call
+ * that uses it being what waits (and the wait said), a free browser taken without a word, the
+ * browser kept to the turn's end across three conversations of one Bot's, and a turn that waited
+ * on a person without having browsed taking nothing afterwards. Four in `bot-lane.test.ts`: two
+ * browsers of one Bot's not waiting for each other, `busy`, and which of the computer's tools are
+ * a browser's. Fifteen in `chat-tools.test.ts`: one a tool of the computer's — asked for on a
+ * page, never for the folder, and a call refused the browser never reaching the computer — and
+ * the call going out after the asking.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2705,7 +2716,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4158, roots: ["server"] },
+  { name: "server", floor: 4182, roots: ["server"] },
   { name: "app", floor: 2256, roots: ["app"] },
   {
     name: "agent-computer",
