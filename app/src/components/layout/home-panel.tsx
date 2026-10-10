@@ -2,6 +2,7 @@ import { IconHome } from "@tabler/icons-react";
 import type { QueryKey } from "@tanstack/react-query";
 import { type KeyboardEvent, type PointerEvent, useId, useRef } from "react";
 import { BotDay } from "@/components/app-sidebar/bot-day";
+import { HomeWidgets } from "@/components/layout/home-widgets";
 import { SectionBoundary } from "@/components/layout/section-boundary";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -30,6 +31,10 @@ import { cn } from "@/lib/utils";
  * and that has to be answered: there it stood under the conversation's row on every screen,
  * whether or not anybody wanted it, and could not be put away. Here one press folds it, the fold
  * is remembered, and the width is the person's.
+ *
+ * UNDER 오늘 ARE 소식 · 목표 · 만든 것 (piece 3-4, `home-widgets.tsx`): the other three screens that
+ * already behaved like panels, each the top three rows of its screen under a title that leads to
+ * the whole of it.
  *
  * THE WIDTH IS ONE CSS VARIABLE ON THE APP'S FRAME (`--home-panel-width`, set in
  * `routes/_authed/_app.tsx`), read by this panel and by the top row's left cell, so the screen's
@@ -239,6 +244,7 @@ function HomeToday() {
           />
         </section>
       ))}
+      <HomeWidgets />
     </div>
   );
 }

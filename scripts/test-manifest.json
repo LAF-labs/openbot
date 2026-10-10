@@ -157,6 +157,7 @@
   "app/tests/history-unreadable.test.tsx",
   "app/tests/home-frame.test.tsx",
   "app/tests/home-panel.test.ts",
+  "app/tests/home-widgets.test.tsx",
   "app/tests/i18n-coverage.test.ts",
   "app/tests/ideas.test.ts",
   "app/tests/josa.test.ts",

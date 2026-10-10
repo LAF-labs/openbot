@@ -2572,6 +2572,14 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * with the conversation's least beside it, and the narrowing where a window cannot spare one.
  * By hand: 2146 and 12 is 2158, and 8 is 2166, and 1 is 2167.
  *
+ * RAISED 2026-10-10 WITH 홈'S FIRST WIDGETS, `app` from 2167 to 2171 (record §1, piece 3-4), by
+ * exactly the four of the new `home-widgets.test.tsx`: 소식 · 목표 · 만든 것 under 오늘 in one order,
+ * each title the way to its screen; a widget that reads and never marks a post seen; a thing the
+ * Bot made opening the conversation it was made in; and what a deployment does not have not
+ * drawn, with a read that failed saying so. The run-end test in `first-screen.test.tsx` holds one
+ * thing more — that what the Bot made is asked for again — and is the same test.
+ * By hand: 2167 and 4 is 2171.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2601,7 +2609,7 @@ const GROUPS: readonly {
   processes?: number;
 }[] = [
   { name: "server", floor: 4012, roots: ["server"] },
-  { name: "app", floor: 2167, roots: ["app"] },
+  { name: "app", floor: 2171, roots: ["app"] },
   {
     name: "agent-computer",
     floor: 537,

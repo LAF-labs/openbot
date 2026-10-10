@@ -33,6 +33,7 @@ import { channelKeys, channelListQueryOptions } from "@/lib/channels/queries";
 import { feedKeys, feedUnseenQueryOptions } from "@/lib/feed/queries";
 import { goalKeys, goalsQueryOptions } from "@/lib/goals/queries";
 import { t } from "@/lib/i18n";
+import { madeKeys } from "@/lib/made/queries";
 import { settledOf, useReading } from "@/lib/reading";
 
 /**
@@ -111,6 +112,8 @@ function useRefreshWhenARunEnds(workingIds: string): void {
       void queryClient.invalidateQueries({ queryKey: channelKeys.list() });
       void queryClient.invalidateQueries({ queryKey: feedKeys.all });
       void queryClient.invalidateQueries({ queryKey: goalKeys.all });
+      // And what the Bot made: 홈 lists the newest on every screen (`home-widgets.tsx`).
+      void queryClient.invalidateQueries({ queryKey: madeKeys.all });
     }
   }, [workingIds, queryClient]);
 }

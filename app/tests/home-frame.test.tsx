@@ -160,10 +160,10 @@ describe("홈, the panel at the left of the window", () => {
         .querySelector("[data-app-top-bar]")
         ?.querySelectorAll("[data-home-panel]").length,
     ).toBe(0);
-    // What it holds today: the Bot's day, under its one heading.
+    // What it holds: the Bot's day first, then the three widgets of piece 3-4 under it.
     expect(
       [...panel(view).querySelectorAll("h2")].map((h) => h.textContent),
-    ).toEqual(["Today"]);
+    ).toEqual(["Today", "Updates", "Goals", "Made"]);
     expect(ko.Home).toBe("홈");
     expect(ko.Today).toBe("오늘");
   });
@@ -347,7 +347,7 @@ describe("홈, the panel at the left of the window", () => {
     expect(onThePage()).not.toContain("Today");
     expect(
       [...panel(view).querySelectorAll("h2")].map((h) => h.textContent),
-    ).toEqual(["Today"]);
+    ).toEqual(["Today", "Updates", "Goals", "Made"]);
 
     await view.click(button(view));
     await view.waitFor(() => onThePage().includes("Today"), "오늘 on the page");
