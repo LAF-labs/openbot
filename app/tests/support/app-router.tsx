@@ -279,6 +279,22 @@ export async function mountApp(options: {
     defaultPendingMinMs: 0,
   });
 
+  /*
+   * THE WINDOW THIS APP IS MOUNTED IN IS THIS FILE'S OWN. How wide it is, and whether 홈 is open
+   * at its left, are read once and kept in the app's modules (`lib/computer/screen-panel.ts`,
+   * `lib/home/home-panel.ts`) — right for a tab, and wrong for a process that every test file
+   * brings a new window to. Since 2026-10-10 the frame itself is laid out by both: an app mounted
+   * after a file that drew at 375px had no 홈, and one mounted after a file that folded it had it
+   * folded, so which tests passed was a matter of the order the files ran in. Forgotten here, the
+   * frame reads the window it is actually in.
+   */
+  const { forgetScreenPanelViewport } = await import(
+    "../../src/lib/computer/screen-panel"
+  );
+  forgetScreenPanelViewport();
+  const { forgetHomePanel } = await import("../../src/lib/home/home-panel");
+  forgetHomePanel();
+
   document.body.innerHTML = "";
   const host = document.createElement("div");
   document.body.append(host);

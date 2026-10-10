@@ -377,11 +377,12 @@ describe("the top row", () => {
   test("stands over a screen with no header of its own: the window's handle, the Bot and its state, and the menu — and there is no column", async () => {
     const view = await mountApp({ path: "/help", api: oneBot });
     await view.waitFor(() => presence(view) !== null, "the Bot in the row");
-    // What the installed app's window is dragged by: the row, and the empty stretch in it.
+    // What the installed app's window is dragged by: the row, its first cell (the home button's,
+    // as wide as 홈 under it — `home-frame.test.tsx`) and the empty stretch a screen draws into.
     expect(row(view)?.hasAttribute("data-tauri-drag-region")).toBe(true);
     expect(
       row(view)?.querySelectorAll("div[data-tauri-drag-region]").length,
-    ).toBe(1);
+    ).toBe(2);
     // The Bot, by name and state, leading to its conversation — where a waiting card is.
     expect(presence(view)?.getAttribute("aria-label")).toBe(
       "초롱 · Ready. Conversation",

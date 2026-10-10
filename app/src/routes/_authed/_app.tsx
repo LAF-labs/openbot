@@ -1,9 +1,12 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
+import type { CSSProperties } from "react";
 import { AppTopBar } from "@/components/layout/app-top-bar";
+import { HomePanel } from "@/components/layout/home-panel";
 import { PhoneTabBar } from "@/components/layout/phone-tab-bar";
 import { SectionBoundary } from "@/components/layout/section-boundary";
 import { agentKeys } from "@/lib/agents/queries";
 import { channelKeys } from "@/lib/channels/queries";
+import { HomeDrawn, useHomePanelFit } from "@/lib/home/home-panel";
 import { t } from "@/lib/i18n";
 
 /**
@@ -17,6 +20,7 @@ export const Route = createFileRoute("/_authed/_app")({
 });
 
 function RouteComponent() {
+  const home = useHomePanelFit();
   return (
     /*
      * ONE VIEWPORT, NEVER SCROLLS: panes scroll inside it. A growable shell lets the transcript's
@@ -31,8 +35,18 @@ function RouteComponent() {
      * IN A NARROW WINDOW THE BAR UNDER THE SCREEN IS STILL DRAWN (`phone-tab-bar.tsx`). A phone's
      * browser is not a surface this app is made for (owner, 2026-10-10: mobile is an app of its
      * own); what was there is left as it was, neither worked on nor taken out.
+     *
+     * 홈 STANDS AT THE LEFT OF THE SCREEN, UNDER THE ROW (piece 3-2, `layout/home-panel.tsx`).
+     * How wide it is drawn is one number, and two things are laid out by it — the panel, and the
+     * top row's first cell above it — so it is a CSS variable on this element and neither reads
+     * the other. Dragging the panel's edge writes the same variable here, directly, and
+     * `data-resizing` on this element is what stops both from easing while it does.
      */
-    <div className="flex h-svh w-full flex-col overflow-hidden">
+    <div
+      className="group/frame flex h-svh w-full flex-col overflow-hidden"
+      data-home-frame
+      style={{ "--home-panel-width": `${home.width}px` } as CSSProperties}
+    >
       {/*
        * THE COMPOSER IS MANY TAB STOPS DEEP. This is the standard way past what comes before it,
        * and it is the first thing in the tab order: invisible until focused, then a real button
@@ -58,16 +72,29 @@ function RouteComponent() {
        * handed to the row, which draws it from that seam and lays it out under the screen.
        */}
       <AppTopBar narrowBar={<PhoneTabBar />} rosterQueries={ROSTER_QUERIES}>
-        <main
-          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
-          id="main"
-          // Focusable only as a skip-link target, never as a tab stop of its own.
-          tabIndex={-1}
-        >
-          <SectionBoundary className="flex-1" section="main">
-            <Outlet />
-          </SectionBoundary>
-        </main>
+        {/*
+         * A THIRD SEAM, 홈's, is inside the panel: what it holds reads the Bot's day, and a throw
+         * there leaves the row and the screen as they were. It reads the Bots and the
+         * conversations too, so an answer that breaks the roster breaks 홈 beside it: two parts
+         * that could not be drawn, each saying so where it stands and each reported under its
+         * own name.
+         */}
+        <div className="flex min-h-0 flex-1">
+          <HomePanel rosterQueries={ROSTER_QUERIES} />
+          <main
+            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+            id="main"
+            // Focusable only as a skip-link target, never as a tab stop of its own.
+            tabIndex={-1}
+          >
+            <SectionBoundary className="flex-1" section="main">
+              {/* A page that would repeat what 홈 holds is told whether 홈 is there (소식's 오늘). */}
+              <HomeDrawn.Provider value={home.width > 0}>
+                <Outlet />
+              </HomeDrawn.Provider>
+            </SectionBoundary>
+          </main>
+        </div>
       </AppTopBar>
     </div>
   );

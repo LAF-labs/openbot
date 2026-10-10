@@ -44,10 +44,10 @@ import { PresencePillBody, presenceClass, saysItsWord } from "./bot-header";
  *
  * ON THE PC APP, ONLY 지금, with a Stop beside it, AND 기다리는 일 (2026-09-25, UX review 0.5.4 item
  * 12). The full column beside it showed 한 일 and 다음 then, and the drawer repeated them word for
- * word. The column's list went on 2026-10-04 (the owner: too much text on the screen) and this was
- * left as it was, so on the PC app 한 일 and 다음 are on 소식 and nowhere else; whether the drawer
- * takes them back there is the owner's to say. Below `lg`, where the column is a rail or is not
- * drawn, the drawer shows the whole day, as it always has.
+ * word. The column's list went on 2026-10-04 (the owner: too much text on the screen), and since
+ * 2026-10-10 홈, the panel at the left of the window, lists them beside the conversation again
+ * (`layout/home-panel.tsx`) — the same reason, back. With 홈 folded they are a press away, there
+ * or on 소식. Below `lg`, where there is no 홈, the drawer shows the whole day, as it always has.
  *
  * STOP IS HERE, BESIDE WHAT IS BEING DONE (item 17). It lived only in the account menu, as 모두 멈추기,
  * and 지금 said what the Bot was doing with no way to make it stop. It is the same stop — this window's

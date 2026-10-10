@@ -2554,6 +2554,24 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * read are the same two, read under the row.
  * By hand: 2166 less 30 is 2136, and 10 is 2146.
  *
+ * RAISED 2026-10-10 FOR 홈, THE PANEL AT THE LEFT OF THE WINDOW, `app` from 2146 to 2167 (record
+ * §1, piece 3-2), by exactly twenty-one. Twelve in the new `home-panel.test.ts`, the record's
+ * sentence as arithmetic: a fifth of the window and never under 280; dragged, seven tenths and
+ * never past what leaves the conversation 360; a chosen width inside those ends; nothing when
+ * folded or below the PC app's floor; a window with no width yet; what it does beside the
+ * profile, the routines' form and each size of the Bot's screen at 1024 and at 1280, and the
+ * conversation's least at every window from the floor up; and what is kept per device — the
+ * default, a width no window could have, folding and dragging found by a reload, a browser that
+ * stores nothing. Eight in the new `home-frame.test.tsx`, the frame as the app mounts it: beside
+ * the screen and under the row, holding 오늘; the home button folding it and a reload finding it
+ * folded; the row's first cell as wide as the panel and itself the handle; the edge moved by a
+ * keyboard; the edge dragged, with one store write at the end; stepping aside for a wider pane
+ * with the button saying so; narrowed beside a narrower one and back; and 소식 not drawing 오늘
+ * a second time. One in `screen-panel.test.ts`: the test that the smallest window narrowed the
+ * largest screen was true of the column that went, and is now two — every size spared at 1024
+ * with the conversation's least beside it, and the narrowing where a window cannot spare one.
+ * By hand: 2146 and 12 is 2158, and 8 is 2166, and 1 is 2167.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2583,7 +2601,7 @@ const GROUPS: readonly {
   processes?: number;
 }[] = [
   { name: "server", floor: 4012, roots: ["server"] },
-  { name: "app", floor: 2146, roots: ["app"] },
+  { name: "app", floor: 2167, roots: ["app"] },
   {
     name: "agent-computer",
     floor: 537,

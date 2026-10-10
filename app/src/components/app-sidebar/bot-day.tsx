@@ -50,13 +50,15 @@ import { cn } from "@/lib/utils";
  * task was a card three screens up, and a fact it learned was on the profile. This is that work,
  * from the ledgers (`GET /api/agents/:agentId/day`).
  *
- * DRAWN IN TWO PLACES, AND NO LONGER IN THE SIDEBAR. It was written for the sidebar (2026-09-25):
+ * DRAWN IN THREE PLACES, AND NO LONGER IN THE SIDEBAR. It was written for the sidebar (2026-09-25):
  * one Bot's column had its whole height empty under the conversation, which is why this file is in
  * this directory, and the list stood there under a heading of its own, three rows and then a link
  * to 소식 for the rest. The owner had it taken out on 2026-10-04 — too much text on the screen. What
- * draws it now is 소식, as a page (`routes/_authed/_app/feed.tsx`), and the header's drawer, under
- * 지금 (`channels/presence-drawer.tsx`): one component, so the two can never disagree about what is
- * waiting or what comes next.
+ * draws it now is 홈, the panel at the left of the window, as the first thing in it (2026-10-10,
+ * `layout/home-panel.tsx` — a panel a person folds, which the column was not); 소식, as a page,
+ * wherever 홈 is not on the screen (`routes/_authed/_app/feed.tsx`); and the header's drawer, under
+ * 지금 (`channels/presence-drawer.tsx`): one component, so the three can never disagree about what
+ * is waiting or what comes next.
  *
  * NOTHING IS ANSWERED HERE. A row goes to where the thing is — the Bot's first message of the turn,
  * the delivered answer, the card with the buttons (`lib/channels/jump.ts`), the routine, what it
@@ -67,9 +69,9 @@ import { cn } from "@/lib/utils";
  *
  * THE DRAWER ON THE PC APP ASKS FOR `waitingOnly` (2026-09-25, UX review 0.5.4 item 12). The full
  * column beside it showed 한 일 and 다음 then, and the drawer repeated them word for word. The column
- * shows neither since 2026-10-04 and the drawer was left as it was, so on the PC app they are on
- * 소식 and nowhere else; whether the drawer takes them back there is the owner's to say. Below `lg`
- * the drawer shows the whole day.
+ * went, and from 2026-10-04 to 2026-10-10 they were on 소식 and nowhere else; 홈 lists them beside
+ * the conversation again, which is the reason the drawer was given in the first place. With 홈
+ * folded they are a press away, in 홈 or on 소식. Below `lg` the drawer shows the whole day.
  */
 export function BotDay({
   botId,

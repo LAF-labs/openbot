@@ -44,6 +44,7 @@
  */
 export const SCREEN_SECTIONS = [
   "sidebar",
+  "home",
   "main",
   "conversation",
   "transcript",

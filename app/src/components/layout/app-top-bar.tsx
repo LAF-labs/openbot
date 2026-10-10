@@ -3,6 +3,7 @@ import { useRouterState } from "@tanstack/react-router";
 import { createContext, type ReactNode, useContext, useState } from "react";
 import { createPortal } from "react-dom";
 import { BotPresenceLink } from "@/components/layout/bot-presence-link";
+import { HomeButton } from "@/components/layout/home-panel";
 import { ProfileMenu } from "@/components/layout/profile-menu";
 import { ReadNotice } from "@/components/layout/read-states";
 import { SectionBoundary } from "@/components/layout/section-boundary";
@@ -36,8 +37,17 @@ import { cn } from "@/lib/utils";
  * a place the screen below fills (`useTopBarSlot`), and a conversation puts its header there.
  * A screen with a title of its own in its page leaves it empty, which is a longer handle.
  *
- * WHAT IS NOT HERE YET, each with a piece of its own: the switch between 채팅 and 프로젝트, the
- * search, and the home button with the panel it opens (pieces 3-2, 4-2, 4-3).
+ * ITS LEFT CELL IS AS WIDE AS 홈 (2026-10-10, piece 3-2). The panel at the left of the window
+ * (`home-panel.tsx`) stands under this row, and the row is still one bar from edge to edge — one
+ * handle. But what a screen draws into the row has to start where that screen starts, or a
+ * conversation's name would stand over 홈 and its buttons a window away from it. So the row's
+ * first cell — the lights' width in the shell, then the home button — is never narrower than the
+ * panel (`--home-panel-width`, set on the app's frame), and shrinks to the button when 홈 is
+ * folded. The cell is the row's and carries the attribute itself: it is most of the handle while
+ * 홈 is wide.
+ *
+ * WHAT IS NOT HERE YET, each with a piece of its own: the switch between 채팅 and 프로젝트, and
+ * the search (pieces 4-2, 4-3).
  */
 
 /** The width the macOS window buttons take at the row's left, in the shell: three lights and air. */
@@ -103,14 +113,23 @@ export function AppTopBar({
   return (
     <TopBarSlot.Provider value={slot}>
       <header
-        className={cn(
-          // At least the height the window buttons sit in; taller only while a line stands in it.
-          "flex min-h-titlebar shrink-0 select-none items-center gap-2 bg-background pe-2",
-          inShell() ? LIGHTS_CLEARANCE : "ps-3",
-        )}
+        // At least the height the window buttons sit in; taller only while a line stands in it.
+        className="flex min-h-titlebar shrink-0 select-none items-center gap-2 bg-background pe-2"
         data-app-top-bar
         data-tauri-drag-region
       >
+        <div
+          className={cn(
+            "flex h-full shrink-0 items-center lg:min-w-[calc(var(--home-panel-width)_-_0.5rem)]",
+            // Eased with the panel under it, and not at all while its edge follows a hand.
+            "transition-[min-width] duration-300 ease-out group-data-resizing/frame:transition-none motion-reduce:transition-none",
+            inShell() ? LIGHTS_CLEARANCE : "ps-2",
+          )}
+          data-tauri-drag-region
+          data-top-bar-home
+        >
+          <HomeButton />
+        </div>
         <div
           className="flex h-full min-w-0 flex-1 items-center gap-2"
           data-tauri-drag-region

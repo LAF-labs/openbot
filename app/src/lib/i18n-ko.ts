@@ -2774,6 +2774,13 @@ export const ko: Record<string, string> = {
   Updates: "소식",
   Menu: "메뉴",
   "Something new": "새로 온 것 있음",
+  // 홈, the panel at the left of the window (piece 3-2).
+  Home: "홈",
+  "Fold Home": "홈 접기",
+  "Open Home": "홈 펼치기",
+  "Width of Home": "홈 너비",
+  "No room for Home beside what is open":
+    "열려 있는 화면 옆에 홈을 둘 자리가 없어요",
   "Nothing yet today. What you hand over in the conversation shows up here.":
     "오늘은 아직 한 일이 없어요. 대화에서 맡기신 일이 여기에 모여요.",
   // today

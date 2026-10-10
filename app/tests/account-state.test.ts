@@ -57,6 +57,19 @@ const DEVICE_SCOPED = [
    */
   "lib/computer/screen-panel.ts",
   /*
+   * How wide 홈 is on THIS screen, and whether it is folded (`lib/home/home-panel.ts`, 2026-10-10).
+   *
+   * A DECISION, and it is the record's own sentence (`docs/laf/redesign-2026-10.md` §1: the width
+   * somebody chose is remembered per device — a convenience of one person's, for which the
+   * browser's storage is enough). The argument is the one made for the Bot's screen just above:
+   * the answer is about the window. 600px is a third of a wide monitor and more than a small
+   * laptop's window may give it, and a width synced from the one would arrive on the other as a
+   * number the module has to refuse anyway. Nothing a Bot does reads it, what is drawn where it
+   * cannot be read is the default, and the worst it can be wrong about is whether a panel the
+   * person can open with one press is open.
+   */
+  "lib/home/home-panel.ts",
+  /*
    * The line an answered approval card leaves — "거부함 · toss.im에서 ‘비즈니스’ 누르기"
    * (`lib/approvals.ts`, UI/UX audit 0.5.3, item 3).
    *
