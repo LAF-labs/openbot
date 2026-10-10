@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { FeedPage, FeedPost } from "../../shared/feed";
 import type { GoalView } from "../../shared/goals";
+import {
+  cardToDraw,
+  DRAWABLE_ANYWHERE,
+} from "../src/components/gallery/gallery-card";
 import type { GoalsAnswer } from "../src/lib/goals/queries";
 import { cardWhen, feedCard, goalsCard, madeCard } from "../src/lib/home/cards";
 import type { MadeItem, MadePage } from "../src/lib/made/queries";
@@ -81,6 +85,7 @@ describe("소식's card", () => {
       feedCard(feed([post(), post({ id: "p-2", title: "지원 사업 공고" })]), 0),
     ).toEqual({
       at: "2026-10-10T06:30:00.000Z",
+      card: null,
       count: null,
       line: "이번 주 날씨: 주말에 비",
       note: null,
@@ -92,6 +97,7 @@ describe("소식's card", () => {
   test("says how many are unseen in place of the time, while any are", () => {
     expect(feedCard(feed([post()]), 3)).toEqual({
       at: null,
+      card: null,
       count: 3,
       line: "이번 주 날씨: 주말에 비",
       note: null,
@@ -132,6 +138,7 @@ describe("목표's card", () => {
     );
     expect(card).toEqual({
       at: null,
+      card: null,
       count: 2,
       line: "토익 800점 달성",
       note: "Now 720 · goal 800점",
@@ -180,6 +187,7 @@ describe("만든 것's card", () => {
       madeCard(made([item(), item({ title: "예전 것", messageId: "m-0" })])),
     ).toEqual({
       at: "2026-10-10T06:51:00.000Z",
+      card: null,
       count: null,
       line: "이사 준비",
       note: null,
@@ -217,6 +225,80 @@ describe("만든 것's card", () => {
     expect(
       madeCard(made([item({ title: null, tool: "constructor" })])),
     ).toBeNull();
+  });
+});
+
+describe("the made thing itself, for 홈 to draw", () => {
+  test("a card the server sent the arguments of is handed on by its name, with them", () => {
+    const args = {
+      title: "이사 준비",
+      items: [{ text: "박스 사기", done: true }],
+    };
+    expect(madeCard(made([item({ args })]))?.card).toEqual({
+      args,
+      name: "showChecklist",
+    });
+  });
+
+  test.each([
+    ["none were sent", undefined],
+    ["they are a list", wrong<Record<string, unknown>>([1])],
+    ["they are a word", wrong<Record<string, unknown>>("x")],
+  ])("there is no card to draw where %s: the line stands", (_, args) => {
+    const card = madeCard(made([item(args === undefined ? {} : { args })]));
+    expect(card?.card).toBeNull();
+    expect(card?.line).toBe("이사 준비");
+  });
+});
+
+describe("a gallery card drawn where there is no conversation", () => {
+  test("what only shows can be drawn anywhere; what asks, reads the deployment's data or acts cannot", () => {
+    expect(DRAWABLE_ANYWHERE).toEqual([
+      "showAreaChart",
+      "showBarChart",
+      "showChecklist",
+      "showLineChart",
+      "showMetrics",
+      "showNotice",
+      "showPieChart",
+      "showProgress",
+      "showQuote",
+      "showRecord",
+    ]);
+    for (const name of [
+      "askApproval",
+      "askChoice",
+      "showActivityReport",
+      "showFile",
+      "constructor",
+      "__proto__",
+    ]) {
+      expect({ name, drawn: cardToDraw(name, {}) }).toEqual({
+        name,
+        drawn: null,
+      });
+    }
+    expect(cardToDraw(7, {})).toBeNull();
+  });
+
+  test("what it was called with is checked against the card's own schema before anything is drawn", () => {
+    const good = cardToDraw("showChecklist", {
+      title: "이사 준비",
+      items: [{ text: "박스 사기", done: true }],
+    });
+    expect(good?.props.title).toBe("이사 준비");
+    for (const args of [
+      null,
+      "x",
+      [],
+      { title: "이사 준비", items: "많음" },
+      { title: "이사 준비", items: [{ text: 5, done: true }] },
+    ]) {
+      expect({ args, drawn: cardToDraw("showChecklist", args) }).toEqual({
+        args,
+        drawn: null,
+      });
+    }
   });
 });
 

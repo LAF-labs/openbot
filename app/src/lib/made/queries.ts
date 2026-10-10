@@ -20,6 +20,8 @@ export type MadeItem = {
   at: string;
   channelId: string;
   messageId: string;
+  /** What the card was called with: on the newest thing only, where it is a card (`made.ts`). */
+  args?: Record<string, unknown>;
 };
 
 export type MadePage = { items: MadeItem[]; next: string | null };

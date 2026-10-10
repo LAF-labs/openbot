@@ -11,6 +11,7 @@ import {
   chatCardMeta,
   chatCardTitle,
 } from "@/components/ui/card-surface";
+import { cardToDraw, GalleryCard } from "@/components/gallery/gallery-card";
 import { focusRing } from "@/components/ui/focus";
 import { requestJump } from "@/lib/channels/jump";
 import { feedQueryOptions, feedUnseenQueryOptions } from "@/lib/feed/queries";
@@ -133,6 +134,57 @@ export function HomeCards({
           </>
         );
         const { thing } = view;
+        const made = view.card
+          ? cardToDraw(view.card.name, view.card.args)
+          : null;
+        if (made) {
+          /*
+           * THE THING ITSELF, NOT ITS NAME (piece 7-1). The last thing the Bot made is a card, and
+           * a card is drawn here as it was drawn in the conversation — its own frame, so no box
+           * around it. Held to a height: a long notice is read where it was written, which is
+           * where a press on it goes.
+           */
+          const drawn = (
+            <span
+              className="block max-h-72 overflow-hidden rounded-xl"
+              data-home-card-drawn={view.card?.name}
+            >
+              <GalleryCard card={made} />
+            </span>
+          );
+          return (
+            <li key={is}>
+              <div className="flex flex-col gap-1" data-home-card={is}>
+                <Link
+                  className={cn(PART, focusRing)}
+                  data-home-card-page
+                  to={to}
+                >
+                  {head}
+                </Link>
+                {thing?.kind === "made" ? (
+                  <Link
+                    aria-label={view.line}
+                    className={cn("block rounded-xl", focusRing)}
+                    data-home-card-thing
+                    onClick={() =>
+                      requestJump({
+                        channelId: thing.channelId,
+                        messageId: thing.messageId,
+                      })
+                    }
+                    params={{ channelId: thing.channelId }}
+                    to="/channel/$channelId"
+                  >
+                    {drawn}
+                  </Link>
+                ) : (
+                  drawn
+                )}
+              </div>
+            </li>
+          );
+        }
         return (
           <li key={is}>
             {thing ? (
