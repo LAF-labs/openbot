@@ -281,6 +281,24 @@ describe("the guard a browser tool's outcome passes on its way to a model", () =
     expect(seen).toEqual([false, true]);
   });
 
+  test("a note that is one sentence and not a list is kept beside the mark's", async () => {
+    const { vault } = vaultOf({ [SHOP]: [PASSWORD] });
+    const guard = createShownGuard({ logins: vault });
+    expect<unknown>(
+      await guard(RUN, {
+        ok: true,
+        url: `${SHOP}/a`,
+        text: PASSWORD,
+        notes: "먼저 있던 한 문장",
+      }),
+    ).toEqual({
+      ok: true,
+      url: `${SHOP}/a`,
+      text: "[•••]",
+      notes: ["먼저 있던 한 문장", SAID],
+    });
+  });
+
   test("asks nothing of the vault for an outcome that is at no page, and nothing at all without one", async () => {
     const { vault, asked } = vaultOf({ [SHOP]: [PASSWORD] });
     const guard = createShownGuard({ logins: vault });
