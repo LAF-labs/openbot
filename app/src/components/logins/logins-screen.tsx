@@ -50,6 +50,7 @@ import {
   hostOf,
 } from "@/lib/logins/addresses";
 import { t } from "@/lib/i18n";
+import { josa } from "@/lib/josa";
 import {
   LoginRefusal,
   LOGINS_UNREACHABLE,
@@ -357,7 +358,13 @@ export function LoginsScreen() {
   const settled = settledOf(reading);
   /** `null` is closed; `"new"` a new login; otherwise the one being changed. */
   const [editing, setEditing] = useState<SavedLogin | "new" | null>(null);
+  /**
+   * The login the question is about, and whether the question is open. Two things, because the
+   * name has to outlast the answer: the dialog fades after it closes, and a title that lost its
+   * name on the way out would read "Delete ?" for a moment.
+   */
   const [removing, setRemoving] = useState<SavedLogin | null>(null);
+  const [isAsking, setIsAsking] = useState(false);
   const logins = settled?.data.logins ?? [];
   const isFull = settled ? logins.length >= settled.data.max : false;
 
@@ -395,7 +402,10 @@ export function LoginsScreen() {
               <LoginRow
                 login={login}
                 onChange={() => setEditing(login)}
-                onRemove={() => setRemoving(login)}
+                onRemove={() => {
+                  setRemoving(login);
+                  setIsAsking(true);
+                }}
               />
             </div>
           ))}
@@ -431,10 +441,14 @@ export function LoginsScreen() {
         onConfirm={() =>
           removing ? removeLogin(queryClient, removing.id) : Promise.resolve()
         }
-        onOpenChange={(open) => (open ? null : setRemoving(null))}
-        open={removing !== null}
+        onOpenChange={(open) => (open ? null : setIsAsking(false))}
+        open={isAsking}
         pendingLabel={t("Deleting…")}
-        title={t("Delete this login?")}
+        // By name: with several saved, "this login" does not say which the bin was pressed on.
+        title={t("Delete {name}{josa}?", {
+          josa: josa(removing?.label ?? "", "을/를"),
+          name: removing?.label ?? "",
+        })}
       />
     </PageShell>
   );

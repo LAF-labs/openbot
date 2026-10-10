@@ -224,15 +224,15 @@ describe("Settings → 계정", () => {
     });
   }, 120_000);
 
-  test("deletes one only after it is confirmed", async () => {
+  test("deletes the one whose bin was pressed, after a question that names it — and no other", async () => {
     const { removed } = await rendered();
     expect(removed).toEqual({
-      isAsked: true,
+      // By name: with two saved, "this login" would not say which (a reviewer's point). The
+      // particle after it is the Korean sentence's, carried by the key every delete here uses.
+      question: "Delete 거래처 발주를?",
       writesBeforeConfirm: 0,
-      writes: [
-        { method: "DELETE", path: `/api/logins/${NAVER.id}`, body: null },
-      ],
-      isEmptyAfter: true,
+      writes: [{ method: "DELETE", path: "/api/logins/login-2", body: null }],
+      rowsAfter: [NAVER.label],
     });
   }, 120_000);
 
