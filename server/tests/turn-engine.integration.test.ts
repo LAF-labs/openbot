@@ -1207,6 +1207,40 @@ describe("how a turn ends", () => {
     expect(await statusOf(sent.turnId)).toBe("stopped");
     expect(engine.busy(threadId)).toBe(false);
   });
+
+  test("a project's deletion stops that conversation's turn and waits for it to end — and no other's", async () => {
+    // Record §3, piece 4-5: the rows are removed only once the turn has written its last.
+    const one = await aConversation();
+    const other = await aConversation();
+    const bot = scriptedBot();
+    const { engine } = engineWith(
+      bot,
+      (_name, _args, call) =>
+        new Promise((resolve) => {
+          call.signal.addEventListener("abort", () =>
+            resolve({ ok: false, code: "laf:stopped", stopped: true }),
+          );
+        }),
+    );
+    const send = (conversation: { threadId: string; channelId: string }) =>
+      engine.send({
+        ...conversation,
+        owner: { id: OWNER, role: "user" },
+        botId: BOT,
+        messages: [asked("끝없는 일")],
+        tools: null,
+      });
+    const first = await send(one);
+    if (!first.ok) throw new Error("not sent");
+    await until(async () => bot.runs === 1);
+    await engine.stopThread(one.threadId);
+    expect(await statusOf(first.turnId)).toBe("stopped");
+    expect(engine.busy(one.threadId)).toBe(false);
+
+    // A conversation with nothing going is stopped already; asking is not an error.
+    await engine.stopThread(other.threadId);
+    await engine.stopThread("no-such-thread");
+  });
 });
 
 /**

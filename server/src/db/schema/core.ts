@@ -259,6 +259,16 @@ export const channels = pgTable("channels", {
    * against rows.
    */
   kind: text("kind").$type<"main" | "project">().notNull().default("main"),
+  /*
+   * THIS CONVERSATION IS BEING DELETED, since when (2026-10-10, record §3, piece 4-5; migration
+   * 0066). Set before anything of a project is stopped or removed, and read by every door that
+   * writes into a conversation (`channels/deleting.ts`): between "its turn has stopped" and "its
+   * rows are gone" another window's message would otherwise start a turn that goes on appending
+   * to a thread nobody has. IN POSTGRES, NOT IN MEMORY, because the deletion may be cut short by a
+   * restart — the mark is what still refuses writes afterwards, and what boot finishes from.
+   * Null for every conversation that is not being deleted, which is all of them but for a moment.
+   */
+  deletingAt: timestamp("deleting_at", { withTimezone: true }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

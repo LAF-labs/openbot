@@ -4,6 +4,7 @@
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AppVariables } from "../auth/guards";
+import type { ProjectDeletion } from "./deleting";
 import { parseChannelInput, parseProjectInput } from "./input";
 import { mapRefusal, refusal } from "./refusals";
 import type { AgentChannel, ChannelStore, ChannelSummary } from "./types";
@@ -11,6 +12,8 @@ import type { AgentChannel, ChannelStore, ChannelSummary } from "./types";
 export function createConversationRoutes(
   store: ChannelStore,
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
+  /** Absent where nothing deletes a project: the door is then not there (404), not a no-op. */
+  projectDeletion?: ProjectDeletion,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -56,6 +59,32 @@ export function createConversationRoutes(
       return mapRefusal(context, error);
     }
   });
+
+  /*
+   * Delete a project (piece 4-5): its conversation and every row that named it, in the order
+   * `deleting.ts` holds. ITS PARAMETER IS `:projectId`, NOT `:channelId`, ON PURPOSE: the gate
+   * refuses every write whose path names a conversation being deleted, and this is the one door
+   * that must go on answering for one — asked again after a restart cut it short, it finishes.
+   */
+  if (projectDeletion) {
+    routes.delete("/projects/:projectId", requireUser, async (context) => {
+      try {
+        const outcome = await projectDeletion.delete({
+          userId: context.var.actor.id,
+          channelId: context.req.param("projectId"),
+        });
+        if (!outcome.ok) {
+          return context.json(
+            refusal(outcome.code),
+            outcome.code === "laf:channel_not_found" ? 404 : 409,
+          );
+        }
+        return context.json({ deleted: true });
+      } catch (error) {
+        return mapRefusal(context, error);
+      }
+    });
+  }
 
   routes.get("/", requireUser, async (context) => {
     try {

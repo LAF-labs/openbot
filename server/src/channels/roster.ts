@@ -1,7 +1,7 @@
 /**
  * The channels a person can see, what their roster says about each, and where they stopped reading.
  */
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import type { AgentActor } from "../agents/profile-types";
 import type { Database } from "../db/client";
 import {
@@ -63,7 +63,8 @@ export async function readChannel(
     )
     .innerJoin(channelAgents, eq(channelAgents.channelId, channels.id))
     .innerJoin(agentProfiles, eq(agentProfiles.agentId, channelAgents.agentId))
-    .where(eq(channels.id, channelId))
+    // One being deleted is not there any more, for every reader at once (`deleting.ts`).
+    .where(and(eq(channels.id, channelId), isNull(channels.deletingAt)))
     .orderBy(asc(channelAgents.agentId));
 
   const first = rows[0];
@@ -117,6 +118,8 @@ export async function listChannels(
     )
     .innerJoin(channelAgents, eq(channelAgents.channelId, channels.id))
     .innerJoin(agentProfiles, eq(agentProfiles.agentId, channelAgents.agentId))
+    // A project being deleted has left the list already: it is not offered while it goes.
+    .where(isNull(channels.deletingAt))
     // Most recent first, where starting a conversation counts as activity. A channel somebody
     // just created has nothing said in it yet, and is also the one they are about to type in;
     // ordering on the message alone would bury it under every channel that has one.

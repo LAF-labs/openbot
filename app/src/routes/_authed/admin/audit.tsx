@@ -978,6 +978,7 @@ export const DECISIONS: Record<string, string> = {
   // no name left to write.
   "account.exported": "A person took a copy of their data",
   "account.deleted": "An account was deleted",
+  "project.deleted": "A person deleted a project",
   // A login saved for the Bot's browser (2026-10-10). Which one and for where is in the row; the
   // name and the password are in no row at all.
   "account.login_saved": "A person saved a login for their Bot",
@@ -1374,6 +1375,7 @@ export const EVENTS: Record<string, string> = {
   "component.function_failed": "A component's data",
   "account.exported": "An account",
   "account.deleted": "An account",
+  "project.deleted": "A project",
   "account.login_saved": "A saved login",
   "account.login_replaced": "A saved login",
   "account.login_removed": "A saved login",

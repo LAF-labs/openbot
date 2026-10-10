@@ -1048,6 +1048,18 @@ export function createTurnEngine(options: TurnEngineOptions) {
       await Promise.all(theirs.map((turn) => turn.ended));
     },
 
+    /**
+     * Stop this conversation's turn and wait until it has written its end. What a project's
+     * deletion does before it removes the thread's rows (`channels/deleting.ts`): `stop` only asks,
+     * and a turn asked to stop goes on writing until it has.
+     */
+    async stopThread(threadId: string): Promise<void> {
+      const turn = live.get(threadId);
+      if (!turn) return;
+      turn.stop.abort();
+      await turn.ended;
+    },
+
     /** Whether the conversation has a turn queued or running. */
     busy(threadId: string): boolean {
       return live.has(threadId);

@@ -1,14 +1,18 @@
-import { IconPlus } from "@tabler/icons-react";
+import { IconPlus, IconTrash } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
+import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { focusRing } from "@/components/ui/focus";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMyBots } from "@/lib/agents/my-bots";
-import { createProjectMutationOptions } from "@/lib/channels/mutations";
+import {
+  createProjectMutationOptions,
+  deleteProject,
+} from "@/lib/channels/mutations";
 import { projectName, projectsOf } from "@/lib/channels/projects";
 import {
   type ChannelSummary,
@@ -34,6 +38,10 @@ import { cn } from "@/lib/utils";
  * ONE BOX, ONE PRESS. A project is made by saying what it is called — or by saying nothing, and it
  * is called that — and it opens at once, empty, ready to be spoken to. There is no form because
  * there is nothing else to decide: what the project is for is settled by talking, as the Bot is.
+ *
+ * A PROJECT IS DELETED FROM ITS ROW (piece 4-5), behind the one question every delete here asks
+ * (`confirm-dialog.tsx`): the conversation and everything said in it go, and what the Bot learned
+ * there stays the Bot's. The server stops the project's turn first and answers once it is gone.
  *
  * AN ACCOUNT FROM BEFORE THE CAP has several Bots, and its other conversations with each became
  * that Bot's projects (migration 0064). They are listed under their Bot's name, and a new project
@@ -76,6 +84,9 @@ function ProjectsOfBot({
   const create = useMutation(createProjectMutationOptions(queryClient));
   const [name, setName] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
+  /** The project the question is being asked about; kept while the dialog closes, for its title. */
+  const [asking, setAsking] = useState<ChannelSummary | null>(null);
+  const [isAsking, setIsAsking] = useState(false);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -134,10 +145,10 @@ function ProjectsOfBot({
       {projects.length > 0 ? (
         <ul className="flex flex-col">
           {projects.map((project) => (
-            <li key={project.id}>
+            <li className="flex items-center" key={project.id}>
               <Link
                 className={cn(
-                  "flex min-w-0 items-center gap-2 rounded-lg px-2 py-2.5 text-sm transition-colors hover:bg-accent",
+                  "flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2.5 text-sm transition-colors hover:bg-accent",
                   focusRing,
                 )}
                 data-project={project.id}
@@ -158,6 +169,23 @@ function ProjectsOfBot({
                   </>
                 ) : null}
               </Link>
+              {/* Beside the name, not inside its link: two presses, each its own. Always drawn, quietly: a control that appears only under a pointer is not there on a screen that has none. */}
+              <Button
+                aria-label={t("Delete “{title}”", {
+                  title: projectName(project),
+                })}
+                className="size-9 shrink-0 text-muted-foreground"
+                data-project-delete={project.id}
+                onClick={() => {
+                  setAsking(project);
+                  setIsAsking(true);
+                }}
+                size="icon"
+                title={t("Delete")}
+                variant="ghost"
+              >
+                <IconTrash aria-hidden="true" />
+              </Button>
             </li>
           ))}
         </ul>
@@ -166,6 +194,21 @@ function ProjectsOfBot({
           {t("Work that runs over days gets a conversation of its own here.")}
         </p>
       )}
+      <ConfirmDialog
+        confirmLabel={t("Delete")}
+        description={t(
+          "The project and everything said in it go. What your Bot learned there stays.",
+        )}
+        onConfirm={async () => {
+          if (asking) await deleteProject(queryClient, asking.id);
+        }}
+        onOpenChange={setIsAsking}
+        open={isAsking}
+        // The noun the particle hangs on is "프로젝트", whatever the name ends in (`lib/josa.ts`).
+        title={t("Delete the project “{title}”?", {
+          title: asking ? projectName(asking) : "",
+        })}
+      />
     </div>
   );
 }

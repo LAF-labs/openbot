@@ -33,6 +33,7 @@ import {
   originRefusalBody,
 } from "./auth/origin";
 import type { SessionAdmission } from "./auth/session-revocation";
+import type { ProjectDeletion } from "./channels/deleting";
 import type { ChannelEventHub } from "./channels/events";
 import { type ChannelStore, createChannelRoutes } from "./channels/routes";
 import type { ThreadIdentity } from "./channels/thread-identity";
@@ -178,6 +179,13 @@ export type CreateAppOptions = {
   channelStore?: ChannelStore;
   /** Live channel activity. Absent leaves the routes working, just without the socket. */
   channelEvents?: ChannelEventHub;
+  /**
+   * Deleting a project, and the gate that refuses every write into a conversation while it is
+   * being deleted (`channels/deleting.ts`). The gate is one middleware over the whole API, so no
+   * route has to ask; absent — the suites that mount a few routes — nothing is being deleted.
+   */
+  projectDeletion?: ProjectDeletion;
+  conversationGate?: MiddlewareHandler;
   /**
    * Where a Bot's own refusal is written.
    *
@@ -468,6 +476,8 @@ export function createApp({
   agentProfileStore,
   channelStore,
   channelEvents,
+  projectDeletion,
+  conversationGate,
   auditStore,
   componentStore,
   pluginStore,
@@ -631,6 +641,9 @@ export function createApp({
     }
     return next();
   });
+
+  // Before every route: a write into a conversation being deleted is refused, whichever door.
+  if (conversationGate) app.use("/api/*", conversationGate);
 
   /*
    * One route at two paths. The front door (`app/Caddyfile`) hands only `/api/*` to the API, and a
@@ -1174,6 +1187,7 @@ export function createApp({
         // No picture of a browser a person's value is being held in, nor of a call a page showed
         // a saved password to. See the route.
         computerGateway?.frameWithheld,
+        projectDeletion,
       ),
     );
   }

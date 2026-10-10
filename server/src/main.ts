@@ -53,6 +53,11 @@ import {
 import { startBackgroundWork } from "./boot/background";
 import { keepServingThroughUnhandledRejections } from "./boot/process";
 import { reconcileBeforeServing } from "./boot/reconcile";
+import {
+  createConversationWrites,
+  createProjectDeletion,
+  refuseWhileDeleting,
+} from "./channels/deleting";
 import { recordActivity } from "./channels/activity";
 import {
   type ChannelActivityEvent,
@@ -943,6 +948,11 @@ sayFirstMove({
 // Not awaited: the first decision's slow start is paid here, before anybody is waiting on one.
 // Whatever keys the deployment holds: a person's calendar or mailbox needs none of them.
 void warmFirstMove(firstMoveDeps);
+/*
+ * A project's deletion, and the one gate its mark is read at (`channels/deleting.ts`). The list of
+ * writes in flight is this process's own, which is the deployment's: one API server per VM.
+ */
+const conversationWrites = createConversationWrites();
 const turnEngine = createTurnEngine({
   database,
   ledger: runLedger,
@@ -975,6 +985,22 @@ const turnEngine = createTurnEngine({
       text,
       at: new Date(),
     }),
+});
+const projectDeletion = createProjectDeletion({
+  database,
+  writes: conversationWrites,
+  stopThread: (threadId) => turnEngine.stopThread(threadId),
+  endApprovals: (threadId, actor) =>
+    standingApprovals.endThread(threadId, actor),
+  auditStore: bootAuditStore,
+});
+/*
+ * A deletion a restart cut short is finished here: its mark has been refusing writes since, and
+ * nothing of this process is writing into it. Not awaited — boot does not wait on a transaction to
+ * start answering — and a failure is logged per project, to be tried again at the next boot.
+ */
+void projectDeletion.finishPending().then((count) => {
+  if (count > 0) log.info("project_deletions_finished_at_boot", { count });
 });
 
 /** The runtime, for the one door of it the app asks: which Bots it serves. See `mountCopilotRuntime`. */
@@ -1018,6 +1044,8 @@ const app = createApp({
   agentProfileStore,
   channelStore,
   channelEvents,
+  projectDeletion,
+  conversationGate: refuseWhileDeleting(database, conversationWrites),
   // The same store the boot row uses, so a Bot's own refusal lands in the trail beside its actions.
   auditStore: bootAuditStore,
   componentStore,

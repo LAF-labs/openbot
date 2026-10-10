@@ -303,20 +303,18 @@ function ChannelBody({
     );
   }
   /*
-   * A CONVERSATION THAT IS NOT THERE, most often a room from before 2026-09-24 — several Bots in
-   * one conversation. Rooms were removed with the decision that a person has one Bot
-   * (docs/laf/deployment-model.md, "봇은 하나다"), and migration 0047 deleted them with everything
-   * said in them, so its address now answers 404. That is not a failure to load, and saying so
-   * would send somebody pressing 다시 불러오기 at something that will never come back: this says
-   * what happened and where their Bot is instead.
+   * A CONVERSATION THAT IS NOT THERE: a project deleted — here or from another window (piece
+   * 4-5) — or a room from before 2026-09-24, removed with everything said in it (migration 0047).
+   * Its address answers 404. That is not a failure to load, and saying so would send somebody
+   * pressing 다시 불러오기 at something that will never come back: this says it is gone and
+   * where their Bot is. ONE SHORT SENTENCE FOR BOTH (2026-10-10): it explained rooms, which a
+   * person who has just deleted a project in another window was told about instead.
    */
   if (isGone) {
     return (
       <div className="flex flex-col items-start gap-4 p-8">
         <p className="text-muted-foreground text-sm">
-          {t(
-            "This conversation is no longer here. Conversations with several Bots were removed, along with everything said in them.",
-          )}
+          {t("This conversation is no longer here.")}
         </p>
         <Link className={buttonVariants({ variant: "secondary" })} to="/">
           {t("Go to your Bot")}

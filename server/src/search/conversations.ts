@@ -21,7 +21,7 @@
  * 대화" and "프로젝트" are the screen's to say. The main agent's search tool (record §3) will read
  * through `createConversationSearch` too; it is 4-4's, with the rest of what the Bot is told.
  */
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import {
@@ -144,7 +144,14 @@ export function createConversationSearch(options: {
           eq(channelThreads.userId, userId),
         ),
       )
-      .innerJoin(channels, eq(channels.id, channelThreads.channelId))
+      .innerJoin(
+        channels,
+        and(
+          eq(channels.id, channelThreads.channelId),
+          // A project being deleted is not read: its words are on their way out (`deleting.ts`).
+          isNull(channels.deletingAt),
+        ),
+      )
       .innerJoin(
         channelMemberships,
         and(

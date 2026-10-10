@@ -368,6 +368,7 @@
   "server/tests/consent-store.integration.test.ts",
   "server/tests/conversation-contexts.integration.test.ts",
   "server/tests/conversation-epochs.test.ts",
+  "server/tests/conversation-deleting.integration.test.ts",
   "server/tests/conversation-kind-migration.integration.test.ts",
   "server/tests/conversation-search.integration.test.ts",
   "server/tests/converter.test.ts",
