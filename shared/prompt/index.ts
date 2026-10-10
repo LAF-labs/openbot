@@ -34,6 +34,7 @@ import {
   contextFactsOf,
   contextLayerText,
 } from "./context.ko";
+import { BROWSE_KO } from "./mode/browse.ko";
 import { CHAT_KO } from "./mode/chat.ko";
 import { ROUTINE_KO } from "./mode/routine.ko";
 import { notepadText, type RoutineNote } from "./notepad.ko";
@@ -64,13 +65,18 @@ export { DEFAULT_TIME_ZONE, resolveTimeZone } from "./zone";
 /**
  * 실행이 벌어지는 자리. `forwardedProps.mode`로 오고, 아무 말이 없으면 대화다.
  *
- * 둘뿐이다. 방(봇 여럿의 대화)과 동료 봇의 질문은 2026-09-24에 사람의 봇이 하나가 되면서 지워졌다
+ * 셋이다. 방(봇 여럿의 대화)과 동료 봇의 질문은 2026-09-24에 사람의 봇이 하나가 되면서 지워졌다
  * (docs/laf/deployment-model.md "봇은 하나다"). 옛 클라이언트가 그 이름을 보내면 모르는 값이고,
  * 모르는 값은 대화다.
+ *
+ * `browse`는 대화의 턴이 브라우저로 할 일을 맡긴 실행이다(조각 6-2, `mode/browse.ko.ts`). 사람은
+ * 화면 앞에 있지만 답을 읽는 쪽은 맡긴 쪽이라서, 아래에서 "대화인가"를 묻는 곳 — 사람이 한 말을
+ * 기억에 적으라는 말, 맡은 일이 없을 때의 말 — 은 모두 대화가 아닌 쪽을 탄다: 맡은 쪽에는 그
+ * 툴들이 없다.
  */
-export type PromptMode = "chat" | "routine";
+export type PromptMode = "chat" | "routine" | "browse";
 
-const MODES: readonly PromptMode[] = ["chat", "routine"];
+const MODES: readonly PromptMode[] = ["chat", "routine", "browse"];
 
 /**
  * 조립에 쓰이는 봇의 신원 — 이름뿐이다.
@@ -146,7 +152,8 @@ export type ComposePromptInput = {
 
 /** 이번 실행의 자리에만 해당하는 부분. */
 export function modeText(mode: PromptMode): string {
-  return mode === "routine" ? ROUTINE_KO : CHAT_KO;
+  if (mode === "routine") return ROUTINE_KO;
+  return mode === "browse" ? BROWSE_KO : CHAT_KO;
 }
 
 /** `forwardedProps`가 말한 자리. 모르는 값과 침묵은 둘 다 대화다. */

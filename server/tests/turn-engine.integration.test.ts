@@ -117,7 +117,15 @@ type Subscriber = {
  * A Bot that asks for one tool on its first run and answers on its second, reporting what it does
  * as the AG-UI events a real endpoint streams — which is what every watching window is handed.
  */
-function scriptedBot(answer = "다 됐어요.") {
+function scriptedBot(
+  answer = "다 됐어요.",
+  /** The one call its first reply makes. A second Bot in one turn needs an id of its own. */
+  calls: { id: string; name: string; args: string } = {
+    id: "call-1",
+    name: "computer_navigate",
+    args: '{"url":"https://example.com"}',
+  },
+) {
   const agent = {
     messages: [] as Message[],
     runs: 0,
@@ -152,30 +160,27 @@ function scriptedBot(answer = "다 됐어요.") {
         );
         emit(
           event("TOOL_CALL_START", {
-            toolCallId: "call-1",
-            toolCallName: "computer_navigate",
+            toolCallId: calls.id,
+            toolCallName: calls.name,
             parentMessageId: id,
           }),
         );
         emit(
           event("TOOL_CALL_ARGS", {
-            toolCallId: "call-1",
-            delta: '{"url":"https://example.com"}',
+            toolCallId: calls.id,
+            delta: calls.args,
           }),
         );
-        emit(event("TOOL_CALL_END", { toolCallId: "call-1" }));
+        emit(event("TOOL_CALL_END", { toolCallId: calls.id }));
         agent.messages.push({
           id,
           role: "assistant",
           content: "찾아볼게요.",
           toolCalls: [
             {
-              id: "call-1",
+              id: calls.id,
               type: "function",
-              function: {
-                name: "computer_navigate",
-                arguments: '{"url":"https://example.com"}',
-              },
+              function: { name: calls.name, arguments: calls.args },
             },
           ],
         } as Message);
@@ -1154,6 +1159,301 @@ describe("a turn and the lane of the Bot's browser", () => {
     busy.release();
     expect(await lane.run(BOT, async () => "next")).toBe("next");
     expect(order).toEqual([]);
+  });
+});
+
+/*
+ * A RUN THE TURN HANDED ITS BROWSING TO (piece 6-2). The Bot of a conversation calls `delegate`,
+ * and what browses is the same Bot in a conversation of its own. Two records come of it: the
+ * thread's, for a person — with every step of the delegated run in it — and the Bot's, which holds
+ * the call and the one answer it was handed back.
+ */
+describe("a run the turn delegated to", () => {
+  const TASK = "네이버에서 오늘 서울 날씨를 찾아 기온을 알려 줘.";
+  const HANDED_BACK = "서울은 지금 21도이고 맑아요.";
+  /** The conversation's Bot: one `delegate` call, then its answer to the person. */
+  const delegating = () =>
+    scriptedBot("서울은 지금 21도래요.", {
+      id: "call-delegate",
+      name: "delegate",
+      args: JSON.stringify({ to: "browser", task: TASK }),
+    });
+  /** The run it is handed to: one page opened, then what it hands back. */
+  const browsing = () =>
+    scriptedBot(HANDED_BACK, {
+      id: "call-open",
+      name: "computer_navigate",
+      args: '{"url":"https://naver.com"}',
+    });
+  /**
+   * A turn's tools as `chat-tools.ts` carries `delegate` out: the work goes to `context.delegate`
+   * and its last words come back as the call's answer. Every other call is the delegated run's.
+   */
+  const handingOver =
+    (act: () => Promise<void> | void = () => {}) =>
+    (context: ChatTurnContext): ChatToolkit["execute"] =>
+    async (name, args, call) => {
+      if (name !== "delegate") {
+        await act();
+        return { ok: true, title: "네이버" };
+      }
+      const handed = await context.delegate?.({
+        callId: call.id,
+        mode: "browse",
+        instruction: String(args.task),
+        tools: [
+          { name: "computer_navigate", description: "go", parameters: {} },
+        ],
+        execute: handingOver(act)(context),
+        signal: call.signal,
+      });
+      return { ok: true, answer: handed?.answer ?? "" };
+    };
+  /** One engine whose first Bot is the conversation's and whose every later one is delegated to. */
+  const engineHandingOver = (
+    act?: () => Promise<void> | void,
+    made: ReturnType<typeof scriptedBot>[] = [],
+  ) => {
+    const main = delegating();
+    const built = engineWith(main, handingOver(act), {
+      resolveAgents: async () => {
+        const next = made.length === 0 ? main : browsing();
+        made.push(next);
+        return { [BOT]: next as unknown as LoopAgent };
+      },
+    });
+    return { ...built, main, made };
+  };
+  const send = async (
+    engine: ReturnType<typeof engineWith>["engine"],
+    conversation: { threadId: string; channelId: string },
+    text: string,
+  ) => {
+    const sent = await engine.send({
+      ...conversation,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked(text)],
+      tools: null,
+    });
+    if (!sent.ok) throw new Error("not sent");
+    return sent.turnId;
+  };
+  const delegatedBy = (message: Message) =>
+    (message as { lafDelegated?: string }).lafDelegated;
+
+  test("its steps are in the thread for a person, between the call and its answer — and its last words only in that answer", async () => {
+    const conversation = await aConversation();
+    const { engine } = engineHandingOver();
+    const turnId = await send(engine, conversation, "서울 날씨 찾아줘");
+    await until(async () => (await statusOf(turnId)) === "done");
+    const stored = await messagesFor(database, conversation.threadId);
+    const shape = stored.map((message) => [
+      message.role,
+      message.role === "assistant"
+        ? (message.toolCalls?.[0]?.function.name ?? "says")
+        : message.role === "tool"
+          ? message.toolCallId
+          : "asks",
+      delegatedBy(message) ?? null,
+    ]);
+    expect(shape).toEqual([
+      ["user", "asks", null],
+      ["assistant", "delegate", null],
+      ["assistant", "computer_navigate", "call-delegate"],
+      ["tool", "call-open", "call-delegate"],
+      ["tool", "call-delegate", null],
+      ["assistant", "says", null],
+    ]);
+    // What it handed back is the call's answer, and no message of its own: said once, by the Bot.
+    expect(
+      JSON.parse(
+        String(
+          stored.find((m) => m.role === "tool" && !delegatedBy(m))?.content,
+        ),
+      ),
+    ).toEqual({ ok: true, answer: HANDED_BACK });
+    expect(
+      stored.filter(
+        (message) =>
+          message.role === "assistant" && message.content === HANDED_BACK,
+      ),
+    ).toEqual([]);
+    // Each step is stamped like any message of the turn's: when, and which Bot.
+    const step = stored[2] as Message & { lafAt?: string; lafAgentId?: string };
+    expect(step.lafAgentId).toBe(BOT);
+    expect(typeof step.lafAt).toBe("string");
+  });
+
+  test("every window is sent the steps as they happen, in the turn's order", async () => {
+    const conversation = await aConversation();
+    const { engine, hub } = engineHandingOver();
+    const seen: string[] = [];
+    hub.subscribe(
+      conversation.threadId,
+      { epoch: null, after: null },
+      (frame) => {
+        if (frame.kind === "messages") {
+          seen.push(
+            `messages: ${frame.messages
+              .map(
+                (message) =>
+                  (message.role === "assistant"
+                    ? message.toolCalls?.[0]?.function.name
+                    : undefined) ?? message.role,
+              )
+              .join(", ")}`,
+          );
+        }
+        if (frame.kind === "event" && frame.event.type === "TOOL_CALL_RESULT") {
+          seen.push(`result: ${String(frame.event.toolCallId)}`);
+        }
+      },
+    );
+    const turnId = await send(engine, conversation, "서울 날씨 찾아줘");
+    await until(async () => (await statusOf(turnId)) === "done");
+    // The delegated step is drawn before its page comes back, and that before the call's answer.
+    const order = [
+      "messages: delegate, computer_navigate",
+      "result: call-open",
+      "result: call-delegate",
+    ].map((line) => seen.indexOf(line));
+    expect(order.every((at) => at !== -1)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    // And the turn's last frame is the whole of it, woven: the step between call and answer.
+    expect(seen.at(-1)).toBe(
+      "messages: user, delegate, computer_navigate, tool, tool, assistant",
+    );
+  });
+
+  test("the delegated run has a conversation of its own: the task alone, under the turn's id", async () => {
+    const conversation = await aConversation();
+    const { engine, made } = engineHandingOver();
+    const turnId = await send(engine, conversation, "서울 날씨 찾아줘");
+    await until(async () => (await statusOf(turnId)) === "done");
+    const worker = made[1];
+    if (!worker) throw new Error("nothing was delegated to");
+    // Nothing of the person's thread: the instruction, and then its own steps.
+    expect(worker.inputs[0]?.map((message) => message.content)).toEqual([TASK]);
+    expect(worker.forwarded).toEqual([{ mode: "browse" }, { mode: "browse" }]);
+    // Filed under the turn like every run of it, and apart from the turn's own `.1`.
+    expect(worker.runIds).toEqual([`${turnId}.d1.0`, `${turnId}.d1.1`]);
+    expect(made[0]?.runIds).toEqual([turnId, `${turnId}.1`]);
+    const threadOf = (bot: unknown) => (bot as { threadId?: string }).threadId;
+    expect(threadOf(made[0])).toBe(conversation.threadId);
+    expect(threadOf(worker)).not.toBe(conversation.threadId);
+    expect(typeof threadOf(worker)).toBe("string");
+  });
+
+  test("the Bot that delegated is never handed the steps: not in the turn, not on the next one", async () => {
+    const conversation = await aConversation();
+    const { engine, main, made } = engineHandingOver();
+    const first = await send(engine, conversation, "서울 날씨 찾아줘");
+    await until(async () => (await statusOf(first)) === "done");
+    // Within the turn: its second request holds the call and its answer, and nothing between.
+    expect(
+      main.inputs[1]?.map(
+        (message) =>
+          (message.role === "assistant"
+            ? message.toolCalls?.[0]?.function.name
+            : undefined) ?? message.role,
+      ),
+    ).toEqual(["user", "delegate", "tool"]);
+    // The turn after it: a Bot resolved afresh is handed the thread without them.
+    made.length = 0;
+    const again = scriptedBot("그럼요.");
+    const next = engineWith(again, async () => ({ ok: true }));
+    const second = await send(next.engine, conversation, "고마워");
+    await until(async () => (await statusOf(second)) === "done");
+    const handed = again.inputs[0] ?? [];
+    expect(handed.some((message) => delegatedBy(message) !== undefined)).toBe(
+      false,
+    );
+    expect(JSON.stringify(handed)).not.toContain("computer_navigate");
+    expect(JSON.stringify(handed)).not.toContain("call-open");
+    // And what it was handed back is still there to read.
+    expect(JSON.stringify(handed)).toContain(HANDED_BACK);
+    // While the thread still holds them, for the person who scrolls up.
+    expect(
+      (await messagesFor(database, conversation.threadId)).filter(
+        (message) => delegatedBy(message) === "call-delegate",
+      ),
+    ).toHaveLength(2);
+  });
+
+  test("what it called is counted on the turn's own row", async () => {
+    const conversation = await aConversation();
+    const { engine } = engineHandingOver();
+    const turnId = await send(engine, conversation, "서울 날씨 찾아줘");
+    await until(async () => (await statusOf(turnId)) === "done");
+    const [row] = await database
+      .select({ toolCalls: lafThreadRuns.toolCalls })
+      .from(lafThreadRuns)
+      .where(eq(lafThreadRuns.runId, turnId));
+    // The Bot's `delegate` and the page the delegated run opened.
+    expect(row?.toolCalls).toBe(2);
+  });
+
+  test("a stop while it works ends the turn, and no step is left looking as though it were still going", async () => {
+    const conversation = await aConversation();
+    let reached: () => void = () => {};
+    const working = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const main = delegating();
+    const made: ReturnType<typeof scriptedBot>[] = [];
+    const { engine } = engineWith(
+      main,
+      (context: ChatTurnContext): ChatToolkit["execute"] =>
+        async (name, args, call) => {
+          if (name === "delegate") {
+            const handed = await context.delegate?.({
+              callId: call.id,
+              mode: "browse",
+              instruction: String(args.task),
+              tools: [],
+              // The page that never comes back: cut by the stop, as a call to the computer is.
+              execute: (_name, _args, step) =>
+                new Promise((resolve) => {
+                  reached();
+                  step.signal.addEventListener("abort", () =>
+                    resolve({ ok: false, code: "laf:stopped", stopped: true }),
+                  );
+                }),
+              signal: call.signal,
+            });
+            return { ok: true, answer: handed?.answer ?? "" };
+          }
+          return { ok: true };
+        },
+      {
+        resolveAgents: async () => {
+          const next = made.length === 0 ? main : browsing();
+          made.push(next);
+          return { [BOT]: next as unknown as LoopAgent };
+        },
+      },
+    );
+    const turnId = await send(engine, conversation, "서울 날씨 찾아줘");
+    await working;
+    expect(engine.stop(conversation.threadId)).toBe(true);
+    await until(async () => (await statusOf(turnId)) === "stopped");
+    const stored = await messagesFor(database, conversation.threadId);
+    const answers = stored
+      .filter((message) => message.role === "tool")
+      .map((message) => [
+        (message as { toolCallId: string }).toolCallId,
+        delegatedBy(message) ?? null,
+        JSON.parse(String(message.content)).code,
+      ]);
+    expect(answers).toEqual([
+      ["call-open", "call-delegate", "laf:stopped"],
+      ["call-delegate", null, "laf:stopped"],
+    ]);
+    // Neither Bot was asked anything after the stop.
+    expect(main.runs).toBe(1);
+    expect(made[1]?.runs).toBe(1);
+    expect(engine.busy(conversation.threadId)).toBe(false);
   });
 });
 

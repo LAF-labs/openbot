@@ -31,8 +31,10 @@ import {
   TOOL_RESULT_KO,
   toolResultText,
 } from "../../../shared/prompt/tool-results.ko";
+import type { PromptMode } from "../../../shared/prompt";
 import { CORE_TOOL_NAMES, serverKeyOf } from "../../../shared/tools/bridge";
 import { COMPUTER_TOOLS, computerTool } from "../../../shared/tools/computer";
+import { DELEGATE, delegateTargetOf } from "../../../shared/tools/delegate";
 import {
   type ComputerOutcome,
   computerReplyOutcome,
@@ -112,12 +114,25 @@ import type { RoutineService } from "../routines/service";
 import { createShownGuard } from "../logins/shown";
 import type { LoginVault } from "../logins/store";
 import { drivesTheBrowser } from "../runner/bot-lane";
-import type { LoopExecutor, LoopOutcome } from "../runner/turn-loop";
+import {
+  type LoopExecutor,
+  type LoopOutcome,
+  UnattendedRunError,
+  type UnattendedStep,
+} from "../runner/turn-loop";
 import { awaitApproval, type PersonAnswers } from "./people";
 
 export type ChatToolsDeps = {
   /** Absent when no computer is configured; its tools are then not offered. */
   gateway?: ComputerGateway;
+  /**
+   * The conversation hands its browsing over instead of doing it (piece 6-2,
+   * `docs/laf/redesign-2026-10.md` §4): a turn is offered `delegate` and the three tools that
+   * reach the Bot's folder alone, and the browser's own tools are offered only to the run a
+   * `delegate` call starts (`ChatTurnContext.delegate`). Off, every tool of the computer's is the
+   * turn's own, as it has been. Nothing without a computer.
+   */
+  delegatesBrowsing?: boolean;
   /**
    * The person's saved logins, for taking a saved password out of what the browser's tools hand
    * a model (`logins/shown.ts`). Absent where there is no vault: nothing was saved to look for.
@@ -205,6 +220,22 @@ export type ChatTurnContext = {
    * turn stopped while it waited, and the call must not leave. Absent, nothing is waited for.
    */
   borrowBrowser?: () => Promise<boolean>;
+  /**
+   * Run a second loop of this Bot's inside the turn, for one call (`engine.ts`, piece 6-2): a
+   * conversation of its own holding `instruction` alone, `tools` carried out by `execute`, its
+   * steps filed beside the turn for a person and kept from the Bot that delegated. Hands back
+   * what it said last. Throws what a loop throws — a stop, the turn's deadline, a failure of the
+   * model — and those end the turn as they would from its own loop. Absent, nothing is delegated.
+   */
+  delegate?: (run: {
+    /** The call this is carried out for: what its steps are filed under. */
+    callId: string;
+    mode: Extract<PromptMode, "browse">;
+    instruction: string;
+    tools: Tool[];
+    execute: LoopExecutor;
+    signal: AbortSignal;
+  }) => Promise<{ answer: string; steps: UnattendedStep[] }>;
 };
 
 export type ChatToolkit = {
@@ -315,6 +346,43 @@ type Listing = {
   components: string[];
 };
 
+/** A catalogue entry as a run is handed it: the three fields that travel. */
+const described = (tool: {
+  name: string;
+  description: string;
+  parameters: unknown;
+}): Tool => ({
+  name: tool.name,
+  description: tool.description,
+  parameters: tool.parameters,
+});
+
+/** Whether a turn hands its browsing over: only where there is a computer to browse on. */
+const delegates = (deps: ChatToolsDeps): boolean =>
+  Boolean(deps.gateway && deps.delegatesBrowsing);
+
+/**
+ * The tools of the computer's that a turn is offered as its own.
+ *
+ * All of them, until the conversation delegates its browsing. Then the ones carried out in a
+ * browser go to the run a `delegate` call starts, and the turn keeps the three that reach the
+ * Bot's folder alone — the same line the browser's lane draws (`runner/bot-lane.ts`). The folder
+ * stays the turn's because a person's attachment is read from it: the prompt tells the Bot the
+ * whole file is in its folder, to be read with `computer_read_file` (`attachments.ko.ts`), and a
+ * turn with no such tool would be told to call one it does not have.
+ */
+function turnsComputerTools(deps: ChatToolsDeps): Tool[] {
+  if (!deps.gateway) return [];
+  return (
+    delegates(deps)
+      ? [
+          ...COMPUTER_TOOLS.filter((tool) => !drivesTheBrowser(tool.name)),
+          DELEGATE,
+        ]
+      : COMPUTER_TOOLS
+  ).map(described);
+}
+
 /** The names of every tool this file can carry out for one Bot, right now. */
 async function executableNames(
   deps: ChatToolsDeps,
@@ -330,9 +398,7 @@ async function executableNames(
   withheld: WithheldTools;
 }> {
   const names = new Set<string>();
-  if (deps.gateway) {
-    for (const tool of COMPUTER_TOOLS) names.add(tool.name);
-  }
+  for (const tool of turnsComputerTools(deps)) names.add(tool.name);
   if (deps.agents) names.add(UPDATE_PROFILE.name);
   if (deps.routines) names.add(MANAGE_ROUTINE.name);
   if (deps.agents && (deps.memories || deps.whereabouts)) {
@@ -395,13 +461,7 @@ async function executableNames(
  */
 function serverTools(deps: ChatToolsDeps, pluginTools: Tool[]): Tool[] {
   return [
-    ...(deps.gateway
-      ? COMPUTER_TOOLS.map((tool) => ({
-          name: tool.name,
-          description: tool.description,
-          parameters: tool.parameters,
-        }))
-      : []),
+    ...turnsComputerTools(deps),
     ...(deps.agents
       ? [
           {
@@ -541,16 +601,20 @@ export function createChatTools(deps: ChatToolsDeps) {
       accounts && tool.name === CONNECT_CARD
         ? { ...tool, parameters: withAccountStates(tool.parameters, accounts) }
         : tool;
-    const tools = (
-      goals
-        ? [
-            ...listed,
-            ...goals.tools.filter(
-              (tool) => !listed.some((one) => one.name === tool.name),
-            ),
-          ]
-        : listed
-    ).map(told);
+    /*
+     * `delegate` IS THIS SERVER'S TO OFFER, like the goals' tools: no window registers it, and a
+     * window open since before the upgrade goes on declaring the browser's tools, which the names
+     * above no longer hold. Worded here whatever a window sent under that name.
+     */
+    const own = [
+      ...(delegates(deps) ? [described(DELEGATE)] : []),
+      ...(goals ? goals.tools : []),
+    ];
+    const offered = listed.filter((tool) => tool.name !== DELEGATE.name);
+    const tools = [
+      ...offered,
+      ...own.filter((tool) => !offered.some((one) => one.name === tool.name)),
+    ].map(told);
     if (declared) {
       const dropped = declared
         .filter((tool) => !names.has(tool.name))
@@ -1514,9 +1578,61 @@ export function createChatTools(deps: ChatToolsDeps) {
       return typeof value === "string" ? value : JSON.stringify(value ?? "");
     };
 
+    /*
+     * THE BROWSER'S TOOLS, CARRIED OUT FOR THE RUN THE TURN HANDED ITS BROWSING TO (piece 6-2).
+     * Every one of the computer's and nothing else: that run is offered no other tool, and a
+     * name it made up is refused as a turn's would be. Through `computer` above, so the lane, the
+     * boundary, the wait on a person and the read for a saved password are the turn's own.
+     */
+    const forTheDelegated: LoopExecutor = async (name, args, call) => {
+      try {
+        if (!computerTool(name)) return refusal("laf:tool_unknown");
+        return await withoutSavedPasswords(
+          { userId: owner.id, botId, threadId, toolCallId: call.id },
+          await computer(name, args, call),
+        );
+      } catch (error) {
+        log.error("chat_tool_threw", {
+          tool: name,
+          reason: describeFailure(error),
+        });
+        return refusal("laf:tool_failed");
+      }
+    };
+
+    /**
+     * `delegate`: the work is handed to a run of the Bot's own, and its last words are the answer.
+     *
+     * AN ANSWER OF NOTHING IS A CALL THAT FAILED. A run that ended without a word — out of steps
+     * on a refused call, say — handed nothing back, and "ok" with an empty answer would have the
+     * Bot tell the person it looked and found nothing.
+     */
+    const delegated = async (
+      args: Record<string, unknown>,
+      call: { id: string; signal: AbortSignal },
+    ): Promise<LoopOutcome> => {
+      const run = context.delegate;
+      if (!run || !delegates(deps)) return refusal("laf:tool_unknown");
+      const task = typeof args.task === "string" ? args.task.trim() : "";
+      if (!delegateTargetOf(args.to) || !task) {
+        return refusal("laf:tool_arguments_invalid");
+      }
+      const { answer } = await run({
+        callId: call.id,
+        mode: "browse",
+        instruction: task,
+        tools: COMPUTER_TOOLS.map(described),
+        execute: forTheDelegated,
+        signal: call.signal,
+      });
+      if (call.signal.aborted) return refusal("laf:stopped", { stopped: true });
+      return answer ? { ok: true, answer } : refusal("laf:tool_failed");
+    };
+
     const execute: LoopExecutor = async (name, args, call) => {
       try {
         if (!names.has(name)) return refusal("laf:tool_unknown");
+        if (name === DELEGATE.name) return await delegated(args, call);
         if (computerTool(name)) {
           /*
            * WHAT THE BROWSER'S TOOLS HAND OVER IS READ ONCE MORE HERE, for a password this person
@@ -1540,6 +1656,12 @@ export function createChatTools(deps: ChatToolsDeps) {
         }
         return await component(name, args, call);
       } catch (error) {
+        /*
+         * WHAT ENDED A DELEGATED RUN ENDS THE TURN: a stop, the turn's deadline, the model's own
+         * failure. Answered here as a tool that failed, the Bot would be asked again in front of
+         * a provider that had just refused it, and a stopped turn would go on to its next step.
+         */
+        if (error instanceof UnattendedRunError) throw error;
         /*
          * A handler that threw: the call is answered, and the answer says it failed — AS A FACT,
          * NOT AS A SENTENCE. This returned the string `Error: …`, and a string is what a tool that
