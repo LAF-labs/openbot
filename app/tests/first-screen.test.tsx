@@ -19,6 +19,7 @@ import {
   unmountApps,
 } from "./support/app-router";
 import {
+  acted,
   BOT_ID,
   installTurnStreams,
   removeTurnStreams,
@@ -344,74 +345,141 @@ describe("home", () => {
   });
 });
 
-describe("the sidebar", () => {
-  const nav = (view: { host: HTMLElement }) =>
-    view.host.querySelector("nav") as HTMLElement;
-  const rows = (view: { host: HTMLElement }) =>
-    [...nav(view).querySelectorAll("ul a")].map(
-      (link) => link.getAttribute("href") ?? "",
-    );
+/*
+ * THE TOP ROW (2026-10-10, record §1, piece 3-1). The column at the left of the window is gone.
+ * One row stands over every screen: at its left the Bot and what it is doing — on a conversation,
+ * that conversation's own header — and at its right the person's picture, which opens everything
+ * the column led to (`profile-menu.test.tsx` has the list). The row is also what the installed
+ * app's window is dragged by, on every screen, which is why it is checked on a page that has no
+ * header of its own.
+ */
+describe("the top row", () => {
+  const oneBot = ({ pathname }: { pathname: string }) => {
+    if (pathname === "/api/agents") {
+      return json({ agents: [agentFixture({ id: "bot-1", name: "초롱" })] });
+    }
+    if (pathname === "/api/channels") {
+      return json({
+        channels: [conversation("c-1", "bot-1", "2026-09-20T00:00:00Z")],
+      });
+    }
+    return undefined;
+  };
+  const row = (view: { host: HTMLElement }) =>
+    view.host.querySelector("[data-app-top-bar]") as HTMLElement | null;
+  const presence = (view: { host: HTMLElement }) =>
+    row(view)?.querySelector("a[data-bot-presence]") ?? null;
+  // Counted, never matched against null: a failed `toBeNull()` on an element writes out the whole
+  // document and everything React hangs on it, which is minutes of a run that looks hung.
+  const presences = (view: { host: HTMLElement }) =>
+    row(view)?.querySelectorAll("a[data-bot-presence]").length ?? 0;
 
-  test("with one Bot, is that Bot and the places to change how it works — nothing to make or add", async () => {
-    const view = await mountApp({
-      path: "/help",
-      api: ({ pathname }) => {
-        if (pathname === "/api/agents") {
-          return json({
-            agents: [agentFixture({ id: "bot-1", name: "초롱" })],
-          });
-        }
-        if (pathname === "/api/channels") {
-          return json({
-            channels: [conversation("c-1", "bot-1", "2026-09-20T00:00:00Z")],
-          });
-        }
-        return undefined;
-      },
-    });
-    // The conversation, and 소식 (phase 7), 아이디어 (phase 5), 목표 (phase 9) and 만든 것 (phase 6).
-    await view.waitFor(() => rows(view).length === 5, "the Bot's row");
-    expect(rows(view)).toEqual([
-      "/channel/c-1",
-      "/feed",
-      "/ideas",
-      "/goals",
-      "/made",
-    ]);
-    const text = nav(view).textContent ?? "";
-    expect(text).toContain("초롱");
-    // Every place that changes how it works is one press away under 메뉴 (phase 9) — the one
-    // button at the foot, with the word in its name rather than beside it.
+  test("stands over a screen with no header of its own: the window's handle, the Bot and its state, and the menu — and there is no column", async () => {
+    const view = await mountApp({ path: "/help", api: oneBot });
+    await view.waitFor(() => presence(view) !== null, "the Bot in the row");
+    // What the installed app's window is dragged by: the row, and the empty stretch in it.
+    expect(row(view)?.hasAttribute("data-tauri-drag-region")).toBe(true);
     expect(
-      nav(view)
-        .querySelector("[data-sidebar-menu]")
+      row(view)?.querySelectorAll("div[data-tauri-drag-region]").length,
+    ).toBe(1);
+    // The Bot, by name and state, leading to its conversation — where a waiting card is.
+    expect(presence(view)?.getAttribute("aria-label")).toBe(
+      "초롱 · Ready. Conversation",
+    );
+    expect(presence(view)?.getAttribute("href")).toBe("/channel/c-1");
+    // The menu, named and for whom, with no word drawn.
+    expect(
+      row(view)
+        ?.querySelector("[data-profile-menu]")
         ?.getAttribute("aria-label")
         ?.startsWith("Menu · "),
     ).toBe(true);
-    expect(text).not.toContain("Menu");
-    // The profile is the Bot itself, at the top of the column (2026-09-24), not a second link.
+    // No column: no navigation landmark beside the screen, no roster furniture.
     expect(
-      nav(view).querySelector('a[href^="/agents"]')?.getAttribute("aria-label"),
-    ).toContain("Bot profile");
-    // The list heading is for an account with several; the roster's own furniture is gone.
-    expect(text).not.toContain("Your Bots");
-    expect(nav(view).querySelector('input[type="search"]')).toBeNull();
+      view.host.querySelectorAll('nav[aria-label="Your Bot"]').length,
+    ).toBe(0);
+    expect(view.host.querySelectorAll('input[type="search"]').length).toBe(0);
     expect(
-      nav(view).querySelector('[aria-label="Start a new channel"]'),
-    ).toBeNull();
+      view.host.querySelectorAll('[aria-label="Start a new channel"]').length,
+    ).toBe(0);
   });
 
-  test("on an account from before, lists every Bot it has — hidden ones too — each opening its own conversation", async () => {
+  test("on a conversation it holds that conversation's header, and there is one row, not two", async () => {
+    // The conversation nobody has spoken in yet: its header needs nothing but the Bot.
+    const view = await mountApp({
+      path: "/channel/new?agent=bot-1",
+      api: ({ pathname }) =>
+        pathname === "/api/channels"
+          ? json({ channels: [] })
+          : oneBot({ pathname }),
+    });
+    await view.waitFor(
+      () => row(view)?.querySelector("h1")?.textContent === "초롱",
+      "the conversation's header in the row",
+    );
+    // The header says who the Bot is and what it is doing; the row does not say it a second time.
+    expect(presences(view)).toBe(0);
+    // And the conversation draws no bar of its own under the row.
+    expect(view.host.querySelectorAll("header").length).toBe(1);
+  });
+
+  /*
+   * A RUN ENDING IS WHEN A ROUTINE'S ANSWER LANDS, and nothing pushes that to the window: the
+   * socket carries only what a window reported. The column noticed a run leave the working list
+   * and asked again for what the run may have written; the column is gone and the row does it
+   * (`profile-menu.tsx`), on every screen — here on one that reads none of the three itself.
+   */
+  test("a run that ends while another screen is open asks again for the conversations, 소식's count and the goals", async () => {
+    let isWorking = true;
+    const view = await mountApp({
+      path: "/help",
+      api: (request) => {
+        if (request.pathname === "/api/agents/working") {
+          return json({
+            working: isWorking
+              ? [
+                  {
+                    agentId: "bot-1",
+                    origin: "routine",
+                    label: "아침 주문 확인",
+                    startedAt: "2026-10-10T00:00:00.000Z",
+                  },
+                ]
+              : [],
+          });
+        }
+        return oneBot(request);
+      },
+    });
+    await view.waitFor(() => presence(view) !== null, "the Bot in the row");
+    await view.settle(120);
+    const asked = (pathname: string) =>
+      view.requests.filter((request) => request.pathname === pathname).length;
+    const before = ["/api/channels", "/api/feed/unseen", "/api/goals"].map(
+      asked,
+    );
+
+    isWorking = false;
+    await acted(async () => {
+      const { workingKeys } = await import("../src/lib/agents/working");
+      await view.queryClient.invalidateQueries({ queryKey: workingKeys.all });
+    });
+    await view.waitFor(
+      () => asked("/api/channels") > (before[0] ?? 0),
+      "the conversations to be asked for again",
+    );
+    await view.settle(120);
+    expect(asked("/api/feed/unseen")).toBeGreaterThan(before[1] ?? 0);
+    expect(asked("/api/goals")).toBeGreaterThan(before[2] ?? 0);
+  });
+
+  test("an account with several Bots has none of them at the row's left: whose state would stand there has no answer", async () => {
     const view = await mountApp({
       path: "/help",
       api: ({ pathname, url }) => {
         if (pathname === "/api/agents") {
           return url.searchParams.get("hidden") === "true"
-            ? json({
-                agents: [
-                  agentFixture({ id: "bot-3", name: "세모", hidden: true }),
-                ],
-              })
+            ? json({ agents: [] })
             : json({
                 agents: [
                   agentFixture({ id: "bot-1", name: "초롱" }),
@@ -419,30 +487,15 @@ describe("the sidebar", () => {
                 ],
               });
         }
-        if (pathname === "/api/channels") {
-          return json({
-            channels: [
-              conversation("c-1", "bot-1", "2026-09-20T00:00:00Z"),
-              conversation("c-2", "bot-2", "2026-09-21T00:00:00Z"),
-              // A room from before: it is not either Bot's conversation, and it is not listed.
-              {
-                ...conversation("room", "bot-1", "2026-09-22T00:00:00Z"),
-                agentIds: ["bot-1", "bot-2"],
-              },
-            ],
-          });
-        }
         return undefined;
       },
     });
-    await view.waitFor(() => rows(view).length === 3, "three Bots");
-    expect(nav(view).textContent).toContain("Your Bots");
-    expect(rows(view)).toEqual([
-      "/channel/c-1",
-      "/channel/c-2",
-      // Nobody has spoken to the hidden one: its row opens the empty conversation, by its id.
-      "/channel/new?agent=bot-3",
-    ]);
+    await view.waitFor(
+      () => row(view)?.querySelector("[data-profile-menu]") != null,
+      "the menu",
+    );
+    await view.settle(120);
+    expect(presences(view)).toBe(0);
     expect(ko["Your Bots"]).toBe("내 봇들");
   });
 });

@@ -501,7 +501,6 @@ export const ko: Record<string, string> = {
     "봇들이 함께 쓰는 브라우저 하나와 그 프로필. 프로필이 있어서 봇들이 내일도 로그인 상태로 남아요 — 초기화하면 봇 전부가 로그아웃돼요.",
   Edit: "수정",
   "Edit description": "설명 수정",
-  "Edit profile": "프로필 편집",
   "Edit skill": "스킬 수정",
   Email: "메일",
   "Every action taken in this deployment, and by whom.":
@@ -536,7 +535,6 @@ export const ko: Record<string, string> = {
   Light: "라이트",
   "Loading runs…": "실행 기록 불러오는 중…",
   "Logging out…": "로그아웃 중…",
-  "Mark as unread": "읽지 않음으로 표시",
   "The folder's name is matched to the letter, capitals included: Notes/ is another folder, and a write there is asked about. Judged on the path as the Bot's computer reads it, so a folder it has not used before is a question rather than a refusal. Only a file the Bot writes itself is asked about: a download, a file somebody attaches and a long result set aside go to their own folders without this question.":
     "폴더 이름은 대소문자까지 글자 그대로 비교해요. Notes/는 notes/와 다른 폴더라서, 거기에 쓰려고 하면 물어요. 봇의 컴퓨터가 읽는 파일 경로를 기준으로 판단하므로, 처음 쓰는 폴더는 거부가 아니라 질문이 돼요. 봇이 직접 쓰는 파일만 물어요. 내려받은 파일, 누군가 첨부한 파일, 따로 보관한 긴 결과는 이 질문 없이 각자의 폴더로 가요.",
   "May no longer read this": "더 이상 읽을 수 없음",
@@ -1757,8 +1755,6 @@ export const ko: Record<string, string> = {
     "봇이 응답을 멈춰서 이번 차례를 끝냈어요. 다시 물어보거나, 봇이 켜져 있는지 확인해 주세요.",
   "The Bot did not answer. It may not be running right now.":
     "봇이 답하지 않았어요. 지금 꺼져 있을 수 있어요.",
-  "Expand the sidebar": "사이드바 펼치기",
-  "Collapse the sidebar": "사이드바 접기",
   // 연결·설정 화면
   "Allow notifications for this app in your computer's own settings, then reopen this screen.":
     "컴퓨터 설정의 알림에서 이 앱을 허용한 다음, 이 화면을 다시 열어 주세요.",
@@ -2516,7 +2512,6 @@ export const ko: Record<string, string> = {
   "Reloading…": "다시 불러오는 중…",
   // 진단 정보 미리보기 — 화면 오류 기록이 어느 부분의 것인지.
   "Where it happened: {name}": "문제가 생긴 곳: {name}",
-  "The list of Bots": "봇 목록",
   "The main screen": "본문 화면",
   "The conversation": "대화",
   "The conversation's messages": "대화 내용",
@@ -2778,6 +2773,7 @@ export const ko: Record<string, string> = {
   Places: "이동",
   Updates: "소식",
   Menu: "메뉴",
+  "Something new": "새로 온 것 있음",
   "Nothing yet today. What you hand over in the conversation shows up here.":
     "오늘은 아직 한 일이 없어요. 대화에서 맡기신 일이 여기에 모여요.",
   // today

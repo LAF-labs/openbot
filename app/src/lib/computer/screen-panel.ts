@@ -221,7 +221,8 @@ function subscribeToViewport(onChange: () => void): () => void {
   /*
    * AND the media query's own event, for the same reason the roster listens to both: `resize` is
    * not delivered to a backgrounded tab, and a window widened while the app was hidden would keep
-   * the narrow rule until something else made it look (`app-sidebar/bot-sidebar.tsx`).
+   * the narrow rule until something else made it look (the column that stood at the left of the
+   * window until 2026-10-10).
    */
   const query =
     typeof window.matchMedia === "function"

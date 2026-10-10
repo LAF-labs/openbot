@@ -4,7 +4,8 @@ import { inShell } from "@/lib/notifications/shell";
  * THE 44px THE INSTALLED APP'S WINDOW BUTTONS SIT IN.
  *
  * The shell sets `titleBarStyle: "Overlay"`, which puts the traffic lights over the page rather
- * than in a bar of their own. The roster reserves a row for them (`bot-sidebar.tsx`); Settings and
+ * than in a bar of their own. The app's top row reserves their height and their width
+ * (`app-top-bar.tsx`; the roster's title row did until 2026-10-10); Settings and
  * Admin drew from the top of the window, so in the installed app the close button landed on top of
  * "환경 설정" and on the sidebar's first row. Measured on macOS, where the lights are top-left and
  * therefore over the rail rather than over the pane.

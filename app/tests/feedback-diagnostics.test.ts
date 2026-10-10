@@ -175,11 +175,11 @@ describe("the diagnostic details in the 문의·의견 box", () => {
     const shown = await render({
       bundles: [withScreen],
       expireFirstSend: false,
-      message: "봇 목록이 안 보여요",
+      message: "메뉴가 안 보여요",
     });
 
     expect(shown.preview).toContain(
-      "screen_failed · 문제가 생긴 곳: 봇 목록 · TypeError",
+      "screen_failed · 문제가 생긴 곳: 메뉴 · TypeError",
     );
     expect(shown.preview).toContain("3개");
     for (const said of [

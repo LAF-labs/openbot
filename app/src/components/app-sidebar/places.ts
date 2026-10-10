@@ -2,15 +2,17 @@ import {
   IconBox,
   IconClock,
   IconHelp,
+  IconKey,
   IconNotebook,
   IconPlugConnected,
   IconUserCircle,
 } from "@tabler/icons-react";
 
 /**
- * THE PLACES A PERSON GOES TO CHANGE HOW THE BOT WORKS — one list, drawn twice: the PC sidebar's
- * footer and the phone's 메뉴 page (`/menu`). Held here so the two cannot drift; `phone-nav.test.tsx`
- * holds them equal.
+ * THE PLACES A PERSON GOES TO CHANGE HOW THE BOT WORKS — one list, drawn twice: the menu behind
+ * the person's picture at the top of the app (`layout/profile-menu.tsx`; the PC sidebar's footer
+ * until 2026-10-10) and the 메뉴 page a narrow window has (`/menu`). Held here so the two cannot
+ * drift; `phone-nav.test.tsx` holds them equal.
  *
  * 연결 IS HERE SINCE 2026-09-24. It lived only under Settings, and with the Bot's own screen gone
  * from the roster the places it signs into are the most-used thing a person sets up. 봇 프로필 is
@@ -30,7 +32,8 @@ export const FOOTER_LINKS = [
    * BEHIND ONE 메뉴 ON THE PC SIDEBAR SINCE PHASE 9 (muse-shape plan §4). Phase 5 kept 수첩, 루틴 and
    * 연결 in sight with 스킬 and 도움말 under 더 보기; with the fourth row above (목표), that footer cut
    * the first row of 오늘, which the column still listed then, at 1024×640 — measured, see the
-   * note above `menu` in `bot-sidebar.tsx` — so the whole list moved under one row, the same list
+   * note that stood above the column's menu, in git history since the column went — so the whole
+   * list moved under one row, the same list
    * the 메뉴 page draws. The row is an icon at the foot since 2026-10-04 and one button with the
    * account's picture since 2026-10-06; the places listed under it are the same.
    */
@@ -40,6 +43,12 @@ export const FOOTER_LINKS = [
     icon: IconPlugConnected,
     label: "Connections",
   },
+  /*
+   * 계정 (2026-10-10, docs/laf/redesign-2026-10.md §1 and §6): the logins a person saved for the
+   * Bot to sign in with. Beside 연결 because the two are one errand — a site on 연결 that is not
+   * signed in to sends a person here — and here, not only under Settings, for the reason 연결 is.
+   */
+  { to: "/settings/logins", icon: IconKey, label: "Accounts" },
   /*
    * ONE `?`, AT THE BOTTOM. The help page and the 문의·의견 box behind it are the only way a person
    * who is stuck can say so; a way out that lives only under Settings is a way out that a person

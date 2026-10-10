@@ -207,7 +207,9 @@ describe("the phone's bar", () => {
       join(import.meta.dir, "../src/routes/_authed/_app.tsx"),
       "utf8",
     );
-    expect(layout).toContain("max-md:flex-col");
+    // A column at every width since the column beside the screen went (2026-10-10): the top
+    // row, the screen, and — in a narrow window — the bar, handed to the row's seam.
+    expect(layout).toContain("flex h-svh w-full flex-col");
     expect(layout).toContain("<PhoneTabBar />");
   });
 

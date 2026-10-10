@@ -197,7 +197,7 @@ const isFrameworkFrame = (path: string, file: string): boolean =>
  * Where each of the first few frames OF THE APP'S OWN CODE is: `file.tsx:88:3`, and nothing else.
  *
  * THE APP'S, BECAUSE REACT'S OWN FRAMES MOVE. Measured 2026-09-18 on the roster: one broken answer
- * threw from the same line of `bot-sidebar.tsx` twice, once while the roster was updating and once
+ * threw from the same line of the roster's column (`bot-sidebar.tsx`, since removed) twice, once while the roster was updating and once
  * when it was drawn afresh, and the frames between the throw and the component were React's
  * `updateMemo` in one stack and `mountMemo` in the other — two fingerprints for one failure, and a
  * second report of it. Skipping the framework's frames leaves the throw site and the components

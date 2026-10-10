@@ -27,13 +27,15 @@ const duration = (ms: number): string =>
  * Which part of the screen a `screen_failed` record is about, in the screen's words.
  *
  * The section's id is a fact and is printed as one in the exact fold below; on the line itself
- * `sidebar` means nothing to the person deciding whether to send it, and "봇 목록" does. An id this
- * build does not know is printed as the id.
+ * `sidebar` means nothing to the person deciding whether to send it, and "메뉴" does — the id is
+ * the column's, kept because records already filed carry it; what it names since 2026-10-10 is the
+ * menu in the top row and the Bot's state beside it (`layout/app-top-bar.tsx`). An id this build
+ * does not know is printed as the id.
  */
 const sectionName = (section: string): string => {
   switch (section) {
     case "sidebar":
-      return t("The list of Bots");
+      return t("Menu");
     case "main":
       return t("The main screen");
     case "conversation":
