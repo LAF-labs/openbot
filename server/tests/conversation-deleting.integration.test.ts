@@ -522,12 +522,13 @@ describe("deleting a project", () => {
     /*
      * Both have asked before the first attempt is let go on. The second's arrival is two reads
      * inside `delete` and no event of its own, so it is given time — and too little time fails
-     * this test (two stops) rather than passing it.
+     * this test (two stops) rather than passing it. A second, where the reads take milliseconds:
+     * a failure here on a loaded machine is the margin, not the joining.
      */
     while (stops.length === 0) {
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     release();
     // Both are the one attempt, and it failed: said to both, with the mark left.
     const outcomes = await both;
