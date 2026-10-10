@@ -22,7 +22,7 @@ import { isFirstMoveEnding } from "../../../shared/first-move";
 import { jsonObjectOf } from "../../../shared/json-object";
 import { streamCutResult } from "../../../shared/stream-cut";
 import { UNANSWERED_RESULT } from "../../../shared/task-ending";
-import { computerTool } from "../../../shared/tools/computer";
+import { computerTool, drivesTheBrowser } from "../../../shared/tools/computer";
 import { isDelegated } from "../../../shared/tools/delegate";
 import { withheldToolsForwarded } from "../../../shared/tools/paused";
 import type { AgentActor } from "../agents/profile-types";
@@ -32,11 +32,7 @@ import {
 } from "../channels/turn-failures";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
-import {
-  type BotLane,
-  drivesTheBrowser,
-  type LaneHold,
-} from "../runner/bot-lane";
+import type { BotLane, LaneHold } from "../runner/bot-lane";
 import type { WorkInFlight } from "../runner/in-flight";
 import { chatLabelOf, type RunLedger } from "../runner/run-ledger";
 import {
@@ -816,6 +812,13 @@ export function createTurnEngine(options: TurnEngineOptions) {
           maxSteps,
           forwardedProps: {
             mode: run.mode,
+            /*
+             * NO BRIDGE FOR THIS RUN. Every tool it holds is the computer's and is offered
+             * outright; the bridge's two tools would be at its head with nothing behind them,
+             * and it used them: asked to open a weather page, the run looked for a weather tool
+             * first — a request spent before the page was opened (model eval, 2026-10-11).
+             */
+            toolDeferral: "off",
             ...(input.device === undefined ? {} : { device: input.device }),
           },
           // Under the turn's id like every run of it, and apart from the turn's own `.1`, `.2`.

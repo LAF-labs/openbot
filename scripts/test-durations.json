@@ -583,6 +583,7 @@
   "tests/eval-calendar.test.ts": 0.1,
   "tests/eval-connect.test.ts": 0.02,
   "tests/eval-deferral.test.ts": 0.55,
+  "tests/eval-delegation.test.ts": 0.3,
   "tests/eval-feed.test.ts": 0.01,
   "tests/eval-first-move.test.ts": 0.03,
   "tests/eval-from-failures.test.ts": 0,

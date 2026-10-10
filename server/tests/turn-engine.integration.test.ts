@@ -1344,7 +1344,9 @@ describe("a run the turn delegated to", () => {
     if (!worker) throw new Error("nothing was delegated to");
     // Nothing of the person's thread: the instruction, and then its own steps.
     expect(worker.inputs[0]?.map((message) => message.content)).toEqual([TASK]);
-    expect(worker.forwarded).toEqual([{ mode: "browse" }, { mode: "browse" }]);
+    // In the mode of a delegated run, and without the bridge: every tool it holds is offered.
+    const ridden = { mode: "browse", toolDeferral: "off" };
+    expect(worker.forwarded).toEqual([ridden, ridden]);
     // Filed under the turn like every run of it, and apart from the turn's own `.1`.
     expect(worker.runIds).toEqual([`${turnId}.d1.0`, `${turnId}.d1.1`]);
     expect(made[0]?.runIds).toEqual([turnId, `${turnId}.1`]);

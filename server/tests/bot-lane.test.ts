@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { COMPUTER_TOOLS } from "../../shared/tools/computer";
+import { COMPUTER_TOOLS, drivesTheBrowser } from "../../shared/tools/computer";
 import { computerIdOf } from "../src/computer/bot-id";
-import { createBotLane, drivesTheBrowser } from "../src/runner/bot-lane";
+import { createBotLane } from "../src/runner/bot-lane";
 
 const tick = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

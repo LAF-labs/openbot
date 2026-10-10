@@ -35,6 +35,7 @@ import {
   WEATHER_TOOL_NAME,
 } from "../shared/tools/bridge";
 import { COMPUTER_TOOLS } from "../shared/tools/computer";
+import { DELEGATE } from "../shared/tools/delegate";
 import { NOW_TOOL } from "../shared/tools/now";
 import { SELF_TOOLS } from "../shared/tools/self";
 import { REALISTIC_TOOLSET } from "./deferral";
@@ -296,7 +297,11 @@ export const PLACE_LINES = (["chat", "routine"] as const).flatMap((mode) => [
 
 export const PROMPT_HASH = sha256(
   [
-    ...(["chat", "routine"] as const).map((mode) => promptSkeleton(mode)),
+    // `browse` since piece 6-2: the run a conversation hands its browsing to reads words of its
+    // own, and a verdict about delegation turns on them as much as on the chat mode's.
+    ...(["chat", "routine", "browse"] as const).map((mode) =>
+      promptSkeleton(mode),
+    ),
     ...PLACE_LINES,
   ].join("\n\n---\n\n"),
 );
@@ -321,6 +326,9 @@ export const CORE_CONNECTED_TOOLS = REALISTIC_TOOLSET.filter(
 export const CATALOGUE_HASH = sha256(
   JSON.stringify([
     ...COMPUTER_TOOLS,
+    // What a conversation's Bot holds in place of the browser's tools: its words decide what it
+    // writes for the run that does the work.
+    DELEGATE,
     ...SELF_TOOLS,
     ...BRIDGE_TOOLS,
     NOW_TOOL,

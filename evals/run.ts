@@ -29,8 +29,16 @@ import {
   liveProvider,
 } from "../agent-bot/src/provider";
 import { resolveTimeZone } from "../shared/prompt";
+import { toolResultText } from "../shared/prompt/tool-results.ko";
 import { openAccountsIn, WEATHER_TOOL_NAME } from "../shared/tools/bridge";
-import { measureSchema, REALISTIC_TOOLSET, savingOf } from "./deferral";
+import { COMPUTER_TOOLS } from "../shared/tools/computer";
+import { DELEGATE, delegateTargetOf } from "../shared/tools/delegate";
+import {
+  measureSchema,
+  REALISTIC_TOOLSET,
+  savingOf,
+  UNATTENDED_TOOLSET,
+} from "./deferral";
 import { SHOP_PAGE_TEXT, SHOP_PAGE_TITLE } from "./fixtures";
 import {
   callsOf,
@@ -48,7 +56,12 @@ import {
   PROMPT_HASH,
   systemMessageFor,
 } from "./prompt";
-import { SCENARIOS, streamProblems, turnText } from "./scenarios";
+import {
+  type Delegated,
+  SCENARIOS,
+  streamProblems,
+  turnText,
+} from "./scenarios";
 
 /**
  * The candidate. No default: this file exists to certify one named model, and a fallback here is a
@@ -216,6 +229,154 @@ async function runOnce(
   const allEvents: StreamEvent[] = [];
   let totalTokens: number | null = null;
   let promptTokens: number | null = null;
+  /** What rides on every request of the scenario's, the delegated run's included. */
+  const forwarded = {
+    ...(evalEffort() ? { effort: evalEffort() } : {}),
+    /*
+     * The person's zone, resolved, as the server's middleware forwards it — what the `now`
+     * tool reads the clock in. Without it a Dubai owner's "지금 몇 시야" would read Seoul.
+     */
+    timeZone: resolveTimeZone(scenario.person?.timeZone ?? EVAL_TIME_ZONE),
+    // The measurement arm only. Production never sends it; the default is the bridge.
+    ...(arm && !arm.deferral ? { toolDeferral: "off" } : {}),
+  };
+  const counted = (events: StreamEvent[]) => {
+    // Summed over the run's rounds: a run that looked a tool up made two or three requests.
+    const usage = usagesOf(events);
+    if (usage.requests > 0) {
+      totalTokens = (totalTokens ?? 0) + usage.totalTokens;
+      promptTokens = (promptTokens ?? 0) + usage.promptTokens;
+    }
+  };
+  const within = <T>(work: Promise<T>): Promise<T> =>
+    Promise.race([
+      work,
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("scenario timed out")),
+          SCENARIO_TIMEOUT_MS,
+        ),
+      ),
+    ]);
+
+  /*
+   * THE RUN A `delegate` CALL STARTS, AS THE PRODUCT STARTS ONE (piece 6-2,
+   * `server/src/turns/engine.ts`). A conversation's Bot holds no tool of the browser's: it hands
+   * the work over, and the same Bot does it in a conversation of its own — the task alone, the
+   * `browse` mode's words, every tool of the computer's. Answered with `{ ok: true }` the call
+   * would measure nothing: whether the task the Bot wrote can be carried out by somebody who was
+   * handed only that, and whether what comes back is what gets said, are the two things
+   * delegation can get wrong. So it is run, on the scenario's own pages (`stub`), and what it
+   * said last is handed back the way `chat-tools.ts` hands it back.
+   */
+  const delegated: Delegated[] = [];
+  const browseFor = async (task: string): Promise<Delegated> => {
+    const ordinal = delegated.length + 1;
+    const inner: unknown[] = [
+      systemMessageFor(
+        "browse",
+        scenario.person,
+        scenario.frozenAt,
+        scenario.skills,
+        notebook,
+        // Not the conversation's summary and not a routine's notepad: this run has neither.
+        undefined,
+        undefined,
+        scenario.who,
+      ),
+      { id: `u_task_${scenario.id}_${ordinal}`, role: "user", content: task },
+    ];
+    const run: Delegated = {
+      task,
+      calls: [],
+      said: "",
+      answer: "",
+      waited: false,
+      events: [],
+    };
+    const said: string[] = [];
+    for (let turn = 1; turn <= (scenario.maxTurns ?? MAX_TURNS); turn++) {
+      const response = await runAgent(
+        {
+          // One conversation for a conversation's delegated runs, as the engine names it.
+          threadId: `thread_eval_${scenario.id}_${attempt}.browse`,
+          runId: `eval_${scenario.id}_${attempt}_d${ordinal}_t${turn}_${Date.now()}`,
+          messages: inner,
+          tools: COMPUTER_TOOLS,
+          context: [],
+          state: {},
+          // Without the bridge, as the engine sends it: nothing of this run's stands behind one.
+          forwardedProps: { ...forwarded, toolDeferral: "off" },
+        } as never,
+        PINNED ?? liveProvider,
+      );
+      const round = eventsOfSse(await within(response.text()));
+      run.events.push(...round);
+      counted(round);
+      const calls = callsOf(round);
+      const answered = resultsOf(round);
+      const open = calls.filter((call) => !answered.has(call.id));
+      run.calls.push(...calls);
+      const words = turnText(round).trim();
+      // The reply that asks for nothing is the answer; one that asks for a tool is a step, and
+      // what it says before the step is what a person watching reads.
+      if (open.length === 0) {
+        run.answer = words;
+        break;
+      }
+      if (words) said.push(words);
+      if (open.some((call) => scenario.waitsOn?.(call))) {
+        run.waited = true;
+        break;
+      }
+      inner.push(...clientMessagesOf(round));
+      for (const call of open) {
+        inner.push({
+          id: `t_${call.id}`,
+          role: "tool",
+          toolCallId: call.id,
+          content: (await scenario.stub?.(call)) ?? stubResult(call.name),
+        });
+      }
+    }
+    run.said = said.join("\n");
+    // Out of turns with nothing said last: what it did say, as the engine falls back.
+    if (!run.answer && !run.waited) run.answer = said.at(-1) ?? "";
+    return run;
+  };
+  /** A `delegate` call's answer, as `chat-tools.ts` words it. Sets `waiting` where the run waits. */
+  let waiting = false;
+  const handedBack = async (call: {
+    arguments?: Record<string, unknown> | null;
+  }): Promise<string> => {
+    const refused = (code: string) =>
+      JSON.stringify({ ok: false, code, reason: toolResultText(code) });
+    const task =
+      typeof call.arguments?.task === "string"
+        ? call.arguments.task.trim()
+        : "";
+    if (!delegateTargetOf(call.arguments?.to) || !task) {
+      return refused("laf:tool_arguments_invalid");
+    }
+    // A scenario that is about what the Bot does WITH an answer scripts the answer.
+    const scripted = scenario.handsBack?.(task);
+    const run: Delegated =
+      scripted === undefined
+        ? await browseFor(task)
+        : {
+            task,
+            calls: [],
+            said: "",
+            answer: scripted,
+            waited: false,
+            events: [],
+          };
+    delegated.push(run);
+    if (run.waited) waiting = true;
+    return run.answer
+      ? JSON.stringify({ ok: true, answer: run.answer })
+      : refused("laf:tool_failed");
+  };
 
   for (let turn = 1; turn <= (scenario.maxTurns ?? MAX_TURNS); turn++) {
     const runId = `eval_${scenario.id}_${attempt}_t${turn}_${Date.now()}`;
@@ -238,38 +399,17 @@ async function runOnce(
          * deployment has opted back in — then the same fixed word is (`evalEffort`, `lib.ts`).
          * EVAL_EFFORT overrides both, for comparing two.
          */
-        forwardedProps: {
-          ...(evalEffort() ? { effort: evalEffort() } : {}),
-          /*
-           * The person's zone, resolved, as the server's middleware forwards it — what the `now`
-           * tool reads the clock in. Without it a Dubai owner's "지금 몇 시야" would read Seoul.
-           */
-          timeZone: resolveTimeZone(
-            scenario.person?.timeZone ?? EVAL_TIME_ZONE,
-          ),
-          // The measurement arm only. Production never sends it; the default is the bridge.
-          ...(arm && !arm.deferral ? { toolDeferral: "off" } : {}),
-        },
+        // A scenario that IS the delegated run rides what the engine sends one: no bridge.
+        forwardedProps:
+          scenario.mode === "browse"
+            ? { ...forwarded, toolDeferral: "off" }
+            : forwarded,
       } as never,
       PINNED ?? liveProvider,
     );
-    const body = await Promise.race([
-      response.text(),
-      new Promise<never>((_, reject) =>
-        setTimeout(
-          () => reject(new Error("scenario timed out")),
-          SCENARIO_TIMEOUT_MS,
-        ),
-      ),
-    ]);
-    const events = eventsOfSse(body);
+    const events = eventsOfSse(await within(response.text()));
     allEvents.push(...events);
-    // Summed over the run's rounds: a run that looked a tool up made two or three requests.
-    const usage = usagesOf(events);
-    if (usage.requests > 0) {
-      totalTokens = (totalTokens ?? 0) + usage.totalTokens;
-      promptTokens = (promptTokens ?? 0) + usage.promptTokens;
-    }
+    counted(events);
 
     /*
      * THE PRODUCT'S BREAK CONDITION, WHICH IS NOT "IT SAID SOMETHING".
@@ -311,19 +451,27 @@ async function runOnce(
         id: `t_${call.id}`,
         role: "tool",
         toolCallId: call.id,
-        content: (await scenario.stub?.(call)) ?? stubResult(call.name),
+        content:
+          call.name === DELEGATE.name
+            ? await handedBack(call)
+            : ((await scenario.stub?.(call)) ?? stubResult(call.name)),
       });
     }
+    // The delegated run stopped to ask a person: the turn waits there, and so does this run.
+    if (waiting) break;
   }
 
   const latencyMs = performance.now() - started;
   return {
     events: allEvents,
+    delegated,
     latencyMs,
     totalTokens,
     promptTokens,
     // How many times the model was asked: the number a first move exists to lower.
-    requests: usagesOf(allEvents).requests,
+    requests:
+      usagesOf(allEvents).requests +
+      delegated.reduce((sum, run) => sum + usagesOf(run.events).requests, 0),
   };
 }
 
@@ -350,19 +498,24 @@ for (const scenario of SCENARIOS) {
 
   for (let attempt = 1; attempt <= RUNS; attempt++) {
     try {
-      const { events, latencyMs, totalTokens, requests } = await runOnce(
-        scenario,
-        attempt,
-      );
+      const { events, delegated, latencyMs, totalTokens, requests } =
+        await runOnce(scenario, attempt);
       latencies.push(latencyMs);
       asked.push(requests);
       if (totalTokens !== null) tokens.push(totalTokens);
 
-      const wire = streamProblems(events);
+      const wire = [
+        ...streamProblems(events),
+        // A hand-back the scenario scripted was no run: there is no stream of it to be sound.
+        ...delegated.flatMap((run) =>
+          run.events.length > 0 ? streamProblems(run.events) : [],
+        ),
+      ];
       const judged = scenario.check({
         text: turnText(events),
         calls: callsOf(events),
         events,
+        delegated,
       });
       const failures = [...judged.notes, ...wire.map((p) => `wire: ${p}`)];
       /*
@@ -370,7 +523,13 @@ for (const scenario of SCENARIOS) {
        * could not say which Friday or which figure it was about (`this-weeks-friday`).
        */
       if (process.env.EVAL_SHOW === "1") {
-        const called = callsOf(events).map(
+        const called = [
+          ...callsOf(events),
+          // What a run it delegated to called, marked so the two read apart.
+          ...delegated.flatMap((run) =>
+            run.calls.map((call) => ({ ...call, name: `↳${call.name}` })),
+          ),
+        ].map(
           (call) => `${call.name}(${JSON.stringify(call.arguments ?? {})})`,
         );
         console.log(
@@ -459,19 +618,37 @@ if (process.env.EVAL_DEFERRAL !== "0") {
     deferral: boolean,
   ): Promise<ArmOutcome> => {
     try {
-      const { events, promptTokens } = await runOnce(scenario, 1, {
-        tools: REALISTIC_TOOLSET,
-        deferral,
-      });
+      const { events, delegated, promptTokens, requests } = await runOnce(
+        scenario,
+        1,
+        {
+          // The whole schema of the run the scenario is: a routine still browses for itself.
+          tools:
+            scenario.mode === "routine"
+              ? UNATTENDED_TOOLSET
+              : scenario.mode === "browse"
+                ? COMPUTER_TOOLS
+                : REALISTIC_TOOLSET,
+          deferral,
+        },
+      );
       const judged = scenario.check({
         text: turnText(events),
         calls: callsOf(events),
         events,
+        delegated,
       });
       return {
         promptTokens,
-        requests: usagesOf(events).requests,
-        pass: judged.pass && streamProblems(events).length === 0,
+        requests,
+        pass:
+          judged.pass &&
+          streamProblems(events).length === 0 &&
+          delegated.every(
+            (run) =>
+              run.events.length === 0 ||
+              streamProblems(run.events).length === 0,
+          ),
       };
     } catch {
       return { promptTokens: null, requests: 0, pass: false };

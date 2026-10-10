@@ -132,11 +132,17 @@ describe("tool_search over the adapters' own words", () => {
 describe("what the bridge saves on the product's whole schema", () => {
   test("the schema a Bot with everything connected is handed, before and after", () => {
     const measured = measureSchema(REALISTIC_TOOLSET);
-    // The shape the design was sized for: fourteen computer, three self, ~twenty connected.
-    expect(measured.tools).toBeGreaterThanOrEqual(37);
+    /*
+     * The shape the design is sized for: of the computer's, the folder's three and `delegate`
+     * (fourteen until 2026-10-11, when a conversation began handing its browsing over — piece
+     * 6-2), three self, ~thirty connected. Thirty-five on the day it changed.
+     */
+    expect(measured.tools).toBeGreaterThanOrEqual(30);
     expect(measured.deferred).toBeGreaterThanOrEqual(20);
     /*
      * Measured on 2026-09-06: 23,175 B → 13,166 B (−43%), 15,817 → 8,295 characters (−48%).
+     * And on 2026-10-11, without the browser's eleven: 23,572 B → 10,754 B (−54%), 15,756 → 5,784
+     * characters (−63%) — the core that stays in front of every message is that much smaller.
      * Less than Hermes's −56% because the core tools' descriptions are Korean and three bytes a
      * character; the floors below are what the bridge must keep, not that number.
      */

@@ -2,14 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { modeText, promptModeOf, staticPrompt } from "../shared/prompt/index";
 import { BROWSE_KO } from "../shared/prompt/mode/browse.ko";
 import { CORE_TOOL_NAMES } from "../shared/tools/bridge";
-import { COMPUTER_TOOLS } from "../shared/tools/computer";
+import { COMPUTER_TOOLS, drivesTheBrowser } from "../shared/tools/computer";
 import {
   DELEGATE,
   DELEGATE_TARGETS,
   delegateTargetOf,
   isDelegated,
 } from "../shared/tools/delegate";
-import { drivesTheBrowser } from "../server/src/runner/bot-lane";
 
 /**
  * THE HAND-OVER, AS BOTH SIDES READ IT (piece 6-2, `docs/laf/redesign-2026-10.md` §4).
