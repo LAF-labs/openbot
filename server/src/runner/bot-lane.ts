@@ -11,7 +11,8 @@
  * conversation that only talked waited behind a routine that was browsing, and a project's turn
  * behind the main conversation's. It is keyed by the computer's id now (`computer/bot-id.ts`) — the
  * Bot's own for its main browser, which is every caller's today, so nothing they pass changed —
- * and a chat turn takes it at the first call that uses the browser instead of at its first step.
+ * and a chat turn takes it at the first call that uses the browser instead of at its first step
+ * (which of the computer's tools that is: `drivesTheBrowser`, `shared/tools/computer.ts`).
  * A routine's run still takes it whole: a routine nearly always browses, its notepad is read
  * inside the lane so that a run queued behind another sees what that one settled, and its ledger
  * row opens once the lane lets it through (`routines/run.ts`).
@@ -25,23 +26,6 @@
  * again before it touches the browser — reading `grants` to learn whether anybody else drove it
  * in between, and so whether the page is still the one it left.
  */
-
-/**
- * The computer's tools that reach only the Bot's folder: no page, no tab, nothing another run's
- * snapshot could go stale under (`agent-computer/src/file-routes.ts` is handed the folder and
- * never a browser). Named by what is left out, so that a browser tool added later holds the lane
- * without anybody remembering to list it here.
- */
-const FOLDER_TOOLS: ReadonlySet<string> = new Set([
-  "computer_list_files",
-  "computer_read_file",
-  "computer_write_file",
-]);
-
-/** Whether this one of the computer's tools is carried out in a browser. */
-export function drivesTheBrowser(computerToolName: string): boolean {
-  return !FOLDER_TOOLS.has(computerToolName);
-}
 
 export type LaneHold = {
   /** Let the next holder in. Twice is harmless. */
