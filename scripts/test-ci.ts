@@ -2714,6 +2714,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * page, never for the folder, and a call refused the browser never reaching the computer — and
  * the call going out after the asking.
  *
+ * RAISED 2026-10-10 FOR THE TURN THAT HANDS ITS BROWSING OVER, `server` by thirty-two (to 4225 on
+ * the day it landed) and `root` by eighteen (to 1052) (record §4, the first half of piece 6-2). Six
+ * to `server` in `turn-engine.integration.test.ts`: a delegated run's steps in the thread between
+ * the call and its answer, every window sent them in the turn's order, a conversation of its own
+ * under the turn's id, the Bot that delegated never handed them, what it called counted on the
+ * turn's row, and a stop leaving no step open. Twenty-six in `chat-tools.test.ts`: what a turn
+ * that delegates is offered, one case a tool of the browser's it may no longer call, the task
+ * handed on, what the delegated run may call, four calls that were not made, an empty answer, the
+ * two endings that end the turn, and the conversation that does not delegate. Eighteen to `root`
+ * in the new `tests/delegate.test.ts`: the tool, the mark and the mode a delegated run is told
+ * about itself in.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2742,7 +2754,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4193, roots: ["server"] },
+  { name: "server", floor: 4225, roots: ["server"] },
   { name: "app", floor: 2259, roots: ["app"] },
   {
     name: "agent-computer",
@@ -2766,7 +2778,7 @@ const GROUPS: readonly {
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 1034, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 1052, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
