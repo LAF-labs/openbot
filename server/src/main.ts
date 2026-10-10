@@ -851,6 +851,12 @@ const routineService = createRoutineService({
   deliver: createRoutineDelivery(database, announceFinished),
   deliverFailure: markRoutineFailure,
   tools: unattendedTools,
+  ...(computerGateway
+    ? {
+        runEnded: (botId: string, runKey: string) =>
+          computerGateway.runEnded(botId, runKey),
+      }
+    : {}),
   goals: goalStore,
   // The clock a routine made without a zone runs on: the person's device's, else the deployment's.
   timeZone: config.botTimeZone,

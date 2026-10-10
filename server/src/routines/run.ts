@@ -97,11 +97,32 @@ export const carriedInstruction = (
 ): string =>
   `${instruction}\n\nWhat you reported the last time this routine ran, so you can say what has changed and not repeat it:\n\n${previous}`;
 
+/**
+ * The line a run that waits on its person ends its answer with — and that answer without it.
+ *
+ * THE LINE IS THIS SERVER'S, NOT THE BOT'S, AND IT IS TAKEN OFF BEFORE THE ANSWER IS CARRIED INTO
+ * THE NEXT RUN as "what you reported last time". Left on, the next run read the mark as its own
+ * way of ending a report and wrote one itself, above the one put there for it — two lines saying
+ * a sign-in was needed (measured 2026-10-10, a real routine run twice with no login saved).
+ */
+const AWAITING_MARK = "⏸ ";
+const withAwaitingLine = (answer: string, awaiting: string): string =>
+  `${answer}\n\n${AWAITING_MARK}${awaiting}`.trim();
+function withoutAwaitingLine(report: string): string {
+  if (report.startsWith(AWAITING_MARK)) return "";
+  const at = report.lastIndexOf(`\n\n${AWAITING_MARK}`);
+  return at < 0 ? report : report.slice(0, at);
+}
+
+/** A routine run's own name for what is held in the Bot's browser on its account. */
+const runKeyOf = (runId: string) => `routine:${runId}`;
+
 export type RoutineRunOptions = SettlementOptions & {
   /** See `RoutineServiceOptions` in `service.ts` for each of these. */
   resolveAgents: (actor: AgentActor) => Promise<Record<string, AbstractAgent>>;
   auditStore?: AuditStore;
   tools?: (botId: string, actor: ActionActor) => Promise<UnattendedToolkit>;
+  runEnded?: (botId: string, runKey: string) => Promise<void>;
   goals?: RoutineGoals;
   lane?: BotLane;
   runTimeoutMs: number;
@@ -442,6 +463,9 @@ async function askTheBot(
         id: author,
         // The local actor is not a row in `users`, so it is named without claiming to be one.
         ...(author === DEV_ACTOR.id ? {} : { userId: author }),
+        // What is held in the Bot's browser for this run is let go of at this run's end, and at
+        // no conversation's (`ActionActor.runKey`).
+        runKey: runKeyOf(runId),
       };
       /*
        * The notepad, read here — inside the Bot's lane, not when the routine was claimed. Run now
@@ -487,25 +511,39 @@ async function askTheBot(
               goalId: goal.id,
             })
           : fed;
-      const run = await runUnattended(target, instruction, {
-        toolkit,
-        timeoutMs: options.runTimeoutMs,
-        // Nobody is watching. What that means is said by `shared/prompt/mode/routine.ko.ts`,
-        // composed by the same middleware every other run path goes through.
-        mode: "routine",
-        // And where this routine left off, as facts that middleware composes after the mode.
-        notepad: notepad.read,
-        routineRun,
-        signal,
-        observe,
-      });
+      let run: Awaited<ReturnType<typeof runUnattended>>;
+      try {
+        run = await runUnattended(target, instruction, {
+          toolkit,
+          timeoutMs: options.runTimeoutMs,
+          // Nobody is watching. What that means is said by `shared/prompt/mode/routine.ko.ts`,
+          // composed by the same middleware every other run path goes through.
+          mode: "routine",
+          // And where this routine left off, as facts that middleware composes after the mode.
+          notepad: notepad.read,
+          routineRun,
+          signal,
+          observe,
+        });
+      } finally {
+        /*
+         * THE RUN IS OVER, HOWEVER IT ENDED — answered, failed or stopped. A login this run put
+         * into a page is held by the Bot's computer until it is told so, and the tab it went into
+         * is closed then (`computer/gateway/secrets.ts`, `runEnded`); a run that failed half-way
+         * through a sign-in is exactly the one whose tab must not be left for the next to find.
+         * Never a reason for the run to fail: the gateway keeps its note and tells again.
+         */
+        await options
+          .runEnded?.(row.agentId, runKeyOf(runId))
+          .catch(() => undefined);
+      }
       /*
        * A run that stopped because a person is needed is not a failure — the Bot did its job,
        * which was to find out — but the person has to be told, and a routine's answer is the one
        * place they will read it.
        */
       const answer = run.awaiting
-        ? `${run.answer}\n\n⏸ ${run.awaiting}`.trim()
+        ? withAwaitingLine(run.answer, run.awaiting)
         : run.answer;
       const awaiting = Boolean(run.awaiting);
       return {
@@ -571,7 +609,10 @@ async function instructionFor(
   row: RoutineRow,
   author: string,
 ): Promise<string> {
-  const previous = await lastReport(database, row.id);
+  // As the Bot wrote it: the line this server ended a waiting run's answer with is not its report.
+  const previous = withoutAwaitingLine(
+    (await lastReport(database, row.id)) ?? "",
+  );
   const carried = previous
     ? carriedInstruction(
         row.instruction,

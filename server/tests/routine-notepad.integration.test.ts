@@ -9,6 +9,8 @@ import {
 import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import type { CompletionProvider } from "../../agent-bot/src/index";
+import { ROUTINE_NEEDS_SAVED_LOGIN_KO } from "../../shared/prompt/mode/routine.ko";
+import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import type { AgentActor } from "../src/agents/profile-types";
 import type { AuditEventInput } from "../src/audit";
@@ -164,7 +166,15 @@ async function reviewBot() {
  * middleware and the real `agent-bot` — its fetch hands the AG-UI body straight to `runAgent`, whose
  * provider is `script`. The toolkit carries no computer: the notepad's tool is the run's to add.
  */
-function deployment(bot: { botId: string }, script: Script, withLane = false) {
+function deployment(
+  bot: { botId: string },
+  script: Script,
+  withLane = false,
+  /** The run's toolkit and where its end is told, where a case is about those. */
+  overrides: Partial<
+    Pick<Parameters<typeof createRoutineService>[0], "tools" | "runEnded">
+  > = {},
+) {
   const requests: ProviderRequest[] = [];
   const trail: AuditEventInput[] = [];
   const provider = (async (request: unknown) => {
@@ -217,6 +227,7 @@ function deployment(bot: { botId: string }, script: Script, withLane = false) {
     }),
     runTimeoutMs: 20_000,
     ...(withLane ? { lane: createBotLane() } : {}),
+    ...overrides,
   });
   return { service, requests, trail };
 }
@@ -480,4 +491,240 @@ describe("whose notepad it is", () => {
 
     expect(await storedNotepad(routine.id)).toBeUndefined();
   });
+});
+
+/*
+ * THE END OF A RUN, TOLD TO WHOEVER HOLDS SOMETHING FOR IT (2026-10-10, record §6, piece 2-6). A
+ * routine that signed in with a saved login leaves a value held in the Bot's browser until the
+ * gateway hears the run is over, and the tab it went into is closed then. The run names itself —
+ * it is in no conversation — and its end is told under that name, however the run ended.
+ */
+describe("a routine run's end", () => {
+  const callsTool = (
+    id: string,
+    name: string,
+    args: Record<string, unknown>,
+  ): Chunk[] => [
+    {
+      choices: [
+        {
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                id,
+                function: { name, arguments: JSON.stringify(args) },
+              },
+            ],
+          },
+        },
+      ],
+    },
+    { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
+  ];
+  const idle = async () => ({ ok: false as const, code: "laf:tool_unknown" });
+
+  test("is told under the run's own name — the name its tools were handed — whether it answered or failed", async () => {
+    const bot = await reviewBot();
+    const handed: (string | undefined)[] = [];
+    const ends: [string, string][] = [];
+    let fails = false;
+    const { service } = deployment(
+      bot,
+      () => {
+        if (fails)
+          throw Object.assign(new Error("overloaded"), { status: 503 });
+        return says("새 리뷰가 없습니다.");
+      },
+      false,
+      {
+        tools: async (_botId, actor) => {
+          handed.push(actor.runKey);
+          return { tools: [], execute: idle };
+        },
+        runEnded: async (botId, runKey) => void ends.push([botId, runKey]),
+      },
+    );
+    const routine = await reviewRoutine(bot, service);
+
+    await service.runNow(bot.owner, routine.id);
+    const [answered] = await service.runs(bot.owner, routine.id);
+    expect(answered?.ok).toBe(true);
+    expect(ends).toEqual([[bot.botId, `routine:${answered?.id}`]]);
+    expect(handed).toEqual([`routine:${answered?.id}`]);
+
+    fails = true;
+    await service.runNow(bot.owner, routine.id);
+    const [failed] = await service.runs(bot.owner, routine.id);
+    expect(failed?.ok).toBe(false);
+    // A run that fell over half-way is the one whose tab must not be left for the next to find.
+    expect(ends).toEqual([
+      [bot.botId, `routine:${answered?.id}`],
+      [bot.botId, `routine:${failed?.id}`],
+    ]);
+  }, 30_000);
+
+  test("is told of no run that never had tools: one whose tools could not be assembled, and one that runs without any", async () => {
+    const bot = await reviewBot();
+    const ends: string[] = [];
+    const runEnded = async (_botId: string, runKey: string) =>
+      void ends.push(runKey);
+    const unassembled = deployment(bot, () => says("…"), false, {
+      tools: async () => {
+        throw new Error("the grants could not be read");
+      },
+      runEnded,
+    });
+    const first = await reviewRoutine(bot, unassembled.service);
+    await unassembled.service.runNow(bot.owner, first.id);
+    expect((await unassembled.service.runs(bot.owner, first.id))[0]?.ok).toBe(
+      false,
+    );
+
+    const toolless = deployment(bot, () => says("확인했습니다."), false, {
+      tools: undefined,
+      runEnded,
+    });
+    const second = await reviewRoutine(bot, toolless.service);
+    await toolless.service.runNow(bot.owner, second.id);
+    expect((await toolless.service.runs(bot.owner, second.id))[0]?.ok).toBe(
+      true,
+    );
+    expect(ends).toEqual([]);
+  }, 30_000);
+
+  test("a telling that fails does not fail the run", async () => {
+    const bot = await reviewBot();
+    const { service } = deployment(
+      bot,
+      () => says("새 리뷰가 없습니다."),
+      false,
+      {
+        tools: async () => ({ tools: [], execute: idle }),
+        runEnded: async () => {
+          throw new Error("the computer is away");
+        },
+      },
+    );
+    const routine = await reviewRoutine(bot, service);
+    await service.runNow(bot.owner, routine.id);
+    expect((await service.runs(bot.owner, routine.id))[0]).toMatchObject({
+      ok: true,
+      answer: "새 리뷰가 없습니다.",
+    });
+  }, 30_000);
+
+  /*
+   * A SIGN-IN NOBODY SAVED A LOGIN FOR. The Bot is told to say what is needed and stop — and a
+   * Bot that answers [SILENT] instead must not make the run vanish: it is kept as a run that
+   * waits on its person, delivered, with a line for them at its end
+   * (`runner/unattended.ts`, `ROUTINE_NEEDS_SAVED_LOGIN_KO`).
+   */
+  test("a run that met a sign-in with no saved login is delivered as one that waits, even where the Bot said nothing", async () => {
+    const bot = await reviewBot();
+    const script: Chunk[][] = [
+      callsTool("s1", "computer_request_secret", {
+        fields: [{ ref: "e1", label: "비밀번호" }],
+        snapshotId: 3,
+      }),
+      says("[SILENT]"),
+    ];
+    const { service, requests, trail } = deployment(
+      bot,
+      (ordinal) => script[ordinal] ?? says("…"),
+      false,
+      {
+        tools: async () => ({
+          tools: [
+            {
+              name: "computer_request_secret",
+              description: "저장해 둔 로그인으로 채운다.",
+              parameters: { type: "object", properties: {} },
+            },
+          ],
+          // What the unattended executor answers where the vault does not (`unattended.ts`).
+          execute: async () => ({
+            ok: false,
+            code: "laf:login_not_saved",
+            reason: toolResultText("laf:login_not_saved"),
+            awaitingApproval: true,
+            question: ROUTINE_NEEDS_SAVED_LOGIN_KO,
+          }),
+        }),
+      },
+    );
+    const routine = await reviewRoutine(bot, service);
+    await service.runNow(bot.owner, routine.id);
+
+    // The Bot heard the sentence that is for it...
+    expect(toolResultsOf(requests[1])).toEqual([
+      expect.stringContaining('"code":"laf:login_not_saved"'),
+    ]);
+    // ...and the person reads the line that is for them, on a run that was not swallowed: the
+    // answer is kept and delivered, where a bare [SILENT] is a run nobody is told of.
+    const [receipt] = await service.runs(bot.owner, routine.id);
+    expect(receipt).toMatchObject({
+      ok: true,
+      answer: `[SILENT]\n\n⏸ ${ROUTINE_NEEDS_SAVED_LOGIN_KO}`,
+    });
+    expect(receipt?.answer).not.toContain("멈춰라");
+    expect(trail.at(-1)).toMatchObject({
+      eventType: "routine.ran",
+      payload: { ok: true },
+    });
+  }, 30_000);
+  /*
+   * THE NEXT RUN IS HANDED WHAT THE BOT REPORTED, NOT THE LINE PUT AFTER IT. Carried along as
+   * "what you reported last time", the mark was read as the Bot's own way to end a report, and
+   * the next run wrote a second one above the one put there for it (measured on a real routine,
+   * 2026-10-10).
+   */
+  test("the line a waiting run's answer ends with is this server's, and is not carried into the next run as the Bot's report", async () => {
+    const bot = await reviewBot();
+    const script: Chunk[][] = [
+      callsTool("s1", "computer_request_secret", {
+        fields: [{ ref: "e1", label: "비밀번호" }],
+        snapshotId: 3,
+      }),
+      says("가게 사이트의 로그인이 필요합니다."),
+    ];
+    const { service, requests } = deployment(
+      bot,
+      (ordinal) => script[ordinal] ?? says("…"),
+      false,
+      {
+        tools: async () => ({
+          tools: [
+            {
+              name: "computer_request_secret",
+              description: "저장해 둔 로그인으로 채운다.",
+              parameters: { type: "object", properties: {} },
+            },
+          ],
+          execute: async () => ({
+            ok: false,
+            code: "laf:login_not_saved",
+            reason: toolResultText("laf:login_not_saved"),
+            awaitingApproval: true,
+            question: ROUTINE_NEEDS_SAVED_LOGIN_KO,
+          }),
+        }),
+      },
+    );
+    const routine = await reviewRoutine(bot, service);
+    await service.runNow(bot.owner, routine.id);
+    expect((await service.runs(bot.owner, routine.id))[0]?.answer).toBe(
+      `가게 사이트의 로그인이 필요합니다.\n\n⏸ ${ROUTINE_NEEDS_SAVED_LOGIN_KO}`,
+    );
+
+    await service.runNow(bot.owner, routine.id);
+    const carried = String(
+      requests[2]?.messages?.find((message) => message.role === "user")
+        ?.content ?? "",
+    );
+    expect(carried).toContain("What you reported the last time");
+    expect(carried).toContain("가게 사이트의 로그인이 필요합니다.");
+    expect(carried).not.toContain("⏸");
+    expect(carried).not.toContain(ROUTINE_NEEDS_SAVED_LOGIN_KO);
+  }, 30_000);
 });

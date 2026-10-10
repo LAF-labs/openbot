@@ -75,6 +75,11 @@ const SHOWN_CALLS_MAX = 512;
 export type SavedLoginAnswer = {
   loginFilled?: { id: string; site?: string; fields: number };
   loginChoice?: { id: string; label: string; site?: string }[];
+  /**
+   * Nobody is there to be asked, and no saved login answered: nothing was put in and no card was
+   * opened. Only where the asker said there is nobody (`requestSecret`, `nobodyToAsk`).
+   */
+  loginNotSaved?: true;
 };
 
 /**
@@ -493,6 +498,13 @@ export function createSecrets(deps: {
     approvalId?: string,
     /** The caller's Stop. */
     signal?: AbortSignal,
+    /**
+     * A run with nobody in front of it (a routine's): the vault answers or nothing does. No card
+     * is opened on the computer — one would wait for its ten minutes on a person who is not
+     * there, holding the Bot's browser on a box nobody will fill — and a rule that refuses the
+     * saved login is the answer, since there is no person for the refusal to fall through to.
+     */
+    options: { nobodyToAsk?: true } = {},
   ): Promise<SecretAsked> {
     /*
      * THE FIELD IS RESOLVED HERE, NEVER TAKEN FROM THE BOT.
@@ -625,7 +637,8 @@ export function createSecrets(deps: {
             });
             // NOTED BEFORE THE VALUES LEAVE, as with a person's: a fill that fails at its second
             // box has put a name into the page, and the computer is holding it for the run.
-            putInFor(botId, actor.threadId);
+            // For the run it is put in for: a routine's own name where it has one (`runKey`).
+            putInFor(botId, actor.runKey ?? actor.threadId);
             const filled = await as(botId).fillLogin(into, {
               snapshotId: input.snapshotId,
               origins: login.origins,
@@ -664,8 +677,14 @@ export function createSecrets(deps: {
           error instanceof ActionRefusedError &&
           (error.code === "laf:policy_denied" ||
             error.code === "laf:no_rule_allows");
-        if (!byARule) throw error;
+        if (!byARule || options.nobodyToAsk) throw error;
       }
+    }
+    // Nobody to ask, and the vault did not answer — nothing saved for this origin, a card that is
+    // not a sign-in, a seal that does not open. Said as that, with nothing opened and no row: no
+    // act was made and nobody was asked.
+    if (options.nobodyToAsk) {
+      return { ...(await as(botId).control()), loginNotSaved: true };
     }
     /*
      * THROUGH THE GATE, LIKE EVERY OTHER ACT OF THE BOT'S (2026-10-10, record §6).
