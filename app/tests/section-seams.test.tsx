@@ -103,8 +103,10 @@ describe("the roster, broken under an open window", () => {
     );
     // The page beside it is still drawn.
     expect(view.main()?.textContent).toContain("Help");
-    await view.waitFor(() => reports.length === 1, "the report");
-    expect(reports[0]).toMatchObject({
+    const reportOf = (section: string) =>
+      reports.find((report) => report.section === section);
+    await view.waitFor(() => reportOf("sidebar") !== undefined, "the report");
+    expect(reportOf("sidebar")).toMatchObject({
       section: "sidebar",
       route: "/help",
       kind: "TypeError",
@@ -112,14 +114,25 @@ describe("the roster, broken under an open window", () => {
       surface: "shell",
     });
 
+    /*
+     * The home panel names the Bot from the same conversations and failed on the same answer —
+     * behind a seam of its own, so under its own name: one report for each part, and neither took
+     * the other, or the page, with it.
+     */
+    await view.waitFor(() => reports.length === 2, "the panel's report");
+    expect(reports.map((report) => report.section).sort()).toEqual([
+      "home_panel",
+      "sidebar",
+    ]);
+
     // And the rest of the window still goes places: the page beside the roster changes.
     await view.navigate("/skills");
     expect(routeTemplateOf(view.router)).toBe("/skills");
     expect(view.main()?.textContent).toContain("Skills");
     // The route changed, so the roster tried again — on the same broken answer, and failed again,
-    // from the same place, which is not a second report.
+    // from the same place, which is not another report.
     expect(failedRoster()).not.toBeNull();
-    expect(reports).toHaveLength(1);
+    expect(reports).toHaveLength(2);
 
     // The answer is right again; 다시 불러오기 fetches it and draws the roster.
     channels = [];

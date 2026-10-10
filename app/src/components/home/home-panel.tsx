@@ -1,6 +1,7 @@
 import type { CSSProperties, KeyboardEvent, PointerEvent } from "react";
 import { useState } from "react";
 import { HomeButton } from "@/components/home/home-button";
+import { HomeWidgets } from "@/components/home/home-widgets";
 import { LIGHTS_CLEARANCE } from "@/components/layout/app-top-bar";
 import { focusRing } from "@/components/ui/focus";
 import {
@@ -27,6 +28,10 @@ export const HOME_PANEL_PLACE = "w-home-panel shrink-0 max-md:hidden";
  * less wherever that would leave the screen beside it under 360px. The bounds are the stylesheet's
  * (`w-home-panel`), so the window being resized needs nothing from here; what is handed down is
  * only the width the person chose.
+ *
+ * WHAT IS IN IT TODAY is four widgets that were screens behaving like fixed panels already — 오늘,
+ * 소식, 목표, 만든 것 (`home-widgets.tsx`). The panels a person asks the Bot to make come later;
+ * nothing here offers to make one, because nothing can yet.
  *
  * ITS FIRST ROW IS THE WINDOW'S HANDLE WHILE IT IS OPEN. The installed app draws its traffic
  * lights over the window's top left corner, and that corner is this panel's then, not the top
@@ -71,7 +76,9 @@ export function HomePanel() {
       >
         <HomeButton />
       </div>
-      <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-3 pb-3" />
+      <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-3 pb-3">
+        <HomeWidgets />
+      </div>
       <PanelEdge />
     </aside>
   );

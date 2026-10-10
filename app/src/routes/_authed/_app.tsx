@@ -32,8 +32,9 @@ function RouteComponent() {
      * THE HOME PANEL STANDS BESIDE THAT COLUMN (2026-10-10, piece 3-2): at the window's left, its
      * whole height, folded away and brought back by the home button (`home/home-panel.tsx`). It
      * comes first in the document as it does for the eye, so the Tab key goes through it and then
-     * into the row. It has a seam of its own: what it shows is read apart from the menu and the
-     * screen, and a panel that cannot be drawn leaves both working.
+     * into the row. It has a seam of its own, so a panel that cannot be drawn leaves the menu and
+     * the screen working — and it is given the roster's queries, because its widgets name the Bot
+     * from the same two lists the menu reads (`home/home-widgets.tsx`).
      *
      * IN A NARROW WINDOW THE BAR UNDER THE SCREEN IS STILL DRAWN (`phone-tab-bar.tsx`) and the
      * panel is not. A phone's browser is not a surface this app is made for (owner, 2026-10-10:
@@ -65,7 +66,11 @@ function RouteComponent() {
        * the whole layout through the bar instead (measured by `section-seams.test.tsx`). It is
        * handed to the row, which draws it from that seam and lays it out under the screen.
        */}
-      <SectionBoundary className={HOME_PANEL_PLACE} section="home_panel">
+      <SectionBoundary
+        className={HOME_PANEL_PLACE}
+        queryKeys={ROSTER_QUERIES}
+        section="home_panel"
+      >
         <HomePanel />
       </SectionBoundary>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">

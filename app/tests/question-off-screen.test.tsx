@@ -343,11 +343,17 @@ const pill = (host: HTMLElement) => {
   );
 };
 
-/** The rows under "Waiting on the owner", on a screen that draws 오늘: 소식, of the ones here. */
-const waitingRows = (host: HTMLElement) =>
-  [...host.querySelectorAll("button")].filter((button) =>
+/**
+ * The rows under "Waiting on the owner", in one part of the window: the screen itself — 소식 is the
+ * one here that draws 오늘 — or the home panel beside it, which draws 오늘 on every screen since
+ * 2026-10-10 (piece 3-4) and is why a part has to be named.
+ */
+const waitingRows = (part: Element | null) =>
+  [...(part?.querySelectorAll("button") ?? [])].filter((button) =>
     button.textContent?.includes("Approval needed"),
   );
+const homePanel = (host: HTMLElement) =>
+  host.querySelector("[data-home-panel]");
 
 describe("a question raised while another screen is open", () => {
   test("the pill turns to the person's turn, and 소식 lists it with the way to the card", async () => {
@@ -365,17 +371,23 @@ describe("a question raised while another screen is open", () => {
       "the pill to say the Bot is waiting on the person",
       4000,
     );
-    // On 만든 것 the pill is all that says so: the column beside it lists nothing any more.
-    expect(waitingRows(view.host)).toHaveLength(0);
+    // 만든 것 itself lists nothing; beside it the home panel's 오늘 lists what is waiting, as it
+    // does on every screen.
+    expect(waitingRows(view.main())).toHaveLength(0);
+    await view.waitFor(
+      () => waitingRows(homePanel(view.host)).length === 1,
+      "the home panel to list what is waiting",
+      4000,
+    );
 
     await view.navigate("/feed");
     await view.waitFor(
-      () => waitingRows(view.host).length === 1,
+      () => waitingRows(view.main()).length === 1,
       "소식 to list what is waiting",
       4000,
     );
     // The row is the way to the card: the conversation, on the line of the call that asked.
-    const row = waitingRows(view.host)[0] as HTMLButtonElement;
+    const row = waitingRows(view.main())[0] as HTMLButtonElement;
     await view.click(row);
     await view.waitFor(
       () => view.router.state.location.pathname === `/channel/${CHANNEL}`,
@@ -396,7 +408,7 @@ describe("a question raised while another screen is open", () => {
       6000,
     );
     await view.waitFor(
-      () => waitingRows(view.host).length === 1,
+      () => waitingRows(view.main()).length === 1,
       "소식 to list what is waiting",
       4000,
     );
@@ -406,7 +418,7 @@ describe("a question raised while another screen is open", () => {
       "the pill to stop saying it",
       6000,
     );
-    expect(waitingRows(view.host)).toHaveLength(0);
+    expect(waitingRows(view.main())).toHaveLength(0);
   });
 
   test("with nothing open the page does not go on asking the server", async () => {
@@ -858,11 +870,11 @@ describe("an account that kept two conversations with one Bot", () => {
     );
     await view.navigate("/feed");
     await view.waitFor(
-      () => waitingRows(view.host).length === 1,
+      () => waitingRows(view.main()).length === 1,
       "the question to be listed",
       6000,
     );
-    await view.click(waitingRows(view.host)[0] as HTMLButtonElement);
+    await view.click(waitingRows(view.main())[0] as HTMLButtonElement);
     await view.waitFor(
       () => view.router.state.location.pathname === `/channel/${OTHER_CHANNEL}`,
       "the conversation the question was raised in to open",
