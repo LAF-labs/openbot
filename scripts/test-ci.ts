@@ -2460,16 +2460,20 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * and is not drawn as entered or done. Thirty-six mutations each fail one of these.
  * By hand: 3942 and 13, 1, 1 and 1 are 3958; 532 and 5 are 537; 2142 and 1 are 2143.
  *
- * RAISED 2026-10-10 FOR THE 계정 SCREEN, `app` from 2143 to 2154 (record §6, piece 2-5): the
- * settings page where a person saves the logins their Bot signs in with. Eleven in the new
+ * RAISED 2026-10-10 FOR THE 계정 SCREEN, `app` from 2143 to 2156 (record §6, piece 2-5): the
+ * settings page where a person saves the logins their Bot signs in with. Thirteen in the new
  * `logins-screen.test.tsx`: the list draws what each login is called and where it may go and no
  * value; nothing saved says so; a new one is sent as typed, once, and the dialog goes with what
- * was typed; a change sends no value that was left empty and draws none that is saved; a refusal
- * is said in the person's words beside its box; a delete waits for its confirmation; at the most
- * a person may save no more is offered; the addresses offered for a known site begin with where
- * its sign-in boxes are; what is typed is read a line or a comma at a time; every offered address
- * is one a login can be saved for; every code the server refuses a login with has a sentence.
- * By hand: 2143 and 11 are 2154.
+ * was typed; a change sends only what was changed, never a value left empty, and nothing at all
+ * when nothing was; the dialog cannot be closed under a save that is on its way; a refusal is
+ * said in the person's words beside its box; a delete waits for a question that names the login,
+ * and a refused one is said as a sentence; at the most a person may save no more is offered; the
+ * addresses offered for a known site begin with where its sign-in boxes are; only sites signed in
+ * to with a name and a password are offered; what is typed is read a line or a comma at a time;
+ * every offered address is one a login can be saved for; every code the server refuses a login
+ * with has a sentence. What goes through a dialog is pressed in a process of its own
+ * (`support/logins-render.tsx`). Seventeen mutations each fail one of these.
+ * By hand: 2143 and 13 are 2156.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -2500,7 +2504,7 @@ const GROUPS: readonly {
   processes?: number;
 }[] = [
   { name: "server", floor: 3958, roots: ["server"] },
-  { name: "app", floor: 2154, roots: ["app"] },
+  { name: "app", floor: 2156, roots: ["app"] },
   {
     name: "agent-computer",
     floor: 537,

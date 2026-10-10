@@ -24,11 +24,14 @@ export type SavedLogin = {
 
 export type SavedLogins = { logins: SavedLogin[]; max: number };
 
-/** What a person writes to save one. To change one, a value left out is a value kept. */
+/**
+ * What a person writes to save one — or, to change one, only what they changed: the server keeps
+ * whatever a change does not name (`server/src/logins/routes.ts`).
+ */
 export type LoginWritten = {
-  label: string;
-  site: string | null;
-  origins: string[];
+  label?: string;
+  site?: string | null;
+  origins?: string[];
   username?: string;
   password?: string;
 };
@@ -124,9 +127,10 @@ export async function writeLogin(
   id?: string,
 ): Promise<void> {
   await send(id ? "PATCH" : "POST", id ? `/${encodeURIComponent(id)}` : "", {
-    label: written.label,
-    site: written.site,
-    origins: written.origins,
+    ...(written.label === undefined ? {} : { label: written.label }),
+    ...(written.site === undefined ? {} : { site: written.site }),
+    ...(written.origins === undefined ? {} : { origins: written.origins }),
+    // A value left empty is a value kept, and is not sent.
     ...(written.username ? { username: written.username } : {}),
     ...(written.password ? { password: written.password } : {}),
   });
