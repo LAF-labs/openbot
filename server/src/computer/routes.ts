@@ -435,8 +435,22 @@ export function createComputerRoutes(
         if (values.length === 0 || values.length !== sent.length) {
           return SECRET_VALUE_REQUIRED;
         }
+        /*
+         * AND, WHERE THE PERSON TICKED IT, KEPT AS A SAVED LOGIN (record §6, piece 2-6). What the
+         * window sends is that they said so and what to call it — a name is the surface's to
+         * word — and the gateway keeps it only for a card it had said could be kept. Anything
+         * else under `save` is no request to save.
+         */
+        const label =
+          body?.save && typeof body.save === "object"
+            ? (body.save as { label?: unknown }).label
+            : undefined;
+        const save =
+          typeof label === "string" && label.trim()
+            ? { save: { label } }
+            : undefined;
         try {
-          return await gateway.supplySecret(botId, botId, actor, values);
+          return await gateway.supplySecret(botId, botId, actor, values, save);
         } catch (error) {
           // Not as many values as the card has boxes: the same fact as a body with none.
           if (error instanceof SecretValuesError) return SECRET_VALUE_REQUIRED;

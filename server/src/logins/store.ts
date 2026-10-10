@@ -353,6 +353,16 @@ export function createLoginVault(input: {
         );
     },
 
+    /**
+     * Whether a login could be saved for a document at this address at all: an origin by the one
+     * rule that reads one when a login is saved — HTTPS, or a developer's loopback where that was
+     * asked for. For whoever offers to save one (`computer/gateway/secrets.ts`, a card's tick):
+     * offered for an address this refuses, the offer could only ever fail.
+     */
+    acceptsOrigin(address: string): boolean {
+      return loginOriginOf(address, originOptions) !== null;
+    },
+
     /** Note that a login was put into a page just now. No row of the trail: the fill writes its own. */
     async used(userId: string, id: string): Promise<void> {
       await database

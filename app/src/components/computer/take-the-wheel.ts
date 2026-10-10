@@ -37,6 +37,11 @@ export type ControlState = {
     element: { role: string; name: string };
     /** Every box of the card, by the control's own name beside what the Bot called it. */
     fields?: { ref: string; label: string; role: string; name: string }[];
+    /**
+     * What is typed into this card can be kept as a saved login: it is a sign-in, and nothing is
+     * saved for where it is yet. The server's word — the card draws the choice only then.
+     */
+    savable?: true;
   };
   /**
    * A value was put into this Bot's browser for a person, in a run that is not over. No picture
@@ -141,7 +146,18 @@ export function releaseControl(computerId: string) {
 export async function supplySecret(
   computerId: string,
   values: readonly string[],
-): Promise<{ ok: boolean; error?: string }> {
+  /**
+   * Keep what was typed as a saved login, under this name — the person ticked it on a card the
+   * server said could be kept. The values travel once, in this one request, as they always did.
+   */
+  save?: { label: string },
+): Promise<{
+  ok: boolean;
+  error?: string;
+  /** Whether it was kept, where keeping was asked for; and the server's code where it was not. */
+  loginSaved?: boolean;
+  loginRefused?: string;
+}> {
   try {
     const response = await fetch(`/api/computers/${computerId}/human/secret`, {
       method: "POST",
@@ -155,9 +171,24 @@ export async function supplySecret(
       body: JSON.stringify({
         values,
         ...(values.length === 1 ? { text: values[0] } : {}),
+        ...(save ? { save } : {}),
       }),
     });
-    if (response.ok) return { ok: true };
+    if (response.ok) {
+      if (!save) return { ok: true };
+      // Read only for whether it was kept: nothing of a value comes back, and none is looked for.
+      const kept = (await response.json().catch(() => null)) as {
+        loginSaved?: unknown;
+        loginRefused?: unknown;
+      } | null;
+      return {
+        ok: true,
+        loginSaved: kept?.loginSaved === true,
+        ...(typeof kept?.loginRefused === "string"
+          ? { loginRefused: kept.loginRefused }
+          : {}),
+      };
+    }
     const body = (await response.json().catch(() => null)) as {
       code?: string;
     } | null;

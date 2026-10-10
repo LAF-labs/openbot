@@ -32,6 +32,7 @@ let control: {
     host: string;
     element: { role: string; name: string };
     fields?: { ref: string; label: string; role: string; name: string }[];
+    savable?: true;
   };
 } = {
   holder: "bot" as const,
@@ -40,6 +41,11 @@ let control: {
   reason: REASON,
 };
 const asked: string[] = [];
+/**
+ * What the server answers a card's values with, where a test is about them going in: the body of
+ * a 200. Absent, the value is refused, as the first test here needs.
+ */
+let taken: Record<string, unknown> | null = null;
 /** What each request carried, as it was sent: how a test reads what a card posted. */
 const posted: Array<{ url: string; body: unknown }> = [];
 let realFetch: typeof fetch;
@@ -58,6 +64,14 @@ beforeAll(() => {
     }
     if (url.endsWith("/control/release")) {
       control = { ...control, requested: false, reason: "" };
+    }
+    if (url.endsWith("/human/secret") && taken) {
+      // The values went in, and the request closed with them.
+      control = { ...control, secretWanted: undefined };
+      return new Response(JSON.stringify(taken), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     }
     if (url.endsWith("/human/secret")) {
       // As the computer answers a value it could not put in its field: refused, and the request
@@ -83,7 +97,10 @@ afterAll(async () => {
   await GlobalRegistrator.unregister();
 });
 
-afterEach(unmountAll);
+afterEach(async () => {
+  taken = null;
+  await unmountAll();
+});
 
 describe("whose request is open", () => {
   test("is this card's only when the computer holds the words it asked with", async () => {
@@ -392,6 +409,149 @@ describe("a card that asks for several values", () => {
     );
     expect(view.host.innerHTML).not.toContain(ID);
     expect(view.host.innerHTML).not.toContain(PASSWORD);
+  });
+});
+
+/*
+ * KEEPING WHAT IS TYPED AS A SAVED LOGIN (2026-10-10, record §6, piece 2-6). The card a person is
+ * answering is the last time they are asked for that site, if they tick it: the values go once,
+ * in the one request they always went in, with the tick and what to call the login beside them.
+ * Drawn only where the server said the card can be kept, and off until the person says so.
+ */
+describe("a card whose answer can be kept as a saved login", () => {
+  const ID = "sajang-ID-CANARY";
+  const PASSWORD = "hunter2-CANARY";
+  const signIn = (host: string, savable: boolean) => ({
+    holder: "bot" as const,
+    since: "2026-10-10T00:00:00.000Z",
+    requested: false,
+    secretWanted: "아이디, 비밀번호",
+    secretRef: "e1",
+    secretSnapshotId: 3,
+    secretFields: [
+      { ref: "e1", label: "아이디" },
+      { ref: "e2", label: "비밀번호" },
+    ],
+    secretInto: {
+      host,
+      element: { role: "textbox", name: "아이디" },
+      fields: [
+        { ref: "e1", label: "아이디", role: "textbox", name: "아이디" },
+        { ref: "e2", label: "비밀번호", role: "textbox", name: "비밀번호" },
+      ],
+      ...(savable ? { savable: true as const } : {}),
+    },
+  });
+  async function card(host: string, savable = true) {
+    control = signIn(host, savable);
+    posted.length = 0;
+    const { HelpCard } = await import("../src/components/computer/help-card");
+    const { ActiveBotProvider, useActiveBot } = await import(
+      "../src/lib/copilot/active-bot"
+    );
+    function Conversation() {
+      useActiveBot("agent-keep");
+      return (
+        <HelpCard
+          kind="secret"
+          result={undefined}
+          said="아이디, 비밀번호"
+          status="executing"
+          toolCallId="call-keep"
+        />
+      );
+    }
+    const view = await mount(
+      <ActiveBotProvider>
+        <Conversation />
+      </ActiveBotProvider>,
+    );
+    await view.settle(60);
+    const tick = () =>
+      view.host.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    const answer = async () => {
+      const [first, second] = [
+        ...view.host.querySelectorAll<HTMLInputElement>(
+          'input[type="password"]',
+        ),
+      ];
+      if (!first || !second) throw new Error("no masked boxes");
+      await view.type(first, ID);
+      await view.type(second, PASSWORD);
+      const send = [...view.host.querySelectorAll("button")].find(
+        (button) => button.textContent === "Send to the page",
+      );
+      if (!send) throw new Error("no send button");
+      await view.press(send);
+      await view.settle(80);
+    };
+    const sent = () =>
+      posted
+        .filter((one) => one.url.endsWith("/human/secret"))
+        .map((one) => one.body);
+    return { view, tick, answer, sent };
+  }
+
+  test("draws the choice, off, only where the server said it can be kept", async () => {
+    const kept = await card("ceo.yogiyo.co.kr");
+    expect(kept.tick()?.checked).toBe(false);
+    expect(kept.view.host.textContent).toContain(
+      "Save this login for next time",
+    );
+    await kept.view.unmount();
+
+    const not = await card("ceo.yogiyo.co.kr", false);
+    expect(
+      not.view.host.querySelectorAll('input[type="checkbox"]').length,
+    ).toBe(0);
+  });
+
+  test("ticked, the values go once with the tick and what to call the login, and it is said that it was kept", async () => {
+    taken = { characters: 30, loginSaved: true };
+    const { view, tick, answer, sent } = await card("ceo.yogiyo.co.kr");
+    const box = tick();
+    if (!box) throw new Error("no choice to keep it");
+    await view.press(box);
+    await answer();
+    // One request: the two values, and that they are to be kept, under the site's own name.
+    expect(sent()).toEqual([
+      { values: [ID, PASSWORD], save: { label: "Yogiyo for Owners" } },
+    ]);
+    expect(view.host.textContent).toContain(
+      "Saved to Accounts. Your Bot signs in here itself next time.",
+    );
+    expect(view.host.innerHTML).not.toContain(PASSWORD);
+    expect(view.host.innerHTML).not.toContain(ID);
+  });
+
+  test("a sign-in several sites share is called by its address, and a refusal is said in words", async () => {
+    taken = {
+      characters: 30,
+      loginSaved: false,
+      loginRefused: "laf:logins_full",
+    };
+    const { view, tick, answer, sent } = await card("nid.naver.com");
+    const box = tick();
+    if (!box) throw new Error("no choice to keep it");
+    await view.press(box);
+    await answer();
+    expect(sent()).toEqual([
+      { values: [ID, PASSWORD], save: { label: "nid.naver.com" } },
+    ]);
+    const { loginRefusalText } = await import("../src/lib/logins/refusals");
+    expect(view.host.textContent).toContain(
+      loginRefusalText("laf:logins_full"),
+    );
+    expect(view.host.textContent).not.toContain("laf:logins_full");
+    expect(view.host.textContent).not.toContain("Saved to Accounts");
+  });
+
+  test("left off, nothing about keeping is sent or said", async () => {
+    taken = { characters: 30 };
+    const { view, answer, sent } = await card("ceo.yogiyo.co.kr");
+    await answer();
+    expect(sent()).toEqual([{ values: [ID, PASSWORD] }]);
+    expect(view.host.textContent).not.toContain("Saved to Accounts");
   });
 });
 

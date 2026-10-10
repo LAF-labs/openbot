@@ -15,6 +15,7 @@ import {
 import type { ActionPolicy } from "../src/computer/policy";
 import type { SnapshotResult } from "../src/computer/schema";
 import { LoginSealError } from "../src/logins/crypto";
+import { LoginRefused } from "../src/logins/store";
 import type { SavedLogin } from "../src/logins/store";
 
 /**
@@ -74,6 +75,8 @@ function stack(
     computer?: Partial<Record<"whereFields" | "fillLogin", () => never>>;
     open?: () => never;
     vault?: boolean;
+    /** What the vault does when asked to save: refuse with a code, or not be able to at all. */
+    save?: "full" | "absent";
   } = {},
 ) {
   const calls: string[] = [];
@@ -82,6 +85,10 @@ function stack(
   const filled: unknown[] = [];
   const opened: string[] = [];
   const used: string[] = [];
+  /** What the vault was asked to save, and for whom. */
+  const kept: { userId: string; written: Record<string, unknown> }[] = [];
+  /** What the computer was handed for a person's card. */
+  const supplied: string[][] = [];
   const where = options.where ?? SIGN_IN;
   const client = {
     snapshot: async () => LOGIN_PAGE,
@@ -127,6 +134,16 @@ function stack(
       ends.push("runEnded");
       return { ended: true, closed: 1 };
     },
+    supplySecret: async (values: string[]) => {
+      calls.push("supplySecret");
+      supplied.push(values);
+      return {
+        holder: "bot",
+        since: "2026-10-10T00:00:00.000Z",
+        requested: false,
+        characters: values.join("").length,
+      };
+    },
     forBot() {
       return client;
     },
@@ -157,6 +174,22 @@ function stack(
                 : null;
             },
             used: async (_userId: string, id: string) => void used.push(id),
+            // HTTPS, as the vault's own rule: what a login can be saved for at all.
+            acceptsOrigin: (address: string) => address.startsWith("https://"),
+            ...(options.save === "absent"
+              ? {}
+              : {
+                  save: async (
+                    userId: string,
+                    written: Record<string, unknown> | null,
+                  ) => {
+                    if (options.save === "full") {
+                      throw new LoginRefused("laf:logins_full");
+                    }
+                    kept.push({ userId, written: written ?? {} });
+                    return saved("login-kept", String(written?.label ?? ""));
+                  },
+                }),
           },
         }),
   });
@@ -190,7 +223,19 @@ function stack(
       more.nobody ? { nobodyToAsk: true } : {},
     );
   };
-  return { gateway, approvals, calls, ends, filled, opened, used, rows, ask };
+  return {
+    gateway,
+    approvals,
+    calls,
+    ends,
+    filled,
+    opened,
+    used,
+    rows,
+    ask,
+    kept,
+    supplied,
+  };
 }
 
 const fillRows = (rows: AuditEventInput[]) =>
@@ -619,5 +664,147 @@ describe("a request for a sign-in's values from a run nobody is in front of", ()
     expect([gateway.holdsValues("bot-1"), ends.length]).toEqual([true, 0]);
     await gateway.runEnded("bot-1", "routine:run-1");
     expect([gateway.holdsValues("bot-1"), ends.length]).toEqual([false, 1]);
+  });
+});
+
+/*
+ * WHAT A PERSON TYPES INTO THE CARD, KEPT AS A SAVED LOGIN WHERE THEY SAY SO (2026-10-10, record
+ * §6, piece 2-6). The card they are answering is a sign-in nobody's login answered; a tick as they
+ * answer it is the last time they are asked for that site. The values go where they always went —
+ * into the page — and to the vault, which seals them; they are in no row and no answer.
+ */
+describe("a card answered by a person who says to keep it", () => {
+  const KEEP = { save: { label: "가게 로그인" } };
+  /** The person answering the open card: a name and a password, in the card's order. */
+  const answer = (
+    gateway: ReturnType<typeof stack>["gateway"],
+    values: string[] = [WHO, PASSWORD],
+    options?: { save?: { label: string } },
+  ) => gateway.supplySecret("bot-1", "bot-1", ACTOR, values, options);
+
+  test("a sign-in nobody's login answered says it can be kept, and a tick keeps it — the name and the password each as what it is", async () => {
+    const { gateway, ask, kept, supplied, rows } = stack({ logins: [] });
+    const asked = await ask();
+    expect(asked.secretInto?.savable).toBe(true);
+    const result = await answer(gateway, [WHO, PASSWORD], KEEP);
+    // Into the page first, as always.
+    expect(supplied).toEqual([[WHO, PASSWORD]]);
+    expect(kept).toEqual([
+      {
+        userId: ACTOR.id,
+        written: {
+          label: "가게 로그인",
+          origins: [ORIGIN],
+          username: WHO,
+          password: PASSWORD,
+        },
+      },
+    ]);
+    expect(result).toMatchObject({ loginSaved: true });
+    // Neither value is in what is answered or in any row of the trail.
+    const written = JSON.stringify([result, rows]);
+    expect(written).not.toContain(PASSWORD);
+    expect(written).not.toContain(WHO);
+  });
+
+  test("whichever order the card names its boxes in", async () => {
+    const { gateway, ask, kept } = stack({ logins: [] });
+    await ask([
+      { ref: "e2", label: "비밀번호" },
+      { ref: "e1", label: "아이디" },
+    ]);
+    await answer(gateway, [PASSWORD, WHO], KEEP);
+    expect(kept[0]?.written).toMatchObject({
+      username: WHO,
+      password: PASSWORD,
+    });
+  });
+
+  test("nothing is kept unless they say so", async () => {
+    const { gateway, ask, kept, supplied } = stack({ logins: [] });
+    await ask();
+    const result = await answer(gateway);
+    expect(supplied).toHaveLength(1);
+    expect(kept).toEqual([]);
+    expect(result).not.toHaveProperty("loginSaved");
+  });
+
+  test("only a sign-in with nothing saved for it can be kept: not a lone password, a code's box, a site with a login already, a page served without TLS, or a deployment that cannot save", async () => {
+    const cases = [
+      // A sign-in served without TLS: nothing is saved for it, and nothing ever can be.
+      {
+        made: stack({
+          logins: [],
+          where: {
+            e1: { origin: "http://example.com", kind: "text" },
+            e2: { origin: "http://example.com", kind: "password" },
+          },
+        }),
+        fields: undefined,
+        values: [WHO, PASSWORD],
+      },
+      // A lone password box: a login is a name and a password.
+      {
+        made: stack({ logins: [] }),
+        fields: [{ ref: "e2", label: "비밀번호" }],
+        values: [PASSWORD],
+      },
+      // Not a sign-in at all.
+      {
+        made: stack({
+          logins: [],
+          where: { ...SIGN_IN, e2: { origin: ORIGIN, kind: "other" } },
+        }),
+        fields: undefined,
+        values: [WHO, PASSWORD],
+      },
+      // A login is saved for there, and a rule kept it from being used: a second copy is not wanted.
+      {
+        made: stack({
+          policy: {
+            deny: ['intent == "fill_login"'],
+            ask: [],
+            allow: ["true"],
+          },
+        }),
+        fields: undefined,
+        values: [WHO, PASSWORD],
+      },
+      {
+        made: stack({ logins: [], save: "absent" }),
+        fields: undefined,
+        values: [WHO, PASSWORD],
+      },
+      {
+        made: stack({ vault: false }),
+        fields: undefined,
+        values: [WHO, PASSWORD],
+      },
+    ];
+    for (const { made, fields, values } of cases) {
+      const asked = await made.ask(fields);
+      expect(asked.secretInto).toBeDefined();
+      expect(asked.secretInto?.savable).toBeUndefined();
+      // A window that sent the tick anyway: the values still go in, and it is told nothing was kept.
+      const result = await answer(made.gateway, values, KEEP);
+      expect(made.supplied).toEqual([values]);
+      expect(made.kept).toEqual([]);
+      expect(result).toMatchObject({ loginSaved: false });
+    }
+  });
+
+  test("a vault that refuses does not undo the sign-in: the values are in the page, and the refusal is said by its code", async () => {
+    const { gateway, ask, supplied, kept } = stack({
+      logins: [],
+      save: "full",
+    });
+    await ask();
+    const result = await answer(gateway, [WHO, PASSWORD], KEEP);
+    expect(supplied).toEqual([[WHO, PASSWORD]]);
+    expect(kept).toEqual([]);
+    expect(result).toMatchObject({
+      loginSaved: false,
+      loginRefused: "laf:logins_full",
+    });
   });
 });

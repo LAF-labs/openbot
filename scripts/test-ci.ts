@@ -2524,6 +2524,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * can be saved for.
  * By hand: 2158 and 2 and 2 are 2162.
  *
+ * RAISED 2026-10-10 FOR A LOGIN KEPT FROM THE CARD, `server` from 4005 to 4012 and `app` from 2162
+ * to 2166 (record §6, "카드에서 저장이 들어감"). Five in `saved-login-fill.test.ts`: a sign-in
+ * nobody's login answered says it can be kept and a tick keeps it, the name and the password each
+ * as what it is, whichever order the card names them in; nothing is kept unless asked; only a
+ * sign-in with nothing saved for it can be; a vault that refuses does not undo the sign-in. One
+ * in `computer-routes.test.ts`: the tick is passed on with its name, and anything else under it
+ * is no tick. One in `saved-logins.integration.test.ts`: the vault says whether a login could
+ * be saved for an address at all, by the rule it saves with. Four in `help-card-reload.test.tsx`: the choice is drawn, off, only where the
+ * server said so; ticked, the values go once with the tick and a name; a shared sign-in is
+ * called by its address and a refusal is said in words; left off, nothing is sent or said.
+ * By hand: 4005 and 5, 1 and 1 are 4012; 2162 and 4 are 2166.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2552,8 +2564,8 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4005, roots: ["server"] },
-  { name: "app", floor: 2162, roots: ["app"] },
+  { name: "server", floor: 4012, roots: ["server"] },
+  { name: "app", floor: 2166, roots: ["app"] },
   {
     name: "agent-computer",
     floor: 537,
