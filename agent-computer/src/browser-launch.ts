@@ -86,6 +86,17 @@ export function launchBrowser(
   { timeZone, geolocation, chromiumVersion, proxy }: LaunchSettings,
 ): Promise<BrowserContext> {
   return chromium.launchPersistentContext(dir, {
+    /*
+     * THE FULL CHROMIUM, IN ITS NEW HEADLESS MODE (2026-10-10, `docs/laf/redesign-2026-10.md` §5,
+     * piece 5-2). Without a channel a headless launch is answered with `chromium_headless_shell`,
+     * a different binary, and that binary names itself in the brand list every request carries:
+     * `Sec-Ch-Ua: "HeadlessChrome";v=…` and the same in `navigator.userAgentData`, whatever the
+     * user agent string below is overridden to. `channel: "chromium"` is Playwright's name for the
+     * full build run headless, and the full build's brand list is `"Chromium"` and nothing about
+     * who is looking (measured, `browser-identity.ts`). Still headless: nothing here draws to a
+     * display, and the live screen is the screencast it always was.
+     */
+    channel: "chromium",
     args: LAUNCH_ARGS,
     // Playwright's default is false, and false means it passes `--no-sandbox` on our behalf.
     chromiumSandbox: true,

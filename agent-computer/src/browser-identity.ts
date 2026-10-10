@@ -66,12 +66,20 @@ export const PINNED_CHROMIUM_VERSION = "151.0.7922.34";
  * either was refused, which is a different fact about a different thing. A string no browser sends
  * is a mark of its own.
  *
- * WHAT THIS DOES NOT DO. The `Sec-Ch-Ua` header on every request and `navigator.userAgentData`
- * still carry `"HeadlessChrome";v="151"` from the headless shell — Playwright's override reaches
- * the string, not the brand list — so the page is told twice more what this string no longer says,
- * and `docs/laf/browser-limits.md` says so. The one cure is the browser that does not say it: the
- * full Chromium, headed or in the new headless mode, which is the measured recommendation of that
- * document and is not taken here.
+ * THE BRAND LIST IS THE BROWSER'S OWN, AND THE BROWSER IS THE FULL CHROMIUM (2026-10-10, piece
+ * 5-2). Playwright's override reaches this string and not the brand list — the `Sec-Ch-Ua` header
+ * on every request, and `navigator.userAgentData` — so while the headless shell was what ran, a
+ * page was told `"HeadlessChrome";v="151"` twice more after this string had stopped saying it.
+ * The cure was the browser that does not say it, and `browser-launch.ts` now starts that one: the
+ * full build in its new headless mode. Measured that day with the two binaries of one Chromium
+ * (149) side by side, each opening a page that reports back what it and its server were told:
+ *
+ *     headless shell   UA …HeadlessChrome/149.0.7827.55   brands "HeadlessChrome", "Chromium", "Not)A;Brand"
+ *     new headless     UA …HeadlessChrome/149.0.0.0       brands "Chromium", "Not)A;Brand"
+ *
+ * THE STRING IS STILL OVERRIDDEN, because the second line still says the word in it: the new
+ * headless mode cleans the brand list and not the user agent. This function is as needed as it
+ * was.
  *
  * Linux is kept, and deliberately: claiming Windows here would disagree with `navigator.platform`,
  * the client hints Chromium sends alongside, and the fonts the container has. A quiet, consistent

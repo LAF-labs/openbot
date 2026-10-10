@@ -147,12 +147,18 @@ const PAGE_HTML = `<!doctype html>
     Read through the product's own /read rather than asserted against the launch options: the
     options are a claim, and this is the thing that is actually true of the browser.
   -->
-  <p id="agent"></p>
+  <p id="agent" data-sec-ch-ua="__SEC_CH_UA__"></p>
   <script>
     document.getElementById("agent").textContent = [
       "언어=" + navigator.language,
       "시간대=" + Intl.DateTimeFormat().resolvedOptions().timeZone,
       "브라우저=" + navigator.userAgent,
+      // The brand list a page reads, and the one this page's own request carried: neither is
+      // reached by an override of the string above, so each is the browser's own word.
+      "상표=" + (navigator.userAgentData
+        ? navigator.userAgentData.brands.map(function (one) { return one.brand; }).join("|")
+        : "없음"),
+      "머리말=" + document.getElementById("agent").getAttribute("data-sec-ch-ua"),
     ].join(" ");
   </script>
 </body>
@@ -833,7 +839,13 @@ export function serveFixture(port = 0) {
           },
         });
       }
-      return new Response(PAGE_HTML, {
+      // The page says what its own request was sent with (`Sec-Ch-Ua`), for the test that reads
+      // what a site is told about the browser.
+      const brands = (request.headers.get("sec-ch-ua") ?? "없음")
+        .replaceAll("&", "&amp;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("<", "&lt;");
+      return new Response(PAGE_HTML.replace("__SEC_CH_UA__", brands), {
         headers: { "content-type": "text/html; charset=utf-8" },
       });
     },

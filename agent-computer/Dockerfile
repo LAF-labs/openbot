@@ -4,13 +4,17 @@
 # The image tag and Playwright dependency must be pinned to the same exact version. Bump both or
 # neither.
 #
-# TWO STAGES, BECAUSE THE IMAGE CARRIES FOUR BROWSERS AND ONE RUNS. `launchPersistentContext` in
-# browser-launch.ts is headless, which Playwright answers with `chromium_headless_shell`; full
-# Chromium, Firefox and WebKit sat beside it with the system libraries only they load (GStreamer,
-# GTK, Node). Measured 2026-09-26 on arm64: 4.08 GB on disk (1.02 GB pulled), 1.2 GB of it browsers
-# that never started. The final stage is plain Ubuntu of the same release the Playwright image is
-# built on, given the headless shell and the libraries Playwright's own `install-deps` names for
-# Chromium.
+# TWO STAGES, BECAUSE THE IMAGE CARRIES FOUR BROWSERS AND ONE RUNS. Measured 2026-09-26 on arm64:
+# 4.08 GB on disk (1.02 GB pulled), 1.2 GB of it browsers that never started, with the system
+# libraries only they load (GStreamer, GTK, Node). The final stage is plain Ubuntu of the same
+# release the Playwright image is built on, given the one browser that runs and the libraries
+# Playwright's own `install-deps` names for Chromium.
+#
+# THE ONE THAT RUNS IS THE FULL CHROMIUM (2026-10-10, piece 5-2). It was `chromium_headless_shell`
+# until then, which is what a headless launch with no channel is answered with, and which names
+# itself `HeadlessChrome` in the brand list of every request. browser-launch.ts asks for
+# `channel: "chromium"` — the full build in its new headless mode — so that is the directory
+# copied, and the shell is not: a launch that fell back to it would be the old tell, in silence.
 FROM mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e AS browsers
 
 FROM ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
@@ -74,7 +78,7 @@ RUN apt-get update \
     '  </match>' \
     '</fontconfig>' > /etc/fonts/local.conf
 
-COPY --from=browsers /ms-playwright/chromium_headless_shell-1234 /ms-playwright/chromium_headless_shell-1234
+COPY --from=browsers /ms-playwright/chromium-1234 /ms-playwright/chromium-1234
 
 # The log's shape lives beside the workspaces (`shared/log.ts`), imported as `../../shared/log`;
 # the layout is preserved so the import resolves the same in the image and locally.
