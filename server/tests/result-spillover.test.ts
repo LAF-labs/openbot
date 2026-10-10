@@ -3,7 +3,9 @@ import type { HttpAgent } from "@ag-ui/client";
 import { spillLine, TOOL_RESULT_CUT } from "../../shared/spillover";
 import type { WriteFileInput } from "../src/computer/schema";
 import { createResultSpill } from "../src/computer/spillover";
+import { createThreadProjects } from "../src/channels/thread-projects";
 import { buildAgents } from "../src/copilot";
+import { byConversation, delegatedThreadOf } from "../src/turns/engine";
 
 /**
  * A tool result over the bound is cut once, where it is first seen, and goes on file whole.
@@ -226,5 +228,65 @@ describe("what a remote Bot is sent about a filed result", () => {
     }
     const messages = sent.messages as Array<{ content?: string }>;
     expect(messages.at(-1)?.content).toBe(PAGE);
+  });
+});
+
+/*
+ * A RUN A PROJECT'S TURN DELEGATED TO FILES IN THAT PROJECT'S FOLDER (piece 6-2, beside 4-2's
+ * folders). A long result is filed by the thread of the request it is in, and a delegated run's
+ * thread is no conversation's: asked about as it is, it read "no project", and the page a
+ * project's browsing read would have gone into the person's main folder — readable from the main
+ * conversation, and still there after the project was deleted.
+ */
+describe("a long result of a run a conversation delegated to", () => {
+  const PROJECT = "channel_project-1";
+  const projects = () => {
+    const known = createThreadProjects({} as never);
+    known.remember(PROJECT, "thread-project");
+    return known;
+  };
+  const filedBy = async (
+    scopeOfThread: (threadId: string | undefined) => unknown,
+    threadId: string,
+  ) => {
+    const { writes, client } = recorder();
+    const spill = createResultSpill(client, {
+      scopeOfThread: scopeOfThread as never,
+    });
+    const shown = spill.forModel("bot-1", "call_1", PAGE, threadId);
+    await spill.settled();
+    return { shown, path: writes[0]?.path ?? "" };
+  };
+
+  test("is filed where its conversation's own are: a project's in the project's folder", async () => {
+    const known = projects();
+    const own = await filedBy(known.scopeOfThread, "thread-project");
+    const delegated = await filedBy(
+      byConversation(known.scopeOfThread),
+      delegatedThreadOf("thread-project"),
+    );
+    expect(own.path).toContain(PROJECT);
+    expect(delegated.path).toBe(own.path);
+    // And the line the model is shown names it there.
+    expect(delegated.shown).toBe(own.shown);
+  });
+
+  test("asked about by its own thread it is nobody's project — which is why it is not", async () => {
+    const known = projects();
+    const raw = await filedBy(
+      known.scopeOfThread,
+      delegatedThreadOf("thread-project"),
+    );
+    expect(raw.path).not.toContain(PROJECT);
+  });
+
+  test("the main conversation's, and one with no thread at all, are the main folder's as before", async () => {
+    const known = projects();
+    const read = byConversation(known.scopeOfThread);
+    const main = await filedBy(read, delegatedThreadOf("thread-main"));
+    const plain = await filedBy(read, "thread-main");
+    expect(main.path).toBe(plain.path);
+    expect(main.path).not.toContain(PROJECT);
+    expect(read(undefined)).toEqual(known.scopeOfThread(undefined));
   });
 });

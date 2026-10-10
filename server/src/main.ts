@@ -152,7 +152,7 @@ import { createDiagnosticsSource } from "./support/diagnostics";
 import { createFeedbackStore } from "./support/feedback";
 import { createPackageStatusReader, loadTenantPackage } from "./tenant-package";
 import { createChatTools } from "./turns/chat-tools";
-import { createTurnEngine } from "./turns/engine";
+import { byConversation, createTurnEngine } from "./turns/engine";
 import {
   createFirstMove,
   firstMoveForTurns,
@@ -556,7 +556,8 @@ const actors = createRequestActors({
  */
 const resultSpill = computerClient
   ? createResultSpill(computerClient, {
-      scopeOfThread: threadProjects.scopeOfThread,
+      // By the conversation: a run a project's turn delegated to files in that project's folder.
+      scopeOfThread: byConversation(threadProjects.scopeOfThread),
     })
   : undefined;
 // What Bots may do on their computers. Configuration supplies the deployment's default; an
