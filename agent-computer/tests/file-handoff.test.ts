@@ -86,6 +86,7 @@ function post(
   headers: Record<string, string> = {
     "x-openbot-computer-token": TOKEN,
     "x-openbot-bot-id": BOT,
+    "x-openbot-file-scope": "main",
   },
 ) {
   return ask(
@@ -266,6 +267,7 @@ describe("a file that is not handed over", () => {
         headers: {
           "x-openbot-computer-token": TOKEN,
           "x-openbot-bot-id": BOT,
+          "x-openbot-file-scope": "main",
         },
       }),
     );
@@ -331,6 +333,7 @@ describe("bytes put where nothing is, over the wire", () => {
   const DOOR = {
     "x-openbot-computer-token": TOKEN,
     "x-openbot-bot-id": BOT,
+    "x-openbot-file-scope": "main",
   };
 
   /** A put as the server sends one: the file as the body, its path percent-encoded in a header. */

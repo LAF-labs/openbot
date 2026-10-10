@@ -23,6 +23,11 @@ import {
   PDF_WITHOUT_TEXT,
   SHEET_WITHOUT_ROWS,
 } from "../../../shared/prompt/attachments.ko";
+import {
+  type FileScope,
+  MAIN_SCOPE,
+  placedForWrite,
+} from "../../../shared/file-scope";
 import type { WriteFileInput, WriteFileResult } from "../computer/schema";
 import type { Database } from "../db/client";
 import { lafAttachments } from "../db/schema";
@@ -62,7 +67,11 @@ export type AttachmentForModel = {
 
 /** The one method this needs of the computer client, so a test can hand in a recorder. */
 export type AttachmentFiler = {
-  forBot(botId: string): {
+  forBot(
+    botId: string,
+    inBrowser?: string | null,
+    as?: FileScope,
+  ): {
     writeFile(input: WriteFileInput): Promise<WriteFileResult>;
   };
 };
@@ -101,6 +110,11 @@ export function createAttachmentService(options: {
   database: Database;
   /** Absent: nothing is written to a computer, and the model is told the whole cannot be read. */
   computer?: AttachmentFiler;
+  /**
+   * Whose files something arriving in a channel is (`channels/thread-projects.ts`): a project's
+   * readable copy is filed in the project's own folder. Absent: the main folder's.
+   */
+  scopeOfChannel?: (channelId: string) => FileScope;
   imagesAccepted: boolean;
   /** Where uploaded bytes are read. Absent: a local child, as on a laptop (`converter-client.ts`). */
   converter?: Converter;
@@ -118,12 +132,18 @@ export function createAttachmentService(options: {
   /** The readable whole onto the Bot's computer. Null when it could not be put there. */
   const fileOnComputer = async (
     botId: string,
-    path: string,
+    channelId: string,
+    named: string,
     contents: string,
   ): Promise<string | null> => {
     if (!computer) return null;
+    // In the project's own folder where the conversation is one, and named to the model there.
+    const scope = options.scopeOfChannel?.(channelId) ?? MAIN_SCOPE;
+    const path = placedForWrite(scope, named) ?? named;
     try {
-      await computer.forBot(botId).writeFile({ path, contents });
+      await computer
+        .forBot(botId, undefined, scope)
+        .writeFile({ path, contents });
       return path;
     } catch (error) {
       log.warn("attachment_not_filed", {
@@ -199,6 +219,7 @@ export function createAttachmentService(options: {
         if (extracted.whole) {
           workspacePath = await fileOnComputer(
             botId,
+            channelId,
             workspacePathFor(
               id,
               name,

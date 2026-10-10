@@ -491,9 +491,10 @@ function filedToolResult(
   message: ToolResultMessage,
   botId: string,
   spill: ResultSpill,
+  threadId: string | undefined,
 ): ToolResultMessage {
   const text = textOf(message.content);
-  const shown = spill.forModel(botId, message.toolCallId, text);
+  const shown = spill.forModel(botId, message.toolCallId, text, threadId);
   return shown === text ? message : { ...message, content: shown };
 }
 
@@ -706,7 +707,7 @@ function remoteAgentWithPrompt(
       .filter((message) => !isSupersededPrompt(message.id, agent.id))
       .map((message) =>
         spill && message.role === "tool"
-          ? filedToolResult(message, agent.id, spill)
+          ? filedToolResult(message, agent.id, spill, input.threadId)
           : message,
       );
     const prepared = conversations?.prepare({

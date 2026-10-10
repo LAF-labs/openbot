@@ -71,6 +71,7 @@ function asBot(bot: string) {
         "content-type": "application/json",
         "x-openbot-computer-token": TOKEN,
         "x-openbot-bot-id": bot,
+        "x-openbot-file-scope": "main",
       },
     });
     const text = await response.text();

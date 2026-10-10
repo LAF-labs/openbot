@@ -6,6 +6,11 @@ import { createAttachmentService } from "../src/attachments/service";
 import type { WriteFileInput } from "../src/computer/schema";
 import { createDatabase } from "../src/db/client";
 import { agents, channels, lafAttachments, users } from "../src/db/schema";
+import {
+  type FileScope,
+  MAIN_SCOPE,
+  projectScope,
+} from "../../shared/file-scope";
 import { TEST_POOL } from "./support/database";
 
 /**
@@ -24,13 +29,22 @@ const bot = `attach-${suite}-bot`;
 const otherBot = `attach-${suite}-other`;
 const channel = `attach-${suite}-channel`;
 
-const filed: Array<{ botId: string; input: WriteFileInput }> = [];
+/** A project's channel: what is filed for it goes in its own folder. */
+const project = `attach-${suite}-project`;
+
+const filed: Array<{
+  botId: string;
+  input: WriteFileInput;
+  as: FileScope | undefined;
+}> = [];
 const service = createAttachmentService({
   database,
+  scopeOfChannel: (channelId) =>
+    channelId === project ? projectScope(project) : MAIN_SCOPE,
   computer: {
-    forBot: (botId) => ({
+    forBot: (botId, _inBrowser, as) => ({
       writeFile: async (input) => {
-        filed.push({ botId, input });
+        filed.push({ botId, input, as });
         return {
           path: input.path,
           bytes: Buffer.byteLength(input.contents),
@@ -66,14 +80,17 @@ beforeAll(async () => {
       configuration: { endpoint: "https://bot.example.test/ag-ui" },
     },
   ]);
-  await database
-    .insert(channels)
-    .values({ id: channel, name: "빵순이", description: "" });
+  await database.insert(channels).values([
+    { id: channel, name: "빵순이", description: "" },
+    { id: project, name: "가을 메뉴", description: "", kind: "project" },
+  ]);
 });
 
 afterAll(async () => {
   // The cascade from each of the three is what takes the rows; the users row goes last.
-  await database.delete(channels).where(eq(channels.id, channel));
+  await database
+    .delete(channels)
+    .where(inArray(channels.id, [channel, project]));
   await database.delete(agents).where(inArray(agents.id, [bot, otherBot]));
   await database.delete(users).where(eq(users.id, person));
   await database.$client.end();
@@ -111,6 +128,8 @@ describe("a file handed to the Bot", () => {
     expect(onComputer?.input.path).toMatch(
       /^uploads\/\d{4}-\d{2}-\d{2}-[0-9a-f]{8}-8월 매출\.csv$/,
     );
+    // Said as the main conversation's: the computer refuses a file call that does not say.
+    expect(onComputer?.as).toEqual(MAIN_SCOPE);
     expect(onComputer?.input.contents).toBe("메뉴,수량\n아메리카노,42");
 
     const forModel = await service.forModel(bot, [received.attachment.id]);
@@ -185,5 +204,36 @@ describe("a file handed to the Bot", () => {
         bytes: new Uint8Array(PNG),
       }),
     ).toEqual({ ok: false, code: "laf:attachment_image_unsupported" });
+  });
+});
+
+describe("a file handed to the Bot in a project", () => {
+  test("is filed in the project's own folder, as the project's, and named to the model there", async () => {
+    filed.length = 0;
+    const received = await service.receive({
+      userId: person,
+      channelId: project,
+      botId: bot,
+      claimedName: "메뉴.csv",
+      bytes: new TextEncoder().encode("메뉴,가격\n단호박 라떼,6500\n"),
+    });
+    if (!received.ok) throw new Error(received.code);
+
+    expect(filed).toHaveLength(1);
+    expect(filed[0]?.as).toEqual(projectScope(project));
+    expect(filed[0]?.input.path).toMatch(
+      new RegExp(
+        `^projects/${project}/uploads/\\d{4}-\\d{2}-\\d{2}-[0-9a-f]{8}-메뉴\\.csv$`,
+      ),
+    );
+    const forModel = await service.forModel(bot, [received.attachment.id]);
+    expect(forModel.get(received.attachment.id)?.modelText ?? "").toContain(
+      filed[0]?.input.path ?? "?",
+    );
+
+    // This test's own row, by its id: the cases above count this person's rows.
+    await database
+      .delete(lafAttachments)
+      .where(eq(lafAttachments.id, received.attachment.id));
   });
 });

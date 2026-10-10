@@ -350,6 +350,8 @@ export const withdrawSecret: BotRoute = async ({ request, session }) => {
  * A run in which nothing was put in ends nothing, and this is not what starts a browser.
  */
 export const runEnded: BotRoute = async ({ botId, session }, { profiles }) => {
+  // The run is over: what the page hands the browser from here is nobody's to file.
+  delete session.fileScope;
   if (!holdsFilled(session)) return json({ ended: true, closed: 0 });
   const tabs = filledTabs(session);
   const open = tabs.filter((tab) => !tab.isClosed()).length;

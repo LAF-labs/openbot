@@ -267,6 +267,7 @@ async function call(
       "content-type": "application/json",
       "x-openbot-computer-token": init.token ?? TOKEN,
       ...(bot ? { "x-openbot-bot-id": bot } : {}),
+      "x-openbot-file-scope": "main",
     },
   });
   const text = await response.text();

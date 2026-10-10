@@ -10,6 +10,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { ElementHandle, Frame, Page } from "playwright";
+import type { FileScope } from "../../shared/file-scope";
 import type { NoteCode } from "./codes";
 import {
   type Control,
@@ -55,6 +56,13 @@ export type SecretField = {
 /** Per-Bot browser-control state. Profiles are isolated, but this process is not a security boundary. */
 export type BotSession = {
   control: Control;
+  /**
+   * Whose files the last run in this browser writes: said on its calls (`routes.ts`) and standing
+   * until another run's call says otherwise. Forgotten when this side is told a run is over
+   * (`control-routes.ts`, `runEnded`) or the project it names is removed. Where a download lands.
+   * Absent — nothing has said since the process started, or since either of those — nothing lands.
+   */
+  fileScope?: FileScope;
   /**
    * Which snapshot the caller's refs came from.
    *

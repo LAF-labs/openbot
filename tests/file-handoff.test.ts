@@ -26,6 +26,7 @@ import { createComputerRoutes } from "../server/src/computer/routes";
 import { createChatTools } from "../server/src/turns/chat-tools";
 import { createPersonAnswers } from "../server/src/turns/people";
 import { ATTACHMENT_MAX_BYTES } from "../shared/attachments";
+import { MAIN_SCOPE } from "../shared/file-scope";
 import { toolResultText } from "../shared/prompt/tool-results.ko";
 import {
   contentTypeOf,
@@ -307,7 +308,7 @@ describe("a file that does not leave", () => {
       allowPrivateHosts: true,
     });
     const failure = await stranger
-      .forBot("bot-1")
+      .forBot("bot-1", undefined, MAIN_SCOPE)
       .downloadFile("chart.png")
       .then(
         () => null,
@@ -413,7 +414,7 @@ describe("the server's own file calls, against the real folder", () => {
   test("bytes put under a Korean path land as they were sent, and are taken whole again", async () => {
     reached.length = 0;
     const path = "made/2026-10-06-1a2b3c4d/요일별 매출.xlsx";
-    const bot = computerClient.forBot("bot-1");
+    const bot = computerClient.forBot("bot-1", undefined, MAIN_SCOPE);
 
     expect(await bot.putFile(path, BINARY)).toEqual({
       path,
@@ -426,7 +427,7 @@ describe("the server's own file calls, against the real folder", () => {
   });
 
   test("a put never replaces: a taken path is refused as that, and the first file is as it was", async () => {
-    const bot = computerClient.forBot("bot-1");
+    const bot = computerClient.forBot("bot-1", undefined, MAIN_SCOPE);
     await bot.putFile("made/once.bin", BINARY);
 
     const again = await failureOf(
@@ -454,13 +455,15 @@ describe("the server's own file calls, against the real folder", () => {
 
   test("a file too large for a person's download is still taken whole by the server", async () => {
     // Five megabytes and a byte: the download door's own refusal is held above.
-    const whole = await computerClient.forBot("bot-1").fileBytes("huge.bin");
+    const whole = await computerClient
+      .forBot("bot-1", undefined, MAIN_SCOPE)
+      .fileBytes("huge.bin");
     expect(whole.byteLength).toBe(5_000_001);
     expect(whole[5_000_000]).toBe(1);
   });
 
   test("neither leaves the folder, and neither is answered without the Bot being named", async () => {
-    const bot = computerClient.forBot("bot-1");
+    const bot = computerClient.forBot("bot-1", undefined, MAIN_SCOPE);
     for (const path of ["../outside/owned.bin", "/tmp/owned.bin"]) {
       expect((await failureOf(bot.putFile(path, BINARY))).message).toBe(
         "laf:file_path_refused",
@@ -503,7 +506,7 @@ test("the sentence for a file that is too large is true of a read as well as of 
   const big = new Uint8Array(ATTACHMENT_MAX_BYTES + 1);
   await writeFile(join(root, "too-large-to-take.bin"), big);
   const refused = await computerClient
-    .forBot("bot-1")
+    .forBot("bot-1", undefined, MAIN_SCOPE)
     .fileBytes("too-large-to-take.bin")
     .catch((error: unknown) => error);
   expect(refused instanceof Error && refused.message).toBe(

@@ -26,6 +26,7 @@ import {
   createChannelStore,
 } from "../src/channels/routes";
 import { createThreadIdentity } from "../src/channels/thread-identity";
+import { createThreadProjects } from "../src/channels/thread-projects";
 import { createDatabase } from "../src/db/client";
 import {
   agentMemories,
@@ -580,6 +581,160 @@ describe("deleting a project", () => {
     expect(trail[0]?.payload).toMatchObject({ resumed: true });
     // And nothing that was not marked went with it.
     expect(await left(MAIN)).toEqual(WHOLE);
+  });
+
+  test("its folder on the Bot's computer is removed after the turn's end and before the rows, and then it is forgotten", async () => {
+    const project = await conversation("project");
+    const order: string[] = [];
+    const rows = async () => (await left(project)).messages;
+    const deletion = createProjectDeletion({
+      database,
+      stopThread: async () => {
+        order.push(`stop: rows ${await rows()}`);
+      },
+      dropContext: async () => {
+        order.push(`forget its context: rows ${await rows()}`);
+      },
+      removeFolder: async (channelId, botIds) => {
+        order.push(
+          `remove the folder of ${channelId === project.channel ? "the project" : channelId} for ${botIds.join()}: rows ${await rows()}`,
+        );
+      },
+      forgotten: (channelId) => {
+        order.push(
+          `forgotten ${channelId === project.channel ? "the project" : channelId}`,
+        );
+      },
+    });
+
+    await deletion.delete({ channelId: project.channel, userId: ME });
+
+    order.push(`deleted: rows ${await rows()}`);
+    expect(order).toEqual([
+      "stop: rows 1",
+      "forget its context: rows 1",
+      `remove the folder of the project for ${BOT}: rows 1`,
+      "forgotten the project",
+      "deleted: rows 0",
+    ]);
+  });
+
+  test("a folder that could not be removed keeps the project marked with every row, and the clock removes both", async () => {
+    const project = await conversation("project");
+    let computerIsUp = false;
+    const asked: string[] = [];
+    const forgotten: string[] = [];
+    const deletion = createProjectDeletion({
+      auditStore,
+      database,
+      stopThread: async () => undefined,
+      removeFolder: async (channelId) => {
+        asked.push(channelId);
+        if (!computerIsUp) throw new Error("laf:computer_unreachable");
+      },
+      forgotten: (channelId) => {
+        forgotten.push(channelId);
+      },
+    });
+
+    // Rows removed with the folder left behind would be a folder nothing ever names again.
+    expect(
+      await deletion.delete({ channelId: project.channel, userId: ME }),
+    ).toEqual({ ok: false, code: PROJECT_DELETING });
+    expect(await left(project)).toEqual(WHOLE);
+    expect(
+      await anyBeingDeleted(database, {
+        channelIds: [project.channel],
+        threadIds: [],
+      }),
+    ).toBe(true);
+    expect(forgotten).toEqual([]);
+    expect(await auditOf(project.channel)).toHaveLength(0);
+
+    await deletion.finishPending();
+    expect(await left(project)).toEqual(WHOLE);
+
+    computerIsUp = true;
+    expect(await deletion.finishPending()).toBeGreaterThanOrEqual(1);
+    expect(await left(project)).toEqual(GONE);
+    expect(forgotten).toEqual([project.channel]);
+    expect(asked.filter((id) => id === project.channel)).toHaveLength(3);
+    expect(await auditOf(project.channel)).toHaveLength(1);
+  });
+});
+
+describe("which conversations are projects", () => {
+  test("is read whole from the database: a project by its thread and its channel, the main conversation as no project", async () => {
+    const project = await conversation("project");
+    const threadProjects = createThreadProjects(database);
+
+    expect(await threadProjects.load()).toBeGreaterThanOrEqual(1);
+
+    expect(threadProjects.scopeOfThread(project.thread)).toEqual({
+      kind: "project",
+      id: project.channel,
+    });
+    expect(threadProjects.scopeOfChannel(project.channel)).toEqual({
+      kind: "project",
+      id: project.channel,
+    });
+    expect(threadProjects.scopeOfThread(MAIN.thread)).toEqual({ kind: "main" });
+    expect(threadProjects.scopeOfChannel(MAIN.channel)).toEqual({
+      kind: "main",
+    });
+    // A routine's run, a check: no conversation at all.
+    expect(threadProjects.scopeOfThread(undefined)).toEqual({ kind: "main" });
+  });
+
+  test("a thread it was never told of is asked of the database, once", async () => {
+    const threadProjects = createThreadProjects(database);
+    const project = await conversation("project");
+
+    expect(await threadProjects.of(project.thread)).toBe(project.channel);
+    expect(await threadProjects.of(MAIN.thread)).toBeNull();
+    expect(await threadProjects.of(randomUUID())).toBeNull();
+    // Kept: the caller that cannot wait is now answered too.
+    expect(threadProjects.scopeOfThread(project.thread)).toEqual({
+      kind: "project",
+      id: project.channel,
+    });
+  });
+
+  test("is told of a project when the store makes one, and forgets it when it is deleted", async () => {
+    const threadProjects = createThreadProjects(database);
+    const telling = createChannelStore(
+      database,
+      createAgentProfileStore(
+        database,
+        new URL("https://managed.example.test/ag-ui"),
+      ),
+      createThreadIdentity("test-deployment"),
+      undefined,
+      threadProjects.remember,
+    );
+    const project = await telling.createProject(actor, BOT, "가을 메뉴");
+    made.push({ channel: project.id, thread: project.threadId });
+
+    // With nothing loaded and nothing asked: told.
+    expect(threadProjects.scopeOfThread(project.threadId)).toEqual({
+      kind: "project",
+      id: project.id,
+    });
+    expect(threadProjects.scopeOfChannel(project.id)).toEqual({
+      kind: "project",
+      id: project.id,
+    });
+
+    await createProjectDeletion({
+      database,
+      stopThread: async () => undefined,
+      forgotten: threadProjects.forget,
+    }).delete({ channelId: project.id, userId: ME });
+
+    expect(threadProjects.scopeOfThread(project.threadId)).toEqual({
+      kind: "main",
+    });
+    expect(threadProjects.scopeOfChannel(project.id)).toEqual({ kind: "main" });
   });
 });
 

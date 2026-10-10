@@ -7,6 +7,7 @@
  * it writes (the trail's rows) and how a call is described (its intent and subject) live beside it,
  * so that this file is the sequence and nothing else.
  */
+import { type FileScope, placedForWrite } from "../../../../shared/file-scope";
 import { ACTION_FAILED, type AuditStore } from "../../audit";
 import { describeFailure } from "../../failure-text";
 import { log } from "../../log";
@@ -99,6 +100,11 @@ export function createGovern(options: {
     subject: ReviewSubject,
   ) => Promise<ReviewVerdict | null>;
   snapshots: SnapshotCache;
+  /** Whose files a call's actor may touch, and where that is carried to the client (`gateway.ts`). */
+  fileScopes: {
+    of: (actor: ActionActor) => Promise<FileScope>;
+    during: <T>(scope: FileScope, work: () => Promise<T>) => Promise<T>;
+  };
   /**
    * The high-risk check and what it reads beside the call: what was typed on the site so far, by
    * kind, and whether a person entered a secret there. Absent, no submission is ever escalated —
@@ -115,6 +121,12 @@ export function createGovern(options: {
   const { auditStore, approvals, repeat, standing, snapshots } = options;
   const { pageMoved, resolve } = snapshots;
 
+  /** What `govern` is called with: `governAs`'s own arguments, less the scope it reads itself. */
+  type GovernArguments<T> =
+    Parameters<typeof governAs<T>> extends [FileScope, ...infer Rest]
+      ? Rest
+      : never;
+
   /**
    * Decide, record, then act.
    *
@@ -122,7 +134,20 @@ export function createGovern(options: {
    * later fails is still part of the audit sequence, and a trail that only contains successes cannot
    * show that sequence.
    */
-  async function govern<T>(
+  async function govern<T>(...given: GovernArguments<T>): Promise<T> {
+    /*
+     * WHOSE FILES, BEFORE ANYTHING ELSE, AND FOR THE WHOLE OF THE ACT (`shared/file-scope.ts`).
+     * Read once from who is acting; every call the act makes to the computer says it, whichever
+     * module makes the call, because this is the one function every acting call goes through.
+     * A scope that cannot be read fails the call: guessed as the main conversation's, a
+     * project's file would be written where nothing deletes it.
+     */
+    const scope = await options.fileScopes.of(given[3]);
+    return options.fileScopes.during(scope, () => governAs(scope, ...given));
+  }
+
+  async function governAs<T>(
+    scope: FileScope,
     computerId: string,
     toolName: string,
     botId: string,
@@ -230,10 +255,23 @@ export function createGovern(options: {
      * string with no one spelling stays exactly as written, here and on the wire
      * (`addresses.ts`, `workspacePathOf`).
      */
-    const filePath =
+    const spelled =
       subject.filePath === undefined
         ? undefined
         : (workspacePathOf(subject.filePath) ?? subject.filePath);
+    /*
+     * AND WHERE A WRITE GOES: a project's, inside the project's own folder. Placed HERE, before
+     * anything is decided, so the rule, the question, the row and the computer are all handed the
+     * place the file will really be. A path the scope may not write at all — another project's —
+     * goes on as spelled, and is refused where every unreachable path is, by the computer. So
+     * does a string that is no path.
+     */
+    const filePath =
+      spelled !== undefined &&
+      intentOf(toolName, subject.key) === "write_file" &&
+      workspacePathOf(spelled) !== null
+        ? (placedForWrite(scope, spelled) ?? spelled)
+        : spelled;
     /*
      * A path the computer does not read one way is not decided at all: it is refused below, as
      * the floor for a page this server has not seen is, and nothing is sent. Its row carries the

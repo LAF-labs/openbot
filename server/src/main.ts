@@ -1,5 +1,6 @@
 import "./telemetry-off";
 import { serve } from "bun";
+import { PERSON_SCOPE } from "../../shared/file-scope";
 import { HARNESS_VERSION } from "../../shared/prompt/harness";
 import { createConsentStore } from "./account/consent";
 import { createAccountDeletion } from "./account/deletion";
@@ -60,6 +61,7 @@ import {
   createChannelEventHub,
 } from "./channels/events";
 import { createChannelStore } from "./channels/routes";
+import { createThreadProjects } from "./channels/thread-projects";
 import { websocket as channelSocket } from "./channels/socket";
 import { createStallGuard } from "./channels/stall-guard";
 import { createThreadIdentity } from "./channels/thread-identity";
@@ -265,6 +267,13 @@ const conversations = createConversationStore({
     : {}),
 });
 const conversationsLoaded = await conversations.load();
+/*
+ * Which conversations are projects (`channels/thread-projects.ts`): read whole before anything
+ * runs, because what a project's run files goes in the project's own folder and one caller of this
+ * cannot wait for the database.
+ */
+const threadProjects = createThreadProjects(database);
+await threadProjects.load();
 // The vault, built before the agent store because a customer's agent may sit behind a key and that
 // key belongs here rather than on the agent row. See agents/auth-header.ts.
 const credentialStore = createCredentialStore(database);
@@ -342,6 +351,7 @@ const threadIdentity = createThreadIdentity(tenantPackage.tenantId);
 const attachmentService = createAttachmentService({
   database,
   ...(computerClient ? { computer: computerClient } : {}),
+  scopeOfChannel: threadProjects.scopeOfChannel,
   imagesAccepted: tenantPackage.model.supportsImages !== false,
   // Every uploaded byte is read outside this process: the sidecar, or a local child on a laptop.
   converter: createConverter(converterSettingFor(config.converter)),
@@ -459,6 +469,7 @@ const channelStore = createChannelStore(
   agentProfileStore,
   threadIdentity,
   (event) => channelEvents.deliver(event),
+  threadProjects.remember,
 );
 /**
  * Which components each Bot may answer with.
@@ -544,7 +555,9 @@ const actors = createRequestActors({
  * No computer, nothing to file: the transcript goes as it always did.
  */
 const resultSpill = computerClient
-  ? createResultSpill(computerClient)
+  ? createResultSpill(computerClient, {
+      scopeOfThread: threadProjects.scopeOfThread,
+    })
   : undefined;
 // What Bots may do on their computers. Configuration supplies the deployment's default; an
 // administrator can change it while running, and a restart returns to the configured one.
@@ -754,6 +767,7 @@ const loginVault = createLoginVault({
 const computerGateway = computerClient
   ? createComputerGateway({
       client: computerClient,
+      projectOf: threadProjects.of,
       logins: loginVault,
       /*
        * The trail, with one ear on it.
@@ -986,6 +1000,24 @@ const projectDeletion = createProjectDeletion({
   database,
   stopThread: (threadId) => turnEngine.stopThread(threadId),
   dropContext: (threadId) => conversations.drop(threadId),
+  /*
+   * The project's folder, on the computer of each Bot in it — as the person, who alone may name a
+   * project to remove (`agent-computer/src/file-routes.ts`). After the long results still being
+   * filed into it have landed: one written a moment later would make the folder again.
+   */
+  ...(computerClient
+    ? {
+        removeFolder: async (channelId: string, botIds: readonly string[]) => {
+          await resultSpill?.settledFor(channelId);
+          for (const botId of botIds) {
+            await computerClient
+              .forBot(botId, undefined, PERSON_SCOPE)
+              .removeProjectFolder(channelId);
+          }
+        },
+      }
+    : {}),
+  forgotten: threadProjects.forget,
   endApprovals: (threadId, actor) =>
     standingApprovals.endThread(threadId, actor),
   auditStore: bootAuditStore,

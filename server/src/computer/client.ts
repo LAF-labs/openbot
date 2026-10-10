@@ -14,6 +14,11 @@ import {
   HANDOFF_MAX_BYTES,
 } from "../../../shared/workspace-files";
 import type { BrowserWhereabouts } from "../account/whereabouts";
+import {
+  FILE_SCOPE_HEADER,
+  type FileScope,
+  fileScopeHeader,
+} from "../../../shared/file-scope";
 import { BotIdRefusedError, isBotId, isBrowserName } from "./bot-id";
 import type { SecretField } from "../../../shared/secret-ask";
 import type {
@@ -414,7 +419,12 @@ export function createComputerClient(options: ComputerClientOptions) {
    * point it acts, and threading it through every signature would put the same argument in every call
    * site for a value that never changes within a request.
    */
-  function build(botId?: string, browser?: string | null) {
+  function build(
+    botId?: string,
+    browser?: string | null,
+    /** Whose files the calls may touch (`shared/file-scope.ts`). The computer refuses a file call with none. */
+    scope?: FileScope,
+  ) {
     /**
      * Nothing usable came back, as the fact this client says itself: the caller stopped, the
      * deadline passed, or nobody was there. A caller that stopped mid-request is neither of the
@@ -480,6 +490,7 @@ export function createComputerClient(options: ComputerClientOptions) {
             ...(botId ? { "x-openbot-bot-id": botId } : {}),
             // Absent for the main browser, which is every call from before there were others.
             ...(browser ? { [BROWSER_HEADER]: browser } : {}),
+            ...(scope ? { [FILE_SCOPE_HEADER]: fileScopeHeader(scope) } : {}),
             ...(token ? { "x-openbot-computer-token": token } : {}),
             ...(whereabouts
               ? {
@@ -813,6 +824,17 @@ export function createComputerClient(options: ComputerClientOptions) {
       },
 
       /**
+       * A project's folder, removed with everything in it (`/files/project/remove`): by the
+       * project's id, never a path, and only as the person. Answers whether there was one.
+       */
+      async removeProjectFolder(projectId: string): Promise<boolean> {
+        const answer = (await post("/files/project/remove", {
+          projectId,
+        })) as { removed?: unknown };
+        return answer.removed === true;
+      },
+
+      /**
        * Bytes, to a path in the folder that nothing is at.
        *
        * The one call whose REQUEST is not JSON: the body is the file, and its path rides in a
@@ -1033,8 +1055,8 @@ export function createComputerClient(options: ComputerClientOptions) {
        * The same computer, addressed as a particular Bot — and, where one is named, as that Bot
        * in one of the computer's background browsers rather than its main one.
        */
-      forBot(id: string, inBrowser?: string | null) {
-        return build(id, inBrowser);
+      forBot(id: string, inBrowser?: string | null, as?: FileScope) {
+        return build(id, inBrowser, as);
       },
     };
     return computer;
