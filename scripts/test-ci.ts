@@ -2762,6 +2762,13 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `tests/delegate.test.ts`: the chat mode naming none of the browser's eleven tools, one case
  * each, and naming the hand-over.
  *
+ * RAISED 2026-10-11 FOR THE EVAL THAT MEASURES A HAND-OVER, `root` by a hundred and forty-eight (to
+ * 1282, on top of the project tool's) (record §4, the first part of piece 6-3), all in the new
+ * `tests/eval-delegation.test.ts`:
+ * the lists the model pack hands out against the product's own — one case a conversation's
+ * scenario, that it is handed no tool of the browser's — and every judge that reads a hand-over
+ * fed a turn that should pass and one that should not.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2819,7 +2826,7 @@ const GROUPS: readonly {
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 1134, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 1282, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
