@@ -200,9 +200,33 @@ function forTheBot(message: Message): Message {
   return rest as Message;
 }
 
+const DELEGATED = ".browse";
+
 /** The conversation a conversation's delegated runs are made in: one, named after it. */
 export const delegatedThreadOf = (threadId: string): string =>
-  `${threadId}.browse`;
+  `${threadId}${DELEGATED}`;
+
+/**
+ * Something read by conversation, asked for by the thread a run of the model was made on.
+ *
+ * A DELEGATED RUN'S THREAD IS NO CONVERSATION'S, and whatever is decided per conversation has to
+ * be decided for the one that delegated. The first that needed it: a result too long to hand a
+ * model is filed in the conversation's folder, a project's in the project's own
+ * (`computer/spillover.ts`), by the thread of the request it is in. Asked about a delegated run's
+ * thread as it is, that read "no project" — and a page a project's browsing read would have been
+ * filed in the person's main folder, where the main conversation can read it and where it stays
+ * when the project is deleted.
+ */
+export function byConversation<T>(
+  read: (threadId: string | undefined) => T,
+): (threadId: string | undefined) => T {
+  return (threadId) =>
+    read(
+      threadId?.endsWith(DELEGATED)
+        ? threadId.slice(0, -DELEGATED.length)
+        : threadId,
+    );
+}
 
 /** Whether a call is one of the browser's own: a tool of the computer's that drives a page. */
 const isBrowserStep = (name: string | undefined): boolean =>
