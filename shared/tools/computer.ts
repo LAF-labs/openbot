@@ -301,6 +301,30 @@ export const UNATTENDED_SAVED_LOGIN: ComputerTool = {
       ?.parameters ?? object({}),
 };
 
+/**
+ * 봇의 폴더만 닿는 셋: 페이지도 탭도 없고, 다른 실행의 스냅샷이 낡아질 것도 없다
+ * (`agent-computer/src/file-routes.ts`는 폴더만 받고 브라우저를 받지 않는다).
+ *
+ * 이 선은 두 군데가 함께 읽는다. 브라우저의 차선은 이 셋에는 줄을 세우지 않고
+ * (`server/src/runner/bot-lane.ts`, 조각 5-4), 브라우징을 맡기는 대화는 이 셋만 직접 든다
+ * (`delegate.ts`, 조각 6-2).
+ */
+const FOLDER_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "computer_list_files",
+  "computer_read_file",
+  "computer_write_file",
+]);
+
+/**
+ * 컴퓨터의 툴 가운데 브라우저에서 실행되는 것인가.
+ *
+ * 빠진 것으로 정한다 — 나중에 더해지는 브라우저 툴이 여기 적히지 않아도 차선을 잡고, 대화하는
+ * 봇의 손에서 빠진다.
+ */
+export function drivesTheBrowser(computerToolName: string): boolean {
+  return !FOLDER_TOOL_NAMES.has(computerToolName);
+}
+
 /** 이름으로 하나. 없는 이름은 undefined — 카탈로그에 없는 툴은 실행되지도 않는다. */
 export function computerTool(name: string): ComputerTool | undefined {
   return COMPUTER_TOOLS.find((tool) => tool.name === name);

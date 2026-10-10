@@ -9,6 +9,7 @@
  * `to`는 지금 하나뿐이다. 깊은 추론과 백그라운드 일(6-3)이 여기에 값으로 더해진다 — 툴을 하나
  * 더 싣는 대신이다(§4 "위임 도구 하나가 남는다").
  */
+import { COMPUTER_TOOLS, drivesTheBrowser } from "./computer";
 import type { JsonSchema } from "./standard-schema";
 
 /** 맡을 수 있는 쪽. 지금은 브라우저 하나다. */
@@ -41,6 +42,22 @@ export const DELEGATE: {
     required: ["to", "task"],
   },
 };
+
+/**
+ * 브라우징을 맡기는 대화의 봇이 컴퓨터의 것 가운데 드는 것: 폴더의 셋과 `delegate`.
+ *
+ * 한 군데다. 서버가 턴에 주는 목록(`server/src/turns/chat-tools.ts`)과 모델 평가가 "대화하는
+ * 봇이 받는 것"이라고 부르는 목록(`evals/deferral.ts`)이 이것을 함께 읽는다 — 평가가 제품이 주지
+ * 않는 목록을 재면, 통과는 아무것도 말하지 않는다.
+ */
+export const CONVERSATION_COMPUTER_TOOLS: readonly {
+  name: string;
+  description: string;
+  parameters: JsonSchema;
+}[] = [
+  ...COMPUTER_TOOLS.filter((tool) => !drivesTheBrowser(tool.name)),
+  DELEGATE,
+];
 
 /** `to`로 온 값이 맡을 수 있는 쪽인가. */
 export function delegateTargetOf(value: unknown): DelegateTarget | undefined {
