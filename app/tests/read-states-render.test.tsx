@@ -80,27 +80,33 @@ describe("the roster", () => {
         failing ? refused("laf:internal", 500) : json({ agents: [BOT] }),
       ),
     });
-    const nav = () => view.host.querySelector('nav[aria-label="Your Bot"]');
+    // The line stands under the app's top row, where the column that said it used to be.
+    const row = () => view.host.querySelector("[data-app-top-bar]");
+    const notice = () => row()?.nextElementSibling ?? null;
     await view.waitFor(
       () =>
-        (nav()?.textContent ?? "").includes("Your Bot could not be loaded."),
+        (notice()?.textContent ?? "").includes("Your Bot could not be loaded."),
       "the roster's failure line",
     );
-    expect(nav()?.textContent).not.toContain("No Bots yet.");
+    expect(view.host.textContent).not.toContain("No Bots yet.");
 
     failing = false;
-    const again = tryAgainIn(nav());
+    const again = tryAgainIn(notice());
     if (!again) throw new Error("the roster offered no way to ask again");
     await view.click(again);
     await view.waitFor(
-      () => (nav()?.textContent ?? "").includes("Sprout"),
+      () =>
+        (
+          row()
+            ?.querySelector("a[data-bot-presence]")
+            ?.getAttribute("aria-label") ?? ""
+        ).startsWith("Sprout"),
       "the Bot to arrive",
     );
-    expect(nav()?.querySelector("[data-roster-notice]")).toBeNull();
-    // And the roster's notice has fallen quiet again — still mounted, saying nothing.
-    expect(nav()?.querySelector("[data-read-state]")).toBeNull();
+    // And the notice has fallen quiet again — still mounted, saying nothing.
+    expect(notice()?.hasAttribute("data-read-state")).toBe(false);
     expect(
-      [...(nav()?.querySelectorAll('[role="alert"]') ?? [])].map(
+      [...(notice()?.querySelectorAll('[role="alert"]') ?? [])].map(
         (alert) => alert.textContent,
       ),
     ).toEqual([""]);
@@ -108,15 +114,17 @@ describe("the roster", () => {
 
   /*
    * NO "아직 봇이 없습니다" AND NO 새 봇 (2026-09-24). A person has one Bot, and somebody with none
-   * is sent to the first run to make it; the sidebar has nothing to offer about making another.
+   * is sent to the first run to make it; the top row has nothing to offer about making another.
    */
-  test("with no Bot, the sidebar draws no row and no way to make one", async () => {
+  test("with no Bot, the top row names none and offers no way to make one", async () => {
     const view = await mountApp({ path: "/skills" });
-    const nav = view.host.querySelector('nav[aria-label="Your Bot"]');
-    expect(nav).not.toBeNull();
-    expect(nav?.querySelectorAll("ul a")).toHaveLength(0);
-    expect(nav?.textContent).not.toContain("New Bot");
-    expect(nav?.querySelector("[data-roster-notice]")).toBeNull();
+    const row = view.host.querySelector("[data-app-top-bar]");
+    expect(row?.querySelectorAll("[data-profile-menu]").length).toBe(1);
+    expect(row?.querySelectorAll("a[data-bot-presence]").length).toBe(0);
+    expect(row?.textContent).not.toContain("New Bot");
+    expect(row?.nextElementSibling?.hasAttribute("data-read-state")).toBe(
+      false,
+    );
   });
 });
 

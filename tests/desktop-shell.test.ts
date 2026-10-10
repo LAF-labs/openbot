@@ -528,13 +528,24 @@ test("every row that reserves the title bar's height can move the window", () =>
     ?.windows?.[0]?.titleBarStyle;
   expect(style).toBe("Overlay");
 
-  // The reservation and the handle on the same element: the attribute has to sit inside the tag
-  // that opened with that height, before that tag closes. The sidebar's row is `h-titlebar` — the
-  // 44px as a name since 2026-09-24, where it used to be spelled `h-[var(--sand-titlebar-block)]`.
-  const sidebarRow = read(
-    "app/src/components/app-sidebar/bot-sidebar.tsx",
-  ).match(/<div[^>]*\bh-titlebar\b[^>]*>/);
-  expect(sidebarRow?.[0]).toContain("data-tauri-drag-region");
+  /*
+   * The reservation and the handle on the same element: the attribute has to sit inside the tag
+   * that opened with that height. It was the column's title row until 2026-10-10; the column is
+   * gone and the app's one top row took the job over (`layout/app-top-bar.tsx`), on every screen
+   * — a row at least `titlebar` tall (the 44px as a name), itself the handle, and so is the empty
+   * stretch in it, because Tauri drags only from an element that carries the attribute itself.
+   * In the shell it also leaves the width of the window's buttons empty at its left.
+   */
+  const topRow = read("app/src/components/layout/app-top-bar.tsx");
+  const opening = topRow.match(/<header[^>]*>/)?.[0] ?? "";
+  expect(opening).toContain("min-h-titlebar");
+  expect(opening).toContain("data-tauri-drag-region");
+  expect(opening).toContain("inShell() ? LIGHTS_CLEARANCE");
+  expect(topRow.match(/<div[^>]*ref=\{setSlot\}[^>]*>/)?.[0]).toContain(
+    "data-tauri-drag-region",
+  );
+  // And it is mounted by the layout every screen of the app is drawn in.
+  expect(read("app/src/routes/_authed/_app.tsx")).toContain("<AppTopBar");
 
   /*
    * The conversation's header is the Bot's presence now (`bot-header.tsx`), 56px rather than 44 —

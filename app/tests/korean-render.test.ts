@@ -45,7 +45,6 @@ let rendering: Promise<Rendered> | undefined;
 type Rendered = {
   notices: string[];
   headings: string[];
-  times: string[];
 };
 
 /** One Korean process for the whole file: it mounts the route tree several times over. */
@@ -92,15 +91,5 @@ describe("a Bot's name in Korean", () => {
       expect(text).not.toContain("(가)");
       expect(text).not.toContain("{josa}");
     }
-  }, 120_000);
-});
-
-describe("the roster's times on a machine whose own locale is English", () => {
-  test("are written the Korean way: today's clock, this week's weekday, an older date", async () => {
-    const { times } = await renderedInKorean();
-    const [today, thisWeek, older] = times;
-    expect(today).toMatch(/^(오전|오후) \d{1,2}:\d{2}$/);
-    expect(thisWeek).toMatch(/^[월화수목금토일]$/);
-    expect(older).toMatch(/^\d{1,2}\. \d{1,2}\.$/);
   }, 120_000);
 });

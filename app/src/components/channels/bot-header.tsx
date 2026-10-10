@@ -1,4 +1,6 @@
+import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
+import { useTopBarSlot } from "@/components/layout/app-top-bar";
 import type { Presence } from "@/lib/agents/presence";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -46,12 +48,10 @@ export function BotHeader({
   pill?: (presence: Presence) => ReactNode;
 }) {
   const presence = usePresence(agentId);
+  const slot = useTopBarSlot();
 
-  return (
-    <header
-      className="sticky top-0 z-10 flex h-12 shrink-0 select-none items-center gap-2 bg-background/90 px-3 backdrop-blur-sm"
-      data-tauri-drag-region
-    >
+  const content = (
+    <>
       {leading}
       <div
         className="flex min-w-0 flex-1 items-center gap-2"
@@ -74,6 +74,24 @@ export function BotHeader({
        * card and the help card each announce themselves, politely. Announcing the pill too would say
        * every step twice. The word is in the pill's name for whoever moves to it.
        */}
+    </>
+  );
+
+  /*
+   * IN THE APP'S ONE TOP ROW, WHERE THERE IS ONE (2026-10-10, `layout/app-top-bar.tsx`). The row
+   * that holds the menu is also the window's handle and stands over every screen; this header
+   * under it would be a second bar, 92px of the 640 the smallest window has. So what this draws
+   * goes into that row's left, and no row is drawn here. Alone — a test, or a screen outside the
+   * app's frame — it is the row it always was.
+   */
+  if (slot) return createPortal(content, slot);
+
+  return (
+    <header
+      className="sticky top-0 z-10 flex h-12 shrink-0 select-none items-center gap-2 bg-background/90 px-3 backdrop-blur-sm"
+      data-tauri-drag-region
+    >
+      {content}
     </header>
   );
 }
@@ -85,7 +103,7 @@ export const PILL_TONES: Readonly<Record<Presence["tone"], string>> = {
   quiet: "bg-muted text-muted-foreground",
 };
 
-const DOT_TONES: Readonly<Record<Presence["tone"], string>> = {
+export const DOT_TONES: Readonly<Record<Presence["tone"], string>> = {
   attention: "animate-pulse bg-warning",
   active: "animate-pulse bg-primary",
   quiet: "bg-muted-foreground/50",

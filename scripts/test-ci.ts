@@ -2536,6 +2536,24 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * called by its address and a refusal is said in words; left off, nothing is sent or said.
  * By hand: 4005 and 5, 1 and 1 are 4012; 2162 and 4 are 2166.
  *
+ * LOWERED 2026-10-10 WITH THE COLUMN THAT WENT, `app` from 2166 to 2146 (record §1, piece 3-1):
+ * the column at the left of the window was removed and what it led to moved behind the person's
+ * picture in a top row. The old floor minus exactly what was removed, plus what replaced it — not
+ * a fresh margin, which would hide more than this change took out.
+ * GONE, 30: the twenty-seven of `sidebar-rail.test.tsx` (the rail and its breakpoint, the roster's
+ * rows, the foot's one button — a column that no longer exists has no width to collapse and no
+ * rows to lay out); the roster's times in Korean in `korean-render.test.ts` (the rows that drew a
+ * time went with it); and the two of `first-screen.test.tsx` that read the column's links.
+ * NEW, 10: six in `profile-menu.test.tsx` (the button's name and its one mark; the list's order
+ * with 모두 멈추기 first and 계정 among the places; what is new said inside; an account with
+ * several Bots; an administrator's) and four in `first-screen.test.tsx` (the top row on a screen
+ * with no header of its own — the window's handle, the Bot and its state, the menu, no column;
+ * a conversation's header in that row, one row and not two; a run that ends asks again for the
+ * conversations, 소식's count and the goals — which the column did and no test held; no Bot at
+ * the row's left where there are several). The two of `read-states-render.test.tsx` about a roster that could not be
+ * read are the same two, read under the row.
+ * By hand: 2166 less 30 is 2136, and 10 is 2146.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2565,7 +2583,7 @@ const GROUPS: readonly {
   processes?: number;
 }[] = [
   { name: "server", floor: 4012, roots: ["server"] },
-  { name: "app", floor: 2166, roots: ["app"] },
+  { name: "app", floor: 2146, roots: ["app"] },
   {
     name: "agent-computer",
     floor: 537,

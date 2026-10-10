@@ -325,11 +325,22 @@ function windowHidden(): () => void {
 }
 
 const pill = (host: HTMLElement) => {
+  // On any other screen: the top row's link, named by the Bot and what it is doing.
   const row = [...host.querySelectorAll("a[aria-label]")].find((link) =>
     link.getAttribute("aria-label")?.startsWith("닻 · "),
   );
-  const label = row?.getAttribute("aria-label") ?? "";
-  return label.slice("닻 · ".length).replace(/\. Bot profile$/, "");
+  if (row) {
+    const label = row.getAttribute("aria-label") ?? "";
+    return label.slice("닻 · ".length).replace(/\. Conversation$/, "");
+  }
+  // On the conversation: its own header, which stands in the same row and says the same.
+  return (
+    host
+      .querySelector(
+        '[data-app-top-bar] button[aria-label$="See what the Bot is doing"]',
+      )
+      ?.getAttribute("title") ?? ""
+  );
 };
 
 /** The rows under "Waiting on the owner", on a screen that draws 오늘: 소식, of the ones here. */

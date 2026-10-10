@@ -76,7 +76,7 @@ describe("the roster, broken under an open window", () => {
         return undefined;
       },
     });
-    const roster = () => view.host.querySelector('nav[aria-label="Your Bot"]');
+    const roster = () => view.host.querySelector("[data-profile-menu]");
     const failedRoster = () =>
       view.host.querySelector('[data-failed-section="sidebar"]');
     await view.waitFor(() => roster() !== null, "the roster");
@@ -162,7 +162,7 @@ describe("the roster, broken under an open window", () => {
       queryKey: ["routines"],
       brokenBody: { routines: [null] },
       goodBody: { routines: [] },
-      stillThere: 'nav[aria-label="Your Bot"]',
+      stillThere: "[data-profile-menu]",
     },
     {
       path: "/settings/connected-accounts",
