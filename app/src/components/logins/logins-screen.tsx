@@ -101,6 +101,19 @@ const draftOf = (login: SavedLogin | null): Draft => ({
   password: "",
 });
 
+/** A new login's form with a site already picked: what `handleSite` would have filled in. */
+function draftFor(siteId: string): Draft {
+  const site = LOGIN_SITES.find((one) => one.id === siteId);
+  if (!site) return draftOf(null);
+  return {
+    site: site.id,
+    label: t(site.name),
+    addresses: addressesOf(site.id).join("\n"),
+    username: "",
+    password: "",
+  };
+}
+
 /**
  * What to send for a change: only what the person changed. The server keeps whatever a change
  * does not name, so a form opened a while ago does not put back the name and the addresses it
@@ -123,17 +136,25 @@ function changesOf(opened: Draft, draft: Draft): LoginWritten {
 
 function LoginForm({
   login,
+  site,
   onDone,
   onSavingChange,
 }: {
   /** The login being changed, or null for a new one. */
   login: SavedLogin | null;
+  /**
+   * The site a new login is for, where the person came from that site's row on 연결: chosen for
+   * them, with its name and the addresses its sign-in is at, as picking it here would.
+   */
+  site?: string;
   onDone: () => void;
   /** Told while a save is on its way, so the dialog around this is not closed under it. */
   onSavingChange: (isSaving: boolean) => void;
 }) {
   const queryClient = useQueryClient();
-  const [draft, setDraft] = useState<Draft>(() => draftOf(login));
+  const [draft, setDraft] = useState<Draft>(() =>
+    login === null && site ? draftFor(site) : draftOf(login),
+  );
   const [saving, setSaving] = useState(false);
   const [problem, setProblem] = useState<{
     text: string;
@@ -398,15 +419,29 @@ function LoginRow({
   );
 }
 
-export function LoginsScreen() {
+export function LoginsScreen({
+  site,
+}: {
+  /**
+   * A site to save a login for straight away: the address 연결's row for a site that is not
+   * signed in to sends a person to (`/settings/logins?site=…`). Opens the form with that site
+   * chosen, once — closing it leaves the list, and a site this screen does not offer opens nothing.
+   */
+  site?: string;
+} = {}) {
   const queryClient = useQueryClient();
+  const asked =
+    site && LOGIN_SITES.some((one) => one.id === site) ? site : null;
+  const [startWith, setStartWith] = useState<string | null>(asked);
   const saved = useQuery(savedLoginsQueryOptions());
   const reading = useReading(saved, {
     isEmpty: (answer) => answer.logins.length === 0,
   });
   const settled = settledOf(reading);
   /** `null` is closed; `"new"` a new login; otherwise the one being changed. */
-  const [editing, setEditing] = useState<SavedLogin | "new" | null>(null);
+  const [editing, setEditing] = useState<SavedLogin | "new" | null>(
+    asked ? "new" : null,
+  );
   const [isSaving, setIsSaving] = useState(false);
   /**
    * The login the question is about, and whether the question is open. Two things, because the
@@ -417,6 +452,11 @@ export function LoginsScreen() {
   const [isAsking, setIsAsking] = useState(false);
   const logins = settled?.data.logins ?? [];
   const isFull = settled ? logins.length >= settled.data.max : false;
+  /** The form is done with: and so is the site it was opened for, which the next opening is not for. */
+  const handleClose = () => {
+    setEditing(null);
+    setStartWith(null);
+  };
 
   return (
     <PageShell
@@ -472,7 +512,7 @@ export function LoginsScreen() {
           whichever form was open by then (Codex's read). */}
       <Dialog
         isBusy={isSaving}
-        onOpenChange={(open) => (open ? null : setEditing(null))}
+        onOpenChange={(open) => (open ? null : handleClose())}
         open={editing !== null}
       >
         <DialogContent>
@@ -481,8 +521,9 @@ export function LoginsScreen() {
             <LoginForm
               key={editing === "new" ? "new" : editing.id}
               login={editing === "new" ? null : editing}
-              onDone={() => setEditing(null)}
+              onDone={handleClose}
               onSavingChange={setIsSaving}
+              {...(editing === "new" && startWith ? { site: startWith } : {})}
             />
           )}
         </DialogContent>

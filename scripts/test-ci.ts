@@ -2514,6 +2514,16 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * of the fourteen sites a login can be saved for, as looked at that day.
  * By hand: 2157 and 1 are 2158.
  *
+ * RAISED 2026-10-10 FOR 사이트 연결 COMING BACK, `app` from 2158 to 2162 (record §6): a site row
+ * that is not signed in to offers saving its login, and 계정 opens for the site named. Two more
+ * in `site-rows-render.test.tsx` (five where there were three: no switch and a link to 계정 for
+ * the site; a site with a login saved says so and offers nothing; a login saved for the address
+ * a site signs in at covers it whichever site it was saved under; a certificate site offers no
+ * login to save; the off switch as before). Two in `logins-screen.test.tsx`: arriving with a site
+ * opens the form for it with its name and sign-in addresses — once, and only for a site a login
+ * can be saved for.
+ * By hand: 2158 and 2 and 2 are 2162.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2543,7 +2553,7 @@ const GROUPS: readonly {
   processes?: number;
 }[] = [
   { name: "server", floor: 4005, roots: ["server"] },
-  { name: "app", floor: 2158, roots: ["app"] },
+  { name: "app", floor: 2162, roots: ["app"] },
   {
     name: "agent-computer",
     floor: 537,

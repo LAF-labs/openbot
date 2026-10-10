@@ -38,8 +38,9 @@ import { own } from "@/lib/own";
  *
  * An id this deployment does not offer is left out, and with none left nothing is drawn: a card
  * promising a switch that is not there would be the boundary lying. A site that is not on is left
- * out for the same reason: nothing here can sign one in until the password card, and the turn
- * waiting on it would wait for nothing (`readConnectionSwitches`, which the server reads).
+ * out for the same reason: no switch signs a site in — the Bot does, when it gets there, with a
+ * saved login or the masked card — and a turn held on a card with nothing to press would wait
+ * for nothing (`readConnectionSwitches`, which the server reads).
  */
 /** What the switches on screen are, said to whoever put them there. */
 export type SwitchesState = {
