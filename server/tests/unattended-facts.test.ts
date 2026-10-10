@@ -239,3 +239,72 @@ describe("what the run's record says about a call the Bot service answered", () 
     ]);
   });
 });
+
+/*
+ * A SAVED PASSWORD A PAGE SHOWS BACK, in a run nobody watches (2026-10-10, record §6). A routine
+ * reads a site's page hours after the run that signed in to it, with nothing held by the Bot's
+ * computer; what its browser tools hand the model is read for the passwords saved for that site
+ * (`logins/shown.ts`), as a conversation's turn reads it. The value is made up for this test.
+ */
+describe("what a browser tool hands a routine, read for a saved password", () => {
+  const SHOWN = "tr0ub4dor&3";
+  const gateway = {
+    read: async () => ({
+      title: "내 정보",
+      url: "https://shop.example/my",
+      text: `비밀번호 확인: ${SHOWN}`,
+      truncated: false,
+    }),
+  } as unknown as ComputerGateway;
+  const vault = (asked: string[][] = []) => ({
+    passwordsAt: async (userId: string, addresses: readonly string[]) => {
+      asked.push([userId, ...addresses]);
+      return {
+        shown: new Map([["https://shop.example", [SHOWN]]]),
+        unreadable: [],
+      };
+    },
+  });
+
+  test("the password is not in it, and the mark is explained", async () => {
+    const asked: string[][] = [];
+    const toolkit = await createUnattendedTools({
+      gateway,
+      logins: vault(asked),
+    })("bot-1", actor);
+    const outcome = await toolkit.execute("computer_read", {});
+    expect(outcome).toEqual({
+      ok: true,
+      title: "내 정보",
+      url: "https://shop.example/my",
+      text: "비밀번호 확인: [•••]",
+      truncated: false,
+      notes: [toolResultText("laf:value_hidden")],
+    });
+    expect(JSON.stringify(outcome)).not.toContain(SHOWN);
+    // The vault of the person the routine runs as.
+    expect(asked).toEqual([["person-1", "https://shop.example"]]);
+  });
+
+  test("a vault that cannot be asked is a call that failed, never a page handed over unread", async () => {
+    const toolkit = await createUnattendedTools({
+      gateway,
+      logins: {
+        passwordsAt: async () => {
+          throw new Error("the database is away");
+        },
+      },
+    })("bot-1", actor);
+    const outcome = await toolkit.execute("computer_read", {});
+    expect(outcome.ok).toBe(false);
+    expect(JSON.stringify(outcome)).not.toContain(SHOWN);
+  });
+
+  test("without a vault a page is handed over as it was read", async () => {
+    const toolkit = await createUnattendedTools({ gateway })("bot-1", actor);
+    expect(await toolkit.execute("computer_read", {})).toMatchObject({
+      ok: true,
+      text: `비밀번호 확인: ${SHOWN}`,
+    });
+  });
+});

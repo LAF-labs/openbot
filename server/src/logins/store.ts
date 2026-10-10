@@ -597,5 +597,66 @@ export function createLoginVault(input: {
       );
       return { login: view(row), ...values };
     },
+
+    /**
+     * The passwords a person saved that a page at each of these addresses may be showing back —
+     * for the server taking them out of what a model is handed (`logins/shown.ts`), and for
+     * nothing else: like {@link open}, no route calls this.
+     *
+     * BY ADDRESS, AND ONLY FOR AN ADDRESS A LOGIN WAS SAVED FOR. A password is looked for on the
+     * site it goes into and nowhere else. Looked for on every page, hiding it would answer a
+     * question nobody may ask: a page that lists ten thousand passwords and is read through this
+     * server comes back with one line blanked, and whoever wrote the page — and the instructions
+     * on it — has only to hear which. The site a login was saved for already has the password.
+     * Which login is an address's is the same rule that read the origin when it was saved, asked
+     * here for the reason {@link forOrigin} gives.
+     *
+     * Nothing is opened for an address nothing was saved for, which is nearly every page a Bot
+     * reads: one query, no key touched. A row whose seal does not open is named back and skipped —
+     * a password this server cannot read is one it cannot find.
+     */
+    async passwordsAt(
+      userId: string,
+      addresses: readonly string[],
+    ): Promise<{ shown: Map<string, string[]>; unreadable: string[] }> {
+      const shown = new Map<string, string[]>();
+      const unreadable: string[] = [];
+      const asked = [...new Set(addresses)].filter((address) =>
+        loginOriginOf(address, originOptions),
+      );
+      if (asked.length === 0) return { shown, unreadable };
+      const rows = await database
+        .select()
+        .from(lafSavedLogins)
+        .where(eq(lafSavedLogins.userId, userId))
+        .orderBy(asc(lafSavedLogins.createdAt), asc(lafSavedLogins.id));
+      const opened = new Map<string, string | null>();
+      for (const address of asked) {
+        for (const row of rows) {
+          if (!isSavedOrigin(view(row).origins, address, originOptions)) {
+            continue;
+          }
+          if (!opened.has(row.id)) {
+            try {
+              const values = await openLogin(
+                keyEncryptionKey,
+                { id: row.id, userId },
+                row,
+              );
+              opened.set(row.id, values.password);
+            } catch (error) {
+              if (!(error instanceof LoginSealError)) throw error;
+              opened.set(row.id, null);
+              unreadable.push(row.id);
+            }
+          }
+          const password = opened.get(row.id);
+          if (password) {
+            shown.set(address, [...(shown.get(address) ?? []), password]);
+          }
+        }
+      }
+      return { shown, unreadable };
+    },
   };
 }

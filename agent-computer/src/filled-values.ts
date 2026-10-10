@@ -26,92 +26,31 @@
  * No Playwright in here beyond a tab's type, so the rules can be tested without a browser.
  */
 import type { Page } from "playwright";
+import {
+  BYTES_AS_TEXT,
+  blankerOf,
+  HIDDEN,
+  patternOf,
+} from "../../shared/hidden-values";
 import type { NoteCode } from "./codes";
 import { rewritten } from "./respond";
 import type { BotSession } from "./sessions";
 import { digestOf } from "./typed-values";
 
-/**
- * What stands where a value was. Not empty: "비밀번호: 입니다" reads as a page that said nothing, and
- * the Bot would report it so. Not a word either — a word is something a model types back.
- */
-export const HIDDEN = "[•••]";
-
 /** Said on the answer something was hidden in, so the mark is not taken for the page's own. */
 const VALUE_HIDDEN: NoteCode = "laf:value_hidden";
-
-/**
- * How long a value has to be before it is looked for inside text.
- *
- * CHOSEN BY WHAT IT COSTS, which `tests/filled-values.test.ts` writes down. A value is found
- * wherever its letters stand, so a short one takes ordinary words apart: three letters (`kim`) would
- * blank the head of `kimchi` and of every address at `kimsclub`. Four (`love`) still blanks the head
- * of `lovely` — but four is where a sign-in name starts, and a name shown back is the commonest echo
- * there is. Under four, a value is still kept out of its box and out of addresses, as it was; it is
- * only not hunted through sentences.
- */
-const SHORTEST_HUNTED = 4;
-
-/**
- * A value that is only digits is looked for as a number, not as letters — and from two digits,
- * because as a number it costs almost nothing: `1234` is hidden where a page says `PIN: 1234`, and
- * left alone inside `12,340원`, `2026-1234-5678` and `010-1234-5678`. Looked for as letters, a card's
- * two-digit password took every price on a checkout apart.
- */
-const SHORTEST_NUMBER = 2;
-
-/**
- * From this many digits a number is also looked for with its groups apart — a card number shown as
- * `1234-5678-9012-3456`, a phone number as `010 1234 5678` — and anywhere it is not part of a longer
- * run of digits. Shorter than this, a number with a gap in it is two numbers.
- */
-const GROUPED_NUMBER = 8;
 
 /** How many values a session holds. A card is six boxes; a run that fills ten cards is no run. */
 const FILLED_LIMIT = 64;
 
 type Held = {
-  /** Each value as it was put in, with how it is looked for — or null for one too short to hunt. */
-  values: Map<string, RegExp | null>;
+  /** Each value as it was put in, the oldest first. */
+  values: Set<string>;
   /** The tabs a value went into. Closed when the run ends. */
   tabs: Set<Page>;
 };
 
 const held = new WeakMap<BotSession, Held>();
-
-function escaped(text: string): string {
-  return text.replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&");
-}
-
-/**
- * How a value is looked for in text, or null when it is too short to be.
- *
- * As a page would show it back, which is not always as it was typed: letters in either case (a
- * heading styled in capitals reads back in capitals), any run of white space where the value has
- * one, and a long number with or without its groups apart.
- */
-export function patternOf(value: string): RegExp | null {
-  const words = value.replace(/[​­]/g, "").split(/\s+/).filter(Boolean);
-  const written = words.join(" ");
-  const digits = written.replace(/[ -]/g, "");
-  const isNumber =
-    /^\d+$/.test(digits) &&
-    (digits === written || digits.length >= GROUPED_NUMBER);
-  if (isNumber) {
-    if (digits.length < SHORTEST_NUMBER) return null;
-    if (digits.length >= GROUPED_NUMBER) {
-      return new RegExp(`(?<!\\d)${[...digits].join("[ -]?")}(?!\\d)`, "g");
-    }
-    // The whole of a number, never a part of one: not inside a word or a ref (`e12`), and not one
-    // group of a number written in groups — a date, a price, a phone number, an order's.
-    return new RegExp(
-      `(?<![0-9A-Za-z])(?<!\\d[-./,:])${digits}(?![0-9A-Za-z])(?![-./,:]\\d)`,
-      "g",
-    );
-  }
-  if ([...written].length < SHORTEST_HUNTED) return null;
-  return new RegExp(words.map(escaped).join("\\s+"), "giu");
-}
 
 /**
  * Hold a value that is about to go into a page, and the tab it is going into.
@@ -124,14 +63,14 @@ export function rememberFilled(
   tab: Page,
   value: string,
 ): void {
-  const kept = held.get(session) ?? { values: new Map(), tabs: new Set() };
+  const kept = held.get(session) ?? { values: new Set(), tabs: new Set() };
   held.set(session, kept);
   kept.tabs.add(tab);
   kept.values.delete(value);
-  kept.values.set(value, patternOf(value));
+  kept.values.add(value);
   // The oldest goes first. Sixty-four values in one run is ten sign-ins and their codes, and the
   // first of those codes stopped being worth anything an hour ago.
-  for (const oldest of kept.values.keys()) {
+  for (const oldest of kept.values) {
     if (kept.values.size <= FILLED_LIMIT) break;
     kept.values.delete(oldest);
   }
@@ -153,27 +92,14 @@ export function forgetFilled(session: BotSession): void {
 }
 
 /**
- * A string that is one web address, in four parts: the scheme, a name and password written before
- * the host, the host with its port, and everything after.
- */
-const WHOLE_ADDRESS = /^(https?:\/\/)([^/?#\s]*@)?([^/?#\s@]*)(\S*)$/i;
-
-/**
  * Text with every held value taken out of it, or null when nothing is held that can be looked for —
- * the answer for nearly every call, and the one that costs nothing.
+ * the answer for nearly every call, and the one that costs nothing. How a value is looked for, and
+ * what of an address is left standing, is the one rule the server reads too
+ * (`shared/hidden-values.ts`).
  *
  * NOT A VALUE THE BOT ITSELF TYPED, as with addresses (`typed-values.ts`, `ownDigests`): hiding
  * what the Bot wrote into a search box would tell it that its guess was what a person typed, on a
  * page that shows nothing back at all.
- *
- * AND NOT THE SITE OF AN ADDRESS. A blog whose address begins with its owner's sign-in name
- * (`gibeom.tistory.com`) would be answered as `https://[•••].tistory.com/…`, which is no address:
- * the server judges every act by the host it is on (`server/src/computer/gateway/addresses.ts`),
- * and a host it cannot read is a site no rule allows — the Bot shut out of the very site it was
- * just signed in to. A site's name is public in a way a password never is, and no page puts a
- * password there. What comes after it is looked in — the path, the query, the fragment — and so is
- * a name and password written before the host. Only a string that is the address and nothing
- * else: an address in a sentence is the page's words.
  */
 export function filledBlanker(
   session: BotSession,
@@ -181,30 +107,13 @@ export function filledBlanker(
   const kept = held.get(session);
   if (!kept) return null;
   const own = new Set(session.ownDigests);
-  const patterns = [...kept.values]
-    .filter(([value]) => {
+  return blankerOf(
+    [...kept.values].filter((value) => {
       const digest = digestOf(value);
       return !(digest && own.has(digest));
-    })
-    // The longest first: of `hunter2` and `hunter2!!`, the shorter would leave the other's tail.
-    .sort(([one], [other]) => other.length - one.length)
-    .flatMap(([, pattern]) => (pattern ? [pattern] : []));
-  if (patterns.length === 0) return null;
-  const blank = (text: string) =>
-    patterns.reduce((left, pattern) => left.replace(pattern, HIDDEN), text);
-  return (text) => {
-    const address = WHOLE_ADDRESS.exec(text);
-    if (!address) return blank(text);
-    const [, scheme = "", before = "", site = "", after = ""] = address;
-    return `${scheme}${blank(before)}${site}${blank(after)}`;
-  };
+    }),
+  );
 }
-
-/**
- * The fields of an answer that are bytes written as text. A value looked for in a megabyte of
- * base64 is found there by chance, and the picture it was found in no longer decodes.
- */
-const BYTES_AS_TEXT = new Set(["base64"]);
 
 function withoutFilledIn(
   value: unknown,
@@ -271,3 +180,7 @@ export async function withoutFilledValues(
     };
   });
 }
+
+// The rule itself is shared with the server (`shared/hidden-values.ts`); said from here too, for
+// whoever reads this module to know what the door does.
+export { HIDDEN, patternOf };

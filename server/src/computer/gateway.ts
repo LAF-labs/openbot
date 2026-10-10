@@ -221,6 +221,10 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
     supplySecret: secrets.supplySecret,
     /** Whether a person's value is being held in this Bot's browser. See `gateway/secrets.ts`. */
     holdsValues: secrets.holdsValues,
+    /** A browser call's outcome was handed to a model, with or without a saved password hidden in it. */
+    handedOver: secrets.handedOver,
+    /** Whether a picture offered for this call is one not to keep. */
+    frameWithheld: secrets.frameWithheld,
     /** A run of this Bot's is over: what was put in for it stops being held. */
     runEnded: secrets.runEnded,
     ...createNavigation({ as, govern, siteSeen: options.siteSeen }),

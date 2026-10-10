@@ -825,6 +825,7 @@ const botLane = createBotLane();
 const unattendedTools = createUnattendedTools({
   ...(computerGateway ? { gateway: computerGateway } : {}),
   pluginStore,
+  logins: loginVault,
 });
 
 /**
@@ -903,6 +904,7 @@ const connectionSwitchSources = connectionSourcesFrom({
 const chatTools = createChatTools({
   ...(computerGateway ? { gateway: computerGateway } : {}),
   pluginStore,
+  logins: loginVault,
   approvals,
   people: personAnswers,
   agents: agentProfileStore,

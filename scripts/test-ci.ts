@@ -2475,6 +2475,24 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * (`support/logins-render.tsx`). Twenty mutations each fail one of these.
  * By hand: 2143 and 14 are 2157.
  *
+ * RAISED 2026-10-10 FOR A SAVED PASSWORD A PAGE SHOWS BACK, `server` from 3958 to 3987 and `root`
+ * from 935 to 938 (record §6, "서버의 대조가 들어감"): what a browser tool hands a model is read
+ * once more by the server, for the passwords saved for that page's own site. Fifteen in the new
+ * `shown-passwords.test.ts`: where an outcome says its pages are; the password out of the page of
+ * its site, of the page an act arrived at, of a note, of an address after its site — and left
+ * alone on any other site's page, tab by tab, in bytes and in a file's text; the guard asks the
+ * vault by address, says so once, tells whoever keeps pictures of every call, and throws where
+ * the vault cannot be asked. Five in `computer-gateway.test.ts`: a run a page only showed a
+ * password to is pictured by nobody, tells the computer nothing at its end, leaves its calls
+ * refused a picture afterwards, neither ends nor is ended by a run a value was put in for, is
+ * not learnt as a value from the control state, and is let go of with the browser. Four in
+ * `chat-tools.test.ts` and three in `unattended-facts.test.ts` for the two paths that hand an
+ * outcome over; one in `frame-routes.test.ts` (refused by the call, whenever it arrives); one in
+ * `saved-logins.integration.test.ts` (the vault hands a password to its owner for a page of its
+ * origin and no other). Three at the root for the rule both sides now read from one file
+ * (`hidden-values.test.ts`).
+ * By hand: 3958 and 15, 5, 4, 3, 1 and 1 are 3987; 935 and 3 are 938.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2503,7 +2521,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 3958, roots: ["server"] },
+  { name: "server", floor: 3987, roots: ["server"] },
   { name: "app", floor: 2157, roots: ["app"] },
   {
     name: "agent-computer",
@@ -2511,7 +2529,7 @@ const GROUPS: readonly {
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 935, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 938, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

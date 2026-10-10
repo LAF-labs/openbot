@@ -73,11 +73,12 @@ export function createChannelRoutes(
    */
   trustedOrigins: readonly string[] = [],
   /**
-   * Whether a picture of this Bot's browser may not be kept just now: a value was put into it for
-   * a person, in a run that has not ended (`computer/gateway/secrets.ts`). Absent where there is
-   * no computer, and then no picture is refused for it.
+   * Whether a picture of this Bot's browser, offered for this call, may not be kept: a value was
+   * put into it for a person in a run that has not ended, or the call is one of a run a page
+   * showed a saved password to (`computer/gateway/secrets.ts`). Absent where there is no computer,
+   * and then no picture is refused for it.
    */
-  framesWithheld?: (botId: string) => boolean,
+  framesWithheld?: (botId: string, toolCallId: string) => boolean,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 

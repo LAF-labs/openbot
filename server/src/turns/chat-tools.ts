@@ -109,12 +109,19 @@ import {
 import { RoutineError } from "../routines/errors";
 import type { RoutineSchedule } from "../routines/schedule";
 import type { RoutineService } from "../routines/service";
+import { createShownGuard } from "../logins/shown";
+import type { LoginVault } from "../logins/store";
 import type { LoopExecutor, LoopOutcome } from "../runner/turn-loop";
 import { awaitApproval, type PersonAnswers } from "./people";
 
 export type ChatToolsDeps = {
   /** Absent when no computer is configured; its tools are then not offered. */
   gateway?: ComputerGateway;
+  /**
+   * The person's saved logins, for taking a saved password out of what the browser's tools hand
+   * a model (`logins/shown.ts`). Absent where there is no vault: nothing was saved to look for.
+   */
+  logins?: Pick<LoginVault, "passwordsAt">;
   /**
    * `offeredToModel`, never `listForAgent`: this list is read by a model, and the other one holds a
    * vendor's unreviewed words for a tool that waits for review (`OfferedPlugins`, `store.ts`).
@@ -428,6 +435,12 @@ function serverTools(deps: ChatToolsDeps, pluginTools: Tool[]): Tool[] {
 
 export function createChatTools(deps: ChatToolsDeps) {
   const lastListed = new Map<string, Listing>();
+  // A page that showed a saved password is on screen: the gateway is told which calls were handed
+  // over, so that no picture of them is kept (`computer/gateway/secrets.ts`, `handedOver`).
+  const withoutSavedPasswords = createShownGuard({
+    ...(deps.logins ? { logins: deps.logins } : {}),
+    seen: (run, hidden) => deps.gateway?.handedOver(run.botId, run, hidden),
+  });
   return async (
     context: ChatTurnContext,
     declared: readonly Tool[] | null,
@@ -1479,7 +1492,18 @@ export function createChatTools(deps: ChatToolsDeps) {
     const execute: LoopExecutor = async (name, args, call) => {
       try {
         if (!names.has(name)) return refusal("laf:tool_unknown");
-        if (computerTool(name)) return await computer(name, args, call);
+        if (computerTool(name)) {
+          /*
+           * WHAT THE BROWSER'S TOOLS HAND OVER IS READ ONCE MORE HERE, for a password this person
+           * saved and a page is showing back (`logins/shown.ts`). Inside this `try`: an outcome
+           * the vault could not be asked about is a call that failed, never one handed over
+           * unread.
+           */
+          return await withoutSavedPasswords(
+            { userId: owner.id, botId, threadId, toolCallId: call.id },
+            await computer(name, args, call),
+          );
+        }
         const ref = pluginRefs.get(name);
         if (ref !== undefined) return await plugin(ref, args, call);
         if (name === SKILL_VIEW.name) return await skillView(args);
