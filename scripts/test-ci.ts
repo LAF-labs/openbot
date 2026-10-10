@@ -2604,6 +2604,15 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * and the arguments checked against the card's own schema. One in `home-cards-frame.test.tsx`:
  * the last thing made drawn as the card itself, and as its name where the arguments do not fit.
  *
+ * RAISED 2026-10-10 FOR WHAT A CONVERSATION IS, `server` from 4020 to 4023 and `app` from 2217 to
+ * 2220 (record §3, piece 4-1, migration 0064). Three in the new
+ * `conversation-kind-migration.integration.test.ts`, the backfill run over an account shaped like
+ * the one measured in 2026-09 (three Bots, thirteen channels, one tie): the conversation the old
+ * rule answered stays main and the resolver answers the same after as before; a second run
+ * changes nothing; a project older than the main is not taken for it. Three in `my-bots.test.ts`:
+ * the app takes the one that says main, offers no project in its place, and falls back to the
+ * oldest only where a server says nothing.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2632,8 +2641,8 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4020, roots: ["server"] },
-  { name: "app", floor: 2217, roots: ["app"] },
+  { name: "server", floor: 4023, roots: ["server"] },
+  { name: "app", floor: 2220, roots: ["app"] },
   {
     name: "agent-computer",
     floor: 537,

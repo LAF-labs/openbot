@@ -43,6 +43,7 @@ export async function readChannel(
       name: channels.name,
       agentId: channelAgents.agentId,
       threadId: channelThreads.threadId,
+      kind: channels.kind,
       deletedAt: agentProfiles.deletedAt,
     })
     .from(channels)
@@ -74,6 +75,7 @@ export async function readChannel(
     agentIds: rows.map((row) => row.agentId),
     threadId: first.threadId,
     active: rows.every((row) => row.deletedAt === null),
+    kind: first.kind,
   };
 }
 
@@ -87,6 +89,7 @@ export async function listChannels(
       name: channels.name,
       agentId: channelAgents.agentId,
       threadId: channelThreads.threadId,
+      kind: channels.kind,
       deletedAt: agentProfiles.deletedAt,
       // THIS PERSON'S last message, from the row that is their conversation. The columns sat
       // on `channels` until migration 0038, which put the owner's last sentence on a member
@@ -142,6 +145,7 @@ export async function listChannels(
       agentIds: [row.agentId],
       threadId: row.threadId,
       active: row.deletedAt === null,
+      kind: row.kind,
       lastMessage: row.lastMessage,
       lastMessageAt: row.lastMessageAt,
       lastMessageAgentId: row.lastMessageAgentId,

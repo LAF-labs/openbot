@@ -245,6 +245,20 @@ export const channels = pgTable("channels", {
    * message could end an older turn wherever it had got to. Rooms were removed on 2026-09-24 and
    * migration 0047 dropped the column along with the rooms' own rows.
    */
+  /*
+   * WHAT THIS CONVERSATION IS: the Bot's one main conversation, or a project beside it (2026-10-10,
+   * `docs/laf/redesign-2026-10.md` §3, piece 4-1; migration 0064). Until then "the conversation"
+   * was a rule and not a fact — the oldest channel holding only that Bot
+   * (`channels/solo-channel.ts`) — and a rule cannot have a second conversation beside it that is
+   * not mistaken for the first.
+   *
+   * ONE `main` FOR A PERSON AND A BOT IS HELD IN CODE, NOT HERE: who is in a channel and which Bot
+   * it holds are two other tables, and no constraint on this one can count across them. It is
+   * decided where a conversation is made, inside the transaction that holds the Bot's profile
+   * locked (`channels/conversations.ts`), and the migration that filled this column is tested
+   * against rows.
+   */
+  kind: text("kind").$type<"main" | "project">().notNull().default("main"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

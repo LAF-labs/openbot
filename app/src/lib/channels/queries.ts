@@ -27,6 +27,11 @@ export type ChannelSummary = AgentChannel & {
   unread: boolean;
   /** ISO-8601. Ordering falls back to this, so a channel just created sorts to the top. */
   createdAt: string;
+  /**
+   * The Bot's one main conversation, or a project beside it (the server's `channels.kind`, piece
+   * 4-1). Absent from a server before 2026-10-10, which had only the rule (`my-bots.ts`).
+   */
+  kind?: "main" | "project";
 };
 
 export const channelKeys = {

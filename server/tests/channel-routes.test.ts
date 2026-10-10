@@ -47,6 +47,7 @@ function channel(overrides: Partial<AgentChannel> = {}): AgentChannel {
     agentIds: ["agent-1"],
     threadId: "thread-1",
     active: true,
+    kind: "main",
     ...overrides,
   };
 }
@@ -242,6 +243,8 @@ describe("channel routes", () => {
         agentIds: ["agent-1"],
         threadId: "thread-1",
         active: true,
+        // What it is, for the surface to tell the main conversation from a project.
+        kind: "main",
       },
     });
     expect(fetched.status).toBe(200);
@@ -728,6 +731,7 @@ describe("channel store integration", () => {
       agentIds: canonicalAgentIds,
       threadId: created.threadId,
       active: true,
+      kind: "main",
     });
     const persisted = await persistedChannel(created.id);
     expect(persisted.channelRow?.name).toBe("Zulu, Alpha");

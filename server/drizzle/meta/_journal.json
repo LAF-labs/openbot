@@ -449,6 +449,13 @@
       "when": 1791573211933,
       "tag": "0063_saved_logins",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1791622818614,
+      "tag": "0064_conversation_kind",
+      "breakpoints": true
     }
   ]
 }

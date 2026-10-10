@@ -119,4 +119,47 @@ describe("a Bot's conversation", () => {
     expect(conversationOf("a", [])).toBeUndefined();
     expect(conversationOf("a", undefined)).toBeUndefined();
   });
+
+  /*
+   * WHAT A CONVERSATION SAYS IT IS (2026-10-10, the server's `channels.kind`). A project is
+   * another conversation with the same Bot, and nothing says the main one is the older.
+   */
+  test("where the server says, it is the one that says main — an older project is not taken for it", () => {
+    const channels = [
+      {
+        ...channel("project", ["a"], "2026-08-01T00:00:00Z"),
+        kind: "project" as const,
+      },
+      {
+        ...channel("main", ["a"], "2026-09-01T00:00:00Z"),
+        kind: "main" as const,
+      },
+      {
+        ...channel("other", ["b"], "2026-07-01T00:00:00Z"),
+        kind: "main" as const,
+      },
+    ];
+    expect(conversationOf("a", channels)?.id).toBe("main");
+    expect(conversationOf("b", channels)?.id).toBe("other");
+  });
+
+  test("where the server says and none is main, the Bot has no main conversation: a project is not offered in its place", () => {
+    expect(
+      conversationOf("a", [
+        {
+          ...channel("project", ["a"], "2026-08-01T00:00:00Z"),
+          kind: "project" as const,
+        },
+      ]),
+    ).toBeUndefined();
+  });
+
+  test("a server from before the column says nothing, and the rule answers: the oldest", () => {
+    expect(
+      conversationOf("a", [
+        channel("newer", ["a"], "2026-09-10T00:00:00Z"),
+        channel("oldest", ["a"], "2026-09-01T00:00:00Z"),
+      ])?.id,
+    ).toBe("oldest");
+  });
 });

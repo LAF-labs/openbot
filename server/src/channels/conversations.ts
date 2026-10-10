@@ -85,6 +85,7 @@ export function createConversation(
             agentIds,
             threadId: existing.threadId,
             active: true,
+            kind: "main",
           };
         }
       }
@@ -151,6 +152,9 @@ async function insertConversation(
     id,
     name,
     description: PRIVATE_AGENT_CHANNEL_DESCRIPTION,
+    // Said, not left to the column's default: this path makes a Bot's main conversation and no
+    // other, having found none above. A project is made by a path of its own (piece 4-2).
+    kind: "main",
   });
   await transaction.insert(channelMemberships).values({
     channelId: id,
@@ -165,5 +169,5 @@ async function insertConversation(
     threadId,
   });
 
-  return { id, name, agentIds, threadId, active: true };
+  return { id, name, agentIds, threadId, active: true, kind: "main" };
 }

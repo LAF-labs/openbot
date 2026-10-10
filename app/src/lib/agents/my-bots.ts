@@ -112,19 +112,36 @@ export function primaryBot(
 }
 
 /**
- * A Bot's conversation: the OLDEST one-Bot channel it has, which is the rule the server's `create`
- * resolves to (`channels/conversations.ts`). Undefined before its first message.
+ * A Bot's conversation: its MAIN one, as the server's `create` resolves to
+ * (`channels/conversations.ts`, `channels/solo-channel.ts`). Undefined before its first message.
  */
 export function conversationOf(
   agentId: string,
   channels: readonly ChannelSummary[] | undefined,
 ): ChannelSummary | undefined {
   let oldest: ChannelSummary | undefined;
+  let main: ChannelSummary | undefined;
+  let isSaid = false;
   for (const channel of channels ?? []) {
     if (channel.agentIds.length !== 1 || channel.agentIds[0] !== agentId) {
       continue;
     }
     if (!oldest || channel.createdAt < oldest.createdAt) oldest = channel;
+    if (channel.kind === undefined) continue;
+    isSaid = true;
+    if (
+      channel.kind === "main" &&
+      (!main || channel.createdAt < main.createdAt)
+    ) {
+      main = channel;
+    }
   }
-  return oldest;
+  /*
+   * WHAT A CONVERSATION SAYS IT IS, WHERE THE SERVER SAYS (2026-10-10, `channels.kind`). The
+   * oldest one was the rule; a project is another conversation with the same Bot and may one
+   * day be the older of the two. Where the server says and none is `main`, the Bot has no main
+   * conversation — the oldest project is not offered in its place. Only a server from before
+   * the column, which says nothing of any of them, is answered by the rule.
+   */
+  return isSaid ? main : oldest;
 }

@@ -13,6 +13,8 @@ export type AgentChannel = {
   agentIds: string[];
   threadId: string;
   active: boolean;
+  /** The Bot's one main conversation, or a project beside it (`channels.kind`). */
+  kind: "main" | "project";
 };
 
 /** A channel plus the last thing said in it, which is what a roster renders. */
