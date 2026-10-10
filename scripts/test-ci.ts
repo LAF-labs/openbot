@@ -2652,6 +2652,20 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * (one conversation's turn stopped and waited for). Six in `projects.test.tsx`: the delete beside
  * each name, and the request — its door, already gone as success, three refusals as sentences.
  *
+ * RAISED 2026-10-10 FOR THE BOT'S BROWSERS, `server` from 4084 to 4124 and `root` from 940 to 946
+ * (record §5, pieces 5-1 and 5-3), by exactly what those pieces brought and left to one commit —
+ * this file is edited by every merge of the other lane, and a floor raised in each of theirs was a
+ * conflict each time. Five to `server` with the run on every question (5-1): three in
+ * `run-ledger.integration.test.ts` — two runs of one Bot at once each counting the questions they
+ * raised, a turn counting what every run of it raised, a row that names no run counted as it was —
+ * one in `approval-routes.test.ts` and one in `turn-engine.integration.test.ts`. Thirty-five to
+ * `server` in the new `computer-browsers.test.ts` (5-3): what a computer's id is and is not, the
+ * client naming the browser and refusing a name that is not one, and the gateway keeping apart,
+ * per browser, the page it last saw, a person's yes and a value put in. Six to `root` in the new
+ * `tests/computer-browsers-wire.test.ts`: the server's own client and gateway against the
+ * computer's own door and its own count of places, over a socket.
+ * By hand: 4084 and 5 is 4089, and 35 is 4124; 940 and 6 is 946.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2680,7 +2694,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4084, roots: ["server"] },
+  { name: "server", floor: 4124, roots: ["server"] },
   { name: "app", floor: 2251, roots: ["app"] },
   {
     name: "agent-computer",
@@ -2698,7 +2712,7 @@ const GROUPS: readonly {
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 940, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 946, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
