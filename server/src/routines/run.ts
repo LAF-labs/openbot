@@ -206,6 +206,12 @@ export function createRoutineRun(options: RoutineRunOptions): RoutineRun {
          * drive one browser at once — each one's snapshot goes stale under the other, and a click
          * meant for one page lands on the other's. A queue private to this service would not have
          * seen the room.
+         *
+         * THE WHOLE RUN, WHERE A CHAT TURN TAKES IT ONLY AT THE CALL THAT USES THE BROWSER (piece
+         * 5-4, `bot-lane.ts`). A routine nearly always browses; its notepad and its goals are read
+         * inside the lane so that a run queued behind another reads what that one settled; and its
+         * ledger row opens once the lane lets it through. So a conversation that only talks no
+         * longer waits for this run — and this run still waits for a conversation that is browsing.
          */
         await (options.lane
           ? options.lane.run(row.agentId, () =>

@@ -56,6 +56,7 @@ import {
   withheldToolsIn,
   withheldToolsText,
 } from "../../shared/tools/paused";
+import { COMPUTER_TOOLS } from "../../shared/tools/computer";
 import { A_CLICK } from "./support/subjects";
 
 const owner: AgentActor = { id: "owner-1", role: "user" };
@@ -3626,5 +3627,100 @@ describe("a card that reads data", () => {
         function: WITHHELD,
       },
     });
+  });
+});
+
+/*
+ * THE BROWSER IS ASKED FOR BY THE CALL THAT USES IT (piece 5-4). A turn took the Bot's lane before
+ * its first step, so one that only talked waited behind a routine that was browsing. The asking is
+ * here now, in front of every one of the computer's tools that is carried out on a page — and in
+ * front of none that only reaches the Bot's folder, which has no page to go stale.
+ */
+describe("the browser is asked for by the call that uses it", () => {
+  const FOLDER = [
+    "computer_list_files",
+    "computer_read_file",
+    "computer_write_file",
+  ];
+  /** A computer that answers nothing: reaching it at all is what a case counts. */
+  const untouched = () => {
+    const reached: string[] = [];
+    const gateway = new Proxy(
+      {},
+      {
+        get: (_target, method) => async () => {
+          reached.push(String(method));
+          throw new Error("the computer was reached");
+        },
+      },
+    ) as unknown as ComputerGateway;
+    return { gateway, reached };
+  };
+
+  // One case a tool, so a tool added to the catalogue is asked about here by name.
+  test.each(COMPUTER_TOOLS.map((entry) => entry.name))(
+    "%s: asked for on a page, never for the folder",
+    async (name) => {
+      const { gateway, reached } = untouched();
+      let asked = 0;
+      const toolkit = await createChatTools({
+        gateway,
+        people: createPersonAnswers(),
+      })(
+        {
+          ...context,
+          // Stopped while it waited for the browser: the answer every case here is given.
+          borrowBrowser: async () => {
+            asked += 1;
+            return false;
+          },
+        },
+        [tool(name)],
+      );
+      const outcome = await toolkit.execute(name, {}, call());
+      if (FOLDER.includes(name)) {
+        expect(asked).toBe(0);
+        return;
+      }
+      expect(asked).toBe(1);
+      expect(outcome).toMatchObject({
+        ok: false,
+        code: "laf:stopped",
+        stopped: true,
+      });
+      // Not sent: a call that never had the browser never reaches the computer.
+      expect(reached).toEqual([]);
+    },
+  );
+
+  test("had, the call goes out after the asking and not before", async () => {
+    const order: string[] = [];
+    const gateway = {
+      navigate: async () => {
+        order.push("sent");
+        return { url: "https://example.com/", title: "예시" };
+      },
+    } as unknown as ComputerGateway;
+    const toolkit = await createChatTools({
+      gateway,
+      people: createPersonAnswers(),
+    })(
+      {
+        ...context,
+        borrowBrowser: async () => {
+          order.push("asked for the browser");
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          order.push("has the browser");
+          return true;
+        },
+      },
+      [tool("computer_navigate")],
+    );
+    await toolkit.execute(
+      "computer_navigate",
+      { url: "https://example.com" },
+      call(),
+    );
+    expect(order).toEqual(["asked for the browser", "has the browser", "sent"]);
   });
 });

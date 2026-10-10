@@ -111,6 +111,7 @@ import type { RoutineSchedule } from "../routines/schedule";
 import type { RoutineService } from "../routines/service";
 import { createShownGuard } from "../logins/shown";
 import type { LoginVault } from "../logins/store";
+import { drivesTheBrowser } from "../runner/bot-lane";
 import type { LoopExecutor, LoopOutcome } from "../runner/turn-loop";
 import { awaitApproval, type PersonAnswers } from "./people";
 
@@ -189,13 +190,21 @@ export type ChatTurnContext = {
   /** The turn's run: who holds a question it raises. */
   runId: string;
   /**
-   * Wait for a person without holding the Bot (`engine.ts`): the Bot's lane is let go of for the
-   * wait and taken back before the call goes on, and `moved` says whether anything else drove the
-   * Bot in between — a routine may have moved the shared browser. Absent, the wait simply runs.
+   * Wait for a person without holding the Bot's browser (`engine.ts`): where the turn has it, its
+   * lane is let go of for the wait and taken back before the call goes on, and `moved` says
+   * whether anything else drove it in between — a routine may have moved the shared browser. A
+   * turn that has not used the browser gives nothing up and takes nothing. Absent, the wait
+   * simply runs.
    */
   awaitPerson?: <T>(
     wait: () => Promise<T>,
   ) => Promise<{ value: T; moved: boolean }>;
+  /**
+   * Have the Bot's browser before a call that uses it (`engine.ts`, piece 5-4): waits for whoever
+   * has it — a routine, another conversation's turn — and keeps it to the turn's end. False is a
+   * turn stopped while it waited, and the call must not leave. Absent, nothing is waited for.
+   */
+  borrowBrowser?: () => Promise<boolean>;
 };
 
 export type ChatToolkit = {
@@ -696,6 +705,18 @@ export function createChatTools(deps: ChatToolsDeps) {
       const gateway = deps.gateway;
       if (!gateway) return refusal("laf:tool_unknown");
       const { signal } = call;
+      /*
+       * THE BROWSER IS ASKED FOR HERE, BY THE CALL THAT USES IT, and not by the turn before its
+       * first step: a turn that only talks, or only reads the Bot's folder, waits behind nobody.
+       * A stop while it waited is a stop — the call is answered as stopped and never sent.
+       */
+      if (
+        drivesTheBrowser(name) &&
+        context.borrowBrowser &&
+        !(await context.borrowBrowser())
+      ) {
+        return refusal("laf:stopped", { stopped: true });
+      }
       const actor = actorFor(call.id);
       const c = botId;
       switch (name) {

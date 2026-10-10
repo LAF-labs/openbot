@@ -291,6 +291,21 @@ const statusOf = async (runId: string) =>
       .where(eq(lafThreadRuns.runId, runId))
   )[0]?.status;
 
+/**
+ * A call that uses the browser, as `chat-tools.ts` carries one out: the browser is asked for
+ * first, and a call that did not get it — the turn was stopped while it waited — never leaves.
+ */
+const browsing =
+  (act: () => void = () => {}) =>
+  (context: ChatTurnContext): ChatToolkit["execute"] =>
+  async () => {
+    if (!(await context.borrowBrowser?.())) {
+      return { ok: false, code: "laf:stopped", stopped: true };
+    }
+    act();
+    return { ok: true };
+  };
+
 describe("a turn the server owns", () => {
   test("runs to its end with nobody watching, and every step is filed", async () => {
     const { threadId, channelId } = await aConversation();
@@ -574,7 +589,7 @@ describe("a turn the server owns", () => {
     expect(engine.busy(threadId)).toBe(false);
   });
 
-  test("a turn waiting behind the Bot's lane already has its record", async () => {
+  test("a turn waiting for the Bot's browser already has its record", async () => {
     const { threadId, channelId } = await aConversation();
     const lane = createBotLane();
     let free: () => void = () => {};
@@ -586,7 +601,7 @@ describe("a turn the server owns", () => {
         }),
     );
     const bot = scriptedBot();
-    const { engine } = engineWith(bot, async () => ({ ok: true }), { lane });
+    const { engine } = engineWith(bot, browsing(), { lane });
     const sent = await engine.send({
       threadId,
       channelId,
@@ -598,9 +613,14 @@ describe("a turn the server owns", () => {
     if (!sent.ok) throw new Error("not sent");
     // Queued behind a routine: the row is open, so a process that dies now is found at boot.
     expect(await statusOf(sent.turnId)).toBe("running");
-    expect(bot.runs).toBe(0);
+    // The Bot was asked, and its call is what waits: nothing has been asked of it since.
+    await until(async () => bot.runs === 1);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(bot.runs).toBe(1);
+    expect(await statusOf(sent.turnId)).toBe("running");
     free();
     await until(async () => (await statusOf(sent.turnId)) === "done");
+    expect(bot.runs).toBe(2);
   });
 });
 
@@ -799,8 +819,182 @@ describe("a turn in flight when the server is asked to leave", () => {
   });
 });
 
-describe("a turn and the Bot's lane", () => {
-  test("a turn waiting on a person lets a routine have the Bot, and takes it back before it acts", async () => {
+describe("a turn and the lane of the Bot's browser", () => {
+  /** Every status a conversation's windows were told, in order. */
+  const statusesOf = (
+    hub: ReturnType<typeof engineWith>["hub"],
+    id: string,
+  ) => {
+    const statuses: string[] = [];
+    hub.subscribe(id, { epoch: null, after: null }, (frame) => {
+      if (frame.kind === "turn") statuses.push(frame.turn.status);
+    });
+    return statuses;
+  };
+
+  test("a turn that never uses the browser runs while a routine has it", async () => {
+    /*
+     * Piece 5-4: the lane was the Bot's, so "안녕" waited for as long as a routine browsed. What
+     * it keeps apart is two loops on one browser, and this turn's call is not one.
+     */
+    const { threadId, channelId } = await aConversation();
+    const lane = createBotLane();
+    const routine = await lane.acquire(BOT);
+    const bot = scriptedBot();
+    const { engine, hub } = engineWith(bot, async () => ({ ok: true }), {
+      lane,
+    });
+    const statuses = statusesOf(hub, threadId);
+    const sent = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("안녕")],
+      tools: null,
+    });
+    if (!sent.ok) throw new Error("not sent");
+    await until(async () => (await statusOf(sent.turnId)) === "done");
+    // Done with the routine still on the browser, and never said to be waiting for it.
+    expect(lane.busy(BOT)).toBe(true);
+    expect(bot.runs).toBe(2);
+    expect(statuses).toEqual(["queued", "running", "done"]);
+    // And it took nothing: the routine is the only holder there has been.
+    expect(lane.grants(BOT)).toBe(1);
+    routine.release();
+  });
+
+  test("the call that uses the browser is what waits for it, and the wait is said", async () => {
+    const { threadId, channelId } = await aConversation();
+    const lane = createBotLane();
+    const routine = await lane.acquire(BOT);
+    const bot = scriptedBot();
+    const order: string[] = [];
+    const { engine, hub } = engineWith(
+      bot,
+      browsing(() => order.push("turn: acted")),
+      { lane },
+    );
+    const statuses = statusesOf(hub, threadId);
+    const sent = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("가격 좀 찾아줘")],
+      tools: null,
+    });
+    if (!sent.ok) throw new Error("not sent");
+    // The Bot's model was asked without waiting for anybody; its call is what stands in line.
+    await until(async () => statuses.at(-1) === "queued" && bot.runs === 1);
+    expect(statuses).toEqual(["queued", "running", "queued"]);
+    expect(order).toEqual([]);
+    order.push("routine: done");
+    routine.release();
+    await until(async () => (await statusOf(sent.turnId)) === "done");
+    expect(order).toEqual(["routine: done", "turn: acted"]);
+    expect(statuses).toEqual([
+      "queued",
+      "running",
+      "queued",
+      "running",
+      "done",
+    ]);
+    // Let go of at the turn's end: whoever is next has it at once.
+    expect(await lane.run(BOT, async () => "next")).toBe("next");
+  });
+
+  test("a free browser is taken without a word about waiting", async () => {
+    const { threadId, channelId } = await aConversation();
+    const lane = createBotLane();
+    const bot = scriptedBot();
+    const { engine, hub } = engineWith(bot, browsing(), { lane });
+    const statuses = statusesOf(hub, threadId);
+    const sent = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("가격 좀 찾아줘")],
+      tools: null,
+    });
+    if (!sent.ok) throw new Error("not sent");
+    await until(async () => (await statusOf(sent.turnId)) === "done");
+    expect(statuses).toEqual(["queued", "running", "done"]);
+    expect(lane.grants(BOT)).toBe(1);
+  });
+
+  test("the browser is kept to the turn's end: another conversation that browses waits, one that only talks does not", async () => {
+    const lane = createBotLane();
+    const first = await aConversation();
+    const second = await aConversation();
+    const third = await aConversation();
+    let finish: () => void = () => {};
+    const finished = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const order: string[] = [];
+    // Three conversations of one Bot's, one engine: who a call belongs to is read off its turn.
+    const { engine } = engineWith(
+      scriptedBot(),
+      (context: ChatTurnContext) => async () => {
+        if (context.threadId === second.threadId) {
+          order.push("talking: answered");
+          return { ok: true };
+        }
+        if (!(await context.borrowBrowser?.())) {
+          return { ok: false, code: "laf:stopped", stopped: true };
+        }
+        if (context.threadId === first.threadId) {
+          order.push("first: has the browser");
+          await finished;
+          order.push("first: done with it");
+        } else {
+          order.push("third: has the browser");
+        }
+        return { ok: true };
+      },
+      {
+        lane,
+        // Each turn its own Bot object: a scripted one counts its runs.
+        resolveAgents: async () => ({
+          [BOT]: scriptedBot() as unknown as LoopAgent,
+        }),
+      },
+    );
+    const send = async (
+      conversation: { threadId: string; channelId: string },
+      text: string,
+    ) => {
+      const sent = await engine.send({
+        ...conversation,
+        owner: { id: OWNER, role: "user" },
+        botId: BOT,
+        messages: [asked(text)],
+        tools: null,
+      });
+      if (!sent.ok) throw new Error("not sent");
+      return sent.turnId;
+    };
+    const browsingTurn = await send(first, "가격 좀 찾아줘");
+    await until(async () => order.length === 1);
+    const waitingTurn = await send(third, "이 사이트도 봐줘");
+    const talkingTurn = await send(second, "안녕");
+    await until(async () => (await statusOf(talkingTurn)) === "done");
+    expect(order).toEqual(["first: has the browser", "talking: answered"]);
+    expect(await statusOf(waitingTurn)).toBe("running");
+    finish();
+    await until(async () => (await statusOf(browsingTurn)) === "done");
+    await until(async () => (await statusOf(waitingTurn)) === "done");
+    expect(order).toEqual([
+      "first: has the browser",
+      "talking: answered",
+      "first: done with it",
+      "third: has the browser",
+    ]);
+  });
+
+  test("a turn waiting on a person lets a routine have the browser, and takes it back before it acts", async () => {
     /*
      * Review H1: a turn held the lane through every wait on a person — up to ten minutes a
      * question — and the 07:30 briefing queued behind it ran at nine. The lane is let go of for the
@@ -818,6 +1012,8 @@ describe("a turn and the Bot's lane", () => {
     const { engine, hub } = engineWith(
       bot,
       (context: ChatTurnContext) => async () => {
+        // A press on a page: the browser is this turn's before anybody is asked about it.
+        await context.borrowBrowser?.();
         order.push("turn: asked the person");
         const waited = await context.awaitPerson?.(() => answered);
         seen.moved = waited?.moved ?? null;
@@ -826,10 +1022,7 @@ describe("a turn and the Bot's lane", () => {
       },
       { lane },
     );
-    const statuses: string[] = [];
-    hub.subscribe(threadId, { epoch: null, after: null }, (frame) => {
-      if (frame.kind === "turn") statuses.push(frame.turn.status);
-    });
+    const statuses = statusesOf(hub, threadId);
     const sent = await engine.send({
       threadId,
       channelId,
@@ -872,12 +1065,67 @@ describe("a turn and the Bot's lane", () => {
     expect(seen.moved).toBe(true);
   });
 
-  test("a stop while the turn waits for the Bot does not wait for the Bot", async () => {
+  test("a turn that waited on a person without having used the browser takes nothing afterwards", async () => {
+    /*
+     * A question about a plugin's call. Taken "back" after the answer, the lane would be held to
+     * the turn's end by a turn that never browsed — and waited for, behind the routine below.
+     */
+    const { threadId, channelId } = await aConversation();
+    const lane = createBotLane();
+    const bot = scriptedBot();
+    let answer: () => void = () => {};
+    const answered = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    const seen: { moved: boolean | null; asked: boolean } = {
+      moved: null,
+      asked: false,
+    };
+    const { engine, hub } = engineWith(
+      bot,
+      (context: ChatTurnContext) => async () => {
+        seen.asked = true;
+        const waited = await context.awaitPerson?.(() => answered);
+        seen.moved = waited?.moved ?? null;
+        return { ok: true };
+      },
+      { lane },
+    );
+    const statuses = statusesOf(hub, threadId);
+    const sent = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("메일 보내기 전에 물어봐줘")],
+      tools: null,
+    });
+    if (!sent.ok) throw new Error("not sent");
+    await until(async () => seen.asked);
+    // A routine takes the browser while the person decides, and is still on it at the answer.
+    const routine = await lane.acquire(BOT);
+    answer();
+    await until(async () => (await statusOf(sent.turnId)) === "done");
+    expect(lane.busy(BOT)).toBe(true);
+    expect(statuses).toEqual(["queued", "running", "done"]);
+    // Nothing of this turn's was on a page, so nothing can have moved under it.
+    expect(seen.moved).toBe(false);
+    expect(lane.grants(BOT)).toBe(1);
+    routine.release();
+  });
+
+  test("a stop while a call waits for the browser does not wait for the browser", async () => {
     const { threadId, channelId } = await aConversation();
     const lane = createBotLane();
     const busy = await lane.acquire(BOT);
     const bot = scriptedBot();
-    const { engine } = engineWith(bot, async () => ({ ok: true }), { lane });
+    const order: string[] = [];
+    const { engine, hub } = engineWith(
+      bot,
+      browsing(() => order.push("turn: acted")),
+      { lane },
+    );
+    const statuses = statusesOf(hub, threadId);
     const sent = await engine.send({
       threadId,
       channelId,
@@ -887,12 +1135,22 @@ describe("a turn and the Bot's lane", () => {
       tools: null,
     });
     if (!sent.ok) throw new Error("not sent");
+    await until(async () => statuses.at(-1) === "queued" && bot.runs === 1);
     expect(engine.stop(threadId)).toBe(true);
     await until(async () => (await statusOf(sent.turnId)) === "stopped");
-    expect(bot.runs).toBe(0);
+    // The call it was waiting to make never left, and is answered as stopped.
+    expect(order).toEqual([]);
+    const stored = await messagesFor(database, threadId);
+    const result = stored.find((message) => message.role === "tool");
+    expect(JSON.parse(String(result?.content))).toMatchObject({
+      code: "laf:stopped",
+      stopped: true,
+    });
+    expect(bot.runs).toBe(1);
     // And the lane it never got is not kept from whoever comes next.
     busy.release();
     expect(await lane.run(BOT, async () => "next")).toBe("next");
+    expect(order).toEqual([]);
   });
 });
 

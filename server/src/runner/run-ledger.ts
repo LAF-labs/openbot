@@ -307,10 +307,11 @@ async function turnSoFar(
  * row (`approval.requested`, written by the gateway and the plugin store) names its run since that
  * day, and a turn counts the rows that name one of its own. It was by Bot and time until then —
  * every question about the Bot since the turn began — and what made those the turn's was the Bot's
- * lane: one thing at a time on one Bot. That holds only while the lane does. Two turns of one Bot
- * at once — a conversation and a project, which is where the lane is going — would each have
- * counted the other's questions, and one's unanswered question would have filed the other's
- * unfinished ending as waiting on the owner (`telemetry/run-ending.ts`).
+ * lane: one thing at a time on one Bot. That held only while the lane did, and since piece 5-4 the
+ * lane is a browser's (`bot-lane.ts`): a conversation that only talks runs beside a routine, and
+ * beside a project's turn. Those would each have counted the other's questions, and one's
+ * unanswered question would have filed the other's unfinished ending as waiting on the owner
+ * (`telemetry/run-ending.ts`).
  *
  * A ROW THAT NAMES NO RUN IS STILL COUNTED THE OLD WAY, by Bot and time: every row written before
  * that day, and a question raised by a call with no run behind it. Counting those for nobody would

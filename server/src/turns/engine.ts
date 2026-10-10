@@ -430,16 +430,25 @@ export function createTurnEngine(options: TurnEngineOptions) {
     let stopped = false;
 
     /*
-     * THE BOT'S LANE: HELD WHILE THE TURN DRIVES THE BOT, LET GO OF WHILE IT WAITS ON A PERSON.
+     * THE BROWSER'S LANE: TAKEN AT THE FIRST CALL THAT USES THE BROWSER, HELD TO THE TURN'S END,
+     * LET GO OF WHILE IT WAITS ON A PERSON.
      *
-     * A turn used to hold the lane from its first step to its last, and a turn waiting on a
-     * question holds it for up to ten minutes a question: the 07:30 briefing, queued behind it, ran
-     * at nine (review H1, 2026-09-27). The lane is released for every wait on a person and taken
-     * back before the turn touches the Bot again, and whoever reads a wait's outcome is told whether
-     * anybody else drove the Bot meanwhile — a routine may have moved the shared browser.
+     * A turn used to take the lane before its first step (until piece 5-4, 2026-10-10), so a
+     * conversation that only talked waited behind a routine that was browsing — and behind another
+     * conversation of the same Bot's. What the lane keeps apart is two loops on one browser, and a
+     * turn that never calls a browser tool is not one of them: it takes nothing and waits for
+     * nobody. Once taken it is kept to the end, because what the turn saw (its snapshot's refs,
+     * its tab) has to still be there at its next step.
      *
-     * A stop never waits for the lane: taking it back races the stop, and a hold granted after the
-     * turn is over is handed straight back, so nothing abandoned mid-wait can keep the Bot forever.
+     * A turn waiting on a question held it for up to ten minutes a question: the 07:30 briefing,
+     * queued behind it, ran at nine (review H1, 2026-09-27). The lane is released for every wait
+     * on a person and taken back before the turn touches the browser again, and whoever reads a
+     * wait's outcome is told whether anybody else drove it meanwhile — a routine may have moved
+     * the shared browser.
+     *
+     * A stop never waits for the lane: taking it races the stop, and a hold granted after the
+     * turn is over is handed straight back, so nothing abandoned mid-wait can keep the browser
+     * forever.
      */
     let hold: LaneHold | null = null;
     let over = false;
@@ -469,10 +478,45 @@ export function createTurnEngine(options: TurnEngineOptions) {
       hold?.release();
       hold = null;
     };
+    /*
+     * WAITING FOR THE BROWSER IS SAID, AND ONLY WHEN THERE IS A WAIT. A turn that reaches for a
+     * browser somebody else has goes quiet for as long as they keep it — minutes, behind a
+     * routine — and `queued` is the word a window already draws for that. Not said where the
+     * browser is free: the word would flash past on every turn that browses.
+     */
+    const takeSaying = async (): Promise<void> => {
+      if (!lane) return;
+      const waits = lane.busy(botId);
+      if (waits && !over && !signal.aborted) announceTurn(turn, "queued");
+      await take();
+      if (waits && !over && !signal.aborted) announceTurn(turn, "running");
+    };
+    /*
+     * One taking at a time: a second call that asked while the first was still in line would
+     * queue behind this turn's own hold, which is let go of only when the turn ends.
+     */
+    let borrowing: Promise<void> | null = null;
+    const borrowBrowser = async (): Promise<boolean> => {
+      if (!lane) return true;
+      if (!hold) {
+        borrowing ??= takeSaying().finally(() => {
+          borrowing = null;
+        });
+        await borrowing;
+      }
+      // Not held after asking is a stop that won the race, or a turn that is already over.
+      return hold !== null;
+    };
     const awaitPerson = async <T>(
       wait: () => Promise<T>,
     ): Promise<{ value: T; moved: boolean }> => {
-      if (!lane) return { value: await wait(), moved: false };
+      /*
+       * A TURN THAT HAS NOT USED THE BROWSER HAS NOTHING TO GIVE BACK OR TAKE BACK. A question
+       * about a plugin's call is waited on by a turn that may never browse; taking the lane
+       * "back" after it would have that turn hold the browser to its end for nothing, and wait
+       * behind a routine to do it.
+       */
+      if (!lane || !hold) return { value: await wait(), moved: false };
       const before = lane.grants(botId);
       letGo();
       let value: T;
@@ -506,8 +550,7 @@ export function createTurnEngine(options: TurnEngineOptions) {
       });
 
     try {
-      // Queued until the Bot is free: a routine it is running finishes first.
-      await take();
+      // Nothing is waited for here: the browser is asked for by the call that uses it.
       if (signal.aborted) throw new RunStopped([]);
       if (options.admits && !(await options.admits(owner.id))) {
         throw new Error("laf:not_admitted");
@@ -549,7 +592,14 @@ export function createTurnEngine(options: TurnEngineOptions) {
       } as BaseEvent);
 
       const toolkit = await options.tools(
-        { botId, owner, threadId, runId: turn.id, awaitPerson },
+        {
+          botId,
+          owner,
+          threadId,
+          runId: turn.id,
+          awaitPerson,
+          borrowBrowser,
+        },
         input.tools,
       );
       let persisting: Promise<void> = Promise.resolve();
