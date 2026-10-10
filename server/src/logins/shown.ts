@@ -24,8 +24,8 @@
  *
  * WHAT THIS DOES NOT REACH, said rather than left to be assumed: a document of the saved site
  * framed inside a page of another (the outcome carries the page's address, not each frame's); what
- * the trail and an approval card write about an act — the page's address and the name of the
- * element acted on — which the gateway reads before this does; a value a person typed into a
+ * the trail and an approval card write about an act — the page's origin and path, and the name of
+ * the element acted on — which the gateway reads before this does; a value a person typed into a
  * card, which this server never knew; a picture. The picture is why
  * every call is told on, with whether it was a hit (`seen`): a page whose words held the password
  * shows it on screen too, and whoever keeps pictures has to know which calls those were.
