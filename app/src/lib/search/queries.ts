@@ -1,9 +1,8 @@
-import { type SearchPage, searchTerms } from "@shared/search";
+import { type SearchHit, type SearchPage, searchTerms } from "@shared/search";
 import { infiniteQueryOptions, keepPreviousData } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import { t } from "@/lib/i18n";
-import { own } from "@/lib/own";
-import { RequestRefusedError } from "@/lib/refusals";
+import { RequestRefusedError, requestOrRefusal } from "@/lib/refusals";
 
 /**
  * 통합검색 on the wire, and what the box holds (record §3, piece 4-3, 2026-10-10).
@@ -24,39 +23,59 @@ export const searchKeys = {
   of: (terms: readonly string[]) => ["search", ...terms] as const,
 };
 
-/** The refusals the door answers with, as the codes it sends. One sentence: none is the person's to fix. */
-export const SEARCH_REFUSALS: Readonly<Record<string, string>> = {
-  "laf:search_unavailable": "The conversations could not be searched.",
-  "laf:search_query_invalid": "The conversations could not be searched.",
-  "laf:search_cursor_invalid": "The conversations could not be searched.",
-};
+/**
+ * A page out of whatever arrived, or null where it is not one: every hit names its conversation
+ * and its message and carries its words.
+ *
+ * READ ONCE, HERE, AND AN ANSWER THAT IS NO PAGE IS A FAILURE. The screen used to read each page
+ * leniently, so a 200 with nothing in it — a proxy's page, a body cut short — drew "No message has
+ * those words", which is a statement about the person's conversations and was not true
+ * (review, 2026-10-10).
+ */
+export function searchPageOf(body: unknown): SearchPage | null {
+  const page = body as { hits?: unknown; next?: unknown } | null;
+  if (!Array.isArray(page?.hits)) return null;
+  const isHit = (hit: unknown): hit is SearchHit =>
+    hit !== null &&
+    typeof hit === "object" &&
+    typeof (hit as SearchHit).channelId === "string" &&
+    typeof (hit as SearchHit).messageId === "string" &&
+    typeof (hit as SearchHit).snippet === "string";
+  if (!page.hits.every(isHit)) return null;
+  return {
+    hits: page.hits,
+    next: typeof page.next === "string" ? page.next : null,
+  };
+}
 
+/*
+ * No table of refusals: the door's three codes are none of them the person's to fix, and the
+ * screen says its one sentence for any failure (`routes/_authed/_app/search.tsx`). The code still
+ * travels on the error, for "this deployment cannot search".
+ */
 async function searchRequest(
   terms: readonly string[],
   cursor: string | null,
   signal: AbortSignal,
 ): Promise<SearchPage> {
-  const response = await fetch("/api/search", {
-    body: JSON.stringify({ q: terms.join(" "), ...(cursor ? { cursor } : {}) }),
-    credentials: "include",
-    headers: { "content-type": "application/json" },
-    method: "POST",
-    signal,
-  });
-  const body = (await response.json().catch(() => null)) as Record<
-    string,
-    unknown
-  > | null;
-  if (!response.ok) {
-    const code = typeof body?.code === "string" ? body.code : "";
-    const known = own(SEARCH_REFUSALS, code);
+  const page = searchPageOf(
+    await requestOrRefusal("/api/search", {
+      body: JSON.stringify({
+        q: terms.join(" "),
+        ...(cursor ? { cursor } : {}),
+      }),
+      method: "POST",
+      signal,
+    }),
+  );
+  if (!page) {
     throw new RequestRefusedError(
-      known ? t(known) : t("The conversations could not be searched."),
-      response.status,
-      code || null,
+      t("That did not go through. Try again."),
+      200,
+      null,
     );
   }
-  return body as unknown as SearchPage;
+  return page;
 }
 
 /** The hits for what was typed. Asked only once it is a search (`searchTerms`). */
@@ -64,9 +83,7 @@ export function searchQueryOptions(typed: string) {
   const terms = searchTerms(typed) ?? [];
   return infiniteQueryOptions({
     enabled: terms.length > 0,
-    // Of whatever arrived: an answer that is no page has no next one (`lib/feed/queries.ts` says why).
-    getNextPageParam: (last: SearchPage | null | undefined) =>
-      last?.next ?? null,
+    getNextPageParam: (last: SearchPage) => last.next,
     initialPageParam: null as string | null,
     // The list a person is reading stays while the next word's answer is on its way.
     placeholderData: keepPreviousData,

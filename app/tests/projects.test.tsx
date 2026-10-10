@@ -250,6 +250,31 @@ describe("the 프로젝트 screen", () => {
     expect(ko["There are as many projects as there can be."]).toBeString();
   });
 
+  test("a press that never reached the server says that — not the engine's own words for it", async () => {
+    // A dropped connection is thrown as "Load failed", and was drawn as it came (review, 2026-10-10).
+    const view = await mountApp({
+      path: "/projects",
+      api: account([], (request) => {
+        if (request.pathname === "/api/channels/projects") {
+          throw new TypeError("Load failed");
+        }
+        return undefined;
+      }),
+    });
+    await view.waitFor(
+      () => view.host.querySelectorAll("[data-project-make]").length === 1,
+      "the button",
+    );
+    await view.click(view.host.querySelector("[data-project-make]") as Element);
+    await view.waitFor(
+      () => view.main()?.querySelectorAll('[role="alert"]').length === 1,
+      "the failure",
+    );
+    expect(view.main()?.querySelector('[role="alert"]')?.textContent).toBe(
+      "The server could not be reached. Please try again in a moment.",
+    );
+  });
+
   test("an account with several Bots has each Bot's projects under its name", async () => {
     const view = await mountApp({
       path: "/projects",
@@ -456,7 +481,9 @@ describe("deleting a project", () => {
     test.each([
       [409, "laf:project_only", "Only a project can be deleted here."],
       [409, "laf:project_deleting", "That project is being deleted."],
-      [500, "laf:internal", "Could not delete the project. Try again."],
+      [500, "laf:internal", "That did not go through. Try again."],
+      // A 404 that is not the server's own fact — a proxy's, a deployment without the door.
+      [404, undefined, "That did not go through. Try again."],
     ])(
       "a refusal (%i %s) is a sentence, and what is held stays",
       async (status, code, sentence) => {

@@ -1549,8 +1549,6 @@ export const ko: Record<string, string> = {
     "대화 목록을 불러오지 못했어요. 새로고침해 주세요.",
   "Could not load this conversation.":
     "이 대화를 불러오지 못했어요. 새로고침해 주세요.",
-  "Could not start a conversation. Try again.":
-    "대화를 시작하지 못했어요. 다시 시도해 주세요.",
   "Could not mark that as read. Try again.":
     "읽음 표시를 저장하지 못했어요. 다시 시도해 주세요.",
   "Could not load what this Bot knows. Refresh to try again.":
@@ -2781,8 +2779,6 @@ export const ko: Record<string, string> = {
   "Untitled project": "이름 없는 프로젝트",
   "New project": "새 프로젝트",
   "Make the project": "프로젝트 만들기",
-  "Could not make the project. Try again.":
-    "프로젝트를 만들지 못했어요. 다시 시도해 주세요.",
   "Work that runs over days gets a conversation of its own here.":
     "며칠씩 이어지는 일은 여기서 따로 대화해요.",
   "There are as many projects as there can be.":
@@ -2792,8 +2788,6 @@ export const ko: Record<string, string> = {
   "Delete the project “{title}”?": "‘{title}’ 프로젝트를 지울까요?",
   "The project and everything said in it go. What your Bot learned there stays.":
     "프로젝트와 그 안에서 나눈 대화가 모두 지워져요. 봇이 거기서 기억한 것은 남아요.",
-  "Could not delete the project. Try again.":
-    "프로젝트를 지우지 못했어요. 다시 시도해 주세요.",
   "Only a project can be deleted here.": "여기서는 프로젝트만 지울 수 있어요.",
   "That project is being deleted.": "그 프로젝트는 지우는 중이에요.",
   // 검색, every conversation at once (piece 4-3).
@@ -3296,7 +3290,6 @@ export const ko: Record<string, string> = {
   "Write a notice for this: ": "안내문 써 줘: ",
   "Write an introduction for this: ": "소개 글 써 줘: ",
   "Make this for me: ": "만들어 줘: ",
-  "That Bot is not yours to see.": "볼 수 없는 봇이에요.",
   "What it found": "찾은 소식",
   "Updates could not be loaded.": "소식을 불러오지 못했어요.",
   "This deployment does not post updates.":

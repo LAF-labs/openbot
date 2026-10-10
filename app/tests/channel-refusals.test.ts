@@ -26,7 +26,8 @@ describe("the channel refusal copy", () => {
       new URL("../../server/src/channels/routes.ts", import.meta.url),
     ).text();
     const codes = new Set(
-      [...routes.matchAll(/"(laf:channel_[a-z_]+)"/g)].map(
+      // The project doors' codes too: the walk read only `laf:channel_…` and so never saw one.
+      [...routes.matchAll(/"(laf:(?:channel|project)_[a-z_]+)"/g)].map(
         (match) => match[1] as string,
       ),
     );

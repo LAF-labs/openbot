@@ -65,10 +65,10 @@ function SearchPage() {
   const terms = searchTerms(asked);
   const found = useInfiniteQuery(searchQueryOptions(asked));
   const reading = useReading(found, {
-    isEmpty: (data) => data.pages.every((page) => hitsOf(page).length === 0),
+    isEmpty: (data) => data.pages.every((page) => page.hits.length === 0),
   });
   const settled = terms ? settledOf(reading) : null;
-  const hits = settled ? settled.data.pages.flatMap(hitsOf) : [];
+  const hits = settled ? settled.data.pages.flatMap((page) => page.hits) : [];
 
   const mine = useMyBots();
   const channels = useQuery(channelListQueryOptions());
@@ -152,21 +152,6 @@ function SearchPage() {
       ) : null}
     </PageShell>
   );
-}
-
-/** A page's hits, of whatever arrived: an answer that is no page has none. */
-function hitsOf(page: unknown): SearchHit[] {
-  const hits = (page as { hits?: unknown } | null)?.hits;
-  return Array.isArray(hits)
-    ? hits.filter(
-        (hit): hit is SearchHit =>
-          hit !== null &&
-          typeof hit === "object" &&
-          typeof hit.channelId === "string" &&
-          typeof hit.messageId === "string" &&
-          typeof hit.snippet === "string",
-      )
-    : [];
 }
 
 /**

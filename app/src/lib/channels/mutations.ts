@@ -1,6 +1,6 @@
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
 import { t } from "@/lib/i18n";
-import { own } from "@/lib/own";
+import { RequestRefusedError, requestOrRefusal } from "@/lib/refusals";
 import { type AgentChannel, channelKeys } from "./queries";
 
 /**
@@ -27,10 +27,9 @@ export const CHANNEL_REFUSALS: Record<string, string> = {
   "laf:project_deleting": "That project is being deleted.",
 };
 
-function channelRefusal(code: string | undefined): string {
-  const known = own(CHANNEL_REFUSALS, code);
-  return known ? t(known) : t("Could not start a conversation. Try again.");
-}
+/** One of the channel doors: its body, or the refusal in this table's words (`lib/refusals.ts`). */
+const channelRequest = (path: string, init: RequestInit) =>
+  requestOrRefusal(path, init, CHANNEL_REFUSALS);
 
 /**
  * Start the Bot's conversation. The server answers with the one it already has, if it has one.
@@ -39,22 +38,13 @@ function channelRefusal(code: string | undefined): string {
  */
 export function createChannelMutationOptions(queryClient: QueryClient) {
   return mutationOptions({
-    mutationFn: async (agentIds: string[]): Promise<AgentChannel> => {
-      const response = await fetch("/api/channels", {
-        method: "POST",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ agentIds }),
-      });
-      if (!response.ok) {
-        const code = await response
-          .json()
-          .then((body: { code?: string }) => body.code)
-          .catch(() => undefined);
-        throw new Error(channelRefusal(code));
-      }
-      return ((await response.json()) as { channel: AgentChannel }).channel;
-    },
+    mutationFn: async (agentIds: string[]): Promise<AgentChannel> =>
+      (
+        (await channelRequest("/api/channels", {
+          body: JSON.stringify({ agentIds }),
+          method: "POST",
+        })) as { channel: AgentChannel }
+      ).channel,
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: channelKeys.all }),
   });
@@ -70,25 +60,13 @@ export function createProjectMutationOptions(queryClient: QueryClient) {
     mutationFn: async (input: {
       agentId: string;
       name: string;
-    }): Promise<AgentChannel> => {
-      const response = await fetch("/api/channels/projects", {
-        method: "POST",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(input),
-      });
-      if (!response.ok) {
-        const code = await response
-          .json()
-          .then((body: { code?: string }) => body.code)
-          .catch(() => undefined);
-        const known = own(CHANNEL_REFUSALS, code);
-        throw new Error(
-          known ? t(known) : t("Could not make the project. Try again."),
-        );
-      }
-      return ((await response.json()) as { channel: AgentChannel }).channel;
-    },
+    }): Promise<AgentChannel> =>
+      (
+        (await channelRequest("/api/channels/projects", {
+          body: JSON.stringify(input),
+          method: "POST",
+        })) as { channel: AgentChannel }
+      ).channel,
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: channelKeys.all }),
   });
@@ -97,22 +75,23 @@ export function createProjectMutationOptions(queryClient: QueryClient) {
 /**
  * Delete a project: its conversation and everything that named it (`server/src/channels/
  * deleting.ts`). The server marks it, waits for what was writing into it, stops its turn and then
- * removes it, so this answers only once it is gone — and "it is not there" is the same success,
- * since another window may have got there first.
+ * removes it, so this answers only once it is gone.
+ *
+ * "IT IS NOT THERE" IS THE SAME SUCCESS — another window may have got there first — BUT ONLY AS
+ * THE SERVER'S OWN FACT. Any 404 used to count, and a proxy's 404, or a deployment that has no
+ * such door, is a project that is still there (review, 2026-10-10).
  */
 export async function deleteProject(
   queryClient: QueryClient,
   channelId: string,
 ): Promise<void> {
-  const response = await fetch(
-    `/api/channels/projects/${encodeURIComponent(channelId)}`,
-    { credentials: "include", method: "DELETE" },
-  );
-  if (!response.ok && response.status !== 404) {
-    const code = await response
-      .json()
-      .then((body: { code?: string }) => body.code)
-      .catch(() => undefined);
+  try {
+    await channelRequest(
+      `/api/channels/projects/${encodeURIComponent(channelId)}`,
+      { method: "DELETE" },
+    );
+  } catch (error) {
+    const code = error instanceof RequestRefusedError ? error.code : null;
     /*
      * BEING DELETED IS NOT "NOT DELETED". The server has marked it and is waiting for its turn to
      * end; it finishes on its own. The list no longer holds it, so the list is read again — the
@@ -121,10 +100,7 @@ export async function deleteProject(
     if (code === "laf:project_deleting") {
       await queryClient.invalidateQueries({ queryKey: channelKeys.all });
     }
-    const known = own(CHANNEL_REFUSALS, code);
-    throw new Error(
-      known ? t(known) : t("Could not delete the project. Try again."),
-    );
+    if (code !== "laf:channel_not_found") throw error;
   }
   // Out of what is on screen at once, and out of what a conversation opened by its id would read.
   queryClient.removeQueries({ queryKey: channelKeys.detail(channelId) });
