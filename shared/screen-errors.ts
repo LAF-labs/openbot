@@ -102,6 +102,7 @@ export const SCREEN_ROUTES = [
   "/privacy",
   "/projects",
   "/routines",
+  "/search",
   "/settings",
   "/settings/",
   "/settings/account",
