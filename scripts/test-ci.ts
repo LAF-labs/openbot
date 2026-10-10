@@ -2684,7 +2684,17 @@ const GROUPS: readonly {
   { name: "app", floor: 2251, roots: ["app"] },
   {
     name: "agent-computer",
-    floor: 537,
+    /*
+     * RAISED 2026-10-10 WITH THE BROWSERS A COMPUTER HOLDS, from 537 to 581 (record §5, piece
+     * 5-3), by exactly forty-four. Thirty-eight in `browsers.test.ts`, against seats that open
+     * nothing: which browser a call is for, a name nobody opened, the room there is and the answer
+     * past it, whose place may be given away, what letting go does, what a start sweeps, sixteen
+     * names that are and are not one, and the door's part of each. Six in
+     * `background-browsers.test.ts`, the computer itself with real browsers. By hand: 537 and 38
+     * is 575, and 6 is 581. (Said here and not at the end of the note above: that end is where
+     * every other piece's note goes, and two people adding to one line is a conflict a day.)
+     */
+    floor: 581,
     roots: ["agent-computer"],
     processes: 1,
   },
