@@ -15,7 +15,8 @@ import {
   matchesToken,
   offeredToken,
 } from "./authorisation";
-import type { BotRoute, Computer } from "./computer";
+import { BROWSER_HEADER, type Browsers, isBrowserName } from "./browsers";
+import type { BotRoute } from "./computer";
 import {
   health,
   listComputers,
@@ -46,7 +47,7 @@ import { fillLogin, whereFields } from "./login-routes";
 import type { Profiles } from "./profiles";
 import { navigate } from "./navigation";
 import { readPage, screenshot, snapshot, switchTab } from "./page-routes";
-import { answeredADeadTab, fact } from "./respond";
+import { answeredADeadTab, fact, invalid, json } from "./respond";
 import { withoutTypedAddresses } from "./typed-values";
 import { whereaboutsOf } from "./whereabouts";
 
@@ -93,7 +94,9 @@ function botIdOf(request: Request, fallback?: string | null): string | null {
   );
 }
 
-export function computerFetch(computer: Computer) {
+export function computerFetch(browsers: Browsers) {
+  /** The deployment's own browser: whose token, health and roster this door answers with. */
+  const main = browsers.main;
   return async (
     request: Request,
     server: Server<StreamData>,
@@ -113,7 +116,7 @@ export function computerFetch(computer: Computer) {
      */
     if (
       !isOpenPath(url.pathname) &&
-      !matchesToken(computer.config.token, offeredToken(request.headers, url))
+      !matchesToken(main.config.token, offeredToken(request.headers, url))
     ) {
       // Says nothing about what is here. A refusal that describes the endpoint it is protecting is a
       // directory listing for whoever is knocking — so the one fact is that the token was refused.
@@ -121,11 +124,34 @@ export function computerFetch(computer: Computer) {
     }
 
     if (url.pathname === "/health") {
-      return health(botIdOf(request), computer);
+      return health(botIdOf(request), main);
     }
 
     if (url.pathname === "/computers" && request.method === "GET") {
-      return listComputers(computer);
+      return listComputers(main);
+    }
+
+    /*
+     * WHICH BROWSER (`browsers.ts`, piece 5-3). No name is the main one, which is every call from
+     * before there were background browsers. A name is taken as one or refused as a part of the
+     * request that is unusable — it is never a path, and never trimmed into something else.
+     */
+    const named = request.headers.get(BROWSER_HEADER)?.trim() || null;
+    if (named !== null && !isBrowserName(named)) return invalid("browser");
+
+    // Opening a background browser and letting it go name no Bot: the browser is every Bot's
+    // that is sent to it. `opened: false` is the answer when there is no room, not a failure.
+    if (url.pathname === "/browsers/open" && request.method === "POST") {
+      if (named === null) return invalid("browser");
+      return json({
+        opened: browsers.open(named),
+        open: browsers.names().length,
+        cap: browsers.cap,
+      });
+    }
+    if (url.pathname === "/browsers/release" && request.method === "POST") {
+      if (named === null) return invalid("browser");
+      return json({ released: await browsers.release(named) });
     }
 
     /*
@@ -158,10 +184,8 @@ export function computerFetch(computer: Computer) {
      * root. Checked again on this side rather than trusted from the server: see `isBotId`.
      */
     if (!isBotId(botId)) return fact(BOT_ID_INVALID);
-    // Resolved once per request. Everything below that touches a browser, an ask or a snapshot
-    // goes through this Bot's session, so there is no path where one Bot's call reaches another's.
-    const session = computer.sessions.sessionFor(botId);
 
+    // The screen a person watches is the main browser's, whatever else the request names.
     if (url.pathname === "/stream") {
       if (server.upgrade(request, { data: { botId } }))
         return undefined as unknown as Response;
@@ -170,63 +194,76 @@ export function computerFetch(computer: Computer) {
 
     const route = BOT_ROUTES.get(`${request.method} ${url.pathname}`);
     if (route) {
-      /*
-       * WHERE THE PERSON IS, BEFORE ANYTHING OPENS A PAGE. The server names its Bot's owner's zone
-       * and coarse place on every call (whereabouts.ts), so the browser this call may be about to
-       * start — or the page it is about to load — is on their clock and in their place, not the
-       * VM's. A call that says nothing leaves the browser as it was.
-       */
-      await computer.profiles.follow(whereaboutsOf(request.headers));
-      /*
-       * AND NO ADDRESS LEAVES CARRYING WHAT A PERSON TYPED. A form sent by GET puts its boxes in the
-       * address it lands on, and that address rode out on every answer after it (audit R3-03). The
-       * one place every Bot route's answer passes is here, so this is where it is blanked — and an
-       * answer from a Bot nobody has typed for goes out untouched. See `typed-values.ts`.
-       */
-      /*
-       * WHICH TAB THIS CALL WAS ON, kept as the route takes it. Each route asks for the Bot's tab
-       * itself, so the door hands it a view of the profiles that remembers the answer: the last
-       * tab this one request was handed, and nobody else's.
-       */
-      let on: Page | undefined;
-      const profiles: Profiles = Object.assign(
-        Object.create(computer.profiles) as Profiles,
-        {
-          page: async (asked: string): Promise<Page> => {
-            on = await computer.profiles.page(asked);
-            return on;
+      const computer = browsers.take(named);
+      // Nothing is open under that name: nobody opened it, or it was let go of. Not opened here —
+      // a call is not a reason to start a browser (`browsers.ts`).
+      if (!computer) return invalid("browser");
+      // Resolved once per request. Everything below that touches a browser, an ask or a snapshot
+      // goes through this Bot's session in this browser, so there is no path where one Bot's call
+      // reaches another's — or the same Bot's in a different browser.
+      // Its browser is this call's until the call is over: nothing makes room with it meanwhile.
+      try {
+        const session = computer.sessions.sessionFor(botId);
+        /*
+         * WHERE THE PERSON IS, BEFORE ANYTHING OPENS A PAGE. The server names its Bot's owner's zone
+         * and coarse place on every call (whereabouts.ts), so the browser this call may be about to
+         * start — or the page it is about to load — is on their clock and in their place, not the
+         * VM's. A call that says nothing leaves the browser as it was.
+         */
+        await computer.profiles.follow(whereaboutsOf(request.headers));
+        /*
+         * AND NO ADDRESS LEAVES CARRYING WHAT A PERSON TYPED. A form sent by GET puts its boxes in the
+         * address it lands on, and that address rode out on every answer after it (audit R3-03). The
+         * one place every Bot route's answer passes is here, so this is where it is blanked — and an
+         * answer from a Bot nobody has typed for goes out untouched. See `typed-values.ts`.
+         */
+        /*
+         * WHICH TAB THIS CALL WAS ON, kept as the route takes it. Each route asks for the Bot's tab
+         * itself, so the door hands it a view of the profiles that remembers the answer: the last
+         * tab this one request was handed, and nobody else's.
+         */
+        let on: Page | undefined;
+        const profiles: Profiles = Object.assign(
+          Object.create(computer.profiles) as Profiles,
+          {
+            page: async (asked: string): Promise<Page> => {
+              on = await computer.profiles.page(asked);
+              return on;
+            },
           },
-        },
-      );
-      const answer = await route(
-        { request, url, botId, session },
-        { ...computer, profiles },
-      );
-      /*
-       * A CALL THAT FAILED ON A DEAD TAB LETS GO OF THAT TAB. A renderer's death is heard as an
-       * event (tabs.ts), and one that was not heard leaves the Bot on a tab that fails every call
-       * for ever — the incident of 2026-10-05 again, by another door. The failure itself is the
-       * second way of knowing, and every route's failure is written in one place
-       * (`browserFailed`), so it is read here, before the answer is rewritten below.
-       *
-       * THE TAB THE CALL WAS ON, NOT THE TAB THE BOT IS ON NOW. The two differ by the time a call
-       * fails: a click whose tab died under it has usually opened another first, and the live
-       * screen asks for the Bot's tab every second. The first version let go of whichever was
-       * current — a healthy popup closed, with its site's name in the crash line.
-       */
-      if (on && answeredADeadTab(answer)) await computer.profiles.deadTab(on);
-      const sent = await withoutTypedAddresses(session, answer);
-      /*
-       * AND NO TEXT LEAVES CARRYING WHAT WAS PUT INTO A PAGE FOR A PERSON, for as long as the run
-       * that put it there lasts — a page may show a value back anywhere, and here is the one place
-       * all of it passes (`filled-values.ts`).
-       *
-       * NOT A FILE'S. A file in the Bot's folder is the person's own, read to be changed and
-       * written back: a list of their customers with the mark where their own sign-in name stood
-       * would be saved that way. What a page says is the browser's; what a file says is not.
-       */
-      if (url.pathname.startsWith("/files/")) return sent;
-      return withoutFilledValues(session, sent);
+        );
+        const answer = await route(
+          { request, url, botId, session },
+          { ...computer, profiles },
+        );
+        /*
+         * A CALL THAT FAILED ON A DEAD TAB LETS GO OF THAT TAB. A renderer's death is heard as an
+         * event (tabs.ts), and one that was not heard leaves the Bot on a tab that fails every call
+         * for ever — the incident of 2026-10-05 again, by another door. The failure itself is the
+         * second way of knowing, and every route's failure is written in one place
+         * (`browserFailed`), so it is read here, before the answer is rewritten below.
+         *
+         * THE TAB THE CALL WAS ON, NOT THE TAB THE BOT IS ON NOW. The two differ by the time a call
+         * fails: a click whose tab died under it has usually opened another first, and the live
+         * screen asks for the Bot's tab every second. The first version let go of whichever was
+         * current — a healthy popup closed, with its site's name in the crash line.
+         */
+        if (on && answeredADeadTab(answer)) await computer.profiles.deadTab(on);
+        const sent = await withoutTypedAddresses(session, answer);
+        /*
+         * AND NO TEXT LEAVES CARRYING WHAT WAS PUT INTO A PAGE FOR A PERSON, for as long as the run
+         * that put it there lasts — a page may show a value back anywhere, and here is the one place
+         * all of it passes (`filled-values.ts`).
+         *
+         * NOT A FILE'S. A file in the Bot's folder is the person's own, read to be changed and
+         * written back: a list of their customers with the mark where their own sign-in name stood
+         * would be saved that way. What a page says is the browser's; what a file says is not.
+         */
+        if (url.pathname.startsWith("/files/")) return sent;
+        return withoutFilledValues(session, sent);
+      } finally {
+        browsers.left(named);
+      }
     }
 
     return fact("laf:computer_route_unknown");
