@@ -577,7 +577,15 @@ describe.skipIf(!HAS_BROWSER)("the Bot's browser on a Korean page", () => {
     expect(text).toContain("언어=ko-KR");
     expect(text).toContain("시간대=Asia/Seoul");
     expect(text).toMatch(/브라우저=.*Chrome\/\d+/);
-    // The single cheapest automation signal there is, and it used to be in every request.
+    /*
+     * And the two places an override of that string does not reach (piece 5-2): the brand list a
+     * page reads and the one every request carries. Each is there to be read — a browser that
+     * sent none would pass a test that only looked for a word — and each is the full Chromium's.
+     */
+    expect(text).toMatch(/상표=\S*Chromium/);
+    expect(text).toMatch(/머리말=.*"Chromium";v="\d+"/);
+    // The single cheapest automation signal there is, and it used to be in every request: in the
+    // string until 2026-10-04, in both brand lists until the browser itself changed.
     expect(text).not.toContain("Headless");
   }, 30_000);
 });
