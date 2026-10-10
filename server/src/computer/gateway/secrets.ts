@@ -62,6 +62,9 @@ type Requested = {
 /** A run that named no conversation, or one this server learnt of from the computer. */
 const ANY_RUN = "";
 
+/** How many calls a picture stays refused for after their run. A turn is some tens of calls. */
+const SHOWN_CALLS_MAX = 512;
+
 /**
  * What a request for values came to, when a login the person saved answered it instead of them.
  *
@@ -188,14 +191,73 @@ export function createSecrets(deps: {
     valueRuns.set(botId, runs);
   };
 
-  /** Whether a value is being held in this Bot's browser, as far as this server knows. */
+  /**
+   * The runs in which a saved password was taken out of something handed to a model
+   * (`logins/shown.ts`), by Bot — and the calls of those runs, from the one it was hidden in on.
+   *
+   * APART FROM `valueRuns`, BECAUSE NOTHING WAS PUT IN. An end of a run noted there is passed on to
+   * the computer, which closes every tab a value went into, whoever's run put it there. A run that
+   * only read a page has no tab of its own to close, and its end must not close another run's.
+   *
+   * THE RUN, AND THEN ITS CALLS. For the rest of the run nothing of the Bot's browser is pictured:
+   * the page whose words held the password is the page on screen, and it is still there through a
+   * scroll that hands over no words. The run's end lets go of that — but a picture belongs to a
+   * call, and the window offers it when a task is over, again while the call's result is on its
+   * way, and after a stop not until the next turn (`app/src/lib/computer/last-frame.ts`). So the
+   * calls handed over from the hit on are remembered past the run, and refused by name.
+   */
+  const shownRuns = new Map<string, Set<string>>();
+  const shownCalls = new Set<string>();
+  const callOf = (botId: string, toolCallId: string) =>
+    `${botId} ${toolCallId}`;
+
+  /**
+   * A browser call's outcome was handed to a model in this run; `hidden` where a saved password
+   * was taken out of it. Every call is told here, not only a hit: the ones after it are what the
+   * picture of that page would be filed under.
+   */
+  function handedOver(
+    botId: string,
+    run: { threadId?: string; toolCallId?: string },
+    hidden: boolean,
+  ): void {
+    const key = run.threadId ?? ANY_RUN;
+    if (hidden) {
+      const runs = shownRuns.get(botId) ?? new Set<string>();
+      runs.add(key);
+      shownRuns.set(botId, runs);
+    }
+    if (!run.toolCallId || !shownRuns.get(botId)?.has(key)) return;
+    const call = callOf(botId, run.toolCallId);
+    shownCalls.delete(call);
+    shownCalls.add(call);
+    // The oldest goes first: a picture is offered within a turn or two of its call, not a day on.
+    for (const oldest of shownCalls) {
+      if (shownCalls.size <= SHOWN_CALLS_MAX) break;
+      shownCalls.delete(oldest);
+    }
+  }
+
+  /**
+   * Whether a value is being held in this Bot's browser, as far as this server knows — or a page
+   * in it showed a saved password to a run that has not ended.
+   */
   function holdsValues(botId: string): boolean {
-    return valueRuns.has(botId);
+    return valueRuns.has(botId) || shownRuns.has(botId);
+  }
+
+  /** Whether a picture offered for this call of this Bot's is one not to keep. */
+  function frameWithheld(botId: string, toolCallId?: string): boolean {
+    return (
+      holdsValues(botId) ||
+      (toolCallId !== undefined && shownCalls.has(callOf(botId, toolCallId)))
+    );
   }
 
   /** This Bot's browser was stopped or reset: its tabs are closed, and what was held went with them. */
   function valuesLetGo(botId: string): void {
     valueRuns.delete(botId);
+    shownRuns.delete(botId);
   }
 
   /** The computer said it holds a value this server has no note of: one from before a restart. */
@@ -212,6 +274,12 @@ export function createSecrets(deps: {
    * and is still noted here as holding it, so the next run to end tells it again.
    */
   async function runEnded(botId: string, threadId?: string): Promise<void> {
+    // What this run was only shown is this server's note alone: let go of here, and the computer
+    // is told nothing on its account (`shownRuns`).
+    const shown = shownRuns.get(botId);
+    if (shown?.delete(threadId ?? ANY_RUN) && shown.size === 0) {
+      shownRuns.delete(botId);
+    }
     const runs = valueRuns.get(botId);
     if (!runs) return;
     if (!runs.has(threadId ?? ANY_RUN) && !runs.has(ANY_RUN)) return;
@@ -795,6 +863,8 @@ export function createSecrets(deps: {
     requestSecret,
     supplySecret,
     holdsValues,
+    handedOver,
+    frameWithheld,
     valuesSeen,
     valuesLetGo,
     runEnded,

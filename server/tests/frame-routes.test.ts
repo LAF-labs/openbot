@@ -63,7 +63,7 @@ function routes(overrides: Partial<ChannelStore> = {}) {
 }
 
 /** The same routes, on a deployment whose computer may be holding a person's value for a Bot. */
-function routesWhere(holding: (botId: string) => boolean) {
+function routesWhere(holding: (botId: string, toolCallId: string) => boolean) {
   const { kept } = routes();
   const keeps: string[] = [];
   const store: ChannelStore = {
@@ -157,6 +157,30 @@ describe("keeping and reading it", () => {
         .status,
     ).toBe(204);
     expect(keeps).toEqual(["call-after"]);
+  });
+
+  /*
+   * AND BY THE CALL, WHEN THE RUN IS OVER. A page that showed a saved password is pictured by the
+   * window when its task ends, and the picture may arrive after the turn has — when no value is
+   * being held any more. The guard is asked about the call the picture is for.
+   */
+  test("a picture for a call that is not to be pictured is refused whenever it arrives, and the next call's is kept", async () => {
+    const asked: string[] = [];
+    const { app, keeps } = routesWhere((botId, toolCallId) => {
+      asked.push(`${botId}/${toolCallId}`);
+      return toolCallId === "call-shown";
+    });
+    const refused = await app.request(
+      "/mine/frames/call-shown",
+      put({ jpeg: JPEG }),
+    );
+    expect(refused.status).toBe(409);
+    expect(
+      (await app.request("/mine/frames/call-other", put({ jpeg: JPEG })))
+        .status,
+    ).toBe(204);
+    expect(asked).toEqual(["agent-1/call-shown", "agent-1/call-other"]);
+    expect(keeps).toEqual(["call-other"]);
   });
 
   test("a picture that is not one is refused before anything is looked up", async () => {

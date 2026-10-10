@@ -295,6 +295,40 @@ describe("a login a person saves", () => {
     expect(rows.length).toBe(written);
   });
 
+  /*
+   * WHAT A PAGE OF ITS SITE MAY BE SHOWING BACK (2026-10-10, record §6, "실행이 끝난 뒤에는 서버가 한 번 더
+   * 거른다"). The server reads what a browser tool hands a model for the passwords saved FOR THAT
+   * PAGE'S SITE (`logins/shown.ts`) — asked by address, so that a password is never looked for on
+   * a page of any other site, where hiding it would say what it is.
+   */
+  test("hands its password to the server's reading of a page of its own site — by origin, to its owner, and for no other address", async () => {
+    const written = rows.length;
+    const at = await vault.passwordsAt(owner, [
+      "https://nid.naver.com",
+      "https://nid.naver.com",
+      "https://sell.smartstore.naver.com",
+      // The same host without TLS, its parent, a look-alike, and no address at all.
+      "http://nid.naver.com",
+      "https://naver.com",
+      "https://nid.naver.com.evil.example",
+      "about:blank",
+    ]);
+    expect([...at.shown]).toEqual([
+      ["https://nid.naver.com", [PASSWORD]],
+      ["https://sell.smartstore.naver.com", [PASSWORD]],
+    ]);
+    expect(at.unreadable).toEqual([]);
+    // The password and not the name: a sign-in name is on every page of its site.
+    expect(JSON.stringify([...at.shown])).not.toContain(USERNAME);
+    // Nobody else's, and nothing where nothing is asked about.
+    expect(
+      (await vault.passwordsAt(other, ["https://nid.naver.com"])).shown.size,
+    ).toBe(0);
+    expect((await vault.passwordsAt(owner, [])).shown.size).toBe(0);
+    // A read: no row of the trail, and it is not a use.
+    expect(rows.length).toBe(written);
+  });
+
   test("gets a new key when a value changes, and keeps its key when only its name does", async () => {
     const [mine] = await vault.list(owner);
     if (!mine) throw new Error("the owner has no saved login");
@@ -704,6 +738,14 @@ describe("a login a person saves", () => {
     expect(
       await vault.open(other, sealedElsewhere).catch((error: unknown) => error),
     ).toBeInstanceOf(LoginSealError);
+    // Read for a page of its site, such a row hides nothing — and is named, not thrown: the
+    // page is still read for every login that does open.
+    const unread = await vault.passwordsAt(other, ["https://full.example"]);
+    expect([unread.shown.size, unread.unreadable.length]).toEqual([
+      0,
+      SAVED_LOGINS_MAX,
+    ]);
+    expect(unread.unreadable).toContain(sealedElsewhere);
 
     /*
      * AND IT CAN BE PUT RIGHT. A deployment whose key was changed holds rows it cannot open. One

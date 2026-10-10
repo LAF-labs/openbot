@@ -1152,8 +1152,9 @@ export function createApp({
         messageTimeReader,
         // Where the activity socket may be opened from. The same list every other check reads.
         config.trustedOrigins,
-        // No picture of a browser a person's value is being held in. See the route.
-        computerGateway?.holdsValues,
+        // No picture of a browser a person's value is being held in, nor of a call a page showed
+        // a saved password to. See the route.
+        computerGateway?.frameWithheld,
       ),
     );
   }

@@ -806,6 +806,127 @@ describe("a computer call, answered as the window answered it", () => {
   });
 });
 
+/*
+ * A SAVED PASSWORD A PAGE SHOWS BACK (2026-10-10, record §6). What the browser's tools hand a model
+ * is read once more on its way, for the passwords this person saved for the page's own site
+ * (`logins/shown.ts`). The values are made up for these tests.
+ */
+describe("what a browser tool hands over, read for a saved password", () => {
+  const SHOWN = "tr0ub4dor&3";
+  const said = toolResultText("laf:value_hidden");
+  const vault = (asked: string[][] = []) => ({
+    passwordsAt: async (userId: string, addresses: readonly string[]) => {
+      asked.push([userId, ...addresses]);
+      return {
+        shown: new Map(
+          addresses.includes("https://shop.example")
+            ? [["https://shop.example", [SHOWN]]]
+            : [],
+        ),
+        unreadable: [],
+      };
+    },
+  });
+  const reading = (text: string, url = "https://shop.example/my") => {
+    const told: Array<
+      [string, string | undefined, string | undefined, boolean]
+    > = [];
+    const gateway = {
+      read: async () => ({ title: "내 정보", url, text, truncated: false }),
+      listFiles: async () => ({
+        path: "",
+        entries: [{ name: `${SHOWN}.txt`, type: "file" }],
+      }),
+      handedOver: (
+        botId: string,
+        run: { threadId?: string; toolCallId?: string },
+        hidden: boolean,
+      ) => {
+        told.push([botId, run.threadId, run.toolCallId, hidden]);
+      },
+    } as unknown as ComputerGateway;
+    return { gateway, told };
+  };
+
+  test("the password is not in what the model reads, the mark is explained, and the gateway is told which call", async () => {
+    const asked: string[][] = [];
+    const { gateway, told } = reading(`비밀번호 확인: ${SHOWN}`);
+    const toolkit = await createChatTools({
+      gateway,
+      logins: vault(asked),
+      people: createPersonAnswers(),
+    })(context, [tool("computer_read")]);
+    const outcome = await toolkit.execute("computer_read", {}, call("read-1"));
+    expect(outcome).toEqual({
+      ok: true,
+      title: "내 정보",
+      url: "https://shop.example/my",
+      text: "비밀번호 확인: [•••]",
+      truncated: false,
+      notes: [said],
+    });
+    expect(JSON.stringify(outcome)).not.toContain(SHOWN);
+    // The owner's vault, asked about the page's own site.
+    expect(asked).toEqual([["owner-1", "https://shop.example"]]);
+    expect(told).toEqual([["bot-1", "thread-1", "read-1", true]]);
+  });
+
+  test("the same words on another site's page are that page's, and the call is still told on", async () => {
+    const { gateway, told } = reading(
+      `1. hunter2\n2. ${SHOWN}`,
+      "https://other.example/list",
+    );
+    const toolkit = await createChatTools({
+      gateway,
+      logins: vault(),
+      people: createPersonAnswers(),
+    })(context, [tool("computer_read")]);
+    expect(await toolkit.execute("computer_read", {}, call("read-2"))).toEqual({
+      ok: true,
+      title: "내 정보",
+      url: "https://other.example/list",
+      text: `1. hunter2\n2. ${SHOWN}`,
+      truncated: false,
+    });
+    expect(told).toEqual([["bot-1", "thread-1", "read-2", false]]);
+  });
+
+  test("a file's listing is no page: nothing is asked of the vault and nothing is changed", async () => {
+    const asked: string[][] = [];
+    const { gateway } = reading("");
+    const toolkit = await createChatTools({
+      gateway,
+      logins: vault(asked),
+      people: createPersonAnswers(),
+    })(context, [tool("computer_list_files")]);
+    expect(
+      await toolkit.execute("computer_list_files", {}, call("files-1")),
+    ).toEqual({
+      ok: true,
+      path: "",
+      entries: [{ name: `${SHOWN}.txt`, type: "file" }],
+    });
+    expect(asked).toEqual([]);
+  });
+
+  test("a vault that cannot be asked is a call that failed, never a page handed over unread", async () => {
+    const { gateway, told } = reading(`비밀번호 확인: ${SHOWN}`);
+    const toolkit = await createChatTools({
+      gateway,
+      logins: {
+        passwordsAt: async () => {
+          throw new Error("the database is away");
+        },
+      },
+      people: createPersonAnswers(),
+    })(context, [tool("computer_read")]);
+    const outcome = await toolkit.execute("computer_read", {}, call("read-3"));
+    expect((outcome as { ok: boolean }).ok).toBe(false);
+    expect(JSON.stringify(outcome)).not.toContain(SHOWN);
+    expect(told).toEqual([]);
+  });
+});
+
 describe("a wait on a person while the Bot is let go of", () => {
   const moved = {
     ...context,

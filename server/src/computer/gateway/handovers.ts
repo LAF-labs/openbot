@@ -23,7 +23,11 @@ export function createHandovers(deps: {
   auditStore: AuditStore;
   secrets: Pick<
     Secrets,
-    "forgetTypedInto" | "targetOf" | "valuesSeen" | "valuesLetGo"
+    | "forgetTypedInto"
+    | "targetOf"
+    | "valuesSeen"
+    | "valuesLetGo"
+    | "holdsValues"
   >;
 }) {
   const { client, as, auditStore, secrets } = deps;
@@ -73,9 +77,20 @@ export function createHandovers(deps: {
     },
 
     async control(botId: string) {
-      const state = await as(botId).control();
-      // What this server may have forgotten by starting again (`secrets.ts`, `valueRuns`).
-      if (state.valuesHeld) secrets.valuesSeen(botId);
+      const said = await as(botId).control();
+      // What this server may have forgotten by starting again (`secrets.ts`, `valueRuns`). Read
+      // off what the COMPUTER said: the line below adds this server's own note, and learning
+      // from that would turn a page that was only read into a value to be ended.
+      if (said.valuesHeld) secrets.valuesSeen(botId);
+      /*
+       * AND WHAT ONLY THIS SERVER KNOWS: a page showed a saved password to a run still going
+       * (`secrets.ts`, `shownRuns`). The computer put nothing in and holds nothing, so it does not
+       * say so — and the one reader of this field is the window deciding whether to take a
+       * picture (`app/src/lib/computer/last-frame.ts`), for which the two are the same fact.
+       */
+      const state: typeof said = secrets.holdsValues(botId)
+        ? { ...said, valuesHeld: true }
+        : said;
       // The open request's target, resolved when it was made. Attached only while the request is
       // open, so a stale entry cannot describe a box that is no longer asking.
       const into = secrets.targetOf(botId);

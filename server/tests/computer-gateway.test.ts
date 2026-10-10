@@ -2887,6 +2887,105 @@ describe("a run a person's value was put in for", () => {
     await gateway.runEnded("bot-1", "thread-a");
     expect(ends()).toBe(0);
   });
+
+  /*
+   * A PAGE THAT SHOWED A SAVED PASSWORD TO A RUN (2026-10-10, record §6, "실행이 끝난 뒤에는 서버가 한 번
+   * 더 거른다"). Nothing was put in, so the computer holds nothing and has no tab to close: the note
+   * is this server's alone. What it has to do is keep the page's picture from being kept — for the
+   * rest of the run, and for the run's calls afterwards, because the window offers a picture when a
+   * task is over and that may be after the turn is.
+   */
+  describe("and a run a page only showed a saved password to", () => {
+    const idle = {
+      holder: "bot",
+      since: "2026-10-10T00:00:00.000Z",
+      requested: false,
+    };
+    const at = (threadId: string, toolCallId: string) => ({
+      threadId,
+      toolCallId,
+    });
+
+    test("is pictured by nobody until it ends, and the computer is told nothing of its end", async () => {
+      const { gateway, stub, ends } = held(closes);
+      stub.control = async () => ({ ...idle });
+      gateway.handedOver("bot-1", at("thread-a", "call-1"), false);
+      expect(gateway.holdsValues("bot-1")).toBe(false);
+      expect((await gateway.control("bot-1")).valuesHeld).toBeUndefined();
+
+      gateway.handedOver("bot-1", at("thread-a", "call-2"), true);
+      expect(gateway.holdsValues("bot-1")).toBe(true);
+      // The window's keeper reads this and takes no picture (`last-frame.ts`).
+      expect((await gateway.control("bot-1")).valuesHeld).toBe(true);
+      expect(gateway.frameWithheld("bot-1", "any-call")).toBe(true);
+      // Another Bot's browser is another browser.
+      expect(gateway.holdsValues("bot-2")).toBe(false);
+
+      // Another conversation's end is not this run's.
+      await gateway.runEnded("bot-1", "thread-b");
+      expect(gateway.holdsValues("bot-1")).toBe(true);
+      await gateway.runEnded("bot-1", "thread-a");
+      expect([gateway.holdsValues("bot-1"), ends()]).toEqual([false, 0]);
+      expect((await gateway.control("bot-1")).valuesHeld).toBeUndefined();
+    });
+
+    test("leaves its calls refused a picture after it has ended — from the one it was hidden in on", async () => {
+      const { gateway } = held(closes);
+      gateway.handedOver("bot-1", at("thread-a", "call-before"), false);
+      gateway.handedOver("bot-1", at("thread-a", "call-hit"), true);
+      // A scroll: no words handed over, the same page on screen.
+      gateway.handedOver("bot-1", at("thread-a", "call-after"), false);
+      await gateway.runEnded("bot-1", "thread-a");
+
+      expect(gateway.holdsValues("bot-1")).toBe(false);
+      expect(gateway.frameWithheld("bot-1", "call-hit")).toBe(true);
+      expect(gateway.frameWithheld("bot-1", "call-after")).toBe(true);
+      // Before the page showed anything, and a call of the next run's, are not that page's.
+      expect(gateway.frameWithheld("bot-1", "call-before")).toBe(false);
+      gateway.handedOver("bot-1", at("thread-a", "call-next-run"), false);
+      expect(gateway.frameWithheld("bot-1", "call-next-run")).toBe(false);
+      // By Bot: the same call id under another Bot is another call.
+      expect(gateway.frameWithheld("bot-2", "call-hit")).toBe(false);
+    });
+
+    test("does not end a run a value was put in for, and is not ended by one", async () => {
+      const { gateway, supplyIn, ends } = held(closes);
+      await supplyIn("thread-fill");
+      gateway.handedOver("bot-1", at("thread-read", "call-1"), true);
+
+      // The reading run ends: the tab the other run filled is not closed for it.
+      await gateway.runEnded("bot-1", "thread-read");
+      expect([gateway.holdsValues("bot-1"), ends()]).toEqual([true, 0]);
+
+      gateway.handedOver("bot-1", at("thread-read", "call-2"), true);
+      await gateway.runEnded("bot-1", "thread-fill");
+      // The fill's end reached the computer once; what the other run was shown is still noted.
+      expect([gateway.holdsValues("bot-1"), ends()]).toEqual([true, 1]);
+      await gateway.runEnded("bot-1", "thread-read");
+      expect([gateway.holdsValues("bot-1"), ends()]).toEqual([false, 1]);
+    });
+
+    test("is not taken for a value by a control state read while it lasts", async () => {
+      const { gateway, stub, ends } = held(closes);
+      stub.control = async () => ({ ...idle });
+      gateway.handedOver("bot-1", at("thread-a", "call-1"), true);
+      // A window polls this once a second; the field it is handed is this server's own note, and
+      // learning from that would leave a value to be ended that no computer holds.
+      await gateway.control("bot-1");
+      await gateway.control("bot-1");
+      await gateway.runEnded("bot-1", "thread-a");
+      expect([gateway.holdsValues("bot-1"), ends()]).toEqual([false, 0]);
+    });
+
+    test("is let go of with the browser", async () => {
+      const { gateway } = held(closes);
+      gateway.handedOver("bot-1", at("thread-a", "call-1"), true);
+      await gateway.stopComputer("bot-1", "bot-1", ACTOR);
+      expect(gateway.holdsValues("bot-1")).toBe(false);
+      // The picture taken before the stop is still that page's.
+      expect(gateway.frameWithheld("bot-1", "call-1")).toBe(true);
+    });
+  });
 });
 
 describe("an answer bound to the control it was given for", () => {

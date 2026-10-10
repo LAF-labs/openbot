@@ -29,7 +29,10 @@ import {
   noteTexts,
   toolResultText,
 } from "../../../shared/prompt/tool-results.ko";
-import { UNATTENDED_COMPUTER_TOOLS } from "../../../shared/tools/computer";
+import {
+  computerTool,
+  UNATTENDED_COMPUTER_TOOLS,
+} from "../../../shared/tools/computer";
 import {
   type WithheldTools,
   withheldToolsForwarded,
@@ -43,6 +46,8 @@ import {
 } from "../computer/gateway";
 import { BOTS_OWN_LOOK, readFileInputOf } from "../computer/schema";
 import { snapshotForModel } from "../computer/snapshot-lines";
+import { createShownGuard } from "../logins/shown";
+import type { LoginVault } from "../logins/store";
 import {
   PluginNeedsApprovalError,
   PluginRefusedError,
@@ -354,6 +359,11 @@ export type UnattendedToolsOptions = {
    * waits for review is listed without a word its vendor wrote (`OfferedPlugins`, `store.ts`).
    */
   pluginStore?: Pick<PluginStore, "offeredToModel" | "callTool" | "viewSkill">;
+  /**
+   * The person's saved logins, for taking a saved password out of what the browser's tools hand
+   * a model (`logins/shown.ts`). Absent where there is no vault.
+   */
+  logins?: Pick<LoginVault, "passwordsAt">;
 };
 
 /**
@@ -363,6 +373,15 @@ export type UnattendedToolsOptions = {
  * plugin granted a moment ago applies to the next run, and one revoked mid-week stops.
  */
 export function createUnattendedTools(options: UnattendedToolsOptions) {
+  /*
+   * NOBODY IS TOLD WHICH CALLS THESE WERE (`seen`), because nobody keeps a picture of them: a
+   * picture is filed on a conversation's call by the window watching it, and this run is in no
+   * conversation. Telling the gateway would also need this run's end to take the note back, and
+   * a routine's end is not passed on to it yet (`docs/laf/redesign-2026-10.md` §6, 2-6).
+   */
+  const withoutSavedPasswords = createShownGuard({
+    ...(options.logins ? { logins: options.logins } : {}),
+  });
   return async (
     botId: string,
     actor: ActionActor,
@@ -403,7 +422,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
         : []),
     ];
 
-    const execute: ToolExecutor = async (name, args, call) => {
+    const act: ToolExecutor = async (name, args, call) => {
       // An answer already given, carried into the call it was given for. Undefined on a first try.
       const approvalId = call?.approvalId;
       try {
@@ -655,6 +674,30 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
           default:
             return unknownTool();
         }
+      } catch (error) {
+        return outcomeOfError(error);
+      }
+    };
+
+    /*
+     * WHAT THE BROWSER'S TOOLS HAND OVER IS READ ONCE MORE, for a password this person saved and
+     * a page is showing back (`logins/shown.ts`) — as a conversation's turn reads it
+     * (`turns/chat-tools.ts`). An outcome the vault could not be asked about is a call that
+     * failed, never one handed over unread.
+     */
+    const execute: ToolExecutor = async (name, args, call) => {
+      const outcome = await act(name, args, call);
+      if (!computerTool(name)) return outcome;
+      try {
+        return await withoutSavedPasswords(
+          {
+            userId: actor.id,
+            botId,
+            ...(actor.threadId ? { threadId: actor.threadId } : {}),
+            ...(call?.id ? { toolCallId: call.id } : {}),
+          },
+          outcome,
+        );
       } catch (error) {
         return outcomeOfError(error);
       }
