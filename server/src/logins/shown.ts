@@ -122,9 +122,19 @@ export function withoutShown<T>(
 /** Said on an outcome something was hidden in, so the mark is not taken for the page's own. */
 const SAID = toolResultText("laf:value_hidden");
 
-/** The outcome, saying that something in it was hidden — once, whoever hid it. */
+/**
+ * The outcome, saying that something in it was hidden — once, whoever hid it.
+ *
+ * Beside what it already says, in whichever shape that is: most outcomes carry a list of
+ * sentences, and one that hands a Bot over to a person carries a single sentence, which is kept.
+ */
 function saying<T extends Record<string, unknown>>(outcome: T): T {
-  const notes = Array.isArray(outcome.notes) ? outcome.notes : [];
+  const said = outcome.notes;
+  const notes = Array.isArray(said)
+    ? said
+    : typeof said === "string" && said
+      ? [said]
+      : [];
   return notes.includes(SAID)
     ? outcome
     : { ...outcome, notes: [...notes, SAID] };
