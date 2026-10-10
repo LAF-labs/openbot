@@ -69,7 +69,8 @@ this repository: DNS, the cloud's ingress rules, and the host's own firewall.
 ## Tech
 
 Bun everywhere. Postgres 17 (plain `postgres:17` since migration 0024 dropped the one
-unread `vector` column and the extension with it). Hono (server), React 19 + Vite (app),
+unread `vector` column and the extension with it; 0065 adds `pg_trgm`, which that image
+ships, for searching conversations). Hono (server), React 19 + Vite (app),
 Drizzle, Tailwind 4, Biome, TanStack Router/Query, CopilotKit runtime v2 /
 AG-UI, Playwright (the Bot's browser).
 

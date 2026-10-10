@@ -152,7 +152,15 @@ test("redirects the www name to the apex rather than serving it", () => {
  * and the chain stops on its first statement — so switching the image without also taking that line
  * out would have left every fresh database, CI's included, unable to migrate at all. This is the
  * assertion that the two stay in step: no migration may require an extension the image lacks.
+ *
+ * WHAT THE IMAGE SHIPS IS A LIST, NOT "NONE" (2026-10-10). It read "no migration creates an
+ * extension at all" until the search of conversations needed `pg_trgm` (0065) — which is in the
+ * plain image, as every contrib module is, and trusted, so the database's owner may create it.
+ * A name is added here only after `CREATE EXTENSION` of it has been run on that image; the
+ * upgrade rehearsal is what runs the whole chain on one.
  */
+const SHIPPED_WITH_THE_IMAGE = ["pg_trgm"];
+
 test("needs no Postgres extension the image does not ship", () => {
   const migrations = readdirSync(
     join(import.meta.dir, "..", "server", "drizzle"),
@@ -167,7 +175,18 @@ test("needs no Postgres extension the image does not ship", () => {
 
   expect(migrations.length).toBeGreaterThan(0);
   for (const migration of migrations) {
-    expect(migration).not.toMatch(/^\s*CREATE EXTENSION/im);
+    const created = [
+      ...migration.matchAll(
+        /^\s*CREATE EXTENSION\s+(?:IF NOT EXISTS\s+)?"?([\w-]+)"?/gim,
+      ),
+    ].map((found) => found[1]);
+    // Every `CREATE EXTENSION` is one this reads the name of: none is written another way.
+    expect(created.length).toBe(
+      [...migration.matchAll(/^\s*CREATE EXTENSION/gim)].length,
+    );
+    for (const name of created) {
+      expect(SHIPPED_WITH_THE_IMAGE).toContain(name as string);
+    }
   }
 });
 

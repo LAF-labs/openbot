@@ -142,6 +142,7 @@ import { createStopAll } from "./runner/stop-all";
 import { messagesFor } from "./runner/thread-store";
 import { createUnattendedTools } from "./runner/unattended";
 import { createWorkingReader } from "./runner/working";
+import { createConversationSearch } from "./search/conversations";
 import { createServerModelCalls } from "./server-model-calls";
 import { createAnswerRatingStore } from "./support/answer-ratings";
 import { createDiagnosticsSource } from "./support/diagnostics";
@@ -1167,6 +1168,7 @@ const app = createApp({
     }),
   // 만든 것: the cards and tables a Bot made, read out of its conversation.
   readMade: createMadeReader({ database }),
+  searchConversations: createConversationSearch({ database }),
   // 소식: the posts a feed routine wrote, and the person's presses on them.
   feed: feedStore,
   // 목표: the goals the person set, and their timelines.

@@ -2787,6 +2787,15 @@ export const ko: Record<string, string> = {
     "며칠씩 이어지는 일은 여기서 따로 대화해요.",
   "There are as many projects as there can be.":
     "프로젝트를 더 만들 수 없어요.",
+  // 검색, every conversation at once (piece 4-3).
+  Search: "검색",
+  "Search every conversation": "모든 대화에서 찾기",
+  "No message has those words.": "그 말이 들어간 메시지가 없어요.",
+  "The conversations could not be searched.": "대화를 검색하지 못했어요.",
+  "This deployment cannot search conversations.":
+    "여기서는 대화를 검색할 수 없어요.",
+  "You said": "내가 한 말",
+  "Your Bot said": "봇이 한 말",
   // 홈, the panel at the left of the window (piece 3-2).
   Home: "홈",
   "Fold Home": "홈 접기",

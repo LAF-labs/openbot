@@ -107,6 +107,10 @@ import {
 import { createRoutineSuggestionRoutes } from "./routines/suggestions-routes";
 import type { StopAll } from "./runner/stop-all";
 import { createStopAllRoutes } from "./runner/stop-all-routes";
+import {
+  type ConversationSearch,
+  createSearchRoutes,
+} from "./search/conversations";
 import { createSupportRoutes, type SupportService } from "./support/routes";
 import type { PackageStatusReader } from "./tenant-package";
 import type { DailyBudget } from "./usage/daily-budget";
@@ -424,6 +428,13 @@ export type CreateAppOptions = {
    */
   readMade?: MadeReader;
   /**
+   * 통합검색: what was said, in every conversation a person has (search/conversations.ts).
+   *
+   * Absent leaves `POST /api/search` unmounted — the screen then says it could not search, rather
+   * than answering "nothing found" for words that are there.
+   */
+  searchConversations?: ConversationSearch;
+  /**
    * 소식: the posts a feed routine wrote (feed/).
    *
    * Absent leaves `/api/feed` unmounted — the page then says it could not read 소식, rather than
@@ -489,6 +500,7 @@ export function createApp({
   attachments,
   turnRoutes,
   readMade,
+  searchConversations,
   feed,
   goals,
   logins,
@@ -1060,6 +1072,13 @@ export function createApp({
 
   if (feed) {
     app.route("/api/feed", createFeedRoutes(feed, requireUser));
+  }
+
+  if (searchConversations) {
+    app.route(
+      "/api/search",
+      createSearchRoutes(searchConversations, requireUser),
+    );
   }
 
   if (agentProfileStore) {
