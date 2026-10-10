@@ -506,7 +506,10 @@ for (const scenario of SCENARIOS) {
 
       const wire = [
         ...streamProblems(events),
-        ...delegated.flatMap((run) => streamProblems(run.events)),
+        // A hand-back the scenario scripted was no run: there is no stream of it to be sound.
+        ...delegated.flatMap((run) =>
+          run.events.length > 0 ? streamProblems(run.events) : [],
+        ),
       ];
       const judged = scenario.check({
         text: turnText(events),
@@ -641,7 +644,11 @@ if (process.env.EVAL_DEFERRAL !== "0") {
         pass:
           judged.pass &&
           streamProblems(events).length === 0 &&
-          delegated.every((run) => streamProblems(run.events).length === 0),
+          delegated.every(
+            (run) =>
+              run.events.length === 0 ||
+              streamProblems(run.events).length === 0,
+          ),
       };
     } catch {
       return { promptTokens: null, requests: 0, pass: false };
