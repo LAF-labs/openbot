@@ -2639,6 +2639,19 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * the message and the list on the way back; Enter; no hits as one line; older hits; a failure
  * said; three answers that are no page; several Bots; and the refusals' sentences.
  *
+ * RAISED 2026-10-10 FOR A PROJECT DELETED, `server` from 4071 to 4084 and `app` from 2245 to 2251
+ * (record §3, piece 4-5, migration 0066). Twelve in the new
+ * `conversation-deleting.integration.test.ts`: every row that names a project goes and nothing of
+ * the main conversation or another project does; the main conversation refused; a stranger told
+ * it is not there; the order (mark, wait for the writes in flight, stop the turn, delete); a
+ * write that never returns; a deletion finished at boot; a marked project out of the list, the
+ * read and the search; every write door refusing behind the one gate while the deleting door
+ * goes on answering; a write in a door when the mark is set waited for; the conversations a path
+ * names; and the two lists — the catalogue's columns against the deletion's, and the server's
+ * write routes against the two names the gate reads. One in `turn-engine.integration.test.ts`
+ * (one conversation's turn stopped and waited for). Six in `projects.test.tsx`: the delete beside
+ * each name, and the request — its door, already gone as success, three refusals as sentences.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2667,8 +2680,8 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4071, roots: ["server"] },
-  { name: "app", floor: 2245, roots: ["app"] },
+  { name: "server", floor: 4084, roots: ["server"] },
+  { name: "app", floor: 2251, roots: ["app"] },
   {
     name: "agent-computer",
     floor: 537,

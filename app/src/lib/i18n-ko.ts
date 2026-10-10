@@ -1234,6 +1234,7 @@ export const ko: Record<string, string> = {
   // 감사 기록의 두 줄 — 내보내기와 계정 삭제.
   "A person took a copy of their data": "사람이 자기 데이터를 내려받음",
   "An account was deleted": "계정이 삭제됨",
+  "A person deleted a project": "프로젝트를 지움",
   "A person saved a login for their Bot": "사람이 봇에게 맡길 로그인을 저장함",
   "A person changed a saved login": "사람이 저장한 로그인을 고침",
   "A person deleted a saved login": "사람이 저장한 로그인을 지움",
@@ -1844,6 +1845,7 @@ export const ko: Record<string, string> = {
   "A component": "컴포넌트",
   "A component's data": "컴포넌트 데이터",
   "An account": "계정",
+  "A project": "프로젝트",
   "A saved login": "저장한 로그인",
   "The fleet": "플릿",
   // 봇이 답을 멈춘 줄
@@ -2532,8 +2534,6 @@ export const ko: Record<string, string> = {
   "Your Bots": "내 봇들",
   "Your Bot could not be loaded.": "봇을 불러오지 못했어요.",
   "Delete this Bot": "이 봇 삭제",
-  "This conversation is no longer here. Conversations with several Bots were removed, along with everything said in them.":
-    "이 대화는 이제 없어요. 여러 봇이 함께하던 대화는 정리되면서 그 안의 내용도 함께 지워졌어요.",
   "Go to your Bot": "내 봇과 대화하기",
   "You already have your Bot. Change its name on its profile instead.":
     "이미 봇이 있어요. 봇은 하나만 둘 수 있어요 — 이름은 봇 프로필에서 바꿀 수 있어요.",
@@ -2787,6 +2787,15 @@ export const ko: Record<string, string> = {
     "며칠씩 이어지는 일은 여기서 따로 대화해요.",
   "There are as many projects as there can be.":
     "프로젝트를 더 만들 수 없어요.",
+  // Deleting a project (piece 4-5).
+  "Delete “{title}”": "‘{title}’ 지우기",
+  "Delete the project “{title}”?": "‘{title}’ 프로젝트를 지울까요?",
+  "The project and everything said in it go. What your Bot learned there stays.":
+    "프로젝트와 그 안에서 나눈 대화가 모두 지워져요. 봇이 거기서 기억한 것은 남아요.",
+  "Could not delete the project. Try again.":
+    "프로젝트를 지우지 못했어요. 다시 시도해 주세요.",
+  "Only a project can be deleted here.": "여기서는 프로젝트만 지울 수 있어요.",
+  "That project is being deleted.": "그 프로젝트는 지우는 중이에요.",
   // 검색, every conversation at once (piece 4-3).
   Search: "검색",
   "Search every conversation": "모든 대화에서 찾기",

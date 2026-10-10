@@ -356,3 +356,121 @@ describe("채팅 | 프로젝트, in the top row", () => {
     expect(switched(mainOnly).map((one) => one.marked)).toEqual([false, false]);
   });
 });
+
+describe("deleting a project", () => {
+  test("each project has its own delete, beside its name and named for it — never inside the link that opens it", async () => {
+    const view = await mountApp({
+      path: "/projects",
+      api: account([
+        channel("p-2", "project", { name: "가을 메뉴" }),
+        channel("p-1", "project", { name: "" }),
+      ]),
+    });
+    await view.waitFor(() => names(view).length === 2, "the projects");
+    const buttons = [
+      ...view.host.querySelectorAll<HTMLButtonElement>("[data-project-delete]"),
+    ];
+    expect(
+      buttons.map((button) => [
+        button.dataset.projectDelete,
+        button.getAttribute("aria-label"),
+      ]),
+    ).toEqual([
+      ["p-2", "Delete “가을 메뉴”"],
+      ["p-1", "Delete “Untitled project”"],
+    ]);
+    expect(view.host.querySelectorAll("a [data-project-delete]").length).toBe(
+      0,
+    );
+    /*
+     * The question it opens is `ConfirmDialog`'s, held by its own file in a process of its own
+     * (`confirm-dialog.test.tsx`): a Base UI popup opened in this shared process decides its
+     * animation support before this file's DOM exists. Pressed in the running app instead.
+     */
+    expect([
+      ko["Delete “{title}”"],
+      ko["Delete the project “{title}”?"],
+    ]).toEqual(["‘{title}’ 지우기", "‘{title}’ 프로젝트를 지울까요?"]);
+    expect(
+      ko[
+        "The project and everything said in it go. What your Bot learned there stays."
+      ],
+    ).toBeString();
+  });
+
+  describe("the request", () => {
+    const realFetch = globalThis.fetch;
+    afterEach(() => {
+      globalThis.fetch = realFetch;
+    });
+    const answering = (status: number, body: unknown) => {
+      const asked: Array<[string, string]> = [];
+      globalThis.fetch = (async (
+        input: RequestInfo | URL,
+        init?: RequestInit,
+      ) => {
+        asked.push([init?.method ?? "GET", String(input)]);
+        return new Response(JSON.stringify(body), {
+          headers: { "content-type": "application/json" },
+          status,
+        });
+      }) as typeof fetch;
+      return asked;
+    };
+    const client = async () => {
+      const { QueryClient } = await import("@tanstack/react-query");
+      const { channelKeys } = await import("../src/lib/channels/queries");
+      const queryClient = new QueryClient();
+      queryClient.setQueryData(
+        channelKeys.detail("p 1"),
+        channel("p 1", "project"),
+      );
+      queryClient.setQueryData(channelKeys.list(), [channel("p 1", "project")]);
+      return { channelKeys, queryClient };
+    };
+
+    test("asks the project's own door, and afterwards the conversation is out of what is held and the list is read again", async () => {
+      const { deleteProject } = await import("../src/lib/channels/mutations");
+      const asked = answering(200, { deleted: true });
+      const { channelKeys, queryClient } = await client();
+      await deleteProject(queryClient, "p 1");
+      expect(asked).toEqual([["DELETE", "/api/channels/projects/p%201"]]);
+      expect(
+        queryClient.getQueryData(channelKeys.detail("p 1")),
+      ).toBeUndefined();
+      expect(queryClient.getQueryState(channelKeys.list())?.isInvalidated).toBe(
+        true,
+      );
+    });
+
+    test("one that is already gone is the same success: another window got there first", async () => {
+      const { deleteProject } = await import("../src/lib/channels/mutations");
+      answering(404, { code: "laf:channel_not_found" });
+      const { channelKeys, queryClient } = await client();
+      await deleteProject(queryClient, "p 1");
+      expect(
+        queryClient.getQueryData(channelKeys.detail("p 1")),
+      ).toBeUndefined();
+    });
+
+    test.each([
+      [409, "laf:project_only", "Only a project can be deleted here."],
+      [409, "laf:project_deleting", "That project is being deleted."],
+      [500, "laf:internal", "Could not delete the project. Try again."],
+    ])(
+      "a refusal (%i %s) is a sentence, and what is held stays",
+      async (status, code, sentence) => {
+        const { deleteProject } = await import("../src/lib/channels/mutations");
+        answering(status, { code, error: code });
+        const { channelKeys, queryClient } = await client();
+        await expect(deleteProject(queryClient, "p 1")).rejects.toThrow(
+          sentence,
+        );
+        expect(
+          queryClient.getQueryData(channelKeys.detail("p 1")),
+        ).toBeDefined();
+        expect(ko[sentence as keyof typeof ko]).toBeString();
+      },
+    );
+  });
+});

@@ -20,8 +20,10 @@ export const CHANNEL_REFUSALS: Record<string, string> = {
   "laf:channel_not_found": "That conversation is no longer there.",
   "laf:agent_not_found": "That Bot is no longer there.",
   "laf:project_name_invalid": "That could not be read. Try again.",
-  // No "remove one" in it: a project cannot be removed until piece 4-5.
   "laf:project_limit": "There are as many projects as there can be.",
+  // Deleting one (piece 4-5). The main conversation is the Bot's and is not deleted from a list.
+  "laf:project_only": "Only a project can be deleted here.",
+  "laf:project_deleting": "That project is being deleted.",
 };
 
 function channelRefusal(code: string | undefined): string {
@@ -89,6 +91,35 @@ export function createProjectMutationOptions(queryClient: QueryClient) {
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: channelKeys.all }),
   });
+}
+
+/**
+ * Delete a project: its conversation and everything that named it (`server/src/channels/
+ * deleting.ts`). The server marks it, waits for what was writing into it, stops its turn and then
+ * removes it, so this answers only once it is gone — and "it is not there" is the same success,
+ * since another window may have got there first.
+ */
+export async function deleteProject(
+  queryClient: QueryClient,
+  channelId: string,
+): Promise<void> {
+  const response = await fetch(
+    `/api/channels/projects/${encodeURIComponent(channelId)}`,
+    { credentials: "include", method: "DELETE" },
+  );
+  if (!response.ok && response.status !== 404) {
+    const code = await response
+      .json()
+      .then((body: { code?: string }) => body.code)
+      .catch(() => undefined);
+    const known = own(CHANNEL_REFUSALS, code);
+    throw new Error(
+      known ? t(known) : t("Could not delete the project. Try again."),
+    );
+  }
+  // Out of what is on screen at once, and out of what a conversation opened by its id would read.
+  queryClient.removeQueries({ queryKey: channelKeys.detail(channelId) });
+  await queryClient.invalidateQueries({ queryKey: channelKeys.all });
 }
 
 /**

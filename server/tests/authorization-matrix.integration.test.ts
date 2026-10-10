@@ -58,6 +58,11 @@ import type { AuthService } from "../src/auth/guards";
 import { createRoleRepository, lookupBotOwner } from "../src/auth/guards";
 import { createOnboardingStore } from "../src/auth/onboarding";
 import {
+  createConversationWrites,
+  createProjectDeletion,
+  refuseWhileDeleting,
+} from "../src/channels/deleting";
+import {
   createSessionRevocation,
   SESSION_REVOKED,
 } from "../src/auth/session-revocation";
@@ -99,6 +104,7 @@ import { createPartnerRuntime } from "../src/plugins/partners";
 import { createPluginStore } from "../src/plugins/store";
 import { createRoutineService } from "../src/routines/service";
 import { createSuggestionDismissalStore } from "../src/routines/suggestions";
+import { createConversationSearch } from "../src/search/conversations";
 import { createMessageTimeReader } from "../src/runner/message-times";
 import { createWorkingReader } from "../src/runner/working";
 import { createAnswerRatingStore } from "../src/support/answer-ratings";
@@ -297,6 +303,7 @@ function deployment() {
     resolveAgents: async () => ({ [BOT_A]: instantBot }),
   });
 
+  const conversationWrites = createConversationWrites();
   const app = createApp({
     config,
     auth,
@@ -357,6 +364,14 @@ function deployment() {
     // No `dailyBudget` … `turnRoutes`: not what this matrix is about, and absent leaves them unmounted.
     // 만든 것: mounted, so its one door is pressed by every person below.
     readMade: createMadeReader({ database }),
+    // 검색 and deleting a project (2026-10-10): mounted, so their doors are pressed by everybody.
+    searchConversations: createConversationSearch({ database }),
+    projectDeletion: createProjectDeletion({
+      database,
+      stopThread: async () => {},
+      writes: conversationWrites,
+    }),
+    conversationGate: refuseWhileDeleting(database, conversationWrites),
     // 소식: the posts and the person's three presses on them.
     feed: createFeedStore({ database }),
     // 목표: the person's goals and their presses on them.

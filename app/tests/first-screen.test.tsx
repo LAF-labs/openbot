@@ -512,7 +512,7 @@ describe("a room from before", () => {
    * it, so its old address answers 404 now. The screen used to say nothing in one was deleted, which
    * stopped being true that day; it says what happened and offers the way back to the Bot.
    */
-  test("says group conversations were removed with what was said in them, and leads to the Bot", async () => {
+  test("says the conversation is no longer there — not that it failed to load — and leads to the Bot", async () => {
     let asked = 0;
     const view = await mountApp({
       path: "/channel/room-1",
@@ -529,8 +529,7 @@ describe("a room from before", () => {
         return undefined;
       },
     });
-    const sentence =
-      "This conversation is no longer here. Conversations with several Bots were removed, along with everything said in them.";
+    const sentence = "This conversation is no longer here.";
     await view.waitFor(
       () => view.host.textContent?.includes(sentence) === true,
       "the sentence",
@@ -543,7 +542,9 @@ describe("a room from before", () => {
     // either — a retry would hold "Loading…" on the screen for a second first.
     await new Promise((resolve) => setTimeout(resolve, 1200));
     expect(asked).toBeLessThanOrEqual(2);
-    expect(ko[sentence]).toContain("지워졌어요");
+    // One sentence for every conversation that is gone — a room then, a deleted project now
+    // (2026-10-10): it does not explain rooms to somebody who has just deleted a project.
+    expect(ko[sentence]).toBe("이 대화는 이제 없어요.");
     expect(ko[sentence]).not.toContain("지워지지 않고");
     expect(ko["Go to your Bot"]).toBe("내 봇과 대화하기");
   });

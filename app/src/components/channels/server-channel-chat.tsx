@@ -53,6 +53,7 @@ import {
 import {
   type AgentChannel,
   channelFailuresQueryOptions,
+  channelKeys,
   messageTimesQueryOptions,
 } from "@/lib/channels/queries";
 import { retryWay, standingFailures } from "@/lib/channels/retry";
@@ -110,6 +111,15 @@ import { deviceClock } from "@/lib/whereabouts/queries";
  * but a grant endpoint that never answers must not hold a message forever.
  */
 const SEND_WITHOUT_GRANTS_AFTER_MS = 5000;
+
+/**
+ * What a send is refused with when its conversation is not there to send into: a project being
+ * deleted (`server/src/channels/deleting.ts`), or one already gone (`server/src/turns/routes.ts`).
+ */
+const CONVERSATION_GONE: ReadonlySet<string> = new Set([
+  "laf:project_deleting",
+  "laf:thread_not_found",
+]);
 
 /** Frozen and shared, so "no times yet" is one identity rather than a new object per render. */
 const EMPTY_TIMES: Readonly<Record<string, string>> = Object.freeze({});
@@ -459,6 +469,15 @@ export function ServerChannelChat({
         outgoing.map((message) => message.id),
       );
       return;
+    }
+    /*
+     * THE CONVERSATION ITSELF IS GONE, OR GOING: a project deleted from another window (piece
+     * 4-5). This window still holds what it read before, and would go on offering a box to type
+     * into. Asked for again, the conversation answers that it is not there, and the screen says
+     * so in place of the transcript (`channelQueryOptions`); the list loses its row.
+     */
+    if (sent.reached && CONVERSATION_GONE.has(sent.code)) {
+      void queryClient.invalidateQueries({ queryKey: channelKeys.all });
     }
     if (retrying) {
       setSendFailure(

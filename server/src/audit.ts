@@ -459,6 +459,12 @@ export const auditEventTypes = [
   "account.exported",
   "account.deleted",
   /**
+   * A person deleted a project — a conversation beside their Bot's main one, and every row that
+   * named it (`channels/deleting.ts`). The row carries the counts per table and whether boot had
+   * to finish it; never the project's name, which was the person's own words.
+   */
+  "project.deleted",
+  /**
    * A login a person saved for their Bot's browser, changed, or deleted (`logins/store.ts`,
    * 2026-10-10). The row's target is the login, by its own id, and its payload is the site and
    * the origins it may be put on — and, for a change, whether its values were replaced. NEVER A

@@ -1,0 +1,1 @@
+ALTER TABLE "channels" ADD COLUMN "deleting_at" timestamp with time zone;

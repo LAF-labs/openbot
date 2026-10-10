@@ -13,6 +13,7 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AppVariables } from "../auth/guards";
 import { createConversationRoutes } from "./conversation-routes";
+import type { ProjectDeletion } from "./deleting";
 import type { ChannelEventHub } from "./events";
 import { createEventRoutes } from "./events-routes";
 import { createRosterRoutes } from "./roster-routes";
@@ -42,6 +43,8 @@ export type ChannelRefusal =
   | "laf:channel_one_bot"
   | "laf:project_name_invalid"
   | "laf:project_limit"
+  | "laf:project_only"
+  | "laf:project_deleting"
   | "laf:activity_invalid"
   | "laf:activity_text_required"
   | "laf:activity_too_long"
@@ -81,6 +84,8 @@ export function createChannelRoutes(
    * and then no picture is refused for it.
    */
   framesWithheld?: (botId: string, toolCallId: string) => boolean,
+  /** Deleting a project (`deleting.ts`). Absent, the door is not mounted. */
+  projectDeletion?: ProjectDeletion,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
 
@@ -107,7 +112,10 @@ export function createChannelRoutes(
       framesWithheld,
     ),
   );
-  routes.route("/", createConversationRoutes(store, requireUser));
+  routes.route(
+    "/",
+    createConversationRoutes(store, requireUser, projectDeletion),
+  );
 
   return routes;
 }

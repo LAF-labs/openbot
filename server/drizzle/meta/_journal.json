@@ -463,6 +463,13 @@
       "when": 1791626638667,
       "tag": "0065_message_search",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1791629468019,
+      "tag": "0066_project_deleting",
+      "breakpoints": true
     }
   ]
 }
