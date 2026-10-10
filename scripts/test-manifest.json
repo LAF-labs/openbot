@@ -199,6 +199,7 @@
   "app/tests/presence.test.ts",
   "app/tests/press.test.ts",
   "app/tests/profile-menu.test.tsx",
+  "app/tests/projects.test.tsx",
   "app/tests/profile-words.test.ts",
   "app/tests/query-client.test.ts",
   "app/tests/question-not-asked.test.ts",

@@ -71,6 +71,7 @@ import { ConversationProvider } from "@/lib/copilot/conversation";
 import { holdChat } from "@/lib/copilot/held-chats";
 import { taskStopOf } from "@/lib/copilot/stranded-steps";
 import { useToolsSettled } from "@/lib/copilot/tools-settled";
+import { isProject } from "@/lib/channels/projects";
 import { t } from "@/lib/i18n";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
 import type { ReadLine } from "@/lib/read-line";
@@ -1443,7 +1444,14 @@ export function ServerChannelChat({
                  * place (pressed 2026-10-02). A first message carried over from the compose screen
                  * is a conversation that starts here, and has its greeting at once.
                  */}
-                {thread.loaded || seed ? (
+                {/*
+                 * AND NOT IN A PROJECT (2026-10-10, pressed: a project made a minute ago opened on
+                 * "안녕하세요, 저는 새벽이에요", how the Bot works, and "어떤 분이세요?" with its four
+                 * buttons). The greeting is the Bot meeting its person, once, at the top of their
+                 * main conversation. A project is the same Bot a person already knows, asked for
+                 * by name; it starts empty.
+                 */}
+                {(thread.loaded || seed) && !isProject(channel) ? (
                   <Greeting agentId={runtimeAgentId} mode="head" />
                 ) : null}
               </>

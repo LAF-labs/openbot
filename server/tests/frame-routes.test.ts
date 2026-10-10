@@ -42,6 +42,7 @@ function routes(overrides: Partial<ChannelStore> = {}) {
   const kept = new Map<string, string>();
   const store: ChannelStore = {
     create: async () => channel("c"),
+    createProject: async () => ({ ...channel("p"), kind: "project" }),
     get: async (_actor, id) => (id === "mine" ? channel(id) : null),
     list: async () => [],
     setLastRead: async (_actor, _id, at) => ({ previous: null, at }),
@@ -69,6 +70,7 @@ function routesWhere(holding: (botId: string, toolCallId: string) => boolean) {
   const keeps: string[] = [];
   const store: ChannelStore = {
     create: async () => channel("c"),
+    createProject: async () => ({ ...channel("p"), kind: "project" }),
     get: async (_actor, id) => (id === "mine" ? channel(id) : null),
     list: async () => [],
     setLastRead: async (_actor, _id, at) => ({ previous: null, at }),
@@ -257,6 +259,7 @@ describe("keeping and reading it", () => {
     const app = createChannelRoutes(
       {
         create: async () => channel("c"),
+        createProject: async () => ({ ...channel("p"), kind: "project" }),
         get: async (_actor, id) => (id === "mine" ? channel(id) : null),
         list: async () => [],
         setLastRead: async (_actor, _id, at) => ({ previous: null, at }),

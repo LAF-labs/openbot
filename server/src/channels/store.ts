@@ -10,7 +10,7 @@
 import type { AgentProfileStore } from "../agents/profile-store";
 import type { Database } from "../db/client";
 import { recordActivity } from "./activity";
-import { createConversation } from "./conversations";
+import { createConversation, createProject } from "./conversations";
 import type { AnnounceChannelActivity } from "./events";
 import { createFrameStore } from "./frames";
 import { listChannels, readChannel, setLastRead } from "./roster";
@@ -37,6 +37,13 @@ export function createChannelStore(
         { database, profileStore, threadIdentity },
         actor,
         agentIds,
+      ),
+    createProject: (actor, agentId, name) =>
+      createProject(
+        { database, profileStore, threadIdentity },
+        actor,
+        agentId,
+        name,
       ),
     get: (actor, channelId) => readChannel(database, actor, channelId),
     list: (actor) => listChannels(database, actor),

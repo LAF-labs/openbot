@@ -43,6 +43,12 @@ export type ChannelActivity = {
 
 export type ChannelStore = {
   create(actor: AgentActor, agentIds: string[]): Promise<AgentChannel>;
+  /** A project: another conversation with this Bot, beside its main one, by the name given. */
+  createProject(
+    actor: AgentActor,
+    agentId: string,
+    name: string,
+  ): Promise<AgentChannel>;
   get(actor: AgentActor, channelId: string): Promise<AgentChannel | null>;
   list(actor: AgentActor): Promise<ChannelSummary[]>;
   /**

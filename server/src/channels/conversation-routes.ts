@@ -4,7 +4,7 @@
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AppVariables } from "../auth/guards";
-import { parseChannelInput } from "./input";
+import { parseChannelInput, parseProjectInput } from "./input";
 import { mapRefusal, refusal } from "./refusals";
 import type { AgentChannel, ChannelStore, ChannelSummary } from "./types";
 
@@ -26,6 +26,30 @@ export function createConversationRoutes(
       const channel = await store.create(
         context.var.actor,
         parsed.value.agentIds,
+      );
+      return context.json({ channel: channelDto(channel) }, 201);
+    } catch (error) {
+      return mapRefusal(context, error);
+    }
+  });
+
+  /*
+   * A project, beside the Bot's main conversation (piece 4-2). Its own door: `POST /` answers the
+   * conversation a Bot already has, and this one always makes a new one, of kind `project`.
+   * Registered before `/:channelId` reads, and a POST, so `projects` is never taken for an id.
+   */
+  routes.post("/projects", requireUser, async (context) => {
+    const parsed = parseProjectInput(
+      await context.req.json().catch(() => null),
+    );
+    if (!parsed.ok) {
+      return context.json({ error: parsed.code, code: parsed.code }, 400);
+    }
+    try {
+      const channel = await store.createProject(
+        context.var.actor,
+        parsed.value.agentId,
+        parsed.value.name,
       );
       return context.json({ channel: channelDto(channel) }, 201);
     } catch (error) {

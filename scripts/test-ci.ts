@@ -2613,6 +2613,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * the app takes the one that says main, offers no project in its place, and falls back to the
  * oldest only where a server says nothing.
  *
+ * RAISED 2026-10-10 FOR A PROJECT MADE AND OPENED, `server` from 4023 to 4041 and `app` from 2220
+ * to 2230 (record §3, piece 4-2, the first part). Eighteen in `channel-routes.test.ts`: the
+ * project input (the Bot and the name as given; no name at all; a long name cut between
+ * characters; six bodies refused by code; nothing but the Bot and the name read), the door (the
+ * store asked as the signed-in person; a bad body asking nothing; one too many as a fact; behind
+ * sign-in), and the store against real tables (always a new conversation of kind project beside
+ * a main that stays the Bot's conversation; a project made first is not taken for the main;
+ * somebody else's Bot; the cap). Ten in the new `projects.test.tsx`: which conversations are
+ * projects and what one is called; the screen as names, its one line, one press making and
+ * opening one, a refusal said, several Bots; and the switch in the top row — which of the two
+ * the screen is, and the mark it wears.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2641,8 +2653,8 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4023, roots: ["server"] },
-  { name: "app", floor: 2220, roots: ["app"] },
+  { name: "server", floor: 4041, roots: ["server"] },
+  { name: "app", floor: 2230, roots: ["app"] },
   {
     name: "agent-computer",
     floor: 537,

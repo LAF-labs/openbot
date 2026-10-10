@@ -3,6 +3,7 @@
  */
 import type { Context } from "hono";
 import { AgentNotFoundError } from "../agents/profile-store";
+import { ProjectLimitError } from "./conversations";
 import { ChannelNotFoundError } from "./errors";
 import type { ChannelRefusal } from "./routes";
 
@@ -22,7 +23,8 @@ export function refusal(code: ChannelRefusal) {
 export function mapRefusal(context: Context, error: unknown): Response {
   if (
     error instanceof AgentNotFoundError ||
-    error instanceof ChannelNotFoundError
+    error instanceof ChannelNotFoundError ||
+    error instanceof ProjectLimitError
   ) {
     return context.json({ error: error.code, code: error.code }, error.status);
   }

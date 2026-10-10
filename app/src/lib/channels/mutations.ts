@@ -19,6 +19,9 @@ export const CHANNEL_REFUSALS: Record<string, string> = {
   "laf:channel_one_bot": "A conversation is with one Bot.",
   "laf:channel_not_found": "That conversation is no longer there.",
   "laf:agent_not_found": "That Bot is no longer there.",
+  "laf:project_name_invalid": "That could not be read. Try again.",
+  // No "remove one" in it: a project cannot be removed until piece 4-5.
+  "laf:project_limit": "There are as many projects as there can be.",
 };
 
 function channelRefusal(code: string | undefined): string {
@@ -46,6 +49,40 @@ export function createChannelMutationOptions(queryClient: QueryClient) {
           .then((body: { code?: string }) => body.code)
           .catch(() => undefined);
         throw new Error(channelRefusal(code));
+      }
+      return ((await response.json()) as { channel: AgentChannel }).channel;
+    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: channelKeys.all }),
+  });
+}
+
+/**
+ * Make a project: another conversation with this Bot, beside its main one, by the name given
+ * (`lib/channels/projects.ts`). Every call makes one — the server's project door never answers
+ * one that exists.
+ */
+export function createProjectMutationOptions(queryClient: QueryClient) {
+  return mutationOptions({
+    mutationFn: async (input: {
+      agentId: string;
+      name: string;
+    }): Promise<AgentChannel> => {
+      const response = await fetch("/api/channels/projects", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      if (!response.ok) {
+        const code = await response
+          .json()
+          .then((body: { code?: string }) => body.code)
+          .catch(() => undefined);
+        const known = own(CHANNEL_REFUSALS, code);
+        throw new Error(
+          known ? t(known) : t("Could not make the project. Try again."),
+        );
       }
       return ((await response.json()) as { channel: AgentChannel }).channel;
     },
