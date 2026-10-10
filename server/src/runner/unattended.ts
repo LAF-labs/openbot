@@ -482,6 +482,8 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
             // The same conversation the computer's tools carry, so a call to somebody else's
             // server is settled in the same terms as a click.
             ...(actor.threadId ? { threadId: actor.threadId } : {}),
+            // And the same run: a question about this call is this run's (`ActionActor.runId`).
+            ...(actor.runId ? { runId: actor.runId } : {}),
             ...(approvalId ? { approvalId } : {}),
             /*
              * NOTHING OF A ROUTINE'S CALL IS DRAWN: what it found reaches the person as the Bot's

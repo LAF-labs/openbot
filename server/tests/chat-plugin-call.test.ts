@@ -171,7 +171,8 @@ describe("a call that was carried out", () => {
     }));
     expect(await fine.call()).toBe("3행을 더했다");
     // What the store is handed: the call as the Bot made it, as this Bot, for this person, on this
-    // line of this conversation.
+    // line of this conversation — and as a step of this turn's run, which a question about it is
+    // counted under.
     expect(fine.sent).toEqual([
       {
         ref: REF,
@@ -179,6 +180,7 @@ describe("a call that was carried out", () => {
         botId: "bot-1",
         actorId: "owner-1",
         threadId: "thread-1",
+        runId: "run-1",
         toolCallId: "call-1",
         actorIsAdmin: false,
         drawnOn: "conversation",

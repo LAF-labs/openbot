@@ -359,6 +359,13 @@ export type PendingApproval = {
   /** The conversation step this question holds open. See {@link ApprovalStep}. */
   step?: ApprovalStep;
   /**
+   * The run whose question this is, as the run ledger names it — a conversation's turn, a
+   * routine's run (`ActionActor.runId`). Written on the question's row and on its answer's, so a
+   * run that ends counts the questions it raised and not another run's of the same Bot. Not sent
+   * to a window: the card is drawn from the step, and a run's id is nothing a person reads.
+   */
+  runId?: string;
+  /**
    * The window holding the step while it waits, and when it last said so. Absent once let go.
    * An id the window made up for itself; nothing is authorised by it, it only says who carries on.
    */
@@ -555,6 +562,8 @@ export type ApprovalRegistry = {
     taskId?: string;
     /** The conversation step it holds open, where the surface named one. See {@link ApprovalStep}. */
     step?: ApprovalStep;
+    /** The run whose question it is, where one is behind it. See PendingApproval.runId. */
+    runId?: string;
     target: { type: string; id: string };
   }) => Promise<PendingApproval>;
   /**
@@ -750,6 +759,7 @@ export function createApprovalRegistry(
         ...(input.threadId ? { threadId: input.threadId } : {}),
         ...(input.threadId && input.taskId ? { taskId: input.taskId } : {}),
         ...(input.step ? { step: input.step } : {}),
+        ...(input.runId ? { runId: input.runId } : {}),
         target: input.target,
         requestedAt: new Date(at).toISOString(),
         expiresAt: new Date(at + ttlMs).toISOString(),

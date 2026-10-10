@@ -6,6 +6,7 @@ import { isFirstMove } from "../../shared/first-move";
 import { createDatabase } from "../src/db/client";
 import {
   agents,
+  auditEvents,
   channelAgents,
   channelMemberships,
   channels,
@@ -1132,6 +1133,54 @@ describe("how a turn ends", () => {
     await until(async () => (await statusOf(sent.turnId)) === "done");
     expect(bot.runIds).toEqual([sent.turnId, `${sent.turnId}.1`]);
     expect(engine.working(OWNER)).toEqual([]);
+  });
+
+  test("a question a turn's call raises is counted on that turn's own row, by the run the call was handed", async () => {
+    /*
+     * Piece 5-1. The chain has three links and each has its own test — the call names the turn's
+     * run (`chat-tools.test.ts`), the gateway writes the run on the question's row
+     * (`approval-routes.test.ts`), the ledger counts by it (`run-ledger.integration.test.ts`) —
+     * and this is the one place they are the same id: what the engine hands a call as its run is
+     * the row it later settles.
+     */
+    const { threadId, channelId } = await aConversation();
+    const bot = scriptedBot();
+    const handed: string[] = [];
+    const { engine } = engineWith(
+      bot,
+      (context: ChatTurnContext) => async () => {
+        handed.push(context.runId);
+        // As the gateway files it (`gateway/trail.ts`), under the run the call was carried out as.
+        await database.insert(auditEvents).values({
+          eventType: "approval.requested",
+          targetType: "computer",
+          targetId: BOT,
+          payload: {
+            bot: BOT,
+            approval: `engine-${randomUUID()}`,
+            run: context.runId,
+          },
+        });
+        return { ok: true };
+      },
+    );
+    const sent = await engine.send({
+      threadId,
+      channelId,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked("눌러 줘")],
+      tools: null,
+    });
+    if (!sent.ok) throw new Error("not sent");
+    await until(async () => (await statusOf(sent.turnId)) === "done");
+
+    expect(handed).toEqual([sent.turnId]);
+    const [row] = await database
+      .select({ asked: lafThreadRuns.approvalsAsked })
+      .from(lafThreadRuns)
+      .where(eq(lafThreadRuns.runId, sent.turnId));
+    expect(row?.asked).toBe(1);
   });
 
   /*

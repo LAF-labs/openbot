@@ -527,6 +527,8 @@ describe("a routine run's end", () => {
   test("is told under the run's own name — the name its tools were handed — whether it answered or failed", async () => {
     const bot = await reviewBot();
     const handed: (string | undefined)[] = [];
+    /** The run as the ledger names it, which a question the run raises is filed under. */
+    const named: (string | undefined)[] = [];
     const ends: [string, string][] = [];
     let fails = false;
     const { service } = deployment(
@@ -540,6 +542,7 @@ describe("a routine run's end", () => {
       {
         tools: async (_botId, actor) => {
           handed.push(actor.runKey);
+          named.push(actor.runId);
           return { tools: [], execute: idle };
         },
         runEnded: async (botId, runKey) => void ends.push([botId, runKey]),
@@ -552,6 +555,7 @@ describe("a routine run's end", () => {
     expect(answered?.ok).toBe(true);
     expect(ends).toEqual([[bot.botId, `routine:${answered?.id}`]]);
     expect(handed).toEqual([`routine:${answered?.id}`]);
+    expect(named).toEqual([answered?.id]);
 
     fails = true;
     await service.runNow(bot.owner, routine.id);

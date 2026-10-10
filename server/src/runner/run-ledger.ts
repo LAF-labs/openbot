@@ -266,6 +266,8 @@ type TurnSoFar = {
   endingCode: string | null;
   /** When the turn's first run was accepted, on the database's clock like the trail's rows. */
   turnStartedAt: Date | null;
+  /** The turn this run belongs to: the run that opened it, which is itself where it opened one. */
+  turnId: string;
 };
 
 /** Where the turn's facts are read: a transaction, or a savepoint inside the caller's. */
@@ -279,8 +281,10 @@ async function turnSoFar(
     agent_id: string | null;
     ending_code: string | null;
     turn_started_at: string | Date | null;
+    turn_id: string;
   }>(sql`
-    SELECT r.agent_id, r.ending_code, coalesce(o.started_at, r.started_at) AS turn_started_at
+    SELECT r.agent_id, r.ending_code, coalesce(o.started_at, r.started_at) AS turn_started_at,
+           coalesce(r.turn_id, r.run_id) AS turn_id
       FROM laf_thread_runs r
       LEFT JOIN laf_thread_runs o ON o.run_id = r.turn_id
      WHERE r.run_id = ${runId}`);
@@ -291,24 +295,36 @@ async function turnSoFar(
     endingCode: row.ending_code,
     turnStartedAt:
       row.turn_started_at === null ? null : new Date(row.turn_started_at),
+    turnId: row.turn_id,
   };
 }
 
 /**
- * The questions asked about this Bot's actions since its turn began, how many a person granted,
- * and how many nobody has answered.
+ * The questions this turn raised about its Bot's actions, how many a person granted, and how many
+ * nobody has answered.
  *
- * BY BOT AND TIME, because the question's row (`approval.requested`, written by the gateway and the
- * plugin store) names the Bot and the approval and not the run: in a conversation it is asked by a
- * window, between two runs, and no run is open to name. One person has one Bot, and a routine takes
- * its Bot's lane, so the questions in a turn's window are that turn's — except for a routine and a
- * conversation overlapping on the one Bot, which would each count the other's. Paired by the
- * approval's id, as `notifications/approval-metrics.ts` and the fleet's `approvals` pair them.
+ * BY THE RUN THAT ASKED (2026-10-10, `docs/laf/redesign-2026-10.md` §5, piece 5-1). The question's
+ * row (`approval.requested`, written by the gateway and the plugin store) names its run since that
+ * day, and a turn counts the rows that name one of its own. It was by Bot and time until then —
+ * every question about the Bot since the turn began — and what made those the turn's was the Bot's
+ * lane: one thing at a time on one Bot. That holds only while the lane does. Two turns of one Bot
+ * at once — a conversation and a project, which is where the lane is going — would each have
+ * counted the other's questions, and one's unanswered question would have filed the other's
+ * unfinished ending as waiting on the owner (`telemetry/run-ending.ts`).
+ *
+ * A ROW THAT NAMES NO RUN IS STILL COUNTED THE OLD WAY, by Bot and time: every row written before
+ * that day, and a question raised by a call with no run behind it. Counting those for nobody would
+ * make a turn that straddles the upgrade forget what it asked.
+ *
+ * STILL BOUNDED BY THE TURN'S START, though the run already says whose it is: that is what lets
+ * the index on (event type, time) carry the read instead of every question ever asked.
+ *
+ * Paired by the approval's id, as `notifications/approval-metrics.ts` and the fleet's `approvals`
+ * pair them.
  */
-async function approvalsSince(
+async function approvalsOf(
   database: Reader,
-  agentId: string,
-  since: Date,
+  turn: { turnId: string; agentId: string; since: Date },
 ): Promise<{ asked: number; granted: number; open: number }> {
   const rows = await database.execute<{
     asked: number | string;
@@ -326,8 +342,11 @@ async function approvalsSince(
                 AND d.payload->>'approval' = r.payload->>'approval')) AS open
       FROM audit_events r
      WHERE r.event_type = 'approval.requested'
-       AND r.payload->>'bot' = ${agentId}
-       AND r.created_at >= ${since}`);
+       AND r.created_at >= ${turn.since}
+       AND (r.payload->>'run' IN (
+              SELECT t.run_id FROM laf_thread_runs t
+               WHERE t.run_id = ${turn.turnId} OR t.turn_id = ${turn.turnId})
+            OR (r.payload->>'run' IS NULL AND r.payload->>'bot' = ${turn.agentId}))`);
   const row = [...rows][0];
   return {
     asked: Number(row?.asked ?? 0),
@@ -362,7 +381,11 @@ export function createRunLedger(database: Database): RunLedger {
         const turn = await turnSoFar(reader, runId);
         const approvals =
           outcome.status !== "waiting" && turn?.agentId && turn.turnStartedAt
-            ? await approvalsSince(reader, turn.agentId, turn.turnStartedAt)
+            ? await approvalsOf(reader, {
+                turnId: turn.turnId,
+                agentId: turn.agentId,
+                since: turn.turnStartedAt,
+              })
             : null;
         return { turn, approvals };
       });

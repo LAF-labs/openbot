@@ -233,6 +233,8 @@ export function createCallPath(
     threadId: string | undefined;
     /** The Bot's call this is, so every window of the conversation can draw its question. */
     toolCallId: string | undefined;
+    /** The run the call is a step of, so its question is counted as that run's. */
+    runId: string | undefined;
     ref: string;
     serverId: string;
     toolName: string;
@@ -277,6 +279,7 @@ export function createCallPath(
               },
             }
           : {}),
+        ...(question.runId ? { runId: question.runId } : {}),
         policyVerdict: question.verdict,
         forcedAsk: question.forcedAsk,
       },
@@ -320,6 +323,8 @@ export function createCallPath(
         bot: question.botId,
         actor: question.actorId,
         approval: settled.approvalId,
+        // Whose question it is, as the computer's own row says it (`gateway/trail.ts`).
+        ...(settled.approval.runId ? { run: settled.approval.runId } : {}),
         rule: settled.approval.rule,
         // The facts, not a sentence: the card is Korean, the trail is queried, and one field cannot
         // be both. See AskSubject. The preview is left off on purpose: who a mail goes to and what
@@ -391,6 +396,8 @@ export function createCallPath(
       threadId?: string | undefined;
       /** The Bot's tool call this carries out, where a turn the server owns named it. */
       toolCallId?: string | undefined;
+      /** The run this is a step of, as the ledger names it. See `ActionActor.runId`. */
+      runId?: string | undefined;
       /**
        * Whether this person governs the whole deployment.
        *
@@ -774,6 +781,7 @@ export function createCallPath(
               actorId: input.actorId,
               threadId: input.threadId,
               toolCallId: input.toolCallId,
+              runId: input.runId,
               ref: input.ref,
               serverId,
               toolName,

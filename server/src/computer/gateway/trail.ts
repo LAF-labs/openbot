@@ -543,6 +543,9 @@ export async function writeApprovalEvent(
       bot: entry.botId,
       actor: entry.actor.id,
       approval: entry.approval.id,
+      // Whose question it is: the run that raised it, which is what that run counts when it ends
+      // (`runner/run-ledger.ts`). Absent where no run was behind the call.
+      ...(entry.approval.runId ? { run: entry.approval.runId } : {}),
       rule: entry.approval.rule,
       /*
        * What was being asked about, in the same facts the card was drawn from — not the sentence.

@@ -2625,6 +2625,15 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * opening one, a refusal said, several Bots; and the switch in the top row — which of the two
  * the screen is, and the mark it wears.
  *
+ * RAISED 2026-10-10 WITH THE RUN ON EVERY QUESTION, `server` from 4041 to 4046 (record §5, piece
+ * 5-1), by exactly five. Three in `run-ledger.integration.test.ts`: two runs of one Bot at once
+ * each counting the questions they raised, with one's unanswered question not the other's wait;
+ * a turn counting what every run of it raised; and a row that names no run counted as it was, by
+ * Bot and since the turn began. One in `approval-routes.test.ts`: the question's row and its
+ * answer's both naming the run that asked, neither inventing one, and the card not carrying it.
+ * One in `turn-engine.integration.test.ts`: the run the engine hands a call is the row it settles.
+ * By hand: 4041 and 3 is 4044, and 1 is 4045, and 1 is 4046.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2653,7 +2662,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4041, roots: ["server"] },
+  { name: "server", floor: 4046, roots: ["server"] },
   { name: "app", floor: 2230, roots: ["app"] },
   {
     name: "agent-computer",

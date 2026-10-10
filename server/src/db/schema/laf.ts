@@ -283,9 +283,10 @@ export const lafThreadRuns = pgTable(
     toolCalls: integer("tool_calls").notNull().default(0),
     retries: integer("retries").notNull().default(0),
     /**
-     * Questions asked about this Bot's actions since its turn began, and how many were granted.
-     * For the turn so far, not this row alone: in a conversation the question is asked while the
-     * row before is `waiting`, between runs. The report takes the turn's largest.
+     * Questions this run's turn raised about its Bot's actions, and how many were granted. Counted
+     * by the run each question's row names (`runner/run-ledger.ts`, `approvalsOf`), so two runs of
+     * one Bot at once do not count each other's. For the turn so far, not this row alone: the
+     * report takes the turn's largest.
      */
     approvalsAsked: integer("approvals_asked").notNull().default(0),
     approvalsGranted: integer("approvals_granted").notNull().default(0),
