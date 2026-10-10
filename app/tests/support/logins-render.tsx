@@ -28,6 +28,8 @@ export type LoginsShown = {
     /** The requests when only a new password was typed, and when nothing was changed at all. */
     passwordOnly: Write[];
     untouched: { writes: Write[]; isDialogClosed: boolean };
+    /** A change to a login another window deleted while the form was open. */
+    gone: { isSaid: boolean; isRowLeft: boolean };
   };
   /** A save that is still on its way, and everything that would close the dialog under it. */
   pending: {
@@ -243,9 +245,45 @@ const changed = await (async (): Promise<LoginsShown["changed"]> => {
     writes: writes.slice(2),
     isDialogClosed: field("login-label") === null,
   };
-  const shown = { opened, writes: first, passwordOnly, untouched };
   await view.unmount();
-  return shown;
+
+  // Deleted elsewhere while its form was open: the change is refused, and the list is read again.
+  let isGone = false;
+  const elsewhere = server({ logins: [NAVER] });
+  const stale = await mountApp({
+    path: "/settings/logins",
+    api: (request) => {
+      if (request.pathname.startsWith("/api/logins") && isGone) {
+        return request.method === "GET"
+          ? json({ logins: [], max: 100 })
+          : json(
+              { error: "laf:login_not_found", code: "laf:login_not_found" },
+              404,
+            );
+      }
+      return elsewhere.api(request);
+    },
+  });
+  await pressLabelled(stale, `Change ${NAVER.label}`);
+  await stale.waitFor(() => field("login-label") !== null, "the stale form");
+  isGone = true;
+  await fill(stale, { "login-label": "다른 이름" });
+  await save(stale);
+  const sentence = "That login is not saved any more.";
+  await stale.waitFor(
+    () => document.body.textContent?.includes(sentence) === true,
+    "the refusal of a change to a login that is gone",
+  );
+  await stale.waitFor(
+    () => stale.host.textContent?.includes(NAVER.label) !== true,
+    "the row to leave the list",
+  );
+  const gone = {
+    isSaid: document.body.textContent?.includes(sentence) === true,
+    isRowLeft: stale.host.textContent?.includes(NAVER.label) === true,
+  };
+  await stale.unmount();
+  return { opened, writes: first, passwordOnly, untouched, gone };
 })();
 
 // 2b. A save still on its way, and everything that would close the dialog under it.

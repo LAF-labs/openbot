@@ -147,6 +147,36 @@ describe("Settings → 계정", () => {
     expect(view.host.querySelector("input")).toBeNull();
   });
 
+  /*
+   * AN ANSWER THAT IS NOT THE LIST IS NOT AN EMPTY LIST (Codex's read). Read leniently, a body
+   * with no `logins` drew "no login is saved yet", and a row that could not be read was left out:
+   * the screen telling a person who saved three that nothing is saved.
+   */
+  test("an answer that is not the list is the list not having loaded — never 'nothing saved', and never some of the rows", async () => {
+    for (const body of [
+      {},
+      { logins: "none", max: 100 },
+      { logins: [NAVER, { id: 7, label: "깨진 행" }], max: 100 },
+      { logins: [NAVER] },
+    ]) {
+      const view = await mountApp({
+        path: "/settings/logins",
+        api: ({ pathname }) =>
+          pathname === "/api/logins" ? json(body) : undefined,
+      });
+      await view.waitFor(
+        () =>
+          view.host.textContent?.includes(
+            "The saved logins could not be loaded.",
+          ) === true,
+        "the load failure",
+      );
+      expect(view.host.textContent).not.toContain("No login is saved yet.");
+      expect(view.host.textContent).not.toContain(NAVER.label);
+      await view.unmount();
+    }
+  });
+
   test("with nothing saved, says so and offers to add one", async () => {
     const { api } = server();
     const view = await mountApp({ path: "/settings/logins", api });
@@ -223,6 +253,9 @@ describe("Settings → 계정", () => {
     ]);
     // And saved as it was opened, the server is asked for nothing.
     expect(changed.untouched).toEqual({ writes: [], isDialogClosed: true });
+    // A login deleted elsewhere while its form was open: said in the form, and gone from the
+    // list behind it — not left there to be opened again for the same refusal (Codex's read).
+    expect(changed.gone).toEqual({ isSaid: true, isRowLeft: false });
   }, 120_000);
 
   /*
