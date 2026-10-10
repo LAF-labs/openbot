@@ -1641,9 +1641,19 @@ SCENARIOS.push(
           "맡긴 글에 어디서 찾는지(네이버)가 없음",
           tasks.some((task) => /네이버|naver/i.test(task)),
         ],
+        // By the address it opened, or by what it typed into the search box: either is looking.
         [
           "맡은 쪽이 가게 이름으로 찾지 않음",
-          navigatedTo(turn).some((url) => url.includes(MOONLIGHT)),
+          (turn.delegated ?? []).some((run) =>
+            run.calls.some((call) => {
+              const raw = call.rawArguments.replace(/\+/g, " ");
+              try {
+                return decodeURIComponent(raw).includes(MOONLIGHT);
+              } catch {
+                return raw.includes(MOONLIGHT);
+              }
+            }),
+          ),
         ],
       ]);
     },

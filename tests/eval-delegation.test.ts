@@ -228,6 +228,50 @@ describe("delegated-task-stands-alone", () => {
     expect(verdict.notes.join(" ")).toContain(why);
   });
 
+  // What the deployment's model did on the pack's first whole run (2026-10-11): opened 네이버's
+  // front page and typed the name into its box. The judge as first written read addresses only.
+  test("looked for by typing the name into the search box passes too", () => {
+    const task =
+      "네이버에서 '달빛공방'을 검색해서 맨 위 결과의 제목을 알려 줘.";
+    expect(
+      check(
+        turn(
+          "맨 위에는 달빛공방 플레이스가 나와요.",
+          [delegate(task)],
+          [
+            handed(task, [
+              call("computer_navigate", { url: "https://www.naver.com" }),
+              call("computer_type", {
+                ref: "e3",
+                snapshotId: 1,
+                text: "달빛공방",
+                submit: true,
+              }),
+            ]),
+          ],
+        ),
+      ).pass,
+    ).toBe(true);
+  });
+
+  test("a run that never looked for the name fails", () => {
+    const task =
+      "네이버에서 '달빛공방'을 검색해서 맨 위 결과의 제목을 알려 줘.";
+    expect(
+      check(
+        turn(
+          "찾아봤어요.",
+          [delegate(task)],
+          [
+            handed(task, [
+              call("computer_navigate", { url: "https://www.naver.com" }),
+            ]),
+          ],
+        ),
+      ).pass,
+    ).toBe(false);
+  });
+
   test("answered without handing anything over fails", () => {
     expect(check(turn("달빛공방이 맨 위에 나올 거예요.")).pass).toBe(false);
   });
