@@ -163,7 +163,8 @@ export function startBackgroundWork(input: {
    * A PROJECT MARKED AND NOT DELETED IS FINISHED HERE. Its deletion stops at a turn that has not
    * ended, or fails in its transaction, and the mark it leaves hides the project and refuses every
    * write: without this it stayed that way until the next restart (review, 2026-10-10). One read
-   * of a small table a minute, which nearly always finds nothing.
+   * of a small table a minute, which nearly always finds nothing. What must have happened at boot
+   * before a deletion may be finished is the caller's to hold (`main.ts`).
    */
   const projectDeletion = input.projectDeletion;
   if (projectDeletion) {

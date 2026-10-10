@@ -1329,7 +1329,16 @@ startBackgroundWork({
   builtInSkills,
   pluginStore,
   conversations,
-  projectDeletion,
+  /*
+   * The clock's attempts keep boot's order (above): never before the interrupted runs have been
+   * told, or a turn the last process died on would be said into a project already removed.
+   */
+  projectDeletion: {
+    finishPending: () =>
+      interruptedReported
+        .catch(() => undefined)
+        .then(() => projectDeletion.finishPending()),
+  },
   // The hourly curation: each new line of a Bot's checked against the owner's own words.
   memoryCurator: createMemoryCurator({
     database,
