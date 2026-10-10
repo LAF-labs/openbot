@@ -429,7 +429,7 @@ describe("the top row", () => {
    * and asked again for what the run may have written; the column is gone and the row does it
    * (`profile-menu.tsx`), on every screen — here on one that reads none of the three itself.
    */
-  test("a run that ends while another screen is open asks again for the conversations, 소식's count and the goals", async () => {
+  test("a run that ends while another screen is open asks again for the conversations, 소식's count, the goals and what the Bot made", async () => {
     let isWorking = true;
     const view = await mountApp({
       path: "/help",
@@ -455,9 +455,14 @@ describe("the top row", () => {
     await view.settle(120);
     const asked = (pathname: string) =>
       view.requests.filter((request) => request.pathname === pathname).length;
-    const before = ["/api/channels", "/api/feed/unseen", "/api/goals"].map(
-      asked,
-    );
+    // The last is the home panel's: 만든 것 is listed on every screen since piece 3-4.
+    const MADE_PATH = "/api/agents/bot-1/made";
+    const before = [
+      "/api/channels",
+      "/api/feed/unseen",
+      "/api/goals",
+      MADE_PATH,
+    ].map(asked);
 
     isWorking = false;
     await acted(async () => {
@@ -471,6 +476,8 @@ describe("the top row", () => {
     await view.settle(120);
     expect(asked("/api/feed/unseen")).toBeGreaterThan(before[1] ?? 0);
     expect(asked("/api/goals")).toBeGreaterThan(before[2] ?? 0);
+    expect(before[3]).toBeGreaterThan(0);
+    expect(asked(MADE_PATH)).toBeGreaterThan(before[3] ?? 0);
   });
 
   test("an account with several Bots has none of them at the row's left: whose state would stand there has no answer", async () => {

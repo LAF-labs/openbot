@@ -2554,6 +2554,15 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * read are the same two, read under the row.
  * By hand: 2166 less 30 is 2136, and 10 is 2146.
  *
+ * RAISED 2026-10-10 WITH THE HOME PANEL, `app` from 2146 to 2165 (record §1, pieces 3-2 and 3-4),
+ * by exactly what it brought, as above. NEW, 19: fifteen in `home-panel.test.tsx` (one home
+ * button at the window's top left whichever way the panel is; folded for the next window; the
+ * edge a separator that can be stepped; six widths held between the record's two bounds; six
+ * stored values read as a panel that can be drawn) and four in `home-widgets.test.tsx` (the four
+ * widgets in their order, each title the way to its screen; a widget that reads and never marks;
+ * a thing the Bot made opening the conversation it was made in; what a deployment does not have
+ * not drawn, and a read that failed saying so).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2583,7 +2592,7 @@ const GROUPS: readonly {
   processes?: number;
 }[] = [
   { name: "server", floor: 4012, roots: ["server"] },
-  { name: "app", floor: 2146, roots: ["app"] },
+  { name: "app", floor: 2165, roots: ["app"] },
   {
     name: "agent-computer",
     floor: 537,
