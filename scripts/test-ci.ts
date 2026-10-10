@@ -2677,6 +2677,9 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * computer's own door and its own count of places, over a socket.
  * By hand: 4084 and 5 is 4089, and 35 is 4124; 940 and 6 is 946.
  *
+ * RAISED 2026-10-10 FOR A CARD THAT THROWS IN 홈, `app` from 2258 to 2259: one in
+ * `card-seams.test.tsx` (the boundary's `fallback`).
+ *
  * RAISED 2026-10-10 FOR THE APP'S DOORS ON ONE HELPER, `app` from 2257 to 2258 (the review of pieces
  * 4-1, 4-3 and 4-5). Two more in `projects.test.tsx` (a dropped connection said as that; a 404
  * that is not the server's own fact is not a deletion) and one fewer in `search.test.tsx`, whose
@@ -2729,7 +2732,7 @@ const GROUPS: readonly {
   processes?: number;
 }[] = [
   { name: "server", floor: 4187, roots: ["server"] },
-  { name: "app", floor: 2258, roots: ["app"] },
+  { name: "app", floor: 2259, roots: ["app"] },
   {
     name: "agent-computer",
     /*

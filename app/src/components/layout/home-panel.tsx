@@ -1,6 +1,13 @@
 import { IconHome } from "@tabler/icons-react";
 import { type QueryKey, useQuery } from "@tanstack/react-query";
-import { type KeyboardEvent, type PointerEvent, useId, useRef } from "react";
+import {
+  type KeyboardEvent,
+  type PointerEvent,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { BotDay } from "@/components/app-sidebar/bot-day";
 import { HomeCards } from "@/components/layout/home-cards";
 import { SectionBoundary } from "@/components/layout/section-boundary";
@@ -49,6 +56,9 @@ export const HOME_PANEL_ID = "home-panel";
 const KEY_STEP = 16;
 const KEY_STRIDE = 64;
 
+/** How long the fold's slide takes (`duration-300` on the panel), and a frame more. */
+const FOLD_MS = 320;
+
 const frameOf = (element: Element): HTMLElement | null =>
   element.closest<HTMLElement>("[data-home-frame]");
 
@@ -60,6 +70,21 @@ export function HomePanel({
 }) {
   const { hasRoom, max, width } = useHomePanelFit();
   const isDrawn = width > 0;
+  /*
+   * FOLDED, 홈 READS NOTHING. Its content stayed mounted at zero pixels, so 오늘 and the cards went
+   * on being asked for, and asked for again, behind an edge nobody could see past
+   * (review, 2026-10-10). It is kept for the length of the slide, so folding moves the edge over
+   * what is there, and then let go.
+   */
+  const [isKept, setIsKept] = useState(isDrawn);
+  useEffect(() => {
+    if (isDrawn) {
+      setIsKept(true);
+      return;
+    }
+    const timer = setTimeout(() => setIsKept(false), FOLD_MS);
+    return () => clearTimeout(timer);
+  }, [isDrawn]);
   /** Where the edge has been dragged to; null when it is not being dragged. */
   const dragged = useRef<number | null>(null);
 
@@ -147,7 +172,7 @@ export function HomePanel({
           queryKeys={rosterQueries}
           section="home"
         >
-          <HomeToday />
+          {isDrawn || isKept ? <HomeToday /> : null}
         </SectionBoundary>
       </div>
       {/*
