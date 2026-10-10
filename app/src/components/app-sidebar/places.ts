@@ -2,6 +2,7 @@ import {
   IconBox,
   IconClock,
   IconHelp,
+  IconKey,
   IconNotebook,
   IconPlugConnected,
   IconUserCircle,
@@ -40,6 +41,12 @@ export const FOOTER_LINKS = [
     icon: IconPlugConnected,
     label: "Connections",
   },
+  /*
+   * 계정 (2026-10-10): the sign-in names and passwords a person saves for the Bot's browser
+   * (`settings/logins`). The record puts it in this list by name (`docs/laf/redesign-2026-10.md`
+   * §1), beside 연결 — both are where the Bot is let into something of the person's.
+   */
+  { to: "/settings/logins", icon: IconKey, label: "Accounts" },
   /*
    * ONE `?`, AT THE BOTTOM. The help page and the 문의·의견 box behind it are the only way a person
    * who is stuck can say so; a way out that lives only under Settings is a way out that a person

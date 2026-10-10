@@ -83,6 +83,27 @@ const oneBot = ({ pathname }: { pathname: string }) => {
   return undefined;
 };
 
+/** An account from before the cap, with two Bots and a conversation with each. */
+const twoBots = ({ pathname }: { pathname: string }) => {
+  if (pathname === "/api/agents") {
+    return json({
+      agents: [
+        agentFixture({ id: "bot-1", name: "초롱" }),
+        agentFixture({ id: "bot-2", name: "두리" }),
+      ],
+    });
+  }
+  if (pathname === "/api/channels") {
+    return json({
+      channels: [
+        conversation("c-1", "bot-1", "2026-09-21T00:00:00Z"),
+        conversation("c-2", "bot-2", "2026-09-20T00:00:00Z"),
+      ],
+    });
+  }
+  return undefined;
+};
+
 type View = Awaited<ReturnType<typeof mountApp>>;
 
 const row = (view: View) =>
@@ -137,6 +158,51 @@ describe("the row at the top", () => {
     ).toBeNull();
     // And search is not drawn before there is anything it could find.
     expect(row(view)?.querySelector('[aria-label="Search"]')).toBeNull();
+  });
+});
+
+describe("the profile button's dot", () => {
+  /*
+   * The sidebar's rail learned this on 2026-10-09: once a question had been read, a Bot with
+   * somebody waiting behind it looked like an idle one until it was hovered. A list behind a press
+   * hides it better still, so the button says it — for whichever of the account's Bots is asking,
+   * not only the one the home opens on.
+   */
+  test("is amber while any of the account's Bots waits on an answer, read or not, and goes when it is answered", async () => {
+    const view = await mountApp({ path: "/help", api: twoBots });
+    const button = () => row(view)?.querySelector("[data-profile-menu]");
+    await view.waitFor(() => button() != null, "the profile button");
+    await view.settle(60);
+    const dot = () =>
+      button()?.querySelector("[data-mark]")?.getAttribute("data-mark") ?? null;
+    // Nothing unread, nothing unseen, nobody waiting: no dot at all.
+    expect(dot()).toBeNull();
+
+    const { closeQuestion, openQuestion } = await import(
+      "../src/lib/approvals"
+    );
+    const { act } = await import("react");
+    await act(async () => {
+      // 두리 is not the Bot the home opens on: 초롱 was spoken to last.
+      openQuestion("call-menu", {
+        approvalId: "approval-menu",
+        botId: "bot-2",
+        subject: undefined,
+        rule: null,
+        expiresAt: "",
+      });
+    });
+    try {
+      await view.settle();
+      expect(dot()).toBe("waiting");
+      expect(button()?.textContent).toContain("Waiting on the owner");
+    } finally {
+      await act(async () => {
+        closeQuestion("call-menu");
+      });
+    }
+    await view.settle();
+    expect(dot()).toBeNull();
   });
 });
 

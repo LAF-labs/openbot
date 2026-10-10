@@ -11,7 +11,7 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { FOOTER_LINKS } from "@/components/app-sidebar/places";
 import { StopAllDialog } from "@/components/app-sidebar/stop-all-dialog";
 import { PersonAvatar } from "@/components/avatar/person-avatar";
@@ -27,6 +27,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { conversationOf, primaryBot, useMyBots } from "@/lib/agents/my-bots";
+import { openQuestions, watchQuestions } from "@/lib/approvals";
 import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import type { ChannelSummary } from "@/lib/channels/queries";
@@ -61,7 +62,11 @@ import { cn } from "@/lib/utils";
  *
  * AN ACCOUNT FROM BEFORE THE CAP keeps every Bot it had (`deployment-model.md` "봇은 하나다"), and
  * the column's list was the only way between them. It is the first group here, for those accounts
- * only: 내 봇들, a row per Bot, each its own conversation. A row is the Bot's name and nothing
+ * only: 내 봇들, a row per Bot, each its own conversation. A Bot that is waiting on an answer is
+ * marked there whether or not its conversation is unread, and the button's dot is amber for any of
+ * them: the column's rail learned that on 2026-10-09 — once a question had been read, a Bot with
+ * somebody waiting behind it looked like an idle one — and a list behind a press would hide it
+ * better still. A row is the Bot's name and nothing
  * before it — a Bot has no face (2026-10-09) and, in a list of words, needs no mark standing in
  * for one. With one Bot there is no such group and 대화 is a row like the others.
  */
@@ -83,6 +88,29 @@ function conversationLink(agentId: string, channelId: string | undefined) {
     ? ({ params: { channelId }, to: "/channel/$channelId" } as const)
     : ({ search: { agent: agentId }, to: "/channel/new" } as const);
 }
+
+/** Amber, whatever else is true of the row: somebody is waiting on the person. */
+function WaitingMark() {
+  return (
+    <>
+      <span
+        aria-hidden="true"
+        className="ml-auto size-2 shrink-0 rounded-full bg-warning"
+        data-mark="waiting"
+      />
+      <span className="sr-only">{t("Waiting on the owner")}</span>
+    </>
+  );
+}
+
+/**
+ * The Bots with a question open, as one string: a snapshot `useSyncExternalStore` can compare, where
+ * a fresh array every read would loop it.
+ */
+const askingBotIds = (): string =>
+  [...new Set(openQuestions().map((question) => question.botId))]
+    .sort()
+    .join(",");
 
 function UnreadMark() {
   return (
@@ -154,7 +182,15 @@ export function ProfileMenu({
   const presence = usePresence(main?.id);
 
   const unseenCount = unseen.data ?? 0;
-  const isWaiting = presence.tone === "attention";
+  /*
+   * The Bot the home opens on is read whole — a question, a request for help, a password wanted.
+   * Every other Bot of an account from before the cap is read for the one thing a list can show
+   * without mounting each Bot's own watch: a question nobody has answered.
+   */
+  const asking = useSyncExternalStore(watchQuestions, askingBotIds, () => "");
+  const isAsking = (botId: string) => asking.split(",").includes(botId);
+  const isWaiting =
+    presence.tone === "attention" || bots.some((bot) => isAsking(bot.id));
   const hasUnread = rows.some((row) => row.channel?.unread) || unseenCount > 0;
 
   const handleSignOut = async () => {
@@ -246,7 +282,11 @@ export function ProfileMenu({
                     }
                   >
                     <span className="min-w-0 truncate">{agent.name}</span>
-                    {channel?.unread ? <UnreadMark /> : null}
+                    {isAsking(agent.id) ? (
+                      <WaitingMark />
+                    ) : channel?.unread ? (
+                      <UnreadMark />
+                    ) : null}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuGroup>
