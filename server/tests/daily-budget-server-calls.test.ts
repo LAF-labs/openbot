@@ -63,8 +63,7 @@ const subject: ReviewSubject = {
 function calls(reached: boolean) {
   const budget: DailyBudget = {
     tokens: 3_000_000,
-    costToday: async () => 0,
-    usedToday: async () => (reached ? 3_000_000 : 0),
+    today: async () => ({ tokens: reached ? 3_000_000 : 0, usd: 0, reached }),
     reachedToday: async () => reached,
   };
   return createServerModelCalls({

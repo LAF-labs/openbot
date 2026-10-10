@@ -786,7 +786,7 @@ export function createApp({
      * key, not an empty trial — on every deployment that is not one, and the judge is not asked.
      *
      * AND WHAT TODAY HAS USED, so the surface can say how much is left before a question is refused
-     * rather than only after. The judge's own count (`usedToday`) — the same Seoul day and the same
+     * rather than only after. The judge's own count (`today`) — the same Seoul day and the same
      * sum the refusal is decided on — and never a second reading of the trail here. Left OUT when it
      * cannot be read: zero would draw an empty meter on the very day somebody may be one question
      * from the limit, which is the one thing this field exists to tell them.
@@ -1397,29 +1397,22 @@ export function createApp({
 /**
  * Today, as a trial's surface is told it: whether the day is spent, and what it has used so far.
  *
- * Both asked of the one judge the runs are refused by, side by side rather than one after the
- * other, because `/api/me` is the call every screen waits on before it draws. `reachedToday` never
- * throws — a trail that cannot be read is not a refusal — and the count can, so a count nobody
- * could read is left out rather than said as zero.
+ * One question to the one judge the runs are refused by, which is one read of the day
+ * (`DailyBudget.today`): `/api/me` is the call every screen waits on before it draws. A day nobody
+ * could read is not a refusal, and its count is left out rather than said as zero.
  */
 async function todayOf(budget: DailyBudget | undefined): Promise<{
   budgetReachedToday: boolean;
   tokensUsedToday?: number;
   costUsdToday?: number;
 }> {
-  if (!budget) return { budgetReachedToday: false };
-  const [budgetReachedToday, tokensUsedToday, costUsdToday] = await Promise.all(
-    [
-      budget.reachedToday(),
-      budget.usedToday().catch(() => null),
-      // Asked only where the day is judged on it; left out, like the count, when it cannot be read.
-      budget.usd === undefined ? null : budget.costToday().catch(() => null),
-    ],
-  );
+  const today = await budget?.today();
+  if (!budget || !today) return { budgetReachedToday: false };
   return {
-    budgetReachedToday,
-    ...(tokensUsedToday === null ? {} : { tokensUsedToday }),
-    ...(costUsdToday === null ? {} : { costUsdToday }),
+    budgetReachedToday: today.reached,
+    tokensUsedToday: today.tokens,
+    // Said only where the day is judged on it.
+    ...(budget.usd === undefined ? {} : { costUsdToday: today.usd }),
   };
 }
 

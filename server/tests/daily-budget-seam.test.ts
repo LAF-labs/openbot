@@ -64,8 +64,11 @@ function judge(reached: boolean) {
   const state = { reached, asked: 0 };
   const budget: DailyBudget = {
     tokens: 3_000_000,
-    costToday: async () => 0,
-    usedToday: async () => (state.reached ? 3_000_000 : 0),
+    today: async () => ({
+      tokens: state.reached ? 3_000_000 : 0,
+      usd: 0,
+      reached: state.reached,
+    }),
     reachedToday: async () => {
       state.asked += 1;
       return state.reached;

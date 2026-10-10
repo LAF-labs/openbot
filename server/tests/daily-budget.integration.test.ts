@@ -5,6 +5,7 @@ import { createDatabase } from "../src/db/client";
 import { auditEvents } from "../src/db/schema";
 import {
   createDailyBudget,
+  type DailyBudget,
   dailyBudgetFor,
   seoulDayOf,
   UNPRICED_USD_PER_MILLION_TOKENS,
@@ -118,15 +119,21 @@ describe("which day is today", () => {
   });
 });
 
+/** The day as the judge read it. A day it could not read is no number, and fails the comparison. */
+const usedBy = async (budget: DailyBudget) =>
+  (await budget.today())?.tokens ?? Number.NaN;
+const costBy = async (budget: DailyBudget) =>
+  (await budget.today())?.usd ?? Number.NaN;
+
 describe("today's count", () => {
   test("is the Seoul day's model.usage rows, and nothing either side of midnight", async () => {
     const yesterday = budgetAt("2003-06-14T18:00:00.000");
     const today = budgetAt("2003-06-15T12:00:00.000");
     const tomorrow = budgetAt("2003-06-16T06:00:00.000");
     const before = {
-      yesterday: await yesterday.usedToday(),
-      today: await today.usedToday(),
-      tomorrow: await tomorrow.usedToday(),
+      yesterday: await usedBy(yesterday),
+      today: await usedBy(today),
+      tomorrow: await usedBy(tomorrow),
     };
 
     await usageAt(seoul("2003-06-14T23:59:59.999"), 1000);
@@ -140,15 +147,15 @@ describe("today's count", () => {
     await usageAt(seoul("2003-06-15T13:00:00.000"), -7);
 
     expect({
-      yesterday: (await yesterday.usedToday()) - before.yesterday,
-      today: (await today.usedToday()) - before.today,
-      tomorrow: (await tomorrow.usedToday()) - before.tomorrow,
+      yesterday: (await usedBy(yesterday)) - before.yesterday,
+      today: (await usedBy(today)) - before.today,
+      tomorrow: (await usedBy(tomorrow)) - before.tomorrow,
     }).toEqual({ yesterday: 1000, today: 320, tomorrow: 4000 });
   });
 
   test("reaches the budget when it meets it, not a token before", async () => {
     const reading = budgetAt("2003-06-20T09:00:00.000");
-    const before = await reading.usedToday();
+    const before = await usedBy(reading);
     await usageAt(seoul("2003-06-20T08:00:00.000"), 320);
 
     expect(
@@ -158,7 +165,7 @@ describe("today's count", () => {
       await budgetAt("2003-06-20T09:00:00.000", before + 321).reachedToday(),
     ).toBe(false);
     // And at the next midnight the day is new, whatever yesterday spent.
-    const next = await budgetAt("2003-06-21T00:00:00.000").usedToday();
+    const next = await usedBy(budgetAt("2003-06-21T00:00:00.000"));
     expect(
       await budgetAt("2003-06-21T00:00:00.000", next + 1).reachedToday(),
     ).toBe(false);
@@ -172,6 +179,8 @@ describe("today's count", () => {
     try {
       const budget = createDailyBudget({ database: unreachable, tokens: 1 });
       expect(await budget.reachedToday()).toBe(false);
+      // And no count is said of a day nobody could read.
+      expect(await budget.today()).toBeNull();
     } finally {
       await unreachable.$client.end().catch(() => undefined);
     }
@@ -188,9 +197,9 @@ describe("today's cost", () => {
     const today = moneyAt("2003-07-15T12:00:00.000", 1);
     const tomorrow = moneyAt("2003-07-16T06:00:00.000", 1);
     const before = {
-      yesterday: await yesterday.costToday(),
-      today: await today.costToday(),
-      tomorrow: await tomorrow.costToday(),
+      yesterday: await costBy(yesterday),
+      today: await costBy(today),
+      tomorrow: await costBy(tomorrow),
     };
 
     await costAt(seoul("2003-07-14T23:59:59.999"), 9, 0.5);
@@ -203,9 +212,9 @@ describe("today's cost", () => {
     await costAt(seoul("2003-07-15T12:00:00.000"), 9, 7, "routine.ran");
 
     expect({
-      yesterday: micro((await yesterday.costToday()) - before.yesterday),
-      today: micro((await today.costToday()) - before.today),
-      tomorrow: micro((await tomorrow.costToday()) - before.tomorrow),
+      yesterday: micro((await costBy(yesterday)) - before.yesterday),
+      today: micro((await costBy(today)) - before.today),
+      tomorrow: micro((await costBy(tomorrow)) - before.tomorrow),
     }).toEqual({
       yesterday: 500_000,
       today: micro(0.0104 + 1.2e-7 + 0.0051),
@@ -215,7 +224,7 @@ describe("today's cost", () => {
 
   test("a call with no price on its row is not free: its tokens count at the unpriced rate", async () => {
     const reading = moneyAt("2003-07-18T12:00:00.000", 1);
-    const before = await reading.costToday();
+    const before = await costBy(reading);
 
     // The provider said nothing; said something that is not an amount; said a negative one.
     await costAt(seoul("2003-07-18T08:00:00.000"), 1_000_000);
@@ -225,13 +234,13 @@ describe("today's cost", () => {
     await costAt(seoul("2003-07-18T08:00:00.000"), 5_000_000, 0);
 
     expect(UNPRICED_USD_PER_MILLION_TOKENS).toBe(0.5);
-    expect(micro((await reading.costToday()) - before)).toBe(
+    expect(micro((await costBy(reading)) - before)).toBe(
       micro((1_400_000 * UNPRICED_USD_PER_MILLION_TOKENS) / 1_000_000),
     );
   });
 
   test("a trial that names dollars is judged on dollars — reached when the cost meets it, whatever the tokens say", async () => {
-    const before = await moneyAt("2003-07-20T09:00:00.000", 1).costToday();
+    const before = await costBy(moneyAt("2003-07-20T09:00:00.000", 1));
     // Six million tokens for three cents: over any token budget, far under this day's dollars.
     await costAt(seoul("2003-07-20T08:00:00.000"), 6_000_000, 0.03);
 
@@ -251,7 +260,7 @@ describe("today's cost", () => {
         tokens: budget,
         now: () => seoul("2003-07-22T09:00:00.000"),
       });
-    const before = await tokens(1).usedToday();
+    const before = await usedBy(tokens(1));
     // A hundred tokens that cost a hundred dollars.
     await costAt(seoul("2003-07-22T08:00:00.000"), 100, 100);
 
