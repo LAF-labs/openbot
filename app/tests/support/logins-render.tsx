@@ -46,6 +46,16 @@ export type LoginsShown = {
     usernameKept: string;
     isCodeDrawn: boolean;
   };
+  /** Arriving from 연결's row for a site: `/settings/logins?site=…`. */
+  arrived: {
+    /** What the form held when the screen opened for a site it offers. */
+    opened: { site: string; label: string; addresses: string };
+    /** The same boxes after that form was closed and 로그인 추가 pressed. */
+    reopened: { site: string; label: string; addresses: string };
+    /** Whether a form opened for a site this screen does not offer, and for no site at all. */
+    isOpenForUnknown: boolean;
+    isOpenForNone: boolean;
+  };
   removed: {
     /** The question, as the dialog's title drew it. */
     question: string;
@@ -429,6 +439,49 @@ const removed = await (async (): Promise<LoginsShown["removed"]> => {
   };
 })();
 
+const arrived = await (async (): Promise<LoginsShown["arrived"]> => {
+  const boxes = () => ({
+    site: document.getElementById("login-site")?.textContent ?? "",
+    label: field("login-label")?.value ?? "(absent)",
+    addresses: field("login-addresses")?.value ?? "(absent)",
+  });
+  const view = await mountApp({
+    path: "/settings/logins?site=baemin-ceo",
+    api: server().api,
+  });
+  await view.waitFor(() => field("login-label") !== null, "the form");
+  const opened = boxes();
+  // Closed, and opened again from the screen's own button: that one is for no site.
+  const open = field("login-password");
+  if (open) await view.press(open, "Escape");
+  await view.waitFor(() => field("login-label") === null, "the form to close");
+  await openAdd(view);
+  const reopened = boxes();
+  await view.unmount();
+
+  const unknown = await mountApp({
+    path: "/settings/logins?site=hometax",
+    api: server().api,
+  });
+  await unknown.waitFor(
+    () => unknown.buttonNamed("Add login") !== undefined,
+    "the add button",
+  );
+  await unknown.settle(80);
+  const isOpenForUnknown = field("login-label") !== null;
+  await unknown.unmount();
+
+  const none = await mountApp({ path: "/settings/logins", api: server().api });
+  await none.waitFor(
+    () => none.buttonNamed("Add login") !== undefined,
+    "the add button",
+  );
+  await none.settle(80);
+  const isOpenForNone = field("login-label") !== null;
+  await none.unmount();
+  return { opened, reopened, isOpenForUnknown, isOpenForNone };
+})();
+
 const shown: LoginsShown = {
   siteBox,
   saved,
@@ -436,6 +489,7 @@ const shown: LoginsShown = {
   pending,
   refused,
   removed,
+  arrived,
 };
 console.log(`LOGINS_RENDER ${JSON.stringify(shown)}`);
 await GlobalRegistrator.unregister();

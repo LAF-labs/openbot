@@ -405,6 +405,36 @@ describe("the addresses offered for a site this product knows", () => {
   });
 });
 
+/*
+ * ARRIVING FOR A SITE (2026-10-10, record §6, piece 2-6). 연결's row for a site that is not signed
+ * in to offers the one thing that can be done from there — saving its login — and sends a person
+ * here with the site named. The form is open when they arrive, with the site chosen and the
+ * addresses its sign-in is at; what they still have to do is type the two values.
+ */
+describe("arriving from 연결 to save a site's login", () => {
+  test("opens the form for that site, with its name and the addresses its sign-in is at", async () => {
+    const { arrived } = await rendered();
+    expect(arrived.opened.site).toContain("Baemin for Owners");
+    expect(arrived.opened.label).toBe("Baemin for Owners");
+    // Where 배민's password box is, first — then where its sign-in starts.
+    expect(arrived.opened.addresses.split("\n")).toEqual([
+      "biz-member.baemin.com",
+      "ceo.baemin.com",
+    ]);
+  });
+
+  test("only once, and only for a site a login can be saved for", async () => {
+    const { arrived } = await rendered();
+    // The next form opened from this screen is for no site in particular.
+    expect(arrived.reopened.site).toContain("Another site");
+    expect(arrived.reopened.label).toBe("");
+    expect(arrived.reopened.addresses).toBe("");
+    // 홈택스 takes a certificate: the screen opens nothing for it, nor for no site at all.
+    expect(arrived.isOpenForUnknown).toBe(false);
+    expect(arrived.isOpenForNone).toBe(false);
+  });
+});
+
 describe("why a login was not saved", () => {
   test("every code the server refuses a login with has a sentence here", () => {
     const refusals = auditFactCodes.filter(

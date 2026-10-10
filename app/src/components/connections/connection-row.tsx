@@ -51,6 +51,7 @@ export const ConnectionRow = ({
   isBusy = false,
   confirmText,
   onToggle,
+  action,
   note = null,
   children,
 }: {
@@ -87,6 +88,12 @@ export const ConnectionRow = ({
    * card is not in yet — `site-rows.tsx`).
    */
   onToggle?: (next: boolean) => void;
+  /**
+   * What stands where the switch would, on a row that has none: the one thing a person can do
+   * about it from here (a site that is signed in to with a saved login — `site-rows.tsx`). Never
+   * beside a switch: a row with both would be asking which of the two turns it on.
+   */
+  action?: React.ReactNode;
   /** What just went wrong with this row. Cleared by the caller on the next attempt. */
   note?: string | null;
   /** The inline form or extra actions this row opens under itself. */
@@ -172,7 +179,9 @@ export const ConnectionRow = ({
             disabled={isBusy}
             onCheckedChange={handleChange}
           />
-        ) : null}
+        ) : (
+          (action ?? null)
+        )}
       </ItemActions>
     </Item>
   );

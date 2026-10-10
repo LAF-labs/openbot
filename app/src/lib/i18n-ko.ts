@@ -1264,8 +1264,9 @@ export const ko: Record<string, string> = {
   // 사이트 연결 — 화면의 말.
   "Needs signing in again": "다시 로그인 필요",
   // 2026-10-09부터 사람이 봇의 브라우저를 넘겨받지 않는다. 연결은 비밀번호 카드로 돌아온다.
-  "Connecting comes back soon, through the password card.":
-    "곧 비밀번호 카드로 연결할 수 있게 돼요.",
+  "Login saved · your Bot signs in when it gets there":
+    "로그인 저장됨 · 봇이 들어갈 때 로그인해요",
+  "Save login": "로그인 저장",
   "The Bot cannot sign in here: it needs a certificate on your device.":
     "봇은 여기에 로그인할 수 없어요 — 내 기기에 있는 인증서가 필요해요.",
 
@@ -1452,8 +1453,8 @@ export const ko: Record<string, string> = {
   "The connections could not be loaded.": "연결 목록을 불러오지 못했어요.",
   "Sign in once at the service and your Bot works with your own account.":
     "서비스에 한 번만 로그인하면, 봇이 내 계정으로 일해요.",
-  "Sites the Bot signs in to in its own browser. Connecting a new one comes back soon, through the password card; one already connected stays signed in.":
-    "봇이 자기 브라우저로 로그인해 쓰는 사이트예요. 새로 연결하는 것은 곧 비밀번호 카드로 돌아오고, 이미 연결한 사이트는 로그인 상태가 유지돼요.",
+  "Sites the Bot signs in to in its own browser, with a login you save in Accounts. One already connected stays signed in.":
+    "봇이 자기 브라우저로 로그인해 쓰는 사이트예요. 계정에 저장한 로그인으로 들어가고, 이미 연결한 사이트는 로그인 상태가 유지돼요.",
   "Finish giving permission in the browser that opened.":
     "열린 브라우저에서 동의를 마치는 중…",
   "Type your shop's name, then press Connect.":

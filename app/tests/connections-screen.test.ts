@@ -178,9 +178,9 @@ describe("what the switch starts", () => {
     expect(oauth).not.toContain("forgetSite");
 
     /*
-     * A site row only lets go of a site, until the password card brings connecting back (owner,
-     * 2026-10-09): it opened the Bot's browser and took the wheel, and nobody takes it now. It holds
-     * no consent flow at all. What it draws is in `site-rows-render.test.tsx`.
+     * A site row only lets go of a site (owner, 2026-10-09): it opened the Bot's browser and took
+     * the wheel, and nobody takes it now — a site is signed in to by the Bot, with a login saved
+     * in 계정. It holds no consent flow at all. What it draws is in `site-rows-render.test.tsx`.
      */
     const sites = read("components/connections/site-rows.tsx");
     expect(sites).toContain("forgetSite");
