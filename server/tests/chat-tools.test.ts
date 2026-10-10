@@ -3888,6 +3888,55 @@ describe("a conversation that hands its browsing over", () => {
     expect(lane.asked).toBe(1);
   });
 
+  /*
+   * AS THE CONVERSATION THAT DELEGATED, AND UNDER ITS TURN (beside 4-2's folders and 5-1's runs).
+   * Where a file goes — a project's own folder or the main one — and whose turn a question is
+   * counted on are both read off the call's actor. A delegated run has a thread and run ids of
+   * its own for the model's sake, and none of them may be what its calls are made as.
+   */
+  test("a delegated run's call is made as the conversation that delegated, under its turn", async () => {
+    const actors: unknown[] = [];
+    const gateway = {
+      navigate: async (
+        _computer: string,
+        _bot: string,
+        actor: unknown,
+        url: string,
+      ) => {
+        actors.push(actor);
+        return { url, title: "예시" };
+      },
+    } as unknown as ComputerGateway;
+    const toolkit = await createChatTools({
+      gateway,
+      delegatesBrowsing: true,
+      people: createPersonAnswers(),
+    })(
+      {
+        ...context,
+        delegate: async (run) => {
+          await run.execute(
+            "computer_navigate",
+            { url: "https://example.com" },
+            call("call-open"),
+          );
+          return { answer: "열었어요.", steps: [] };
+        },
+      },
+      null,
+    );
+    await toolkit.execute(DELEGATE.name, TASK, call("call-delegate"));
+    expect(actors).toEqual([
+      {
+        id: owner.id,
+        userId: owner.id,
+        threadId: context.threadId,
+        runId: context.runId,
+        toolCallId: "call-open",
+      },
+    ]);
+  });
+
   test.each([
     ["no task", { to: "browser" }],
     ["a task of spaces", { to: "browser", task: "   " }],
