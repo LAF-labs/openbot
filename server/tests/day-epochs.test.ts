@@ -510,4 +510,69 @@ describe("a day's close, prepared at night and taken in the morning", () => {
     expect(again.system).toBe(morning.system);
     expect(again.messages).toEqual(morning.messages);
   });
+
+  test("a conversation that was dropped is not written back: not by the write in flight, the day's clock, or a compaction still being decided", async () => {
+    /*
+     * A project's deletion removes the row, and the write is an upsert: anything here that keeps
+     * the conversation afterwards puts it back (review, 2026-10-10).
+     */
+    const rows = new Map<
+      string,
+      Parameters<ConversationPersistence["save"]>[0]
+    >();
+    const saved: string[] = [];
+    const persistence: ConversationPersistence = {
+      loadAll: async () => [...rows.values()],
+      save: async (row) => {
+        // A write takes a moment, as Postgres does.
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        rows.set(row.threadId, structuredClone(row));
+        saved.push(row.threadId);
+      },
+    };
+    let decide: () => void = () => {};
+    const deciding = new Promise<void>((resolve) => {
+      decide = resolve;
+    });
+    const { store, thread, run, setClock } = harness({
+      persistence,
+      compact: async () => {
+        await deciding;
+        return { plan: { call_page: "drop_call" }, arm: "decisions" };
+      },
+    });
+    thread.push(
+      call("c0", "call_page", "computer_read", {}, at(0)),
+      result(
+        "t0",
+        "call_page",
+        JSON.stringify({
+          ok: true,
+          text: "쓸모없는 페이지 본문 ".repeat(4000),
+        }),
+        at(0),
+      ),
+    );
+    dayOfTalk(thread, 0);
+    run(at(0, 200));
+    const compacting = store.compactNow("thread_miso");
+
+    // The write the run asked for is still in flight: `drop` comes back only after it has landed.
+    expect(saved).toEqual([]);
+    await store.drop("thread_miso");
+    expect(saved).toEqual(["thread_miso"]);
+    // The deletion's transaction.
+    rows.clear();
+
+    // The compaction decides now, holding the conversation it was asked about.
+    decide();
+    await compacting;
+    // And the day turns.
+    setClock(at(1, -480));
+    expect(await store.tick()).toBe(0);
+    await store.forget("bot_miso", ["택배는 우체국을 쓴다."]);
+    await store.settled();
+    expect([...rows.keys()]).toEqual([]);
+    expect(saved).toEqual(["thread_miso"]);
+  });
 });

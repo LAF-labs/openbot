@@ -9,8 +9,16 @@
  *
  *   1. MARK (`channels.deleting_at`, in Postgres). From here every write door refuses.
  *   2. WAIT for the writes that were already through a door when the mark was set.
- *   3. STOP the conversation's turn and wait until it has written its end.
+ *   3. STOP the conversation's turn and wait until it has written its end; then have the context
+ *      store forget the conversation, which would otherwise write its row back.
  *   4. DELETE, in one transaction, by an explicit list of what names the conversation.
+ *
+ * A TURN THAT HAS NOT ENDED IS NOT DELETED UNDER. Step 3 has a bound, and when it runs out the
+ * deletion stops there: the mark stays, the doors go on refusing, the person is told the project
+ * is being deleted, and the minute's clock finishes it (`boot/background.ts`). Removing the rows
+ * under a turn still writing is the one thing the mark exists to prevent. It used to wait without
+ * a bound, with the person's request held open, and a deletion that failed after its mark stayed
+ * marked — hidden, refusing, and not deleted — until the next restart (review, 2026-10-10).
  *
  * ONE GATE FOR EVERY DOOR (`refuseWhileDeleting`). It is a middleware over the whole API, and it
  * finds the conversation in the path of the route that matched — any route, written today or next
@@ -27,7 +35,9 @@
  * IN MEMORY, AND RIGHT TO BE: one API server process per deployment (`docs/laf/deployment-model.md`),
  * so "the requests in flight" is this process's own list. The mark is the part that must outlive
  * a restart, and it does — after one there are no requests in flight to wait for, the mark still
- * refuses new ones, and boot finishes what was cut short (`finishPending`).
+ * refuses new ones, and boot finishes what was cut short (`finishPending`). The register and the
+ * gate that fills it are made here, with the deletion that reads it: one register, so nobody can
+ * hand the gate one and the deletion another.
  *
  * WHAT IS NOT REMOVED, AND WHY, is written beside `NAMES_A_CONVERSATION` below and in the record:
  * the audit trail (append-only), and the readable copies of the project's attachments in the Bot's
@@ -57,6 +67,9 @@ export const PROJECT_DELETING = "laf:project_deleting";
 
 /** How long a deletion waits for the writes that were in flight when it marked. */
 export const WRITES_SETTLE_MS = 120_000;
+
+/** How long it waits for the conversation's turn to have written its end, once asked to stop. */
+export const TURN_SETTLE_MS = 120_000;
 
 /** The methods that read. Everything else is a write. */
 const READS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -245,7 +258,14 @@ export const NAMES_A_CONVERSATION: Readonly<
 
 export type ProjectDeletionResult =
   | { ok: true; counts: Record<string, number> }
-  | { ok: false; code: "laf:channel_not_found" | "laf:project_only" };
+  | {
+      ok: false;
+      /** `laf:project_deleting`: marked, its turn has not ended yet, and the clock will finish it. */
+      code:
+        | "laf:channel_not_found"
+        | "laf:project_only"
+        | typeof PROJECT_DELETING;
+    };
 
 export type ProjectDeletion = {
   /** Delete a project this person is in. Asked again for one already marked, it finishes it. */
@@ -253,27 +273,40 @@ export type ProjectDeletion = {
     userId: string;
     channelId: string;
   }): Promise<ProjectDeletionResult>;
-  /** Boot: finish every deletion a restart cut short. Answers how many there were. */
+  /**
+   * Finish every deletion that is marked and not done: what a restart cut short, at boot, and
+   * what a turn or a failure held up, on the minute's clock. Answers how many it finished.
+   */
   finishPending(): Promise<number>;
+  /** The gate over the whole API (`refuseWhileDeleting`), on this deletion's own register. */
+  gate: MiddlewareHandler;
 };
 
 export function createProjectDeletion(dependencies: {
   database: Database;
-  writes: ConversationWrites;
   /** Stop the conversation's turn and wait until it has written its end (`turns/engine.ts`). */
   stopThread: (threadId: string) => Promise<void>;
+  /** Have the context store forget the conversation (`context/conversations.ts` `drop`). */
+  dropContext?: (threadId: string) => Promise<void>;
+  /** The bound on the turn's end. For the tests; a deployment takes `TURN_SETTLE_MS`. */
+  turnSettleMs?: number;
   /** Withdraw what was allowed "for this conversation" (`computer/standing-approvals.ts`). */
   endApprovals?: (threadId: string, actor: string) => Promise<unknown>;
   auditStore?: AuditStore;
 }): ProjectDeletion {
-  const { database, writes, stopThread, endApprovals, auditStore } =
+  const { database, stopThread, dropContext, endApprovals, auditStore } =
     dependencies;
+  const turnSettleMs = dependencies.turnSettleMs ?? TURN_SETTLE_MS;
+  const writes = createConversationWrites();
 
-  /** Steps 2 to 4, for a channel already marked. `by` is absent when boot finishes one. */
-  const finish = async (
+  /**
+   * Steps 2 to 4, for a channel already marked. `by` is absent when nobody asked: boot, or the
+   * clock. Null when the conversation's turn has not ended and nothing was removed.
+   */
+  const attempt = async (
     channelId: string,
     by: string | undefined,
-  ): Promise<Record<string, number>> => {
+  ): Promise<Record<string, number> | null> => {
     const held = await database
       .select({ threadId: channelThreads.threadId })
       .from(channelThreads)
@@ -286,16 +319,29 @@ export function createProjectDeletion(dependencies: {
       log.warn("project_deletion_writes_not_settled", { channel: channelId });
     }
     // After the writes: a send that was in flight has listed its turn by now, so this stops it.
-    await Promise.all(
-      threadIds.map((threadId) =>
-        stopThread(threadId).catch((error: unknown) => {
-          log.warn("project_deletion_turn_not_stopped", {
-            channel: channelId,
-            reason: describeFailure(error),
-          });
-        }),
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const ranOut = new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), turnSettleMs);
+    });
+    const stopped = await Promise.race([
+      Promise.all(threadIds.map((threadId) => stopThread(threadId))).then(
+        () => true as const,
       ),
-    );
+      ranOut,
+    ]).catch((error: unknown) => {
+      log.warn("project_deletion_turn_not_stopped", {
+        channel: channelId,
+        reason: describeFailure(error),
+      });
+      return false as const;
+    });
+    clearTimeout(timer);
+    if (!stopped) {
+      log.warn("project_deletion_turn_not_ended", { channel: channelId });
+      return null;
+    }
+    // After the turn: its end is the last thing that keeps the conversation's context.
+    for (const threadId of threadIds) await dropContext?.(threadId);
     for (const threadId of threadIds) {
       await endApprovals?.(threadId, by ?? "system").catch((error: unknown) => {
         log.warn("project_deletion_approvals_not_ended", {
@@ -385,7 +431,25 @@ export function createProjectDeletion(dependencies: {
     return counts;
   };
 
+  /*
+   * ONE ATTEMPT AT A TIME PER PROJECT. The person asking again, the clock and boot all come here,
+   * and the second to arrive joins the first instead of stopping the turn and ending the
+   * approvals a second time beside it.
+   */
+  const attempts = new Map<string, Promise<Record<string, number> | null>>();
+  const finish = (channelId: string, by: string | undefined) => {
+    const running = attempts.get(channelId);
+    if (running) return running;
+    const work = attempt(channelId, by).finally(() => {
+      if (attempts.get(channelId) === work) attempts.delete(channelId);
+    });
+    attempts.set(channelId, work);
+    return work;
+  };
+
   return {
+    gate: refuseWhileDeleting(database, writes),
+
     async delete({ userId, channelId }) {
       const [found] = await database
         .select({ id: channels.id, kind: channels.kind })
@@ -409,7 +473,10 @@ export function createProjectDeletion(dependencies: {
         .update(channels)
         .set({ deletingAt: sql`coalesce(${channels.deletingAt}, now())` })
         .where(eq(channels.id, channelId));
-      return { ok: true, counts: await finish(channelId, userId) };
+      const counts = await finish(channelId, userId);
+      return counts
+        ? { ok: true, counts }
+        : { ok: false, code: PROJECT_DELETING };
     },
 
     async finishPending() {
@@ -417,15 +484,18 @@ export function createProjectDeletion(dependencies: {
         .select({ id: channels.id })
         .from(channels)
         .where(isNotNull(channels.deletingAt));
+      let finished = 0;
       for (const { id } of pending) {
-        await finish(id, undefined).catch((error: unknown) => {
+        const counts = await finish(id, undefined).catch((error: unknown) => {
           log.error("project_deletion_not_finished", {
             channel: id,
             reason: describeFailure(error),
           });
+          return null;
         });
+        if (counts) finished += 1;
       }
-      return pending.length;
+      return finished;
     },
   };
 }

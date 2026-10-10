@@ -23,6 +23,7 @@ export const CHANNEL_REFUSALS: Record<string, string> = {
   "laf:project_limit": "There are as many projects as there can be.",
   // Deleting one (piece 4-5). The main conversation is the Bot's and is not deleted from a list.
   "laf:project_only": "Only a project can be deleted here.",
+  // Marked, and its turn has not ended yet: the server finishes it when it has.
   "laf:project_deleting": "That project is being deleted.",
 };
 
@@ -112,6 +113,14 @@ export async function deleteProject(
       .json()
       .then((body: { code?: string }) => body.code)
       .catch(() => undefined);
+    /*
+     * BEING DELETED IS NOT "NOT DELETED". The server has marked it and is waiting for its turn to
+     * end; it finishes on its own. The list no longer holds it, so the list is read again — the
+     * sentence says why it went, and nothing is left on screen to press a second time.
+     */
+    if (code === "laf:project_deleting") {
+      await queryClient.invalidateQueries({ queryKey: channelKeys.all });
+    }
     const known = own(CHANNEL_REFUSALS, code);
     throw new Error(
       known ? t(known) : t("Could not delete the project. Try again."),

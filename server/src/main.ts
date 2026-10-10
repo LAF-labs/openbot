@@ -53,11 +53,7 @@ import {
 import { startBackgroundWork } from "./boot/background";
 import { keepServingThroughUnhandledRejections } from "./boot/process";
 import { reconcileBeforeServing } from "./boot/reconcile";
-import {
-  createConversationWrites,
-  createProjectDeletion,
-  refuseWhileDeleting,
-} from "./channels/deleting";
+import { createProjectDeletion } from "./channels/deleting";
 import { recordActivity } from "./channels/activity";
 import {
   type ChannelActivityEvent,
@@ -949,11 +945,6 @@ sayFirstMove({
 // Not awaited: the first decision's slow start is paid here, before anybody is waiting on one.
 // Whatever keys the deployment holds: a person's calendar or mailbox needs none of them.
 void warmFirstMove(firstMoveDeps);
-/*
- * A project's deletion, and the one gate its mark is read at (`channels/deleting.ts`). The list of
- * writes in flight is this process's own, which is the deployment's: one API server per VM.
- */
-const conversationWrites = createConversationWrites();
 const turnEngine = createTurnEngine({
   database,
   ledger: runLedger,
@@ -987,10 +978,14 @@ const turnEngine = createTurnEngine({
       at: new Date(),
     }),
 });
+/*
+ * A project's deletion, and the one gate its mark is read at (`channels/deleting.ts`). The list of
+ * writes in flight is its own and this process's, which is the deployment's: one API server per VM.
+ */
 const projectDeletion = createProjectDeletion({
   database,
-  writes: conversationWrites,
   stopThread: (threadId) => turnEngine.stopThread(threadId),
+  dropContext: (threadId) => conversations.drop(threadId),
   endApprovals: (threadId, actor) =>
     standingApprovals.endThread(threadId, actor),
   auditStore: bootAuditStore,
@@ -998,7 +993,7 @@ const projectDeletion = createProjectDeletion({
 /*
  * A deletion a restart cut short is finished here: its mark has been refusing writes since, and
  * nothing of this process is writing into it. Not awaited — boot does not wait on a transaction to
- * start answering — and a failure is logged per project, to be tried again at the next boot.
+ * start answering — and a failure is logged per project, to be tried again on the minute's clock.
  *
  * AFTER THE INTERRUPTED RUNS HAVE BEEN TOLD, which is the one thing at boot that writes a row
  * naming a conversation by itself: a turn the last process died on, in a project it was half-way
@@ -1054,7 +1049,6 @@ const app = createApp({
   channelStore,
   channelEvents,
   projectDeletion,
-  conversationGate: refuseWhileDeleting(database, conversationWrites),
   // The same store the boot row uses, so a Bot's own refusal lands in the trail beside its actions.
   auditStore: bootAuditStore,
   componentStore,
@@ -1335,6 +1329,7 @@ startBackgroundWork({
   builtInSkills,
   pluginStore,
   conversations,
+  projectDeletion,
   // The hourly curation: each new line of a Bot's checked against the owner's own words.
   memoryCurator: createMemoryCurator({
     database,

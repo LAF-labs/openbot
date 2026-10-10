@@ -2677,6 +2677,13 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * computer's own door and its own count of places, over a socket.
  * By hand: 4084 and 5 is 4089, and 35 is 4124; 940 and 6 is 946.
  *
+ * RAISED 2026-10-10 FOR A DELETION THAT LEAVES NOTHING BEHIND, `server` from 4182 to 4187 and `app`
+ * from 2256 to 2257 (the review of piece 4-5). Three in `conversation-deleting.integration.test.ts`
+ * (a turn that has not ended is not deleted under; a failed deletion is tried again and two at
+ * once are one; the door says "being deleted"), one in `day-epochs.test.ts` (a dropped conversation
+ * is not written back), one in `turn-engine.integration.test.ts` (a turn writing its end is
+ * waited for), and one in app's `projects.test.tsx`.
+ *
  * RAISED 2026-10-10 FOR THE LANE THAT IS A BROWSER'S, `server` from 4158 to 4182 (record §5, piece
  * 5-4), by exactly the twenty-four it brought. Five in `turn-engine.integration.test.ts`, where
  * three became eight: a turn that never uses the browser done while a routine has it, the call
@@ -2716,8 +2723,8 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4182, roots: ["server"] },
-  { name: "app", floor: 2256, roots: ["app"] },
+  { name: "server", floor: 4187, roots: ["server"] },
+  { name: "app", floor: 2257, roots: ["app"] },
   {
     name: "agent-computer",
     /*

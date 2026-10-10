@@ -236,6 +236,12 @@ export type ConversationStore = {
    * the eval and the tests. Resolves to whether a close is ready for the next person message.
    */
   closeNow(threadId: string): Promise<boolean>;
+  /**
+   * The conversation is gone: forget it, and wait for the write of it that is in flight. What a
+   * project's deletion calls before it removes the row (`channels/deleting.ts`), so nothing here
+   * puts the row back afterwards.
+   */
+  drop(threadId: string): Promise<void>;
   /** The store's clock: what the middleware dates a run by. Injected in tests and the eval. */
   now(): Date;
   /**
@@ -1086,6 +1092,20 @@ export function createConversationStore(
       const running = closes.get(threadId);
       if (running) await running;
       return startClose(conversation, true);
+    },
+
+    async drop(threadId) {
+      const conversation = conversations.get(threadId);
+      /*
+       * NOT KEPT ANY MORE, AS WELL AS NOT LISTED. A day's close or a compaction being decided holds
+       * the conversation itself and keeps it when it is done — a minute from now, after the row it
+       * would write has been deleted, and the write is an upsert (review, 2026-10-10: a deleted
+       * project's context came back that way, and from `forget` and the day clock, which walk the
+       * list). Unkept, what they hold writes nothing.
+       */
+      if (conversation) conversation.kept = false;
+      conversations.delete(threadId);
+      await writes.get(threadId);
     },
 
     now() {

@@ -345,6 +345,14 @@ export function turnFailureOf(error: unknown, threadId: string): string {
 
 export function createTurnEngine(options: TurnEngineOptions) {
   const live = new Map<string, LiveTurn>();
+  /*
+   * EVERY TURN THAT HAS NOT WRITTEN ITS END, which is more than `live`. A turn leaves `live` the
+   * moment the conversation is free for the next message, and only then settles its row in the
+   * ledger and records what the Bot said — rows that name the conversation. A deletion that asked
+   * `live` found nothing in that moment, removed the thread, and the rows landed after it
+   * (review, 2026-10-10). Whoever must wait for a conversation to fall silent waits on this.
+   */
+  const unfinished = new Set<LiveTurn>();
   const maxSteps = options.maxSteps ?? CHAT_MAX_STEPS;
   const timeoutMs = options.timeoutMs ?? CHAT_TURN_TIMEOUT_MS;
   const persistRetryMs = options.persistRetryMs ?? PERSIST_RETRY_MS;
@@ -982,6 +990,8 @@ export function createTurnEngine(options: TurnEngineOptions) {
         return { ok: false, code: "laf:turn_in_progress" };
       }
       live.set(input.threadId, turn);
+      unfinished.add(turn);
+      void ended.then(() => unfinished.delete(turn));
       try {
         await options.ledger.begin({
           runId: turnId,
@@ -1091,9 +1101,8 @@ export function createTurnEngine(options: TurnEngineOptions) {
      * account's deletion does first, so no turn goes on writing into a conversation being deleted.
      */
     async stopFor(userId: string): Promise<void> {
-      const theirs = [...live.values()].filter(
-        (turn) => turn.ownerId === userId,
-      );
+      // Aborting one that has already left `live` does nothing: it is past everything that listens.
+      const theirs = [...unfinished].filter((turn) => turn.ownerId === userId);
       for (const turn of theirs) turn.stop.abort();
       await Promise.all(theirs.map((turn) => turn.ended));
     },
@@ -1104,10 +1113,15 @@ export function createTurnEngine(options: TurnEngineOptions) {
      * and a turn asked to stop goes on writing until it has.
      */
     async stopThread(threadId: string): Promise<void> {
-      const turn = live.get(threadId);
-      if (!turn) return;
-      turn.stop.abort();
-      await turn.ended;
+      /*
+       * All of them, not one: the turn that has left `live` and is still writing its end, and the
+       * one a window started the instant it heard the conversation was free.
+       */
+      const theirs = [...unfinished].filter(
+        (turn) => turn.threadId === threadId,
+      );
+      for (const turn of theirs) turn.stop.abort();
+      await Promise.all(theirs.map((turn) => turn.ended));
     },
 
     /** Whether the conversation has a turn queued or running. */

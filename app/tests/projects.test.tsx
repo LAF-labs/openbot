@@ -472,5 +472,17 @@ describe("deleting a project", () => {
         expect(ko[sentence as keyof typeof ko]).toBeString();
       },
     );
+
+    test("one the server is still deleting leaves the list: it is read again, with the sentence said", async () => {
+      const { deleteProject } = await import("../src/lib/channels/mutations");
+      answering(409, { code: "laf:project_deleting" });
+      const { channelKeys, queryClient } = await client();
+      await expect(deleteProject(queryClient, "p 1")).rejects.toThrow(
+        "That project is being deleted.",
+      );
+      expect(queryClient.getQueryState(channelKeys.list())?.isInvalidated).toBe(
+        true,
+      );
+    });
   });
 });

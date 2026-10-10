@@ -57,11 +57,7 @@ import { createSignInAllowlist } from "../src/auth/allowlist";
 import type { AuthService } from "../src/auth/guards";
 import { createRoleRepository, lookupBotOwner } from "../src/auth/guards";
 import { createOnboardingStore } from "../src/auth/onboarding";
-import {
-  createConversationWrites,
-  createProjectDeletion,
-  refuseWhileDeleting,
-} from "../src/channels/deleting";
+import { createProjectDeletion } from "../src/channels/deleting";
 import {
   createSessionRevocation,
   SESSION_REVOKED,
@@ -303,7 +299,6 @@ function deployment() {
     resolveAgents: async () => ({ [BOT_A]: instantBot }),
   });
 
-  const conversationWrites = createConversationWrites();
   const app = createApp({
     config,
     auth,
@@ -369,9 +364,7 @@ function deployment() {
     projectDeletion: createProjectDeletion({
       database,
       stopThread: async () => {},
-      writes: conversationWrites,
     }),
-    conversationGate: refuseWhileDeleting(database, conversationWrites),
     // 소식: the posts and the person's three presses on them.
     feed: createFeedStore({ database }),
     // 목표: the person's goals and their presses on them.
