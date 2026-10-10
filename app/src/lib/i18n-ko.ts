@@ -1407,6 +1407,46 @@ export const ko: Record<string, string> = {
   // 연결 화면 — 계정, 서비스, 사이트를 한 줄씩.
   Connections: "연결",
   Accounts: "계정",
+  "The sign-in names and passwords your Bot signs in with for you. Each is used only at the addresses it was saved for, and is never shown again once saved.":
+    "봇이 대신 로그인할 때 쓰는 아이디와 비밀번호예요. 저장한 주소에서만 쓰이고, 저장한 뒤에는 다시 보여 주지 않아요.",
+  "Add login": "로그인 추가",
+  "Change login": "로그인 바꾸기",
+  "Kept for you alone, and never shown again once saved.":
+    "본인만 쓰도록 보관하고, 저장한 뒤에는 다시 보여 주지 않아요.",
+  Site: "사이트",
+  "Another site": "다른 사이트",
+  Addresses: "주소",
+  "Where its sign-in is. One to a line.":
+    "로그인 창이 있는 주소예요. 한 줄에 하나씩 적어 주세요.",
+  "Sign-in name": "아이디",
+  Password: "비밀번호",
+  "Leave both empty to keep what is saved.":
+    "둘 다 비워 두면 저장된 값을 그대로 둬요.",
+  "Change {name}": "{name} 바꾸기",
+  "Delete {name}": "{name} 지우기",
+  "The saved logins could not be loaded.": "저장한 로그인을 불러오지 못했어요.",
+  "No login is saved yet.": "아직 저장한 로그인이 없어요.",
+  "No more logins can be saved. Delete one first.":
+    "더 저장할 수 없어요. 먼저 하나를 지워 주세요.",
+  "Your Bot will ask you to type it yourself the next time that site asks.":
+    "지우면 그 사이트에서 로그인할 때 봇이 직접 입력을 부탁해요.",
+  "Delete this login?": "이 로그인을 지울까요?",
+  "That could not be read as a login. Check each box and try again.":
+    "로그인으로 읽을 수 없었어요. 칸마다 확인하고 다시 해 주세요.",
+  "Give it a name you will know it by.": "알아볼 수 있는 이름을 붙여 주세요.",
+  "That is not an address a login can be saved for. Use the site's own https address.":
+    "로그인을 저장할 수 있는 주소가 아니에요. 그 사이트의 https 주소를 적어 주세요.",
+  "Add the address its sign-in is on.": "로그인 창이 있는 주소를 적어 주세요.",
+  "That is too many addresses for one login.":
+    "로그인 하나에 주소가 너무 많아요.",
+  "That site is not one this app knows.": "이 앱이 아는 사이트가 아니에요.",
+  "This cannot be left empty.": "비워 둘 수 없어요.",
+  "That is too long to save.": "너무 길어서 저장할 수 없어요.",
+  "That login is not saved any more.": "그 로그인은 이제 저장되어 있지 않아요.",
+  "This login can no longer be opened. Type its sign-in name and password again.":
+    "이 로그인은 더 이상 열 수 없어요. 아이디와 비밀번호를 다시 입력해 주세요.",
+  "That did not reach the server. Check the connection and try again.":
+    "서버에 닿지 못했어요. 연결을 확인하고 다시 해 주세요.",
   Sites: "사이트",
   "Everything your Bot works with, in one place. Turn one on and it walks you through the rest — there is no key to obtain and no developer account anywhere on this screen.":
     "봇이 함께 쓰는 것들을 한곳에 모았어요. 스위치만 켜면 나머지는 화면이 안내해요.",

@@ -166,6 +166,7 @@
   "app/tests/live-region.test.tsx",
   "app/tests/live-screen.test.tsx",
   "app/tests/live-view.test.tsx",
+  "app/tests/logins-screen.test.tsx",
   "app/tests/made.test.ts",
   "app/tests/markdown-cjk.test.tsx",
   "app/tests/markdown-tilde.test.tsx",

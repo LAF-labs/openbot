@@ -150,12 +150,14 @@ async function adminScreenAt(at: string) {
 }
 
 describe("which link is lit", () => {
-  test("Settings is General, 내 가게, 연결 and 내 데이터, in that order", () => {
-    // 내 가게 beside 연결, because its places are the ones 연결 connects.
+  test("Settings is General, 내 가게, 연결, 계정 and 내 데이터, in that order", () => {
+    // 내 가게 beside 연결, because its places are the ones 연결 connects — and 계정 beside 연결,
+    // because the logins saved there are what the Bot signs in to those places with.
     expect(SETTINGS_NAV.map((item) => item.linkOptions.to)).toEqual([
       "/settings",
       "/settings/shop",
       "/settings/connected-accounts",
+      "/settings/logins",
       "/settings/account",
     ]);
   });
