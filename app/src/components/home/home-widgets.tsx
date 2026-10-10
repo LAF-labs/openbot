@@ -46,7 +46,7 @@ const ROW_CLASS = cn(
   focusRing,
 );
 
-/** A widget's card, its title the way to the whole screen. */
+/** A widget's card: a pane of glass on the backdrop, its title the way to the whole screen. */
 function Widget({
   children,
   count,
@@ -65,7 +65,7 @@ function Widget({
 }) {
   return (
     <section
-      className="rounded-3xl border border-border bg-card text-card-foreground shadow-card"
+      className="rounded-3xl border border-glass-border bg-glass text-card-foreground shadow-card backdrop-blur-xl"
       data-home-widget={name}
     >
       <h2 className="px-1.5 pt-1.5">

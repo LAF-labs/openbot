@@ -112,7 +112,8 @@ export function AppTopBar({
       <header
         className={cn(
           // At least the height the window buttons sit in; taller only while a line stands in it.
-          "flex min-h-titlebar shrink-0 select-none items-center gap-2 bg-background pe-2",
+          // No ground of its own: the window's backdrop shows through, as it does behind the panel.
+          "flex min-h-titlebar shrink-0 select-none items-center gap-2 pe-2",
           inShell() ? LIGHTS_CLEARANCE : "ps-3",
           // Beside an open panel the lights are over the panel's first row, not over this one.
           panel.isOpen && "md:ps-3",

@@ -40,8 +40,11 @@ function RouteComponent() {
      * panel is not. A phone's browser is not a surface this app is made for (owner, 2026-10-10:
      * mobile is an app of its own); what was there is left as it was, neither worked on nor taken
      * out.
+     *
+     * THE GROUND IS THE WINDOW'S (`bg-backdrop`, as Hark's is): the panel and the top row have none
+     * of their own, and the panes that stand on it are glass (`home/home-widgets.tsx`).
      */
-    <div className="flex h-svh w-full overflow-hidden">
+    <div className="flex h-svh w-full overflow-hidden bg-backdrop">
       {/*
        * THE COMPOSER IS MANY TAB STOPS DEEP. This is the standard way past what comes before it,
        * and it is the first thing in the tab order: invisible until focused, then a real button

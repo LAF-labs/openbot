@@ -60,7 +60,8 @@ export function HomePanel() {
     <aside
       aria-label={t("Home")}
       className={cn(
-        "relative flex h-full min-h-0 select-none flex-col border-border border-e bg-sidebar",
+        // No ground and no edge of its own: the window's backdrop, with panes of glass on it.
+        "relative flex h-full min-h-0 select-none flex-col",
         HOME_PANEL_PLACE,
       )}
       data-home-panel
