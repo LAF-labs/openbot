@@ -68,7 +68,9 @@ export type ExposedTools = {
  * Whether this run defers tools behind the bridge. On unless the caller says `off`.
  *
  * A per-run switch rather than an environment variable, because the eval arm measures both arms in
- * one process against one model (docs/laf/eval-pack.md). Production never sends it.
+ * one process against one model (docs/laf/eval-pack.md). Production sends it for one kind of run:
+ * the one a conversation hands its browsing to (`server/src/turns/engine.ts`), which holds the
+ * computer's tools and nothing that could stand behind a bridge.
  */
 export function toolDeferralOf(input: RunAgentInput): boolean {
   const forwarded = input.forwardedProps;
