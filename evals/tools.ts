@@ -15,6 +15,7 @@ import {
   computerTool,
   COMPUTER_TOOLS as SHARED_COMPUTER_TOOLS,
 } from "../shared/tools/computer";
+import { DELEGATE as SHARED_DELEGATE } from "../shared/tools/delegate";
 import {
   MANAGE_ROUTINE as SHARED_MANAGE_ROUTINE,
   REMEMBER as SHARED_REMEMBER,
@@ -47,6 +48,12 @@ export const REQUEST_SECRET = computer("computer_request_secret");
 export const REQUEST_HELP = computer("computer_request_help");
 export const LIST_FILES = computer("computer_list_files");
 export const READ_FILE = computer("computer_read_file");
+
+/**
+ * What a conversation's Bot hands its browsing over with (piece 6-2). The catalogue's own object,
+ * like the rest: a copy here would be a second description for the eval to certify.
+ */
+export const DELEGATE = SHARED_DELEGATE;
 
 /** Everything the catalogue holds, for the hash a report records. */
 export const ALL_COMPUTER_TOOLS = SHARED_COMPUTER_TOOLS;
