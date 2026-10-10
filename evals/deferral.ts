@@ -41,7 +41,11 @@ import {
   WEB_SEARCH_TOOLS,
 } from "../server/src/plugins/web-search-rest";
 import { BRIDGE_TOOLS, type WireTool } from "../shared/tools/bridge";
-import { COMPUTER_TOOLS } from "../shared/tools/computer";
+import {
+  COMPUTER_TOOLS,
+  UNATTENDED_COMPUTER_TOOLS,
+} from "../shared/tools/computer";
+import { CONVERSATION_COMPUTER_TOOLS } from "../shared/tools/delegate";
 import { SELF_TOOLS } from "../shared/tools/self";
 
 /** The adapters list their tools from code; none of them reads the connection to do it. */
@@ -101,9 +105,23 @@ export async function connectedServiceTools(): Promise<WireTool[]> {
   return (await connectedServiceFamilies()).flatMap((family) => family.tools);
 }
 
-/** What a chat Bot with everything connected is handed: the product's whole schema. */
+/**
+ * What a chat Bot with everything connected is handed: the product's whole schema.
+ *
+ * OF THE COMPUTER'S, THE FOLDER'S THREE AND `delegate` (piece 6-2) — the list the server hands a
+ * turn, read from the one place both read it (`shared/tools/delegate.ts`). Until 2026-10-11 this
+ * spread all fourteen of the computer's tools, as the product then did; left that way, every
+ * scenario behind this list would have gone on certifying a Bot nobody is handed any more.
+ */
 export const REALISTIC_TOOLSET: readonly WireTool[] = [
-  ...COMPUTER_TOOLS,
+  ...CONVERSATION_COMPUTER_TOOLS,
+  ...SELF_TOOLS,
+  ...(await connectedServiceTools()),
+];
+
+/** The same for a routine's run, which still browses for itself and has nobody to call. */
+export const UNATTENDED_TOOLSET: readonly WireTool[] = [
+  ...UNATTENDED_COMPUTER_TOOLS,
   ...SELF_TOOLS,
   ...(await connectedServiceTools()),
 ];
@@ -166,7 +184,10 @@ export async function schemaTable(): Promise<string[]> {
   const row = (label: string, tools: number, bytes: number, chars: number) =>
     `  ${label.padEnd(26)}${String(tools).padStart(6)}${n(bytes).padStart(10)} B${n(chars).padStart(9)} chars`;
   const families: ToolFamily[] = [
-    { key: "computer (core)", tools: [...COMPUTER_TOOLS] },
+    // What a conversation's Bot holds of the computer's: the folder's three and `delegate`.
+    { key: "computer (core)", tools: [...CONVERSATION_COMPUTER_TOOLS] },
+    // And what the run it delegates to holds — a conversation of its own, paid for when used.
+    { key: "browse run (its own)", tools: [...COMPUTER_TOOLS] },
     { key: "self (core)", tools: [...SELF_TOOLS] },
     ...(await connectedServiceFamilies()),
   ];

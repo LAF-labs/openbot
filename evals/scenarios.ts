@@ -165,10 +165,32 @@ import {
   weatherPlacesAsked,
 } from "./weather";
 
+/**
+ * What one `delegate` call came to (piece 6-2): the run the conversation's Bot handed its browsing
+ * to, carried out by the harness the way the product carries one out (`run.ts`).
+ */
+export type Delegated = {
+  /** What the Bot wrote for whoever would do the work — all that run was handed. */
+  task: string;
+  /** Every call the delegated run made. */
+  calls: ObservedCall[];
+  /** What it said between its steps: the words a person watching reads. */
+  said: string;
+  /** What it handed back — its last words, which only the Bot that delegated reads. */
+  answer: string;
+  /** It stopped on a call the turn waits on a person for (`Scenario.waitsOn`). */
+  waited: boolean;
+  events: StreamEvent[];
+};
+
 export type Turn = {
+  /** What the conversation's Bot said. */
   text: string;
+  /** What the conversation's Bot called itself. */
   calls: ObservedCall[];
   events: StreamEvent[];
+  /** The runs it delegated to, in order. Absent from a turn built by hand in a test. */
+  delegated?: Delegated[];
 };
 
 export type Verdict = { pass: boolean; notes: string[] };
@@ -254,6 +276,12 @@ export type Scenario = {
    * by a stub and the loop goes on.
    */
   waitsOn?: (call: ObservedCall) => boolean;
+  /**
+   * What a `delegate` call hands back, written by the scenario instead of worked out by a
+   * delegated run — for a scenario about what the Bot does WITH an answer (says a refusal as a
+   * refusal, relays a figure). `undefined` for a task lets the run happen.
+   */
+  handsBack?: (task: string) => string | undefined;
 };
 
 const user = (content: string) => ({
@@ -267,11 +295,38 @@ const verdict = (conditions: Array<[string, boolean]>): Verdict => ({
   notes: conditions.filter(([, ok]) => !ok).map(([label]) => label),
 });
 
+/**
+ * EVERY CALL OF THE TURN'S: the Bot's own, then the ones of each run it delegated to.
+ *
+ * A scenario asks what the Bot did — opened the page it was asked to, asked for a password through
+ * the masked box — and since piece 6-2 the browsing half of "the Bot" is a run of its own. Whether
+ * the conversation's Bot or that run made the call is the product's plumbing; that the call was
+ * made is the behaviour. The scenarios that ARE about the hand-over read the two apart
+ * (`handedOver`, `Turn.calls`).
+ */
+const everyCall = (turn: Turn): ObservedCall[] => [
+  ...turn.calls,
+  ...(turn.delegated ?? []).flatMap((run) => run.calls),
+];
+
 const called = (turn: Turn, name: string) =>
-  turn.calls.some((call) => call.name === name);
+  everyCall(turn).some((call) => call.name === name);
 
 const argsOf = (turn: Turn, name: string) =>
-  turn.calls.find((call) => call.name === name)?.arguments ?? null;
+  everyCall(turn).find((call) => call.name === name)?.arguments ?? null;
+
+/** The tasks the conversation's Bot handed over, in order. */
+const handedOver = (turn: Turn): string[] =>
+  (turn.delegated ?? []).map((run) => run.task);
+
+/**
+ * Everything a person read in the turn: what the Bot said, and what a run it delegated to said
+ * between its steps. Not that run's last words — those are the Bot's to read, not the person's.
+ */
+const everythingSaid = (turn: Turn): string =>
+  [turn.text, ...(turn.delegated ?? []).map((run) => run.said)]
+    .filter(Boolean)
+    .join("\n");
 
 /**
  * The words of the browser's machinery, as they reached a shop owner's screen.
