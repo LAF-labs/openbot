@@ -42,6 +42,12 @@ export type HomeCardView = {
    * where the answer did not say which — the card is then the way to its page and nothing else.
    */
   thing: HomeCardThing | null;
+  /**
+   * The made thing itself, where it is a gallery card and the server sent what it was called with
+   * (the newest one only): 홈 draws it in place of the line (`components/gallery/gallery-card.tsx`
+   * decides whether it can). Null everywhere else.
+   */
+  card: { name: string; args: Record<string, unknown> } | null;
 };
 
 export type HomeCardThing =
@@ -79,6 +85,7 @@ export function feedCard(
     count,
     line,
     note: null,
+    card: null,
     // A post has no place of its own: 소식's page is where it is read.
     thing: null,
   };
@@ -102,6 +109,7 @@ export function goalsCard(
     at: null,
     count: active.length,
     line,
+    card: null,
     note: measureLine(first as GoalView),
     thing: id ? { id, kind: "goal" } : null,
   };
@@ -119,8 +127,12 @@ export function madeCard(page: MadePage | undefined): HomeCardView | null {
   if (!line) return null;
   const channelId = text(item.channelId);
   const messageId = text(item.messageId);
+  const tool = text(item.tool);
+  const args = record(item.args);
   return {
     at: text(item.at) || null,
+    card:
+      tool && args && !Array.isArray(item.args) ? { args, name: tool } : null,
     count: null,
     line,
     note: null,

@@ -13,8 +13,10 @@ import { inArray } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import {
+  cardArgs,
   createMadeReader,
   createMadeRoutes,
+  MADE_ARGS_MAX,
   MADE_PAGE_MESSAGES,
   type MadePage,
 } from "../src/agents/made";
@@ -340,6 +342,91 @@ describe("what the Bot made, read out of its conversation", () => {
     ]) {
       expect(titles).not.toContain(absent);
     }
+  });
+
+  /*
+   * 홈 DRAWS THE LAST THING MADE AS THE CARD ITSELF (2026-10-10), and a card is its arguments. One
+   * thing's are sent, not a page's: the newest, on the newest page, and only where it is a card.
+   */
+  test("the newest card carries what it was called with — it alone, and never a file or a table", async () => {
+    // Everything: the newest thing is a file, whose argument is a path in the Bot's folder.
+    const all = await read({
+      userId: A.user,
+      agentId: A.bot,
+      shelf: null,
+      cursor: null,
+    });
+    expect(all.items[0]?.tool).toBe("showFile");
+    expect(all.items.filter((item) => item.args !== undefined)).toEqual([]);
+    expect(JSON.stringify(all)).not.toContain("이번 달 정산 내역이에요");
+
+    // The written things: the newest is the notice, and it alone carries its arguments.
+    const text = await read({
+      userId: A.user,
+      agentId: A.bot,
+      shelf: "text",
+      cursor: null,
+    });
+    expect(text.items[0]?.messageId).toBe("c-notice");
+    expect(text.items[0]?.args?.title).toBe("추석 휴무 안내");
+    expect(
+      text.items.slice(1).filter((item) => item.args !== undefined),
+    ).toEqual([]);
+
+    // A table written into an answer has no arguments: it is words.
+    const tables = await read({
+      userId: A.user,
+      agentId: A.bot,
+      shelf: "table",
+      cursor: null,
+    });
+    expect(tables.items[0]?.tool).toBe("markdownTable");
+    expect(tables.items.filter((item) => item.args !== undefined)).toEqual([]);
+  });
+
+  test("only the newest page's first thing: a page walked back to carries none", async () => {
+    const first = await read({
+      userId: C.user,
+      agentId: C.bot,
+      shelf: null,
+      cursor: null,
+    });
+    expect(first.items[0]?.args).toEqual({
+      title: `공지 ${MADE_PAGE_MESSAGES + 4}`,
+    });
+    expect(first.items.filter((item) => item.args !== undefined)).toHaveLength(
+      1,
+    );
+    const second = await read({
+      userId: C.user,
+      agentId: C.bot,
+      shelf: null,
+      cursor: first.next,
+    });
+    expect(second.items.length).toBeGreaterThan(0);
+    expect(second.items.filter((item) => item.args !== undefined)).toEqual([]);
+  });
+
+  test.each([
+    ["nothing", null],
+    ["not JSON", "{title:"],
+    ["a list", "[1,2]"],
+    ["a word", '"x"'],
+    [
+      "more than is worth drawing small",
+      JSON.stringify({ rows: "x".repeat(MADE_ARGS_MAX) }),
+    ],
+  ])("arguments that are %s are not sent", (_, raw) => {
+    expect(cardArgs(raw)).toBeNull();
+  });
+
+  test("arguments that are an object are sent as they were", () => {
+    expect(
+      cardArgs('{"title":"가","items":[{"label":"나","done":true}]}'),
+    ).toEqual({
+      title: "가",
+      items: [{ label: "나", done: true }],
+    });
   });
 
   test("a shelf holds only its own", async () => {

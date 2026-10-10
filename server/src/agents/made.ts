@@ -49,7 +49,19 @@ export type MadeItem = {
   channelId: string;
   /** The transcript row to jump to: the card's call id, or the answer's message id. */
   messageId: string;
+  /**
+   * What the card was called with — ON THE NEWEST THING OF THE NEWEST PAGE ONLY, and only where
+   * that thing is a card (2026-10-10, record §2: a gallery card drawn outside the conversation).
+   * 홈 draws the last thing the Bot made as the card itself, and a card is its arguments. One
+   * thing's, not a page's: a chart's rows are the largest thing a call carries, and forty of them
+   * on every screen would be a list paid for to draw one. Absent where it is too large to be worth
+   * drawing small (`MADE_ARGS_MAX`), where it is not an object, and on every other item.
+   */
+  args?: Record<string, unknown>;
 };
+
+/** The most a card's arguments may weigh, as text, to be sent along with the list. */
+export const MADE_ARGS_MAX = 16_000;
 
 export type MadePage = {
   items: MadeItem[];
@@ -195,6 +207,37 @@ export function createMadeReader(options: { database: Database }): MadeReader {
         }
       }
     }
+    /*
+     * THE NEWEST CARD'S OWN ARGUMENTS, read by its call id from the same thread the list was read
+     * from — a call this person was shown, by the test above. Never a file's: a file card's
+     * argument is a path in the Bot's folder, and what is drawn for a file is its name.
+     */
+    const [newest] = items;
+    if (
+      cursor === null &&
+      newest &&
+      newest.tool !== MARKDOWN_TABLE &&
+      newest.shelf !== "file"
+    ) {
+      const [found] = (await database
+        .select({
+          args: sql<
+            string | null
+          >`(select tc -> 'function' ->> 'arguments' from ${calls} as tc where tc ->> 'id' = ${newest.messageId} limit 1)`,
+        })
+        .from(lafThreadMessages)
+        .where(
+          and(
+            eq(lafThreadMessages.threadId, conversation.threadId),
+            sql`${message} ->> 'role' = 'assistant'`,
+            sql`exists (select 1 from ${calls} as tc where tc ->> 'id' = ${newest.messageId})`,
+          ),
+        )
+        .limit(1)) as { args: string | null }[];
+      const args = cardArgs(found?.args ?? null);
+      if (args) newest.args = args;
+    }
+
     const last = rows.at(-1);
     return {
       items,
@@ -202,6 +245,21 @@ export function createMadeReader(options: { database: Database }): MadeReader {
         rows.length === MADE_PAGE_MESSAGES && last ? String(last.seq) : null,
     };
   };
+}
+
+/** A call's arguments as the object they were, or null: too large, not JSON, not an object. */
+export function cardArgs(raw: string | null): Record<string, unknown> | null {
+  if (!raw || raw.length > MADE_ARGS_MAX) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return parsed !== null &&
+      typeof parsed === "object" &&
+      !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 /** `GET /api/agents/:agentId/made?shelf=&cursor=`, mounted under `/api/agents` beside 오늘. */

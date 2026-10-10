@@ -2595,6 +2595,15 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * inside the other; the goal's line to that goal, the made thing's to its conversation, leaving
  * word of which message to show.
  *
+ * RAISED 2026-10-10 FOR A GALLERY CARD DRAWN OUTSIDE THE CONVERSATION, `server` from 4012 to 4020
+ * and `app` from 2210 to 2217 (record §2, piece 7-1). Eight in
+ * `agents-made.integration.test.ts`: the newest card alone carries what it was called with, never
+ * a file or a table; a page walked back to carries none; five kinds of arguments that are not
+ * sent; an object sent as it was. Six in `home-cards.test.ts`: the card handed on with its
+ * arguments, three shapes that are no card, which cards can be drawn anywhere and which cannot,
+ * and the arguments checked against the card's own schema. One in `home-cards-frame.test.tsx`:
+ * the last thing made drawn as the card itself, and as its name where the arguments do not fit.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2623,8 +2632,8 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4012, roots: ["server"] },
-  { name: "app", floor: 2210, roots: ["app"] },
+  { name: "server", floor: 4020, roots: ["server"] },
+  { name: "app", floor: 2217, roots: ["app"] },
   {
     name: "agent-computer",
     floor: 537,

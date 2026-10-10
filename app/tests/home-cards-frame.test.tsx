@@ -304,6 +304,52 @@ describe("홈's first cards", () => {
     expect(asked).toEqual(["m-1"]);
   });
 
+  test("the last thing made is drawn as the card itself where the server sent what it was called with — and as its name where that is not the card's shape", async () => {
+    const withArgs = (args: unknown) =>
+      account(({ pathname }) =>
+        pathname === "/api/agents/bot-1/made"
+          ? json({ items: [{ ...MADE, args }], next: null })
+          : undefined,
+      );
+    const view = await mounted(
+      withArgs({
+        title: "이사 준비",
+        items: [
+          { text: "박스 사기", done: true },
+          { text: "주소 변경", done: false },
+        ],
+      }),
+    );
+    await view.waitFor(() => drawn(view).length === 3, "the three cards");
+    const drawnCard = card(view, "made")?.querySelector<HTMLElement>(
+      "[data-home-card-drawn]",
+    );
+    expect(drawnCard?.dataset.homeCardDrawn).toBe("showChecklist");
+    // The card's own content, not a line naming it.
+    expect(drawnCard?.textContent).toContain("주소 변경");
+    expect(
+      card(view, "made")?.querySelectorAll("[data-home-card-line]").length,
+    ).toBe(0);
+    // Still two presses: the name to 만든 것, the card to the message that made it.
+    expect(pageOf(card(view, "made") as HTMLElement)).toBe("/made");
+    expect(thingOf(view, "made")?.getAttribute("href")).toBe("/channel/c-1");
+    expect(
+      thingOf(view, "made")?.querySelectorAll("[data-home-card-drawn]").length,
+    ).toBe(1);
+    await view.unmount();
+
+    // Arguments from before a schema changed, or anything else: the name, as before, and no throw.
+    const stale = await mounted(
+      withArgs({ title: "이사 준비", items: "많음" }),
+    );
+    await stale.waitFor(() => drawn(stale).length === 3, "the three cards");
+    expect(
+      card(stale, "made")?.querySelectorAll("[data-home-card-drawn]").length,
+    ).toBe(0);
+    expect(line(stale, "made")).toBe("이사 준비");
+    expect(failedHome(stale)).toBe(0);
+  });
+
   test("the card of the page that is open is not drawn, and every other is", async () => {
     const view = await mounted(account(), "/help");
     await view.waitFor(() => drawn(view).length === 3, "the three cards");
