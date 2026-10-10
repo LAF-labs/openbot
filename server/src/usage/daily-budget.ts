@@ -106,16 +106,24 @@ export type DailyBudget = {
   readonly tokens: number;
   /** What it may spend in dollars, where `.env` said — and then THIS is what the day is judged on. */
   readonly usd?: number;
-  /** What today has spent so far, in tokens. Throws when the trail cannot be read. */
-  usedToday: () => Promise<number>;
-  /** What today has cost so far, in dollars. Throws when the trail cannot be read. */
-  costToday: () => Promise<number>;
   /**
-   * Whether today's count has reached the budget. Never throws: a trail that cannot be read is not
-   * a refusal (see the note at the top).
+   * Today, in ONE read: what it has spent in tokens, what that cost in dollars, and whether the
+   * budget is reached — on dollars where `.env` named them, on tokens otherwise, never both.
+   * Null when the trail could not be read. Never throws.
+   *
+   * ONE READ BECAUSE IT WAS THREE. `/api/me`, the call every screen waits on, asked for the
+   * verdict, the count and the cost separately, and each summed the day's rows again
+   * (review, 2026-10-10).
+   */
+  today: () => Promise<BudgetDay | null>;
+  /**
+   * Whether today has reached the budget. Never throws: a trail that cannot be read is not a
+   * refusal (see the note at the top).
    */
   reachedToday: () => Promise<boolean>;
 };
+
+export type BudgetDay = { tokens: number; usd: number; reached: boolean };
 
 export function createDailyBudget(input: {
   database: Database;
@@ -126,7 +134,7 @@ export function createDailyBudget(input: {
   const now = input.now ?? (() => new Date());
 
   /** The day's rows, summed both ways in one read: the count, and what it cost. */
-  const today = async (): Promise<{ tokens: number; usd: number }> => {
+  const sums = async (): Promise<{ tokens: number; usd: number }> => {
     const { start, end } = seoulDayOf(now());
     const tokens = sql`case when ${auditEvents.payload} ->> 'totalTokens' ~ '^[0-9]{1,15}$' then (${auditEvents.payload} ->> 'totalTokens')::bigint else 0 end`;
     /*
@@ -155,28 +163,31 @@ export function createDailyBudget(input: {
       );
     return { tokens: Number(row?.used ?? 0), usd: Number(row?.cost ?? 0) };
   };
-  const usedToday = async () => (await today()).tokens;
-  const costToday = async () => (await today()).usd;
+  const today = async (): Promise<BudgetDay | null> => {
+    try {
+      const day = await sums();
+      return {
+        ...day,
+        // One or the other, never both: a trial that names dollars is judged on dollars alone.
+        reached:
+          input.usd === undefined
+            ? day.tokens >= input.tokens
+            : day.usd >= input.usd,
+      };
+    } catch (error) {
+      log.warn("daily_budget_unread", {
+        reason: describeFailure(error),
+        note: "Today's model usage could not be read, so nothing was refused on account of it.",
+      });
+      return null;
+    }
+  };
 
   return {
     tokens: input.tokens,
     ...(input.usd === undefined ? {} : { usd: input.usd }),
-    usedToday,
-    costToday,
-    reachedToday: async () => {
-      try {
-        // One or the other, never both: a trial that names dollars is judged on dollars alone.
-        return input.usd === undefined
-          ? (await usedToday()) >= input.tokens
-          : (await costToday()) >= input.usd;
-      } catch (error) {
-        log.warn("daily_budget_unread", {
-          reason: describeFailure(error),
-          note: "Today's model usage could not be read, so nothing was refused on account of it.",
-        });
-        return false;
-      }
-    },
+    today,
+    reachedToday: async () => (await today())?.reached ?? false,
   };
 }
 
