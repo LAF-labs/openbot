@@ -31,10 +31,20 @@ const signedIn = {
 };
 const roles = { rolesForUser: async () => ["admin" as const] };
 
-function judge(reached: boolean, used: () => Promise<number> = async () => 0) {
-  const asked = { count: 0, counted: 0 };
+function judge(
+  reached: boolean,
+  used: () => Promise<number> = async () => 0,
+  money?: { usd: number; cost: () => Promise<number> },
+) {
+  const asked = { count: 0, counted: 0, costed: 0 };
   const budget: DailyBudget = {
     tokens: 3_000_000,
+    ...(money ? { usd: money.usd } : {}),
+    costToday: async () => {
+      asked.costed += 1;
+      if (!money) throw new Error("a day counted in tokens was asked its cost");
+      return money.cost();
+    },
     usedToday: async () => {
       asked.counted += 1;
       return used();
@@ -104,6 +114,48 @@ describe("what /api/me says about a trial", () => {
       surface({ ...TRIAL, LAF_DAILY_TOKEN_BUDGET: "1" }, judge(false).budget),
     );
     expect(said.trial).toMatchObject({ dailyTokenBudget: 1 });
+  });
+
+  test("a day counted in tokens is never asked what it cost, and says no dollar figure", async () => {
+    const { budget, asked } = judge(false);
+    const said = await deployment(surface(TRIAL, budget));
+    expect(said.trial).not.toHaveProperty("dailyBudgetUsd");
+    expect(said.trial).not.toHaveProperty("costUsdToday");
+    expect(asked.costed).toBe(0);
+  });
+
+  test("a day counted in dollars says the budget and today's cost beside the four, read once", async () => {
+    const { budget, asked } = judge(false, async () => 812_000, {
+      usd: 0.55,
+      cost: async () => 0.2031,
+    });
+    const said = await deployment(
+      surface({ ...TRIAL, LAF_DAILY_BUDGET_USD: "0.55" }, budget),
+    );
+    expect(said.trial).toEqual({
+      endsAt: "2026-09-29T14:59:59Z",
+      holdDays: 30,
+      dailyTokenBudget: 3_000_000,
+      dailyBudgetUsd: 0.55,
+      budgetReachedToday: false,
+      tokensUsedToday: 812_000,
+      costUsdToday: 0.2031,
+    });
+    expect(asked.costed).toBe(1);
+  });
+
+  test("a cost that cannot be read is left out, like the count — never said as nothing spent", async () => {
+    const { budget } = judge(false, async () => 5, {
+      usd: 0.55,
+      cost: async () => {
+        throw new Error("the trail is down");
+      },
+    });
+    const said = await deployment(
+      surface({ ...TRIAL, LAF_DAILY_BUDGET_USD: "0.55" }, budget),
+    );
+    expect(said.trial).toMatchObject({ dailyBudgetUsd: 0.55 });
+    expect(said.trial).not.toHaveProperty("costUsdToday");
   });
 
   test("nothing at all on a deployment that is not a trial, and the judge is never asked", async () => {

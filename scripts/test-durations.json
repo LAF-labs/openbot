@@ -437,6 +437,7 @@
   "server/tests/message-speakers.test.ts": 0,
   "server/tests/message-stamps.test.ts": 0.01,
   "server/tests/migrate-skip.integration.test.ts": 1.81,
+  "server/tests/model-call-usage.test.ts": 0,
   "server/tests/model-usage.test.ts": 0,
   "server/tests/notes-preset-migration.integration.test.ts": 0.05,
   "server/tests/notes-preset-migration.test.ts": 0.01,

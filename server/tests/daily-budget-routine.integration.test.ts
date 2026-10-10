@@ -65,6 +65,7 @@ describe("a routine fired on a day the trial has spent", () => {
     const spent: DailyBudget = {
       tokens: 3_000_000,
       usedToday: async () => 3_000_000,
+      costToday: async () => 0,
       reachedToday: async () => true,
     };
     const built = buildAgents(

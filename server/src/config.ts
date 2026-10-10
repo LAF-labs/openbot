@@ -152,6 +152,7 @@ export const ENVIRONMENT = {
   LAF_TRIAL_ENDS_AT: "compose",
   LAF_TRIAL_HOLD_DAYS: "compose",
   LAF_DAILY_TOKEN_BUDGET: "compose",
+  LAF_DAILY_BUDGET_USD: "compose",
 } as const satisfies Record<string, VariableSource>;
 
 export type VariableName = keyof typeof ENVIRONMENT;
@@ -177,14 +178,20 @@ export const TENANT_PACKAGE_VARIABLES = [
  *
  * A wire contract with laf-control rather than a private spelling: the fleet writes these at
  * provision and pushes them again (`laf trial extend`, `laf trial budget`), and its
- * `PUSHED_ENV_NAMES` owns the same four. `server/tests/trial-env-contract.test.ts` holds compose and
- * `.env.example` to this list.
+ * `PUSHED_ENV_NAMES` owns the first four. `server/tests/trial-env-contract.test.ts` holds compose
+ * and `.env.example` to this list.
+ *
+ * THE FIFTH IS OPTIONAL, AND THE PRODUCT'S FIRST (2026-10-10, record §4): the day's budget in
+ * dollars. A trial provisioned before the fleet learned the name has four lines and goes on being
+ * judged in tokens, exactly as it was — a product that needed the fifth would refuse to start on
+ * the next upgrade of every live trial.
  */
 export const TRIAL_VARIABLES = [
   "LAF_PLAN",
   "LAF_TRIAL_ENDS_AT",
   "LAF_TRIAL_HOLD_DAYS",
   "LAF_DAILY_TOKEN_BUDGET",
+  "LAF_DAILY_BUDGET_USD",
 ] as const satisfies readonly VariableName[];
 
 export type DeploymentConfig = {
@@ -465,6 +472,11 @@ export type DeploymentConfig = {
   trial?: {
     /** ISO-8601 in UTC: the fleet writes 23:59:59 in Seoul on the trial's last day. */
     endsAt: string;
+    /**
+     * What a Seoul day may spend in dollars, where the trial says. Present, the day is judged in
+     * money and the token line is only what `/api/me` reads back; absent, in tokens as before.
+     */
+    dailyBudgetUsd?: number;
     /** How long a stopped trial is kept before it is destroyed. */
     holdDays: number;
     /** Tokens a Seoul day may spend across every Bot on this VM, checked before each run starts. */
@@ -1428,11 +1440,13 @@ function trialConfig(environment: Environment): DeploymentConfig["trial"] {
     "LAF_DAILY_TOKEN_BUDGET",
   ] as const;
   const present = lines.filter((name) => optional(environment, name));
+  const usd = optional(environment, "LAF_DAILY_BUDGET_USD");
 
   if (!plan) {
-    if (present.length === 0) return undefined;
+    if (present.length === 0 && !usd) return undefined;
+    const set = [...present, ...(usd ? ["LAF_DAILY_BUDGET_USD"] : [])];
     throw new Error(
-      `${present.join(", ")} ${present.length === 1 ? "is" : "are"} set but LAF_PLAN is not: these lines belong to a free trial, and on a deployment that is not one they limit nothing and count down to nothing. Set LAF_PLAN=trial with all of them, or remove them`,
+      `${set.join(", ")} ${set.length === 1 ? "is" : "are"} set but LAF_PLAN is not: these lines belong to a free trial, and on a deployment that is not one they limit nothing and count down to nothing. Set LAF_PLAN=trial with all of them, or remove them`,
     );
   }
   if (plan !== "trial") {
@@ -1461,7 +1475,25 @@ function trialConfig(environment: Environment): DeploymentConfig["trial"] {
       "LAF_DAILY_TOKEN_BUDGET",
       "tokens",
     ),
+    ...(usd ? { dailyBudgetUsd: dollars("LAF_DAILY_BUDGET_USD", usd) } : {}),
   };
+}
+
+/**
+ * An amount in dollars as `.env` wrote it: digits, and at most four after a point. Above zero, for
+ * the reason a token budget of zero is refused (above). Not `Number(…)` on whatever is there —
+ * `1e3`, `0x10` and ` 5 ` are all numbers to it, and none is what an operator meant to type.
+ */
+function dollars(name: string, written: string): number {
+  const amount = /^[0-9]{1,4}([.][0-9]{1,4})?$/.test(written)
+    ? Number(written)
+    : Number.NaN;
+  if (!(amount > 0)) {
+    throw new Error(
+      `${name} must be an amount in dollars above zero, written like 0.55 — at most four digits before the point and four after (it is '${written}')`,
+    );
+  }
+  return amount;
 }
 
 export function loadConfig(

@@ -105,6 +105,15 @@ export type Trial = {
    * say plenty was left on a day that may be one question from the limit.
    */
   tokensUsedToday?: number;
+  /**
+   * What a Seoul day may spend in dollars, on a trial whose day is counted in money
+   * (`server/src/usage/daily-budget.ts`) — and then today is measured against THIS, with
+   * `costUsdToday`, and the token pair above is not what the meter draws. Never shown as an
+   * amount: the meter is a share of the day.
+   */
+  dailyBudgetUsd?: number;
+  /** What today has cost, by the judge's own sum. Absent when it could not be read. */
+  costUsdToday?: number;
 };
 
 /**
@@ -122,6 +131,8 @@ export function parseTrial(value: unknown): Trial | undefined {
     dailyTokenBudget,
     budgetReachedToday,
     tokensUsedToday,
+    dailyBudgetUsd,
+    costUsdToday,
   } = value as Record<string, unknown>;
   if (
     typeof endsAt !== "string" ||
@@ -138,7 +149,26 @@ export function parseTrial(value: unknown): Trial | undefined {
     tokensUsedToday >= 0
       ? { tokensUsedToday }
       : {};
-  return { endsAt, holdDays, dailyTokenBudget, budgetReachedToday, ...used };
+  // The dollar pair, each on its own: a budget that is not an amount above zero is no money budget
+  // (the meter then reads tokens, as the server would have judged), a cost that is not one is a
+  // count that could not be read.
+  const amount = (said: unknown) =>
+    typeof said === "number" && Number.isFinite(said) && said >= 0
+      ? said
+      : undefined;
+  const budgetUsd = amount(dailyBudgetUsd);
+  const costUsd = amount(costUsdToday);
+  return {
+    endsAt,
+    holdDays,
+    dailyTokenBudget,
+    budgetReachedToday,
+    ...used,
+    ...(budgetUsd !== undefined && budgetUsd > 0
+      ? { dailyBudgetUsd: budgetUsd }
+      : {}),
+    ...(costUsd === undefined ? {} : { costUsdToday: costUsd }),
+  };
 }
 
 /** The signed-in person, and what the deployment they are on can do. */

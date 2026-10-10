@@ -10,8 +10,10 @@ import type { Reading } from "@/lib/reading";
  * How much of a free trial's day is used, for the two places that say so before a question is
  * refused: the 오늘 사용량 row in Settings and the notice above the composer.
  *
- * The count is the server's (`GET /api/me` → `deployment.trial.tokensUsedToday`), made by the same
- * judge that refuses a run once the day is spent — nothing here counts anything. What this adds is
+ * The count is the server's (`GET /api/me` → `deployment.trial.tokensUsedToday`, or
+ * `costUsdToday` on a trial whose day is counted in dollars), made by the same judge that refuses
+ * a run once the day is spent — nothing here counts anything, and nothing here draws an amount:
+ * the two surfaces say a share of the day, which is the same sentence in either unit. What this adds is
  * the arithmetic of drawing it, and the day it is drawn for: SEOUL'S, because that is the day the
  * server counts and the fleet ends a trial on, whatever clock this machine keeps.
  */
@@ -60,10 +62,12 @@ export function todayUsageReading(
 
 /** Today's use, or nothing to draw — no trial, a count the server could not read, or no budget. */
 export function usageOf(trial: Trial | undefined): TodayUsage | null {
-  if (!trial || trial.tokensUsedToday === undefined) return null;
-  const budget = trial.dailyTokenBudget;
-  if (!(budget > 0)) return null;
-  const used = trial.tokensUsedToday;
+  if (!trial) return null;
+  // The unit the server judges in: dollars where the trial names them, tokens where it does not.
+  const inDollars = trial.dailyBudgetUsd !== undefined;
+  const budget = inDollars ? trial.dailyBudgetUsd : trial.dailyTokenBudget;
+  const used = inDollars ? trial.costUsdToday : trial.tokensUsedToday;
+  if (used === undefined || budget === undefined || !(budget > 0)) return null;
   const ratio = used / budget;
   return {
     used,

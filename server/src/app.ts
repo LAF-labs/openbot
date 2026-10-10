@@ -799,6 +799,11 @@ export function createApp({
             endsAt: config.trial.endsAt,
             holdDays: config.trial.holdDays,
             dailyTokenBudget: config.trial.dailyTokenBudget,
+            // Only on a trial whose day is counted in dollars (`usage/daily-budget.ts`): present,
+            // it is what the surface measures today against, and the token pair is not.
+            ...(config.trial.dailyBudgetUsd === undefined
+              ? {}
+              : { dailyBudgetUsd: config.trial.dailyBudgetUsd }),
             ...(await todayOf(dailyBudget)),
           },
         }
@@ -1402,15 +1407,21 @@ export function createApp({
 async function todayOf(budget: DailyBudget | undefined): Promise<{
   budgetReachedToday: boolean;
   tokensUsedToday?: number;
+  costUsdToday?: number;
 }> {
   if (!budget) return { budgetReachedToday: false };
-  const [budgetReachedToday, tokensUsedToday] = await Promise.all([
-    budget.reachedToday(),
-    budget.usedToday().catch(() => null),
-  ]);
+  const [budgetReachedToday, tokensUsedToday, costUsdToday] = await Promise.all(
+    [
+      budget.reachedToday(),
+      budget.usedToday().catch(() => null),
+      // Asked only where the day is judged on it; left out, like the count, when it cannot be read.
+      budget.usd === undefined ? null : budget.costToday().catch(() => null),
+    ],
+  );
   return {
     budgetReachedToday,
     ...(tokensUsedToday === null ? {} : { tokensUsedToday }),
+    ...(costUsdToday === null ? {} : { costUsdToday }),
   };
 }
 
