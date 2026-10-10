@@ -79,9 +79,13 @@ export type BusinessSite = {
    * 계정 screen offers these with the site's hosts when a person saves a login for it
    * (`app/src/components/logins/logins-screen.tsx`).
    *
-   * ONLY WHERE IT IS KNOWN. 네이버's is the same for every 네이버 service and is in the decision
-   * record (`docs/laf/redesign-2026-10.md` §6). The others are left out until each has been
-   * looked at on the site itself: a wrong host here is a login that silently is not used.
+   * ONLY WHERE IT WAS LOOKED AT. A wrong host here is a login that silently is not used, so each
+   * is the origin of the document that held the password box when the site's sign-in was opened,
+   * signed out, on 2026-10-10 (`docs/laf/redesign-2026-10.md` §6 has the table): 네이버's id
+   * provider for its four services, and five more that send a seller somewhere else to sign in.
+   * A site with none signs in on a host of its own — also looked at, not assumed. A site that
+   * moves its sign-in makes its entry wrong without a test going red; the 계정 screen lets a
+   * person correct the addresses, and the table is to be looked at again when one reports it.
    */
   signInHosts?: readonly string[];
   /** One sentence: 연결하면 봇이 할 수 있는 일. English key. */
@@ -232,6 +236,7 @@ const SITE_SPECS: readonly SiteSpec[] = [
     category: "stock",
     loginUrl: "https://wing.coupang.com",
     hosts: ["wing.coupang.com"],
+    signInHosts: ["xauth.coupang.com"],
     what: "Read what has to ship today and which products are blocked or out of stock.",
     handoff: "login",
     prompts: [
@@ -247,6 +252,7 @@ const SITE_SPECS: readonly SiteSpec[] = [
     category: "settlement",
     loginUrl: "https://ceo.baemin.com",
     hosts: ["ceo.baemin.com"],
+    signInHosts: ["biz-member.baemin.com"],
     what: "Read yesterday's sales, the orders behind them and what is due to be settled.",
     handoff: "login",
     prompts: [
@@ -313,6 +319,7 @@ const SITE_SPECS: readonly SiteSpec[] = [
     category: "reputation",
     loginUrl: "https://business.daangn.com",
     hosts: ["business.daangn.com"],
+    signInHosts: ["accounts.daangn.com"],
     what: "Read the reviews and enquiries left on your neighbourhood business page.",
     handoff: "login",
     prompts: [
@@ -343,6 +350,7 @@ const SITE_SPECS: readonly SiteSpec[] = [
     category: "settlement",
     loginUrl: "https://dashboard.tosspayments.com",
     hosts: ["dashboard.tosspayments.com", "developers.tosspayments.com"],
+    signInHosts: ["app.tosspayments.com"],
     what: "Read yesterday's payments and cancellations and what is due to be settled.",
     handoff: "login",
     prompts: [
@@ -389,6 +397,7 @@ const SITE_SPECS: readonly SiteSpec[] = [
     category: "enquiries",
     loginUrl: "https://center-pf.kakao.com",
     hosts: ["center-pf.kakao.com"],
+    signInHosts: ["accounts.kakao.com"],
     what: "Read the chats waiting for a reply and how the channel is doing.",
     handoff: "login",
     prompts: [
