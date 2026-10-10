@@ -65,11 +65,10 @@ import { cn } from "@/lib/utils";
  *
  * NOTHING POLLS HERE either: see `lib/agents/day.ts` for what refreshes it.
  *
- * THE DRAWER ON THE PC APP ASKS FOR `waitingOnly` (2026-09-25, UX review 0.5.4 item 12). The full
- * column beside it showed 한 일 and 다음 then, and the drawer repeated them word for word. The column
- * shows neither since 2026-10-04 and the drawer was left as it was, so on the PC app they are on
- * 소식 and nowhere else; whether the drawer takes them back there is the owner's to say. Below `lg`
- * the drawer shows the whole day.
+ * `waitingOnly` WAS THE DRAWER'S (2026-09-25, UX review 0.5.4 item 12): the state dot's drawer on
+ * the PC app listed only what waited on the person, because the column beside it showed the rest.
+ * The column and then the drawer went (2026-10-04, 2026-10-09) and nothing asks for it now: the
+ * home panel's 오늘 and 소식 both draw the whole day.
  */
 export function BotDay({
   botId,

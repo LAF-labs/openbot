@@ -47,8 +47,10 @@ export function feedQueryOptions() {
 }
 
 /**
- * The unseen count for the sidebar's row and the phone's tab. A minute's staleness, and read again
- * whenever the window comes forward: posts arrive at 06:30 and on 지금 만들기, never mid-sentence.
+ * The unseen count, for the profile button's dot and its menu's 소식 row, and for the home panel's
+ * 소식 widget (it was the sidebar's row and the phone's tab until both went, 2026-10-09). A minute's
+ * staleness, and read again whenever the window comes forward: posts arrive at 06:30 and on 지금
+ * 만들기, never mid-sentence.
  */
 export function feedUnseenQueryOptions() {
   return queryOptions({

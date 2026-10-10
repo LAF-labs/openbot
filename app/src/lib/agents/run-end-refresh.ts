@@ -4,6 +4,7 @@ import { workingQueryOptions } from "@/lib/agents/working";
 import { channelKeys } from "@/lib/channels/queries";
 import { feedKeys } from "@/lib/feed/queries";
 import { goalKeys } from "@/lib/goals/queries";
+import { madeKeys } from "@/lib/made/queries";
 
 /**
  * A RUN ENDING IS THE MOMENT A ROUTINE'S ANSWER LANDS IN THE CONVERSATION, and nothing pushes that
@@ -33,6 +34,9 @@ export function useRunEndRefresh() {
       void queryClient.invalidateQueries({ queryKey: feedKeys.all });
       // And 목표's: a goal is saved, and progress logged, by a turn or a check-in run.
       void queryClient.invalidateQueries({ queryKey: goalKeys.all });
+      // And what the Bot made: the home panel lists the newest on every screen, and a thing made
+      // in a turn is there when the turn ends.
+      void queryClient.invalidateQueries({ queryKey: madeKeys.all });
     }
   }, [workingIds, queryClient]);
 }

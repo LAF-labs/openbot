@@ -1,14 +1,11 @@
 import { IconHome } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
 import type { CSSProperties, KeyboardEvent, PointerEvent } from "react";
 import { useState } from "react";
-import { BotDay } from "@/components/app-sidebar/bot-day";
+import { HomeWidgets } from "@/components/home/home-widgets";
 import { PHONE_PAGE_CLASS } from "@/components/layout/phone-pager";
 import { shellLightsInset } from "@/components/layout/shell-titlebar";
 import { Button } from "@/components/ui/button";
 import { focusRing } from "@/components/ui/focus";
-import { primaryBot, useMyBots } from "@/lib/agents/my-bots";
-import { channelListQueryOptions } from "@/lib/channels/queries";
 import {
   HOME_PANEL_STEP,
   setHomePanelOpen,
@@ -34,8 +31,8 @@ export const HOME_PANEL_PLACE = cn(
  * screen beside it under 360px. The bounds are the stylesheet's (`w-home-panel`), so the window
  * being resized needs nothing from here; what is handed down is only the width the person chose.
  *
- * WHAT IS IN IT TODAY IS 오늘, the Bot's day, which lived on this height once before and was drawn
- * for a column this narrow (`bot-day.tsx`). The panels a person asks the Bot to make come later;
+ * WHAT IS IN IT TODAY is four widgets that were screens behaving like fixed panels already — 오늘,
+ * 소식, 목표, 만든 것 (`home-widgets.tsx`). The panels a person asks the Bot to make come later;
  * nothing here offers to make one, because nothing can yet.
  *
  * ON A PHONE IT IS A PAGE, NOT A COLUMN (`phone-pager.tsx`): the screen's whole width, to the left
@@ -82,7 +79,7 @@ export function HomePanel() {
         <HomeButton />
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-3 pb-3 max-md:pt-1">
-        <TodayWidget />
+        <HomeWidgets />
       </div>
       {isSideBySide ? <PanelEdge /> : null}
     </aside>
@@ -116,43 +113,6 @@ export function HomeButton() {
     >
       <IconHome className="size-4.5" />
     </Button>
-  );
-}
-
-/** A widget's card: a pane of glass on the backdrop — 18px corners, a bright edge, and the card's lift. */
-function Widget({
-  children,
-  title,
-}: {
-  children: React.ReactNode;
-  title: string;
-}) {
-  return (
-    <section className="rounded-3xl border border-glass-border bg-glass text-card-foreground shadow-card backdrop-blur-xl">
-      <h2 className="px-3.5 pt-3 pb-1 font-medium text-sm">{title}</h2>
-      {children}
-    </section>
-  );
-}
-
-function TodayWidget() {
-  const mine = useMyBots();
-  const channels = useQuery(channelListQueryOptions());
-  const bot = mine.bots ? primaryBot(mine.bots, channels.data) : undefined;
-  if (!bot) return null;
-  return (
-    <Widget title={t("Today")}>
-      <BotDay
-        botId={bot.id}
-        empty={
-          <p className="px-3.5 pb-3.5 text-muted-foreground text-sm">
-            {t(
-              "Nothing yet today. What you hand over in the conversation shows up here.",
-            )}
-          </p>
-        }
-      />
-    </Widget>
   );
 }
 
