@@ -35,10 +35,12 @@ export type LoginsShown = {
     isCodeDrawn: boolean;
   };
   removed: {
-    isAsked: boolean;
+    /** The question, as the dialog's title drew it. */
+    question: string;
     writesBeforeConfirm: number;
     writes: Write[];
-    isEmptyAfter: boolean;
+    /** What the list drew once it was read again. */
+    rowsAfter: string[];
   };
 };
 
@@ -242,32 +244,39 @@ const refused = await (async (): Promise<LoginsShown["refused"]> => {
   return shown;
 })();
 
-// 4. A delete, and the question before it.
+// 4. A delete of the second of two, and the question before it.
+const OTHER = {
+  ...NAVER,
+  id: "login-2",
+  label: "거래처 발주",
+  site: null,
+  origins: ["https://order.example.co.kr"],
+};
 const removed = await (async (): Promise<LoginsShown["removed"]> => {
-  const { api, writes } = server({ logins: [NAVER] });
+  const { api, writes } = server({ logins: [NAVER, OTHER] });
   const view = await mountApp({ path: "/settings/logins", api });
-  await pressLabelled(view, `Delete ${NAVER.label}`);
-  await view.waitFor(
-    () => document.body.textContent?.includes("Delete this login?") === true,
-    "the question",
-  );
-  const isAsked =
-    document.body.textContent?.includes("Delete this login?") === true;
+  await pressLabelled(view, `Delete ${OTHER.label}`);
+  const dialog = () =>
+    document.body.querySelector('[role="alertdialog"], [role="dialog"]');
+  await view.waitFor(() => dialog() !== null, "the question");
+  const question =
+    dialog()?.querySelector("h1, h2, h3")?.textContent?.trim() ?? "";
   const writesBeforeConfirm = writes.length;
   const confirm = pageButton("Delete");
   if (!confirm) throw new Error("no confirm");
   await view.click(confirm);
   await view.waitFor(() => writes.length === 1, "the delete");
   await view.waitFor(
-    () => view.host.textContent?.includes("No login is saved yet.") === true,
+    () => view.host.textContent?.includes(OTHER.label) !== true,
     "the row to go",
   );
   const shown = {
-    isAsked,
+    question,
     writesBeforeConfirm,
     writes: [...writes],
-    isEmptyAfter:
-      view.host.textContent?.includes("No login is saved yet.") === true,
+    rowsAfter: [...view.host.querySelectorAll('[data-slot="item-title"]')].map(
+      (title) => title.textContent?.trim() ?? "",
+    ),
   };
   await view.unmount();
   return shown;

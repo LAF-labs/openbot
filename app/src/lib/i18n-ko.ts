@@ -1430,7 +1430,6 @@ export const ko: Record<string, string> = {
     "더 저장할 수 없어요. 먼저 하나를 지워 주세요.",
   "Your Bot will ask you to type it yourself the next time that site asks.":
     "지우면 그 사이트에서 로그인할 때 봇이 직접 입력을 부탁해요.",
-  "Delete this login?": "이 로그인을 지울까요?",
   "That could not be read as a login. Check each box and try again.":
     "로그인으로 읽을 수 없었어요. 칸마다 확인하고 다시 해 주세요.",
   "Give it a name you will know it by.": "알아볼 수 있는 이름을 붙여 주세요.",
