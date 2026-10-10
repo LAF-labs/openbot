@@ -302,6 +302,7 @@ services:
       LAF_TRIAL_ENDS_AT: ${LAF_TRIAL_ENDS_AT:-}
       LAF_TRIAL_HOLD_DAYS: ${LAF_TRIAL_HOLD_DAYS:-}
       LAF_DAILY_TOKEN_BUDGET: ${LAF_DAILY_TOKEN_BUDGET:-}
+      LAF_DAILY_BUDGET_USD: ${LAF_DAILY_BUDGET_USD:-}
       # Where an uploaded file is read: the `converter` service's socket, on the volume below. Set,
       # it is the only place a file is read; a production server without it refuses every file
       # rather than parsing one as root beside the database (attachments/converter-client.ts).

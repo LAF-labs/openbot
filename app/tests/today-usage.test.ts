@@ -50,6 +50,57 @@ describe("what /api/me says today has used", () => {
   });
 });
 
+describe("a day counted in dollars", () => {
+  const inDollars = (
+    overrides: Record<string, unknown> = {},
+  ): Record<string, unknown> =>
+    trial({ dailyBudgetUsd: 0.5, costUsdToday: 0.2, ...overrides });
+
+  test("is carried beside the token pair", () => {
+    expect(parseTrial(inDollars())).toMatchObject({
+      dailyBudgetUsd: 0.5,
+      costUsdToday: 0.2,
+      tokensUsedToday: 250_000,
+    });
+  });
+
+  test("the meter is the share of the day's dollars, not of its tokens", () => {
+    // A quarter of the tokens and two fifths of the money: the judge reads the money.
+    expect(usageOf(parseTrial(inDollars()))).toEqual({
+      used: 0.2,
+      budget: 0.5,
+      ratio: 0.4,
+      percent: 40,
+    });
+  });
+
+  test("a cost the server could not read is a failed read — never the token meter in its place", () => {
+    const { costUsdToday: _unread, ...withoutIt } = inDollars();
+    const parsed = parseTrial(withoutIt);
+    expect(parsed).toMatchObject({ dailyBudgetUsd: 0.5 });
+    expect(usageOf(parsed)).toBeNull();
+    expect(todayUsageReading({ deployment: { trial: parsed } })).toMatchObject({
+      state: "failed",
+    });
+  });
+
+  test("a budget that is not an amount above zero is no dollar budget: the day reads in tokens", () => {
+    for (const bad of ["0.5", 0, -1, Number.NaN, null]) {
+      const parsed = parseTrial(inDollars({ dailyBudgetUsd: bad }));
+      expect(parsed).not.toHaveProperty("dailyBudgetUsd");
+      expect(usageOf(parsed)).toMatchObject({ percent: 25 });
+    }
+  });
+
+  test("a cost that is not an amount is not drawn", () => {
+    for (const bad of ["0.2", -0.2, Number.NaN, null]) {
+      expect(parseTrial(inDollars({ costUsdToday: bad }))).not.toHaveProperty(
+        "costUsdToday",
+      );
+    }
+  });
+});
+
 describe("the 오늘 사용량 row's state", () => {
   const person = (trialFacts?: Record<string, unknown>) => ({
     deployment: trialFacts ? { trial: parseTrial(trial(trialFacts)) } : {},

@@ -23,6 +23,8 @@ const CONTRACT = [
   "LAF_TRIAL_ENDS_AT",
   "LAF_TRIAL_HOLD_DAYS",
   "LAF_DAILY_TOKEN_BUDGET",
+  // The product's first, 2026-10-10: optional, and the fleet does not write it yet.
+  "LAF_DAILY_BUDGET_USD",
 ];
 
 /** Anything that looks like a trial's line, so an extra or a misspelt one is caught too. */
@@ -43,7 +45,7 @@ for (const line of example.split("\n")) {
   }
 }
 
-describe("the trial's four names", () => {
+describe("the trial's names — four the fleet writes, and the optional fifth", () => {
   test("config.ts declares exactly the contract's, as values compose passes through", () => {
     expect<string[]>([...TRIAL_VARIABLES]).toEqual(CONTRACT);
     for (const name of CONTRACT) {
@@ -87,6 +89,7 @@ describe("the trial's four names", () => {
       endsAt: values.LAF_TRIAL_ENDS_AT ?? "",
       holdDays: Number(values.LAF_TRIAL_HOLD_DAYS),
       dailyTokenBudget: Number(values.LAF_DAILY_TOKEN_BUDGET),
+      dailyBudgetUsd: Number(values.LAF_DAILY_BUDGET_USD),
     });
   });
 });

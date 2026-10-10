@@ -471,6 +471,12 @@ LAF_TRIAL_HOLD_DAYS=30                   # kept this long after it stops, then d
 LAF_DAILY_TOKEN_BUDGET=3000000           # what one Seoul day may spend, across every Bot here
 ```
 
+A fifth is optional — `LAF_DAILY_BUDGET_USD=0.55` — and names the same day in
+dollars. Set, the day is judged on what its model calls cost (the provider's own
+figure on each `model.usage` row; a call with no figure counts its tokens at
+$0.50 a million, never as free) and the token line is only read back. Unset,
+nothing changes. It is refused without `LAF_PLAN=trial`, like the others.
+
 All four or none: `LAF_PLAN=trial` with any of the others missing or malformed
 refuses to start by name, and so does any of the three without it. On a trial
 the app draws a countdown on every signed-in screen, and every run — chat or a

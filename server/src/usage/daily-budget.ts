@@ -20,6 +20,22 @@
  * `MAX_QUESTION_COST_USD`). That ceiling is written down in docs/laf/data-lifecycle.md, as the
  * contract asks.
  *
+ * IN DOLLARS WHERE THE TRIAL SAYS SO, IN TOKENS WHERE IT DOES NOT (2026-10-10, record §4, piece
+ * 6-1). A token is not a price: measured on a development deployment over two weeks, 11.9 million
+ * tokens of the Bot's turns on Muse Spark cost $0.31 and 0.22 million on DeepSeek cost $0.04 — six
+ * and a half times as much per token — and the main conversation is about to hand work to
+ * sub-agents on other models. Summed as tokens, a day on a dear model spends several times what
+ * the day was meant to allow and a day on a cheap one is refused with most of it unspent. So a
+ * trial may name its day in dollars (`LAF_DAILY_BUDGET_USD`), and then the judge sums what each
+ * call COST — the provider's own figure on the row (`costUsd`). A trial that names only tokens is
+ * judged exactly as it always was: the fleet writes the lines, and every live trial has four.
+ *
+ * A ROW WITH NO PRICE IS NOT FREE. A call whose provider did not say what it cost — an endpoint
+ * that is not OpenRouter, or a row from before `askModel` read the figure — counts its tokens at
+ * {@link UNPRICED_USD_PER_MILLION_TOKENS}. Free is the expensive reading, found on an invoice; and
+ * the rate is the dearest the day was planned against, so on an endpoint that never reports a cost
+ * a money budget is a token budget at that rate, and never no budget.
+ *
  * A TRAIL THAT CANNOT BE READ IS NOT A REFUSAL. "Today's allowance is used up" is a sentence only a
  * count may say; saying it because a read failed would tell somebody a false thing about their own
  * use. The run goes ahead, the failure is logged, and the provider key's own daily limit is the
@@ -78,11 +94,22 @@ export function seoulDayOf(now: Date): { start: Date; end: Date } {
   return { start: new Date(start), end: new Date(start + DAY_MS) };
 }
 
+/**
+ * What a call with no price on its row is counted at, in dollars per million tokens: the dearest
+ * rate the trial's day was planned against (self-serve contract, appendix B — a day that is all
+ * output). Several times what the Bot's turns measured, on purpose: see "A ROW WITH NO PRICE".
+ */
+export const UNPRICED_USD_PER_MILLION_TOKENS = 0.5;
+
 export type DailyBudget = {
   /** What a Seoul day may spend, in tokens, as `.env` said. */
   readonly tokens: number;
-  /** What today has spent so far. Throws when the trail cannot be read; see `reachedToday`. */
+  /** What it may spend in dollars, where `.env` said — and then THIS is what the day is judged on. */
+  readonly usd?: number;
+  /** What today has spent so far, in tokens. Throws when the trail cannot be read. */
   usedToday: () => Promise<number>;
+  /** What today has cost so far, in dollars. Throws when the trail cannot be read. */
+  costToday: () => Promise<number>;
   /**
    * Whether today's count has reached the budget. Never throws: a trail that cannot be read is not
    * a refusal (see the note at the top).
@@ -93,12 +120,15 @@ export type DailyBudget = {
 export function createDailyBudget(input: {
   database: Database;
   tokens: number;
+  usd?: number;
   now?: () => Date;
 }): DailyBudget {
   const now = input.now ?? (() => new Date());
 
-  const usedToday = async (): Promise<number> => {
+  /** The day's rows, summed both ways in one read: the count, and what it cost. */
+  const today = async (): Promise<{ tokens: number; usd: number }> => {
     const { start, end } = seoulDayOf(now());
+    const tokens = sql`case when ${auditEvents.payload} ->> 'totalTokens' ~ '^[0-9]{1,15}$' then (${auditEvents.payload} ->> 'totalTokens')::bigint else 0 end`;
     /*
      * A count that crossed a service boundary is not trusted to be a number: anything that is not
      * digits reads as nothing, the same rule the fleet's read sums these rows by (laf-control
@@ -107,7 +137,13 @@ export function createDailyBudget(input: {
      */
     const [row] = await input.database
       .select({
-        used: sql<string>`coalesce(sum(case when ${auditEvents.payload} ->> 'totalTokens' ~ '^[0-9]{1,15}$' then (${auditEvents.payload} ->> 'totalTokens')::bigint else 0 end), 0)::text`,
+        used: sql<string>`coalesce(sum(${tokens}), 0)::text`,
+        /*
+         * The provider's figure where the row has one — in the shape the fleet's read takes it
+         * (laf-control `core/insights-sql.ts`): a plain decimal, which is what jsonb hands back
+         * for any number, `1.2e-7` included. Otherwise the row's tokens at the unpriced rate.
+         */
+        cost: sql<string>`coalesce(sum(case when ${auditEvents.payload} ->> 'costUsd' ~ '^[0-9]{1,6}([.][0-9]{1,20})?$' then (${auditEvents.payload} ->> 'costUsd')::numeric else ${tokens} * ${UNPRICED_USD_PER_MILLION_TOKENS}::numeric / 1000000 end), 0)::text`,
       })
       .from(auditEvents)
       .where(
@@ -117,15 +153,22 @@ export function createDailyBudget(input: {
           lt(auditEvents.createdAt, end),
         ),
       );
-    return Number(row?.used ?? 0);
+    return { tokens: Number(row?.used ?? 0), usd: Number(row?.cost ?? 0) };
   };
+  const usedToday = async () => (await today()).tokens;
+  const costToday = async () => (await today()).usd;
 
   return {
     tokens: input.tokens,
+    ...(input.usd === undefined ? {} : { usd: input.usd }),
     usedToday,
+    costToday,
     reachedToday: async () => {
       try {
-        return (await usedToday()) >= input.tokens;
+        // One or the other, never both: a trial that names dollars is judged on dollars alone.
+        return input.usd === undefined
+          ? (await usedToday()) >= input.tokens
+          : (await costToday()) >= input.usd;
       } catch (error) {
         log.warn("daily_budget_unread", {
           reason: describeFailure(error),
@@ -149,7 +192,13 @@ export function dailyBudgetFor(
   database: Database,
 ): DailyBudget | undefined {
   return trial
-    ? createDailyBudget({ database, tokens: trial.dailyTokenBudget })
+    ? createDailyBudget({
+        database,
+        tokens: trial.dailyTokenBudget,
+        ...(trial.dailyBudgetUsd === undefined
+          ? {}
+          : { usd: trial.dailyBudgetUsd }),
+      })
     : undefined;
 }
 
@@ -189,7 +238,12 @@ export function withDailyBudget(
   return async (url, requestInit) => {
     if (!(await budget.reachedToday())) return inner(url, requestInit);
     // A person's use, not a fault: said at info, for whoever wonders why a Bot answered nothing.
-    log.info("run_refused_daily_budget", { budget: budget.tokens });
+    log.info(
+      "run_refused_daily_budget",
+      budget.usd === undefined
+        ? { budget: budget.tokens }
+        : { usd: budget.usd },
+    );
     return refusedStream();
   };
 }

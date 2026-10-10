@@ -2639,6 +2639,17 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * the message and the list on the way back; Enter; no hits as one line; older hits; a failure
  * said; three answers that are no page; several Bots; and the refusals' sentences.
  *
+ * RAISED 2026-10-10 FOR A DAY COUNTED IN DOLLARS, `server` from 4124 to 4158 and `app` from 2251
+ * to 2256 (record §4, piece 6-1; on top of the Bot's browsers below, which landed first). Seven in `daily-budget.integration.test.ts`: the Seoul day's cost
+ * by the provider's own figure, a row with no price counted at the unpriced rate, a trial judged
+ * on dollars whatever its tokens say and one judged on tokens whatever it cost, an unreadable
+ * trail, and which trials are judged in which. Seventeen in `trial-config.test.ts`: the optional
+ * fifth line — absent, four spellings carried, eleven refused, and refused without a trial. Three
+ * in `trial-me.test.ts`: the dollar pair beside the four, never asked of a day counted in tokens,
+ * and left out when it cannot be read. Seven in the new `model-call-usage.test.ts`: what a
+ * server-side call says it cost, and absent where the provider said nothing. Five in
+ * `today-usage.test.ts`: the meter as a share of the day's dollars.
+ *
  * RAISED 2026-10-10 FOR A PROJECT DELETED, `server` from 4071 to 4084 and `app` from 2245 to 2251
  * (record §3, piece 4-5, migration 0066). Twelve in the new
  * `conversation-deleting.integration.test.ts`: every row that names a project goes and nothing of
@@ -2694,8 +2705,8 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4124, roots: ["server"] },
-  { name: "app", floor: 2251, roots: ["app"] },
+  { name: "server", floor: 4158, roots: ["server"] },
+  { name: "app", floor: 2256, roots: ["app"] },
   {
     name: "agent-computer",
     /*

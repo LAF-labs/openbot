@@ -447,6 +447,7 @@
   "server/tests/message-speakers.test.ts",
   "server/tests/message-stamps.test.ts",
   "server/tests/migrate-skip.integration.test.ts",
+  "server/tests/model-call-usage.test.ts",
   "server/tests/model-usage.test.ts",
   "server/tests/notes-preset-migration.integration.test.ts",
   "server/tests/notes-preset-migration.test.ts",

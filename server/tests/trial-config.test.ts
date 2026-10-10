@@ -86,6 +86,60 @@ describe("a trial", () => {
     ).toBe(1);
   });
 
+  test("has no dollar budget unless the fifth line names one — four lines are a whole trial", () => {
+    expect(loadConfig(testEnvironment(TRIAL)).trial).not.toHaveProperty(
+      "dailyBudgetUsd",
+    );
+    // What compose hands the server when `.env` has no such line.
+    expect(
+      loadConfig(testEnvironment({ ...TRIAL, LAF_DAILY_BUDGET_USD: "" })).trial,
+    ).not.toHaveProperty("dailyBudgetUsd");
+  });
+
+  test.each([
+    ["0.55", 0.55],
+    ["1", 1],
+    ["0.0001", 0.0001],
+    ["9999.9999", 9999.9999],
+  ])("carries the day in dollars as written: %s", (written, amount) => {
+    expect(
+      loadConfig(testEnvironment({ ...TRIAL, LAF_DAILY_BUDGET_USD: written }))
+        .trial,
+    ).toEqual({
+      endsAt: "2026-09-29T14:59:59Z",
+      holdDays: 30,
+      dailyTokenBudget: 3_000_000,
+      dailyBudgetUsd: amount,
+    });
+  });
+
+  test.each([
+    "0",
+    "0.0",
+    "-1",
+    "$0.55",
+    "0,55",
+    ".55",
+    "1e3",
+    "0x10",
+    "0.55555",
+    "10000",
+    "five",
+  ])(
+    "refuses a dollar budget that is not an amount above zero: %s",
+    (value) => {
+      expect(() =>
+        loadConfig(testEnvironment({ ...TRIAL, LAF_DAILY_BUDGET_USD: value })),
+      ).toThrow("LAF_DAILY_BUDGET_USD");
+    },
+  );
+
+  test("refuses a dollar budget on a deployment that is not a trial, by name", () => {
+    expect(() =>
+      loadConfig(testEnvironment({ LAF_DAILY_BUDGET_USD: "0.55" })),
+    ).toThrow("LAF_DAILY_BUDGET_USD is set but LAF_PLAN is not");
+  });
+
   test.each(LINES)("refuses to start without %s, by name", (name) => {
     expect(() =>
       loadConfig(testEnvironment({ ...TRIAL, [name]: undefined })),

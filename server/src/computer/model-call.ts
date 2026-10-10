@@ -43,7 +43,23 @@ export type ModelUsage = {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  /**
+   * What the call cost in dollars, where the provider said (OpenRouter's `usage.cost`), and the
+   * prompt tokens it served from its cache. ABSENT, NEVER ZERO, WHERE IT DID NOT SAY — the same
+   * rule a Bot's turn keeps (`usage/model-usage.ts`). Until 2026-10-10 neither was read here, so
+   * every call this server made on its own — the judges, the day's summary, the dream — was a
+   * row with tokens and no price, and a day counted in money (`usage/daily-budget.ts`) would have
+   * read each of them as free.
+   */
+  costUsd?: number;
+  cachedPromptTokens?: number;
 };
+
+/** A count or an amount a provider reported, read as what it is; anything else, absent. */
+const reported = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined;
 
 export type Ask = {
   system: string;
@@ -159,15 +175,23 @@ export async function askModel(call: ModelCall, ask: Ask): Promise<Answer> {
         prompt_tokens?: number;
         completion_tokens?: number;
         total_tokens?: number;
+        cost?: unknown;
+        prompt_tokens_details?: { cached_tokens?: unknown };
       };
     };
     if (call.onUsage && body.usage) {
       try {
+        const cost = reported(body.usage.cost);
+        const cached = reported(
+          body.usage.prompt_tokens_details?.cached_tokens,
+        );
         call.onUsage({
           model: call.model,
           promptTokens: body.usage.prompt_tokens ?? 0,
           completionTokens: body.usage.completion_tokens ?? 0,
           totalTokens: body.usage.total_tokens ?? 0,
+          ...(cost === undefined ? {} : { costUsd: cost }),
+          ...(cached === undefined ? {} : { cachedPromptTokens: cached }),
         });
       } catch {
         // Metering must not break the call it measures.

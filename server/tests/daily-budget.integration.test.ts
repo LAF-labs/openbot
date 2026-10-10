@@ -7,6 +7,7 @@ import {
   createDailyBudget,
   dailyBudgetFor,
   seoulDayOf,
+  UNPRICED_USD_PER_MILLION_TOKENS,
 } from "../src/usage/daily-budget";
 import { TEST_POOL } from "./support/database";
 import { testEnvironment } from "./support/environment";
@@ -54,6 +55,38 @@ async function usageAt(
     createdAt: at,
   });
 }
+
+/** A usage row with whatever the provider said the call cost — or with nothing said. */
+async function costAt(
+  at: Date,
+  totalTokens: number,
+  costUsd?: unknown,
+  eventType = "model.usage",
+): Promise<void> {
+  await database.insert(auditEvents).values({
+    eventType,
+    targetType: "agent",
+    targetId: `daily-budget-${suite}`,
+    payload: {
+      totalTokens,
+      ...(costUsd === undefined ? {} : { costUsd }),
+      source: "bot-turn",
+      suite,
+    },
+    createdAt: at,
+  });
+}
+
+const moneyAt = (wall: string, usd: number) =>
+  createDailyBudget({
+    database,
+    tokens: 1,
+    usd,
+    now: () => seoul(wall),
+  });
+
+/** To the millionth of a dollar: a sum of decimals read back through a double. */
+const micro = (usd: number) => Math.round(usd * 1_000_000);
 
 const budgetAt = (wall: string, tokens = 1_000_000_000) =>
   createDailyBudget({ database, tokens, now: () => seoul(wall) });
@@ -145,7 +178,134 @@ describe("today's count", () => {
   });
 });
 
+/**
+ * THE SAME DAY IN DOLLARS (piece 6-1). The rows live in July 2003, a month from the token tests',
+ * for the reason those live in June: nothing else writes there, and only a difference is asserted.
+ */
+describe("today's cost", () => {
+  test("is what the Seoul day's calls cost by the provider's own figure, and nothing either side of midnight", async () => {
+    const yesterday = moneyAt("2003-07-14T18:00:00.000", 1);
+    const today = moneyAt("2003-07-15T12:00:00.000", 1);
+    const tomorrow = moneyAt("2003-07-16T06:00:00.000", 1);
+    const before = {
+      yesterday: await yesterday.costToday(),
+      today: await today.costToday(),
+      tomorrow: await tomorrow.costToday(),
+    };
+
+    await costAt(seoul("2003-07-14T23:59:59.999"), 9, 0.5);
+    await costAt(seoul("2003-07-15T00:00:00.000"), 400_000, 0.0104);
+    // As small as a call gets: JSON writes it `1.2e-7`, and jsonb hands it back a plain decimal.
+    await costAt(seoul("2003-07-15T09:00:00.000"), 12, 1.2e-7);
+    await costAt(seoul("2003-07-15T23:59:59.999"), 30_000, 0.0051);
+    await costAt(seoul("2003-07-16T00:00:00.000"), 9, 0.25);
+    // A cost on a row that is not usage is not the day's.
+    await costAt(seoul("2003-07-15T12:00:00.000"), 9, 7, "routine.ran");
+
+    expect({
+      yesterday: micro((await yesterday.costToday()) - before.yesterday),
+      today: micro((await today.costToday()) - before.today),
+      tomorrow: micro((await tomorrow.costToday()) - before.tomorrow),
+    }).toEqual({
+      yesterday: 500_000,
+      today: micro(0.0104 + 1.2e-7 + 0.0051),
+      tomorrow: 250_000,
+    });
+  });
+
+  test("a call with no price on its row is not free: its tokens count at the unpriced rate", async () => {
+    const reading = moneyAt("2003-07-18T12:00:00.000", 1);
+    const before = await reading.costToday();
+
+    // The provider said nothing; said something that is not an amount; said a negative one.
+    await costAt(seoul("2003-07-18T08:00:00.000"), 1_000_000);
+    await costAt(seoul("2003-07-18T08:00:00.000"), 200_000, "cheap");
+    await costAt(seoul("2003-07-18T08:00:00.000"), 200_000, -3);
+    // And a call that cost nothing by the provider's own word costs nothing.
+    await costAt(seoul("2003-07-18T08:00:00.000"), 5_000_000, 0);
+
+    expect(UNPRICED_USD_PER_MILLION_TOKENS).toBe(0.5);
+    expect(micro((await reading.costToday()) - before)).toBe(
+      micro((1_400_000 * UNPRICED_USD_PER_MILLION_TOKENS) / 1_000_000),
+    );
+  });
+
+  test("a trial that names dollars is judged on dollars — reached when the cost meets it, whatever the tokens say", async () => {
+    const before = await moneyAt("2003-07-20T09:00:00.000", 1).costToday();
+    // Six million tokens for three cents: over any token budget, far under this day's dollars.
+    await costAt(seoul("2003-07-20T08:00:00.000"), 6_000_000, 0.03);
+
+    // `tokens: 1` in `moneyAt`: a token judge would have refused long ago.
+    expect(
+      await moneyAt("2003-07-20T09:00:00.000", before + 0.031).reachedToday(),
+    ).toBe(false);
+    expect(
+      await moneyAt("2003-07-20T09:00:00.000", before + 0.03).reachedToday(),
+    ).toBe(true);
+  });
+
+  test("a trial that names only tokens is judged on tokens, whatever the day cost", async () => {
+    const tokens = (budget: number) =>
+      createDailyBudget({
+        database,
+        tokens: budget,
+        now: () => seoul("2003-07-22T09:00:00.000"),
+      });
+    const before = await tokens(1).usedToday();
+    // A hundred tokens that cost a hundred dollars.
+    await costAt(seoul("2003-07-22T08:00:00.000"), 100, 100);
+
+    expect(await tokens(before + 101).reachedToday()).toBe(false);
+    expect(await tokens(before + 100).reachedToday()).toBe(true);
+  });
+
+  test("a trail that cannot be read is not a refusal in dollars either", async () => {
+    const unreachable = createDatabase(
+      "postgres://nobody:nobody@127.0.0.1:1/nothing",
+      { max: 1 },
+    );
+    try {
+      const budget = createDailyBudget({
+        database: unreachable,
+        tokens: 1,
+        usd: 0.0001,
+      });
+      expect(await budget.reachedToday()).toBe(false);
+    } finally {
+      await unreachable.$client.end().catch(() => undefined);
+    }
+  });
+});
+
 describe("which deployments are judged at all", () => {
+  test("a trial whose .env names dollars is judged in them", () => {
+    const trial = loadConfig(
+      testEnvironment({
+        LAF_PLAN: "trial",
+        LAF_TRIAL_ENDS_AT: "2026-09-29T14:59:59Z",
+        LAF_TRIAL_HOLD_DAYS: "30",
+        LAF_DAILY_TOKEN_BUDGET: "3000000",
+        LAF_DAILY_BUDGET_USD: "0.55",
+      }),
+    ).trial;
+    expect(dailyBudgetFor(trial, database)).toMatchObject({
+      tokens: 3_000_000,
+      usd: 0.55,
+    });
+  });
+
+  test("and one that does not has no dollar figure to be judged on", () => {
+    const trial = loadConfig(
+      testEnvironment({
+        LAF_PLAN: "trial",
+        LAF_TRIAL_ENDS_AT: "2026-09-29T14:59:59Z",
+        LAF_TRIAL_HOLD_DAYS: "30",
+        LAF_DAILY_TOKEN_BUDGET: "3000000",
+      }),
+    ).trial;
+    expect(dailyBudgetFor(trial, database)).not.toHaveProperty("usd");
+  });
+
   test("a trial is, on the budget its .env gave it", () => {
     const trial = loadConfig(
       testEnvironment({
