@@ -812,6 +812,13 @@ export function createTurnEngine(options: TurnEngineOptions) {
           maxSteps,
           forwardedProps: {
             mode: run.mode,
+            /*
+             * NO BRIDGE FOR THIS RUN. Every tool it holds is the computer's and is offered
+             * outright; the bridge's two tools would be at its head with nothing behind them,
+             * and it used them: asked to open a weather page, the run looked for a weather tool
+             * first — a request spent before the page was opened (model eval, 2026-10-11).
+             */
+            toolDeferral: "off",
             ...(input.device === undefined ? {} : { device: input.device }),
           },
           // Under the turn's id like every run of it, and apart from the turn's own `.1`, `.2`.
