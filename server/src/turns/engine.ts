@@ -22,7 +22,7 @@ import { isFirstMoveEnding } from "../../../shared/first-move";
 import { jsonObjectOf } from "../../../shared/json-object";
 import { streamCutResult } from "../../../shared/stream-cut";
 import { UNANSWERED_RESULT } from "../../../shared/task-ending";
-import { computerTool } from "../../../shared/tools/computer";
+import { computerTool, drivesTheBrowser } from "../../../shared/tools/computer";
 import { isDelegated } from "../../../shared/tools/delegate";
 import { withheldToolsForwarded } from "../../../shared/tools/paused";
 import type { AgentActor } from "../agents/profile-types";
@@ -32,11 +32,7 @@ import {
 } from "../channels/turn-failures";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
-import {
-  type BotLane,
-  drivesTheBrowser,
-  type LaneHold,
-} from "../runner/bot-lane";
+import type { BotLane, LaneHold } from "../runner/bot-lane";
 import type { WorkInFlight } from "../runner/in-flight";
 import { chatLabelOf, type RunLedger } from "../runner/run-ledger";
 import {

@@ -33,8 +33,16 @@ import {
 } from "../../../shared/prompt/tool-results.ko";
 import type { PromptMode } from "../../../shared/prompt";
 import { CORE_TOOL_NAMES, serverKeyOf } from "../../../shared/tools/bridge";
-import { COMPUTER_TOOLS, computerTool } from "../../../shared/tools/computer";
-import { DELEGATE, delegateTargetOf } from "../../../shared/tools/delegate";
+import {
+  COMPUTER_TOOLS,
+  computerTool,
+  drivesTheBrowser,
+} from "../../../shared/tools/computer";
+import {
+  CONVERSATION_COMPUTER_TOOLS,
+  DELEGATE,
+  delegateTargetOf,
+} from "../../../shared/tools/delegate";
 import {
   type ComputerOutcome,
   computerReplyOutcome,
@@ -113,7 +121,6 @@ import type { RoutineSchedule } from "../routines/schedule";
 import type { RoutineService } from "../routines/service";
 import { createShownGuard } from "../logins/shown";
 import type { LoginVault } from "../logins/store";
-import { drivesTheBrowser } from "../runner/bot-lane";
 import {
   type LoopExecutor,
   type LoopOutcome,
@@ -373,14 +380,9 @@ const delegates = (deps: ChatToolsDeps): boolean =>
  */
 function turnsComputerTools(deps: ChatToolsDeps): Tool[] {
   if (!deps.gateway) return [];
-  return (
-    delegates(deps)
-      ? [
-          ...COMPUTER_TOOLS.filter((tool) => !drivesTheBrowser(tool.name)),
-          DELEGATE,
-        ]
-      : COMPUTER_TOOLS
-  ).map(described);
+  return (delegates(deps) ? CONVERSATION_COMPUTER_TOOLS : COMPUTER_TOOLS).map(
+    described,
+  );
 }
 
 /** The names of every tool this file can carry out for one Bot, right now. */
