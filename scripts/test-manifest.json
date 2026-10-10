@@ -584,6 +584,7 @@
   "tests/clean-checkout.test.ts",
   "tests/compose.test.ts",
   "tests/computer-browsers-wire.test.ts",
+  "tests/delegate.test.ts",
   "tests/desktop-front-door.test.ts",
   "tests/desktop-held.test.ts",
   "tests/desktop-shell.test.ts",

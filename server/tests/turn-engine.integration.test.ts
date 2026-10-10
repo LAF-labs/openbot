@@ -1412,13 +1412,11 @@ describe("a run the turn delegated to", () => {
               mode: "browse",
               instruction: String(args.task),
               tools: [],
-              // The page that never comes back: cut by the stop, as a call to the computer is.
-              execute: (_name, _args, step) =>
-                new Promise((resolve) => {
+              // The page that never comes back, and a call nobody answers: abandoned at the
+              // socket by the stop, as a call to the computer is.
+              execute: () =>
+                new Promise(() => {
                   reached();
-                  step.signal.addEventListener("abort", () =>
-                    resolve({ ok: false, code: "laf:stopped", stopped: true }),
-                  );
                 }),
               signal: call.signal,
             });
