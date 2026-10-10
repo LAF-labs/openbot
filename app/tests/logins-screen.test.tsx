@@ -360,6 +360,38 @@ describe("the addresses offered for a site this product knows", () => {
     expect(addressesOf("hometax")).toEqual([]);
   });
 
+  /*
+   * WHERE EACH SITE'S PASSWORD BOX IS, AS LOOKED AT (2026-10-10, record §6, piece 2-6). The first
+   * address the form offers is the one that decides whether the login is ever used: a login goes
+   * only into a document of an origin it was saved for. Each of these is the origin of the
+   * document that held the password box when the site's sign-in was opened, signed out, that day
+   * — written down here so that a change to the catalogue is a change somebody made on purpose.
+   */
+  test("begin, for every site, with where its sign-in was found when it was opened", () => {
+    expect(
+      Object.fromEntries(
+        LOGIN_SITES.map((site) => [site.id, addressesOf(site.id)[0]]),
+      ),
+    ).toEqual({
+      "naver-smartstore": "nid.naver.com",
+      "naver-smartplace": "nid.naver.com",
+      "naver-booking-talk": "nid.naver.com",
+      "naver-searchad": "nid.naver.com",
+      // Sent somewhere else to sign in.
+      "coupang-wing": "xauth.coupang.com",
+      "baemin-ceo": "biz-member.baemin.com",
+      "daangn-business": "accounts.daangn.com",
+      tosspayments: "app.tosspayments.com",
+      "kakao-channel": "accounts.kakao.com",
+      // Signed in to on a host of their own, which is where their sign-in starts.
+      "coupangeats-store": "store.coupangeats.com",
+      "yogiyo-ceo": "ceo.yogiyo.co.kr",
+      "catchtable-ceo": "ceo.catchtable.co.kr",
+      instagram: "www.instagram.com",
+      "cafe24-admin": "eclogin.cafe24.com",
+    });
+  });
+
   test("are every one an address a login can be saved for", () => {
     const offered = BUSINESS_SITES.flatMap((site) => addressesOf(site.id));
     expect(offered.length).toBeGreaterThan(BUSINESS_SITES.length);

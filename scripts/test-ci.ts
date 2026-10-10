@@ -2509,6 +2509,11 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * root for the tool by another description and the routine's words.
  * By hand: 3988 and 6, 6 and 5 are 4005; 938 and 2 are 940.
  *
+ * RAISED 2026-10-10 FOR WHERE EACH SITE'S SIGN-IN WAS FOUND, `app` from 2157 to 2158 (record §6):
+ * one in `logins-screen.test.tsx`, the table of the first address the 계정 form offers for each
+ * of the fourteen sites a login can be saved for, as looked at that day.
+ * By hand: 2157 and 1 are 2158.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2538,7 +2543,7 @@ const GROUPS: readonly {
   processes?: number;
 }[] = [
   { name: "server", floor: 4005, roots: ["server"] },
-  { name: "app", floor: 2157, roots: ["app"] },
+  { name: "app", floor: 2158, roots: ["app"] },
   {
     name: "agent-computer",
     floor: 537,
