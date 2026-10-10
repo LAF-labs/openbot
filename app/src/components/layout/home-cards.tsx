@@ -153,10 +153,11 @@ export function HomeCards({
               {/*
                * A card that throws takes its own picture, not 홈: the arguments are the model's,
                * and the conversation has drawn its cards inside this boundary from the start
-               * (review, 2026-10-10 — here there was none). Nothing stands in for it: the line
-               * above still says what was made and still leads to it.
+               * (review, 2026-10-10 — here there was none). The line that names it stands in for
+               * it, as for a thing that is no card: the press around it still has something to
+               * show and still leads to the message.
                */}
-              <ToolRenderBoundary fallback={null} name={view.card?.name ?? ""}>
+              <ToolRenderBoundary fallback={body} name={view.card?.name ?? ""}>
                 <GalleryCard card={made} />
               </ToolRenderBoundary>
             </span>

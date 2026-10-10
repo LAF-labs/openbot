@@ -119,11 +119,18 @@ describe("which day is today", () => {
   });
 });
 
-/** The day as the judge read it. A day it could not read is no number, and fails the comparison. */
-const usedBy = async (budget: DailyBudget) =>
-  (await budget.today())?.tokens ?? Number.NaN;
-const costBy = async (budget: DailyBudget) =>
-  (await budget.today())?.usd ?? Number.NaN;
+/**
+ * The day as the judge read it. A day it could not read throws here, by name: handed on as no
+ * number it would fail some comparison further down with nothing to say why.
+ */
+const dayOf = async (budget: DailyBudget) => {
+  const day = await budget.today();
+  if (!day)
+    throw new Error("the day could not be read (see `daily_budget_unread`)");
+  return day;
+};
+const usedBy = async (budget: DailyBudget) => (await dayOf(budget)).tokens;
+const costBy = async (budget: DailyBudget) => (await dayOf(budget)).usd;
 
 describe("today's count", () => {
   test("is the Seoul day's model.usage rows, and nothing either side of midnight", async () => {
