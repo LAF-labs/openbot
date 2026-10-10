@@ -2587,6 +2587,14 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * three again. The run-ending test in `first-screen.test.tsx` now holds 만든 것 too, in place.
  * By hand: 2167 and 28 is 2195, and 10 is 2205.
  *
+ * RAISED 2026-10-10 FOR A CARD'S LINE OPENING THE THING IT NAMES, `app` from 2205 to 2210, by
+ * exactly five (the idea is #151's, carried over). Four in `home-cards.test.ts`: a goal the
+ * answer gave no id is named and leads to its page only; and a made thing with no message, no
+ * conversation, or a message that is not a name has nowhere of its own. One in
+ * `home-cards-frame.test.tsx`: 소식 one press; 목표 and 만든 것 two side by side and never one
+ * inside the other; the goal's line to that goal, the made thing's to its conversation, leaving
+ * word of which message to show.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2616,7 +2624,7 @@ const GROUPS: readonly {
   processes?: number;
 }[] = [
   { name: "server", floor: 4012, roots: ["server"] },
-  { name: "app", floor: 2205, roots: ["app"] },
+  { name: "app", floor: 2210, roots: ["app"] },
   {
     name: "agent-computer",
     floor: 537,

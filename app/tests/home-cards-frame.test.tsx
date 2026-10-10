@@ -17,6 +17,7 @@ import {
   removeAppDom,
   unmountApps,
 } from "./support/app-router";
+import { unmountAll } from "./support/mount";
 import { acted } from "./support/turn-server";
 
 /*
@@ -65,6 +66,7 @@ beforeAll(async () => {
 }, APP_DOM_TIMEOUT_MS);
 afterEach(async () => {
   await unmountApps();
+  await unmountAll();
   sockets = [];
 });
 setDefaultTimeout(20_000);
@@ -170,8 +172,18 @@ const firstDay = account(({ pathname }) => {
 const panel = (view: View) =>
   view.host.querySelector("[data-home-panel]") as HTMLElement;
 const cards = (view: View) => [
-  ...panel(view).querySelectorAll<HTMLAnchorElement>("[data-home-card]"),
+  ...panel(view).querySelectorAll<HTMLElement>("[data-home-card]"),
 ];
+/** Where a card's name leads: its page. The card itself, where the card is one press. */
+const pageOf = (one: HTMLElement) =>
+  (one.matches("[data-home-card-page]")
+    ? one
+    : one.querySelector("[data-home-card-page]")
+  )?.getAttribute("href") ?? null;
+/** Where a card's line leads, where the thing it names has a place of its own. */
+const thingOf = (view: View, is: string) =>
+  card(view, is)?.querySelector<HTMLAnchorElement>("[data-home-card-thing]") ??
+  null;
 const drawn = (view: View) => cards(view).map((card) => card.dataset.homeCard);
 const card = (view: View, is: string) =>
   cards(view).find((one) => one.dataset.homeCard === is);
@@ -213,11 +225,8 @@ describe("홈's first cards", () => {
     const view = await mounted(account());
     await view.waitFor(() => drawn(view).length === 3, "the three cards");
     expect(drawn(view)).toEqual(["feed", "goals", "made"]);
-    expect(cards(view).map((one) => one.getAttribute("href"))).toEqual([
-      "/feed",
-      "/goals",
-      "/made",
-    ]);
+    // Each card's name is the way to its page.
+    expect(cards(view).map(pageOf)).toEqual(["/feed", "/goals", "/made"]);
 
     // 소식: the newest post, and how many are new — the mark the menu's 소식 wears.
     expect(line(view, "feed")).toBe("이번 주 날씨: 주말에 비");
@@ -244,6 +253,55 @@ describe("홈's first cards", () => {
       "목표",
       "만든 것",
     ]);
+  });
+
+  test("a card's line opens the thing it names: that goal on 목표, and a made thing in the conversation at the message that handed it over", async () => {
+    const view = await mounted(account());
+    await view.waitFor(() => drawn(view).length === 3, "the three cards");
+
+    // 소식's posts have no place of their own: one press, to 소식, and no second link in the card.
+    expect(card(view, "feed")?.tagName).toBe("A");
+    expect(card(view, "feed")?.querySelectorAll("a").length).toBe(0);
+    expect(thingOf(view, "feed")).toBeNull();
+
+    // 목표 and 만든 것: two presses side by side — never a link inside a link.
+    for (const is of ["goals", "made"]) {
+      expect(card(view, is)?.tagName).toBe("DIV");
+      expect(card(view, is)?.querySelectorAll("a").length).toBe(2);
+      expect(card(view, is)?.querySelectorAll("a a").length).toBe(0);
+      // The line is in the half that opens the thing, the name in the half that opens the page.
+      expect(
+        thingOf(view, is)?.querySelectorAll("[data-home-card-line]").length,
+      ).toBe(1);
+    }
+    expect(thingOf(view, "goals")?.getAttribute("href")).toBe(
+      "/goals?goal=g-1",
+    );
+    expect(thingOf(view, "made")?.getAttribute("href")).toBe("/channel/c-1");
+
+    /*
+     * Pressed, the made thing's line leaves word of which row to show, for the conversation to
+     * take (`lib/channels/jump.ts`) — watched here by something that is not the conversation,
+     * since whoever takes it or leaves with it untaken clears it.
+     */
+    const { usePendingJump } = await import("../src/lib/channels/jump");
+    const { mount: mountBeside } = await import("./support/mount");
+    const asked: string[] = [];
+    function Watching() {
+      const jump = usePendingJump("c-1");
+      if (jump?.messageId && asked.at(-1) !== jump.messageId) {
+        asked.push(jump.messageId);
+      }
+      return null;
+    }
+    await mountBeside(<Watching />);
+    expect(asked).toEqual([]);
+    await view.click(thingOf(view, "made") as HTMLAnchorElement);
+    await view.waitFor(
+      () => view.router.state.location.pathname === "/channel/c-1",
+      "the conversation to open",
+    );
+    expect(asked).toEqual(["m-1"]);
   });
 
   test("the card of the page that is open is not drawn, and every other is", async () => {

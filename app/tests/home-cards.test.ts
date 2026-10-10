@@ -84,6 +84,8 @@ describe("소식's card", () => {
       count: null,
       line: "이번 주 날씨: 주말에 비",
       note: null,
+      // A post has no place of its own: the card is the way to 소식 and nothing else.
+      thing: null,
     });
   });
 
@@ -93,6 +95,7 @@ describe("소식's card", () => {
       count: 3,
       line: "이번 주 날씨: 주말에 비",
       note: null,
+      thing: null,
     });
   });
 
@@ -132,7 +135,19 @@ describe("목표's card", () => {
       count: 2,
       line: "토익 800점 달성",
       note: "Now 720 · goal 800점",
+      // The line names one goal, and opens that one — not the done goal listed before it.
+      thing: { id: "g-1", kind: "goal" },
     });
+  });
+
+  test("a goal the answer gave no id is still named, and the card is then the way to its page only", () => {
+    const card = goalsCard(
+      wrong<GoalsAnswer>({
+        goals: [{ status: "active", title: "책 12권 읽기", id: 12 }],
+      }),
+    );
+    expect(card?.line).toBe("책 12권 읽기");
+    expect(card?.thing).toBeNull();
   });
 
   test("a goal with nothing to count has no second line", () => {
@@ -168,8 +183,24 @@ describe("만든 것's card", () => {
       count: null,
       line: "이사 준비",
       note: null,
+      // Where it was handed over: the conversation, at that message — the newest thing's, not
+      // the one before it.
+      thing: { channelId: "c-1", kind: "made", messageId: "m-1" },
     });
   });
+
+  test.each([
+    ["no message", { messageId: "" }],
+    ["no conversation", { channelId: "  " }],
+    ["a message that is not a name", { messageId: wrong<string>(7) }],
+  ])(
+    "a thing with %s has nowhere of its own to open: both, or the page",
+    (_, over) => {
+      const card = madeCard(made([item(over)]));
+      expect(card?.line).toBe("이사 준비");
+      expect(card?.thing).toBeNull();
+    },
+  );
 
   test("a thing the Bot gave no title is called by its kind, as its page calls it", () => {
     expect(madeCard(made([item({ title: null })]))?.line).toBe("Checklist");
