@@ -723,28 +723,32 @@ describe("the conversations a request names", () => {
 
 describe("the two lists that keep the next one from being forgotten", () => {
   test("every column that names a conversation without a foreign key to it is in the deletion's list", async () => {
+    /*
+     * FROM `pg_catalog`, NOT `information_schema`. The first writing joined three of the
+     * standard's views, and on CI — four workers, each on its own copy of the database — that one
+     * query ran past the five-second default (2026-10-10): `constraint_column_usage` is a view
+     * over every constraint and every column the role can see. The catalogue's own tables answer
+     * the same question in a millisecond.
+     */
     const rows = (await database.execute(sql`
-      select c.table_name || '.' || c.column_name as named
-      from information_schema.columns c
-      where c.table_schema = current_schema()
-        and (c.column_name like '%thread_id%' or c.column_name like '%channel_id%')
+      select t.relname || '.' || a.attname as named
+      from pg_catalog.pg_attribute a
+      join pg_catalog.pg_class t on t.oid = a.attrelid
+      where t.relnamespace = current_schema()::regnamespace
+        and t.relkind in ('r', 'p')
+        and a.attnum > 0
+        and not a.attisdropped
+        and (a.attname like '%thread_id%' or a.attname like '%channel_id%')
         and not exists (
           select 1
-          from information_schema.key_column_usage k
-          join information_schema.referential_constraints r
-            on r.constraint_name = k.constraint_name
-           and r.constraint_schema = k.constraint_schema
-          join information_schema.constraint_column_usage u
-            on u.constraint_name = r.constraint_name
-           and u.constraint_schema = r.constraint_schema
-          where k.table_schema = c.table_schema
-            and k.table_name = c.table_name
-            and k.column_name = c.column_name
-            and u.table_name = 'channels'
+          from pg_catalog.pg_constraint k
+          where k.conrelid = t.oid
+            and k.contype = 'f'
+            and k.confrelid = 'channels'::regclass
+            and a.attnum = any (k.conkey)
         )
-      order by 1
     `)) as unknown as Array<{ named: string }>;
-    expect(rows.map((row) => row.named)).toEqual(
+    expect(rows.map((row) => row.named).sort()).toEqual(
       Object.keys(NAMES_A_CONVERSATION).sort(),
     );
   });
