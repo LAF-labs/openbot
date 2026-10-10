@@ -24,6 +24,7 @@
 import type { Message } from "@ag-ui/client";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { type FirstMoveMark, isFirstMove } from "../../../shared/first-move";
+import type { DelegatedMark } from "../../../shared/tools/delegate";
 import type { Database } from "../db/client";
 import { lafThreadMessages } from "../db/schema";
 import { storable } from "../db/schema/json";
@@ -46,6 +47,10 @@ import { redactSecretTyping } from "./secret-redaction";
  * turn's first move, and not by the Bot (`shared/first-move.ts`). Unlike the stamps, it is for the
  * window too: the transcript reads it from the message (`turns/history.ts` leaves it on).
  *
+ * `lafDelegated` names the `delegate` call a message was written for: a step of the run the turn
+ * handed its browsing to (`shared/tools/delegate.ts`). Such a message is the conversation's for a
+ * person to read and is never handed to the Bot that delegated (`turns/engine.ts`).
+ *
  * A room's messages also carried `lafRoomReceipts`, which members read one and how their part came
  * out. Rooms were removed on 2026-09-24 and migration 0047 deleted their rows and took the key off
  * any message still holding it.
@@ -53,7 +58,8 @@ import { redactSecretTyping } from "./secret-redaction";
  * This is the ONLY definition. There were three (`StampedMessage` twice, `StoredMessage` once).
  */
 export type StoredMessage = Message &
-  FirstMoveMark & {
+  FirstMoveMark &
+  DelegatedMark & {
     lafAt?: string;
     lafAgentId?: string;
     lafRedacted?: boolean;

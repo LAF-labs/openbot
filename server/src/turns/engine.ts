@@ -22,6 +22,7 @@ import { isFirstMoveEnding } from "../../../shared/first-move";
 import { jsonObjectOf } from "../../../shared/json-object";
 import { streamCutResult } from "../../../shared/stream-cut";
 import { UNANSWERED_RESULT } from "../../../shared/task-ending";
+import { isDelegated } from "../../../shared/tools/delegate";
 import { withheldToolsForwarded } from "../../../shared/tools/paused";
 import type { AgentActor } from "../agents/profile-types";
 import {
@@ -182,6 +183,7 @@ function forTheBot(message: Message): Message {
     lafAgentId: _by,
     lafRedacted: _redacted,
     lafFirstMove: _moved,
+    lafDelegated: _delegated,
     ...rest
   } = message as StoredMessage;
   return rest as Message;
@@ -545,9 +547,51 @@ export function createTurnEngine(options: TurnEngineOptions) {
       return { value, moved: lane.grants(botId) - before > 1 };
     };
 
+    /*
+     * WHAT A DELEGATED RUN SAID AND DID, FILED BESIDE THE TURN'S OWN MESSAGES (piece 6-2).
+     *
+     * A turn that hands its browsing to a run of its own (`delegate`, below) has two records.
+     * The Bot's is `target.messages`: the call it made and the one answer it was handed back.
+     * A person's is that with the delegated run's steps in between — every page it opened and
+     * every card it raised — because everything a window draws about browsing is folded from the
+     * conversation's messages, and a question is drawn on the line of the call that raised it
+     * (`app/src/lib/turns/questions.ts`). So the steps are kept here, marked with the call they
+     * were made for, and woven in wherever the turn's messages are for people: every window's
+     * frames and the thread's rows. Never into `target.messages`.
+     */
+    const beside: { callId: string; messages: StoredMessage[] }[] = [];
+    /** The turn's messages as a person reads them: each delegated run's just before its answer. */
+    const transcript = (): Message[] => {
+      const own = target?.messages.slice(from) ?? [];
+      if (beside.length === 0) return own;
+      const woven: Message[] = [];
+      const placed = new Set<string>();
+      for (const message of own) {
+        if (message.role === "tool") {
+          for (const run of beside) {
+            if (run.callId !== message.toolCallId || placed.has(run.callId)) {
+              continue;
+            }
+            woven.push(...run.messages);
+            placed.add(run.callId);
+          }
+        }
+        woven.push(message);
+      }
+      // A run whose call has no answer yet: still going, or cut with the turn.
+      for (const run of beside) {
+        if (!placed.has(run.callId)) woven.push(...run.messages);
+      }
+      return woven;
+    };
+
+    /** What the Bot — and a run it delegated to — has said and asked for, in the turn's order. */
+    const stepsSoFar = (): Message[] =>
+      transcript().filter((message) => message.role === "assistant");
+
     /** The turn's messages with the store's own fields, as the thread keeps them. */
     const turnMessages = (): Message[] =>
-      (target?.messages.slice(from) ?? []).map((message) => {
+      transcript().map((message) => {
         const at =
           startedAt.get(message.id) ?? filedAt.get(message.id) ?? undefined;
         return {
@@ -574,8 +618,16 @@ export function createTurnEngine(options: TurnEngineOptions) {
        * every server-owned turn started an epoch, where the window's turns went on in one.
        */
       target.threadId = threadId;
+      /*
+       * WHAT A DELEGATED RUN WROTE IS LEFT OUT (piece 6-2). Its steps are in the thread for a
+       * person to read — the sites it opened, the cards it raised — and the Bot that delegated
+       * reads the one answer it was handed back, which is its call's result. Handed the steps
+       * too, every later turn would pay for the browsing it was spared the tools of.
+       */
       const stored = repairUnanswered(
-        (await messagesFor(options.database, threadId)).map(forTheBot),
+        (await messagesFor(options.database, threadId))
+          .filter((message) => !isDelegated(message))
+          .map(forTheBot),
       );
       target.setMessages(stored);
       // The turn's own messages start at what the person asked, which the send already filed.
@@ -591,13 +643,123 @@ export function createTurnEngine(options: TurnEngineOptions) {
         await persist(threadId, turn.id, repairedEarlier);
       }
       const agent = target;
-      options.hub.watchLive(threadId, () => agent.messages.slice(from));
+      options.hub.watchLive(threadId, transcript);
       announceTurn(turn, "running");
       options.hub.event(threadId, turn.id, {
         type: "RUN_STARTED",
         threadId,
         runId: turn.id,
       } as BaseEvent);
+
+      let persisting: Promise<void> = Promise.resolve();
+      const persistNow = () => {
+        persisting = persisting.then(async () => {
+          await persist(threadId, turn.id, turnMessages());
+        });
+        return persisting;
+      };
+      turn.flush = persistNow;
+
+      /*
+       * A RUN OF THE BOT'S OWN, INSIDE THE TURN, FOR ONE CALL (piece 6-2,
+       * `docs/laf/redesign-2026-10.md` §4). The turn's Bot hands a piece of work over — its
+       * browsing — and what does it is the same Bot in a conversation of its own: a fresh thread
+       * holding the instruction alone, so the tools that work needs sit at the head of THAT
+       * conversation and of no turn the person's own conversation ever pays for.
+       *
+       * It is this turn's in everything else. Its calls are carried out by the turn's own
+       * executor, so the boundary, the browser's lane, a wait on a person and the run a question
+       * names are the turn's. What it costs and how many calls it made are on the turn's row. A
+       * stop, the turn's deadline and a failure of the model end it as they end the turn, by the
+       * same throw. And its steps are filed beside the turn's messages (`beside`, above): seen by
+       * every window as they happen, kept in the thread, never read by the Bot that delegated.
+       *
+       * WHAT IS FILED IS THE STEPS, NOT THE ANSWER. A reply that asks for tools is a step: the
+       * line a person watches, with whatever the run said before it. The reply that asks for
+       * nothing is the answer, and it is the delegating Bot's to read — filed too, it would be
+       * drawn as the Bot saying the same thing twice. For the same reason the run's words are
+       * not streamed: nobody knows a reply is a step until it has asked for a tool.
+       */
+      let delegations = 0;
+      /** When the turn's own loop runs out of time; a delegated run has what is left of it. */
+      let endsAt = Date.now() + timeoutMs;
+      const delegate: NonNullable<ChatTurnContext["delegate"]> = async (
+        run,
+      ) => {
+        const worker = (await options.resolveAgents(owner))[botId];
+        if (!worker) throw new Error("laf:bot_not_found");
+        delegations += 1;
+        const ordinal = delegations;
+        // Its own conversation, as a routine's run is: nothing of the person's thread is in it.
+        worker.threadId = randomUUID();
+        worker.setMessages([
+          { id: randomUUID(), role: "user", content: run.instruction },
+        ]);
+        const filed: StoredMessage[] = [];
+        const known = new Set<string>();
+        beside.push({ callId: run.callId, messages: filed });
+        const file = (message: Message) => {
+          if (known.has(message.id)) return;
+          known.add(message.id);
+          filed.push({ ...message, lafDelegated: run.callId } as StoredMessage);
+        };
+        const { steps } = await runTurnLoop(worker, {
+          tools: run.tools,
+          execute: run.execute,
+          timeoutMs: Math.max(1, endsAt - Date.now()),
+          maxSteps,
+          forwardedProps: {
+            mode: run.mode,
+            ...(input.device === undefined ? {} : { device: input.device }),
+          },
+          // Under the turn's id like every run of it, and apart from the turn's own `.1`, `.2`.
+          runIdFor: (n) => `${turn.id}.d${ordinal}.${n}`,
+          signal: run.signal,
+          observe: (event) => {
+            events += 1;
+            // What it cost and what it called are the turn's. Its words are not a person's first
+            // word: none of them is drawn until a step is filed.
+            const type = String(event.type);
+            if (type === "CUSTOM" || type === "TOOL_CALL_START") {
+              meter.observe(event);
+            }
+          },
+          onToolResult: (message) => {
+            filedAt.set(message.id, new Date().toISOString());
+            file(message);
+            options.hub.event(threadId, turn.id, {
+              type: "TOOL_CALL_RESULT",
+              messageId: message.id,
+              toolCallId: message.toolCallId,
+              content: message.content,
+              role: "tool",
+            } as BaseEvent);
+            void persistNow();
+          },
+          onStep: async () => {
+            for (const message of worker.messages) {
+              if (
+                message.role !== "assistant" ||
+                (message.toolCalls?.length ?? 0) === 0 ||
+                known.has(message.id)
+              ) {
+                continue;
+              }
+              startedAt.set(message.id, new Date().toISOString());
+              file(message);
+            }
+            options.hub.messages(threadId, turn.id, stepsSoFar());
+            await persistNow();
+          },
+        });
+        const said = worker.messages
+          .filter((message) => message.role === "assistant")
+          .map((message) =>
+            typeof message.content === "string" ? message.content.trim() : "",
+          )
+          .filter(Boolean);
+        return { answer: said.at(-1) ?? "", steps };
+      };
 
       const toolkit = await options.tools(
         {
@@ -607,17 +769,10 @@ export function createTurnEngine(options: TurnEngineOptions) {
           runId: turn.id,
           awaitPerson,
           borrowBrowser,
+          delegate,
         },
         input.tools,
       );
-      let persisting: Promise<void> = Promise.resolve();
-      const persistNow = () => {
-        persisting = persisting.then(async () => {
-          await persist(threadId, turn.id, turnMessages());
-        });
-        return persisting;
-      };
-      turn.flush = persistNow;
 
       /*
        * THE FIRST MOVE (`first-move.ts`): a call the server makes for the Bot before its model is
@@ -720,6 +875,7 @@ export function createTurnEngine(options: TurnEngineOptions) {
         await persistNow();
       }
 
+      endsAt = Date.now() + timeoutMs;
       await runTurnLoop(agent, {
         tools: toolkit.tools,
         execute: toolkit.execute,
@@ -780,13 +936,7 @@ export function createTurnEngine(options: TurnEngineOptions) {
         },
         onStep: async () => {
           // The server's own copies, which put right anything a window pieced together from deltas.
-          options.hub.messages(
-            threadId,
-            turn.id,
-            agent.messages
-              .slice(from)
-              .filter((message) => message.role === "assistant"),
-          );
+          options.hub.messages(threadId, turn.id, stepsSoFar());
           await persistNow();
         },
       });
@@ -858,10 +1008,49 @@ export function createTurnEngine(options: TurnEngineOptions) {
           answered.add(call.id);
         }
       }
+      /*
+       * AND NONE OF A DELEGATED RUN'S. Its calls are not the Bot's to be handed back, so no
+       * provider would refuse the thread for one left open — but a window draws a call with no
+       * answer as a step still going, and this one's turn is over.
+       */
+      for (const run of beside) {
+        const done = new Set(
+          run.messages
+            .filter((message) => message.role === "tool")
+            .map((message) => (message as { toolCallId: string }).toolCallId),
+        );
+        for (const message of [...run.messages]) {
+          if (message.role !== "assistant") continue;
+          for (const call of message.toolCalls ?? []) {
+            if (done.has(call.id)) continue;
+            const result = {
+              id: randomUUID(),
+              role: "tool" as const,
+              toolCallId: call.id,
+              content: stopped
+                ? outcomeContent(STOPPED_RESULT)
+                : arrivedWhole(call.function.arguments)
+                  ? UNANSWERED_RESULT
+                  : streamCutResult(),
+              lafDelegated: run.callId,
+            };
+            run.messages.push(result);
+            filedAt.set(result.id, new Date().toISOString());
+            options.hub.event(threadId, turn.id, {
+              type: "TOOL_CALL_RESULT",
+              messageId: result.id,
+              toolCallId: call.id,
+              content: result.content,
+              role: "tool",
+            } as BaseEvent);
+            done.add(call.id);
+          }
+        }
+      }
     }
     delete turn.flush;
     if (target) {
-      options.hub.messages(threadId, turn.id, target.messages.slice(from));
+      options.hub.messages(threadId, turn.id, transcript());
       const written = await persistEnd(threadId, turn.id, turnMessages);
       // Not a stop's to report, and not over the top of a failure that already has its name.
       if (!written && !stopped && failure === null) {
