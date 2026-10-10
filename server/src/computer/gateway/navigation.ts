@@ -35,7 +35,7 @@ const REDIRECT_LOOP = "laf:redirect_loop";
 
 export function createNavigation(deps: {
   /** The computer, addressed as the Bot that is asking. See `createComputerGateway`. */
-  as: (botId: string) => ComputerClient;
+  as: (computerId: string, botId?: string) => ComputerClient;
   govern: Govern;
   siteSeen?: SiteSeen | undefined;
 }) {
@@ -98,7 +98,7 @@ export function createNavigation(deps: {
         async () => result,
       );
     } catch (error) {
-      await as(botId)
+      await as(computerId, botId)
         .stopComputer()
         .catch(() => undefined);
       throw error;
@@ -166,7 +166,7 @@ export function createNavigation(deps: {
         actor,
         { targetUrl: target, ...presented },
         () =>
-          as(botId).navigate(target, signal, {
+          as(computerId, botId).navigate(target, signal, {
             holdAtNewHost: true,
             ...(sentReferer ? { referer: sentReferer } : {}),
             ...(look.botsLook ? { botsLook: true } : {}),

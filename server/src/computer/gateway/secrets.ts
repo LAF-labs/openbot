@@ -22,8 +22,9 @@ import {
   type FieldWhere,
   NO_SECRET_PENDING,
   STALE_REFS,
-  STOPPED,
   StaleSnapshotError,
+  STOPPED,
+  WorkspaceRequestError,
 } from "../client";
 import { isSecretFieldElement } from "../default-policy";
 import type { PolicyDecision } from "../policy";
@@ -143,7 +144,7 @@ export class SecretValuesError extends Error {
 
 export function createSecrets(deps: {
   /** The computer, addressed as the Bot that is asking. See `createComputerGateway`. */
-  as: (botId: string) => ComputerClient;
+  as: (computerId: string, botId?: string) => ComputerClient;
   auditStore: AuditStore;
   snapshots: SnapshotCache;
   /**
@@ -199,10 +200,25 @@ export function createSecrets(deps: {
    * it was is not something the computer knows, so the next run of that Bot's to end ends it.
    */
   const valueRuns = new Map<string, Set<string>>();
-  const putInFor = (botId: string, threadId: string | undefined): void => {
+  /**
+   * WHICH OF THE BOT'S BROWSERS A VALUE WENT INTO (piece 5-3), by Bot. The computer's main browser
+   * was the only one there was; a background browser holds what was put into it in a session of
+   * its own (`agent-computer/src/browsers.ts`), and telling the main one a run is over lets go of
+   * nothing there. So the end of a run is told to each browser that holds something, and a
+   * browser that was stopped, reset or let go of stops being one of them.
+   */
+  const valueHolders = new Map<string, Set<string>>();
+  const putInFor = (
+    botId: string,
+    threadId: string | undefined,
+    computerId: string = botId,
+  ): void => {
     const runs = valueRuns.get(botId) ?? new Set<string>();
     runs.add(threadId ?? ANY_RUN);
     valueRuns.set(botId, runs);
+    const holders = valueHolders.get(botId) ?? new Set<string>();
+    holders.add(computerId);
+    valueHolders.set(botId, holders);
   };
 
   /**
@@ -268,15 +284,44 @@ export function createSecrets(deps: {
     );
   }
 
-  /** This Bot's browser was stopped or reset: its tabs are closed, and what was held went with them. */
-  function valuesLetGo(botId: string): void {
-    valueRuns.delete(botId);
-    shownRuns.delete(botId);
+  /**
+   * A browser of this Bot's was stopped, reset or let go of: its tabs are closed, and what was held
+   * in it went with them. The main one unless another is named. A value still held in a different
+   * browser of the Bot's is still held, and its runs stay noted.
+   */
+  function valuesLetGo(botId: string, computerId: string = botId): void {
+    const holders = valueHolders.get(botId);
+    holders?.delete(computerId);
+    if (!holders || holders.size === 0) {
+      valueHolders.delete(botId);
+      valueRuns.delete(botId);
+    }
+    // What a run was only shown is a page of the main browser's (`shownRuns`).
+    if (computerId === botId) shownRuns.delete(botId);
   }
 
   /** The computer said it holds a value this server has no note of: one from before a restart. */
   function valuesSeen(botId: string): void {
     if (!valueRuns.has(botId)) putInFor(botId, undefined);
+  }
+
+  /**
+   * Tell one browser of the Bot's that a run is over; true once it holds nothing. A background
+   * browser that is no longer open holds nothing by being gone: the computer answers that the
+   * request names no browser (`laf:request_invalid`), which for this call can mean nothing else.
+   */
+  async function toldOfTheEnd(
+    botId: string,
+    computerId: string,
+  ): Promise<boolean> {
+    try {
+      return (await as(computerId, botId).runEnded()).ended;
+    } catch (error) {
+      if (computerId !== botId && error instanceof WorkspaceRequestError) {
+        return true;
+      }
+      throw error;
+    }
   }
 
   /**
@@ -302,11 +347,20 @@ export function createSecrets(deps: {
     // has to outlive this answer: it is what tells the computer at that run's own end.
     const ending = [...runs];
     try {
-      const { ended } = await as(botId).runEnded();
-      if (!ended) {
-        log.warn("computer_values_still_held", { bot: botId });
-        return;
+      // Every browser of the Bot's a value went into; the main one where none was noted — a value
+      // from before this server started again is one the main browser said it holds.
+      for (const computerId of [...(valueHolders.get(botId) ?? [botId])]) {
+        const ended = await toldOfTheEnd(botId, computerId);
+        if (!ended) {
+          log.warn("computer_values_still_held", {
+            bot: botId,
+            ...(computerId === botId ? {} : { computer: computerId }),
+          });
+          return;
+        }
+        valueHolders.get(botId)?.delete(computerId);
       }
+      valueHolders.delete(botId);
       for (const run of ending) runs.delete(run);
       if (runs.size === 0 && valueRuns.get(botId) === runs) {
         valueRuns.delete(botId);
@@ -415,7 +469,7 @@ export function createSecrets(deps: {
     if (!vault) return null;
     let where: FieldWhere[];
     try {
-      ({ fields: where } = await as(botId).whereFields(
+      ({ fields: where } = await as(computerId, botId).whereFields(
         fields.map((field) => field.ref),
         input.snapshotId,
       ));
@@ -626,7 +680,10 @@ export function createSecrets(deps: {
       learnt,
     );
     if (saved && "choose" in saved) {
-      return { ...(await as(botId).control()), loginChoice: saved.choose };
+      return {
+        ...(await as(computerId, botId).control()),
+        loginChoice: saved.choose,
+      };
     }
     if (saved) {
       const { login, values } = saved;
@@ -662,8 +719,8 @@ export function createSecrets(deps: {
             // NOTED BEFORE THE VALUES LEAVE, as with a person's: a fill that fails at its second
             // box has put a name into the page, and the computer is holding it for the run.
             // For the run it is put in for: a routine's own name where it has one (`runKey`).
-            putInFor(botId, actor.runKey ?? actor.threadId);
-            const filled = await as(botId).fillLogin(into, {
+            putInFor(botId, actor.runKey ?? actor.threadId, computerId);
+            const filled = await as(computerId, botId).fillLogin(into, {
               snapshotId: input.snapshotId,
               origins: login.origins,
             });
@@ -686,7 +743,7 @@ export function createSecrets(deps: {
           },
         );
         return {
-          ...(await as(botId).control()),
+          ...(await as(computerId, botId).control()),
           loginFilled: {
             id: login.id,
             ...(login.site ? { site: login.site } : {}),
@@ -708,7 +765,10 @@ export function createSecrets(deps: {
     // not a sign-in, a seal that does not open. Said as that, with nothing opened and no row: no
     // act was made and nobody was asked.
     if (options.nobodyToAsk) {
-      return { ...(await as(botId).control()), loginNotSaved: true };
+      return {
+        ...(await as(computerId, botId).control()),
+        loginNotSaved: true,
+      };
     }
     /*
      * THROUGH THE GATE, LIKE EVERY OTHER ACT OF THE BOT'S (2026-10-10, record §6).
@@ -770,7 +830,7 @@ export function createSecrets(deps: {
          * and leaves anything else as it is; the telling is given a few seconds of its own and is not
          * waited for. A computer that cannot be reached lets the ask go by its own clock.
          */
-        const madeFor = as(botId);
+        const madeFor = as(computerId, botId);
         const takeBack = () =>
           void madeFor
             .withdrawSecret(
@@ -892,8 +952,8 @@ export function createSecrets(deps: {
     }
     // NOTED BEFORE THE VALUES LEAVE, not after they land: a supply that fails at its third box
     // has put two values into the page, and the computer is holding those.
-    putInFor(botId, request.threadId);
-    const result = await as(botId).supplySecret([...values], {
+    putInFor(botId, request.threadId, computerId);
+    const result = await as(computerId, botId).supplySecret([...values], {
       // Which ask this answers — the computer takes values for that one and no other —
       snapshotId: request.snapshotId,
       // — and what each box was judged as, which is what it must still be.

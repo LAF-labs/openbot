@@ -11,15 +11,17 @@
  * reads `acts.ts`; a reader checking that every person's reach into a browser is recorded reads this.
  */
 import type { AuditStore } from "../../audit";
+import { computerIdOf } from "../bot-id";
 import type { ComputerClient } from "../client";
 import type { ActionActor } from "./caller";
 import type { Secrets } from "./secrets";
+import type { SnapshotCache } from "./snapshots";
 import { writeControlEvent } from "./trail";
 
 export function createHandovers(deps: {
   client: ComputerClient;
   /** The computer, addressed as the Bot that is asking. See `createComputerGateway`. */
-  as: (botId: string) => ComputerClient;
+  as: (computerId: string, botId?: string) => ComputerClient;
   auditStore: AuditStore;
   secrets: Pick<
     Secrets,
@@ -29,8 +31,9 @@ export function createHandovers(deps: {
     | "valuesLetGo"
     | "holdsValues"
   >;
+  snapshots: Pick<SnapshotCache, "forget">;
 }) {
-  const { client, as, auditStore, secrets } = deps;
+  const { client, as, auditStore, secrets, snapshots } = deps;
 
   return {
     /**
@@ -47,7 +50,7 @@ export function createHandovers(deps: {
       actor: ActionActor,
       reason: string,
     ) {
-      const state = await as(botId).requestControl(reason);
+      const state = await as(computerId, botId).requestControl(reason);
       await writeControlEvent(auditStore, "computer.help_requested", {
         botId,
         actor,
@@ -67,7 +70,7 @@ export function createHandovers(deps: {
       botId: string,
       actor: ActionActor,
     ) {
-      const state = await as(botId).releaseControl();
+      const state = await as(computerId, botId).releaseControl();
       await writeControlEvent(auditStore, "computer.control_released", {
         botId,
         actor,
@@ -118,11 +121,35 @@ export function createHandovers(deps: {
      * fact worth having, and a trail that only records effective actions cannot tell you what somebody
      * tried.
      */
+    /**
+     * Open a background browser for this Bot, under a name the caller chooses (piece 5-3,
+     * `agent-computer/src/browsers.ts`). `opened: false` is the computer saying it has no room:
+     * an answer, for the caller to wait on or go without. The computer's id to act in it by is
+     * `computerIdOf(botId, browser)`.
+     */
+    openBrowser(botId: string, browser: string) {
+      return as(computerIdOf(botId, browser), botId).openBrowser();
+    },
+
+    /**
+     * Let a background browser go: the computer closes it and throws its profile away, and what
+     * this server kept about it — the last page seen there, what was typed where, a value it held
+     * — is forgotten with it, so nothing later is judged against a page that no longer exists.
+     */
+    async releaseBrowser(botId: string, browser: string) {
+      const computerId = computerIdOf(botId, browser);
+      const result = await as(computerId, botId).releaseBrowser();
+      snapshots.forget(computerId);
+      secrets.forgetTypedInto(computerId);
+      secrets.valuesLetGo(botId, computerId);
+      return result;
+    },
+
     async stopComputer(computerId: string, botId: string, actor: ActionActor) {
-      const result = await as(botId).stopComputer();
+      const result = await as(computerId, botId).stopComputer();
       // The pages those refs named are gone, and a restarted browser counts its refs from `e1` again.
       secrets.forgetTypedInto(computerId);
-      secrets.valuesLetGo(botId);
+      secrets.valuesLetGo(botId, computerId);
       await writeControlEvent(auditStore, "computer.stopped", {
         botId,
         actor,
@@ -142,9 +169,9 @@ export function createHandovers(deps: {
      * is written whatever happens next, and it says which of those two it was.
      */
     async resetComputer(computerId: string, botId: string, actor: ActionActor) {
-      const result = await as(botId).resetComputer();
+      const result = await as(computerId, botId).resetComputer();
       secrets.forgetTypedInto(computerId);
-      secrets.valuesLetGo(botId);
+      secrets.valuesLetGo(botId, computerId);
       await writeControlEvent(auditStore, "computer.reset", {
         botId,
         actor,

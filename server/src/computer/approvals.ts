@@ -135,6 +135,13 @@ export type ApprovalSubject = {
    * always ends in nothing: the two cannot be equal, by this field alone.
    */
   server?: string | undefined;
+  /**
+   * Which of the Bot's browsers the act is in, where it is not the main one (piece 5-3). A yes to
+   * pressing a button on a page is a yes in the browser the question was raised about: the same
+   * address in another browser is another page — signed in as somebody else, or as nobody. Absent
+   * for the main browser, so every fingerprint from before there were others is what it was.
+   */
+  browser?: string | undefined;
 };
 
 /**
@@ -517,6 +524,7 @@ export function fingerprintOf(subject: ApprovalSubject): string {
          * across a restart for an upgrade to orphan.
          */
         subject.server ?? "",
+        ...(subject.browser ? [subject.browser] : []),
       ].join("\u0000"),
     )
     .digest("hex");

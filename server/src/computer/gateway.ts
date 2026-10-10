@@ -51,6 +51,7 @@ import type { LoginVault } from "../logins/store";
 import type { AuditStore } from "../audit";
 import { type ApprovalRegistry, createApprovalRegistry } from "./approvals";
 import type { ReviewSubject, ReviewVerdict } from "./auto-review";
+import { browserOf, computerOf } from "./bot-id";
 import type { ComputerClient } from "./client";
 import { createActs } from "./gateway/acts";
 import { createGovern } from "./gateway/govern";
@@ -172,13 +173,26 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
   const { client, auditStore } = options;
 
   /**
-   * The computer, addressed as the Bot that is asking.
+   * The computer, addressed as the Bot that is asking — in the browser the computer's id names.
    *
    * Every call goes through this. The Bot's browser, its logins and the proxy its traffic leaves
    * through are all keyed on this id at the far end, so a call that forgets it lands on the wrong
    * computer, because there is always a computer to answer.
+   *
+   * A COMPUTER'S ID IS THE BOT'S, OR THE BOT'S AND A BROWSER'S NAME (`bot-id.ts`, piece 5-3). The
+   * main browser's is the Bot's id alone, which is what every caller passed before there were
+   * others, so a call that names only a Bot is the main browser's as it always was.
    */
-  const as = (botId: string) => client.forBot(botId);
+  const as = (computerId: string, botId?: string) => {
+    // Where the caller says which Bot it is acting as, that is who is addressed, and a browser
+    // the id names has to be that Bot's (`browserOf`). Where it hands over the id alone — a look
+    // at the page — the id says both.
+    if (botId !== undefined) {
+      return client.forBot(botId, browserOf(computerId, botId));
+    }
+    const named = computerOf(computerId);
+    return client.forBot(named.botId, named.browser);
+  };
 
   const snapshots = createSnapshotCache();
   const secrets = createSecrets({
@@ -216,7 +230,7 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
       snapshots,
       withoutSecrets: secrets.withoutSecrets,
     }),
-    ...createHandovers({ client, as, auditStore, secrets }),
+    ...createHandovers({ client, as, auditStore, secrets, snapshots }),
     ...createPersonFiles({ as, auditStore }),
     requestSecret: secrets.requestSecret,
     supplySecret: secrets.supplySecret,

@@ -90,7 +90,7 @@ function heldTo<I extends { element?: JudgedElement }>(
 
 export function createActs(deps: {
   /** The computer, addressed as the Bot that is asking. See `createComputerGateway`. */
-  as: (botId: string) => ComputerClient;
+  as: (computerId: string, botId?: string) => ComputerClient;
   govern: Govern;
   /** Where a script's ending is recorded, between the run and the files it made. */
   auditStore: AuditStore;
@@ -145,7 +145,7 @@ export function createActs(deps: {
           ...(signal ? { signal } : {}),
           ...(approvalId ? { approvalId } : {}),
         },
-        (judged) => as(botId).click(heldTo(input, judged), signal),
+        (judged) => as(computerId, botId).click(heldTo(input, judged), signal),
       );
     },
 
@@ -174,7 +174,7 @@ export function createActs(deps: {
           ...(signal ? { signal } : {}),
           ...(approvalId ? { approvalId } : {}),
         },
-        (judged) => as(botId).type(heldTo(input, judged), signal),
+        (judged) => as(computerId, botId).type(heldTo(input, judged), signal),
       );
     },
 
@@ -201,7 +201,7 @@ export function createActs(deps: {
         },
         // A keypress on a control is held to that control's label like a click; one on the page
         // itself resolves no ref, so there is nothing to hold it to.
-        (judged) => as(botId).key(heldTo(input, judged), signal),
+        (judged) => as(computerId, botId).key(heldTo(input, judged), signal),
       );
     },
 
@@ -218,7 +218,7 @@ export function createActs(deps: {
         botId,
         actor,
         { ...(approvalId ? { approvalId } : {}) },
-        () => as(botId).scroll(input),
+        () => as(computerId, botId).scroll(input),
       );
     },
 
@@ -242,7 +242,7 @@ export function createActs(deps: {
         botId,
         actor,
         { ...(approvalId ? { approvalId } : {}) },
-        () => as(botId).switchTab(input),
+        () => as(computerId, botId).switchTab(input),
       );
     },
 
@@ -278,7 +278,7 @@ export function createActs(deps: {
         // The file handed to the site is the one the rule was asked about: `path` is `govern`'s
         // reading of `input.path`, and nothing here reads that string a second time.
         (judged, path) =>
-          as(botId).uploadFile(
+          as(computerId, botId).uploadFile(
             heldTo({ ...input, path: path ?? input.path }, judged),
             signal,
           ),
@@ -312,7 +312,10 @@ export function createActs(deps: {
           ...(approvalId ? { approvalId } : {}),
         },
         (_judged, path) =>
-          as(botId).readFile({ ...input, path: path ?? input.path }),
+          as(computerId, botId).readFile({
+            ...input,
+            path: path ?? input.path,
+          }),
       );
     },
 
@@ -347,7 +350,9 @@ export function createActs(deps: {
           ...(approvalId ? { approvalId } : {}),
         },
         (_judged, path) =>
-          as(botId).listFiles(named ? { ...input, path: path ?? "." } : {}),
+          as(computerId, botId).listFiles(
+            named ? { ...input, path: path ?? "." } : {},
+          ),
       );
     },
 
@@ -365,7 +370,10 @@ export function createActs(deps: {
         actor,
         { filePath: input.path, ...(approvalId ? { approvalId } : {}) },
         (_judged, path) =>
-          as(botId).writeFile({ ...input, path: path ?? input.path }),
+          as(computerId, botId).writeFile({
+            ...input,
+            path: path ?? input.path,
+          }),
       );
     },
 
@@ -468,7 +476,7 @@ export function createActs(deps: {
           { filePath: named, forScript: sha256, ...carried },
           (_judged, judgedPath) => {
             path = judgedPath ?? named;
-            return as(botId).fileBytes(path);
+            return as(computerId, botId).fileBytes(path);
           },
         );
         /*
@@ -675,7 +683,7 @@ export function createActs(deps: {
         // Not for a caller that has stopped: nothing will be filed, and nothing is dialled.
         if (!signal?.aborted) {
           try {
-            held = await madeHeldBy(as(botId), signal);
+            held = await madeHeldBy(as(computerId, botId), signal);
           } catch (error) {
             /*
              * AND NOT WHERE THE CALLER STOPPED WHILE THE FOLDER WAS BEING DESCRIBED. The look
@@ -731,11 +739,14 @@ export function createActs(deps: {
                 if (unreachable)
                   throw new ComputerUnavailableError(unreachable);
                 try {
-                  held ??= await madeHeldBy(as(botId), signal);
+                  held ??= await madeHeldBy(as(computerId, botId), signal);
                   if (held + size > madeMaxBytes) {
                     throw madeFull(held, size, madeMaxBytes);
                   }
-                  const filed = await as(botId).putFile(path, product.bytes);
+                  const filed = await as(computerId, botId).putFile(
+                    path,
+                    product.bytes,
+                  );
                   held += filed.bytes;
                   return filed;
                 } catch (error) {
