@@ -82,6 +82,14 @@ export const lafThreadMessages = pgTable(
       table.threadId,
       sql`(${table.message} ->> 'id')`,
     ),
+    /*
+     * AND ONE INDEX THIS FILE CANNOT SAY: `laf_thread_messages_said_trgm_idx`, the trigram index
+     * the search of conversations reads (migration 0065, `search/conversations.ts`) — a GIN index
+     * over a SQL function with an operator class, on the rows that are a person's or the Bot's
+     * words. It is in neither this schema nor the snapshot, so a generated migration neither
+     * makes nor drops it (measured: `drizzle-kit generate` after 0065 finds nothing to do), and
+     * `conversation-search.integration.test.ts` reads it out of the catalogue.
+     */
   ],
 );
 

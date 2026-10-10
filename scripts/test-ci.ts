@@ -2625,14 +2625,19 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * opening one, a refusal said, several Bots; and the switch in the top row — which of the two
  * the screen is, and the mark it wears.
  *
- * RAISED 2026-10-10 WITH THE RUN ON EVERY QUESTION, `server` from 4041 to 4046 (record §5, piece
- * 5-1), by exactly five. Three in `run-ledger.integration.test.ts`: two runs of one Bot at once
- * each counting the questions they raised, with one's unanswered question not the other's wait;
- * a turn counting what every run of it raised; and a row that names no run counted as it was, by
- * Bot and since the turn began. One in `approval-routes.test.ts`: the question's row and its
- * answer's both naming the run that asked, neither inventing one, and the card not carrying it.
- * One in `turn-engine.integration.test.ts`: the run the engine hands a call is the row it settles.
- * By hand: 4041 and 3 is 4044, and 1 is 4045, and 1 is 4046.
+ * RAISED 2026-10-10 FOR THE SEARCH OF EVERY CONVERSATION, `server` from 4041 to 4071 and `app`
+ * from 2230 to 2245 (record §3, piece 4-3, migration 0065). Thirty in the new
+ * `conversation-search.integration.test.ts`: the main conversation and a project read together,
+ * newest first; when a hit says it was said; every word, any order; case; nobody else's
+ * conversation and none the person left; a tool's result and a call's arguments nowhere in the
+ * answer; a message with a file read by its words; `%`, `_` and a backslash as themselves, a case
+ * each; pages through rows written in one instant; exactly a page; the index the query must
+ * name, and that no statistics are kept for it; the door (hits not to be kept, six refused searches, four refused cursors, a failure that
+ * is not "nothing found"); and the words typed, a pattern, a snippet, the marks. Fifteen in the
+ * new `search.test.tsx`: the way to it in the top row of three screens; the box alone; one request
+ * once the typing stops, in a body, with where and the marks; a hit opening its conversation at
+ * the message and the list on the way back; Enter; no hits as one line; older hits; a failure
+ * said; three answers that are no page; several Bots; and the refusals' sentences.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -2662,8 +2667,8 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4046, roots: ["server"] },
-  { name: "app", floor: 2230, roots: ["app"] },
+  { name: "server", floor: 4071, roots: ["server"] },
+  { name: "app", floor: 2245, roots: ["app"] },
   {
     name: "agent-computer",
     floor: 537,

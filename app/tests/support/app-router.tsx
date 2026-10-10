@@ -294,6 +294,9 @@ export async function mountApp(options: {
   forgetScreenPanelViewport();
   const { forgetHomePanel } = await import("../../src/lib/home/home-panel");
   forgetHomePanel();
+  // And what the search box holds, which outlives its page on purpose (`lib/search/queries.ts`).
+  const { setSearchTyped } = await import("../../src/lib/search/queries");
+  setSearchTyped("");
 
   document.body.innerHTML = "";
   const host = document.createElement("div");

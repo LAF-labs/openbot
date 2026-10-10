@@ -7,6 +7,7 @@ import { HomeButton } from "@/components/layout/home-panel";
 import { ProfileMenu } from "@/components/layout/profile-menu";
 import { ReadNotice } from "@/components/layout/read-states";
 import { ScreenSwitch } from "@/components/layout/screen-switch";
+import { SearchButton } from "@/components/layout/search-button";
 import { SectionBoundary } from "@/components/layout/section-boundary";
 import { UpdateNotice } from "@/components/layout/update-notice";
 import { agentListQueryOptions } from "@/lib/agents/queries";
@@ -48,7 +49,8 @@ import { cn } from "@/lib/utils";
  * 홈 is wide.
  *
  * THE SWITCH BETWEEN 채팅 AND 프로젝트 stands where the screen begins, after that cell
- * (`screen-switch.tsx`, piece 4-2). WHAT IS NOT HERE YET: the search (piece 4-3).
+ * (`screen-switch.tsx`, piece 4-2), and THE SEARCH at the right, beside the menu's picture
+ * (`search-button.tsx`, piece 4-3).
  */
 
 /** The width the macOS window buttons take at the row's left, in the shell: three lights and air. */
@@ -140,6 +142,8 @@ export function AppTopBar({
         />
         {/* Only while there is a newer version: an icon, and its sentence a hover away. */}
         <UpdateNotice shape="icon" />
+        {/* What was said, in any conversation: there whether 홈 is open or folded. */}
+        <SearchButton />
         {/*
          * ONE SEAM FOR WHAT READS THE ROSTER: the Bot at the row's left, the menu at its right,
          * and the bar a narrow window has under the screen (drawn from here, laid out there).
