@@ -2867,13 +2867,21 @@ PR이 들어가는 동안 이 팩은 대화 시나리오 80개 가운데 **71개
 떨어진 일곱:
 
 - **셋은 공급자의 요청 제한**(`laf:model_rate_limited`, 요청 0회): `date-arithmetic-in-korean`,
-  `english-question-korean-answer`, `file-made-is-handed-over`. 다시 돌린 결과는 아래.
+  `english-question-korean-answer`, `file-made-is-handed-over`. 따로 세 번씩 다시 돌려 셋 다 3/3.
 - **하나는 판정 불가**: `support-programs-only-from-the-portal` — 이 기계에 `DATA_GO_KR_SERVICE_KEY`가 없다
   (09-28, 10-02의 기록과 같다).
-- **하나는 판정이 좁았다**: `delegated-task-stands-alone` — 맡은 쪽이 네이버 첫 화면을 열고 검색창에
-  가게 이름을 **입력**했는데, 판정은 주소만 읽었다. 입력한 글도 읽게 고쳤다.
+- **하나는 시나리오가 틀렸다**: `delegated-task-stands-alone` — 맡은 쪽이 네이버 첫 화면을 열고
+  검색창에 가게 이름을 **입력**했는데 판정은 주소만 읽었고, 시나리오의 네이버는 무엇을 열든 검색 결과를
+  내주어서 찾지도 않은 실행이 결과를 "본" 것이 됐다(다시 돌린 세 번 가운데 두 번). 입력한 글도 읽게
+  하고, 네이버가 이름으로 찾기 전에는 첫 화면을 내주게 고쳤다 — 그 뒤 3/3: 첫 화면 → 검색창에 이름을
+  넣고 제출 → 결과를 읽음.
 - **둘은 이 모델에서 원래 흔들리던 것**: `send-mail-through-the-bridge`(위 기록: "about a third to a half
-  of the time"), `routine-at-seven-thirty-on-the-owners-clock`(09-28에 2/3). 다시 돌린 결과는 아래.
+  of the time"), `routine-at-seven-thirty-on-the-owners-clock`(09-28에 2/3). 세 번씩 다시 돌려 루틴은
+  3/3, 메일은 2/3 — 떨어진 한 번은 보낼 정산서 파일이 폴더에 있는지부터 보고 "아직 없다"고 답한
+  것이고, `delegate`를 부르지 않았다. 위임과 상관없다.
+
+그래서 떨어진 일곱 가운데 **위임 때문인 것은 없다.** 새 시나리오 여덟은 고친 뒤 모두 통과했다
+(`handed-back-…` 둘과 `delegated-task-stands-alone`은 3/3으로 따로 확인).
 
 **이 측정이 찾은 것.**
 
