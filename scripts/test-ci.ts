@@ -2726,6 +2726,14 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * in the new `tests/delegate.test.ts`: the tool, the mark and the mode a delegated run is told
  * about itself in.
  *
+ * RAISED 2026-10-11 FOR THE CONVERSATION THAT DELEGATES, `server` by nineteen (to 4244) and `root`
+ * by fourteen (to 1066) (record §4, the second half of piece 6-2). Nineteen to `server` in
+ * `turn-engine.integration.test.ts`: the Bot's own old browser steps left out of what it is
+ * handed — one case a tool of the computer's, the words that stay, a reply that only took a step,
+ * its other calls, a thread with none, and the turn after the change. Fourteen to `root` in
+ * `tests/delegate.test.ts`: the chat mode naming none of the browser's eleven tools, one case
+ * each, and naming the hand-over.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2754,7 +2762,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4225, roots: ["server"] },
+  { name: "server", floor: 4244, roots: ["server"] },
   { name: "app", floor: 2259, roots: ["app"] },
   {
     name: "agent-computer",
@@ -2778,7 +2786,7 @@ const GROUPS: readonly {
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 1052, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 1066, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
