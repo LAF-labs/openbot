@@ -36,7 +36,13 @@ export function feedQueryOptions() {
   return infiniteQueryOptions({
     queryKey: feedKeys.posts,
     initialPageParam: null as string | null,
-    getNextPageParam: (last: FeedPage) => last.next,
+    /*
+     * Asked of whatever arrived, which is not always a page: `last.next` on an answer of `null`
+     * threw from inside the query's own bookkeeping, while drawing — and since 2026-10-10 this is
+     * read on every screen (홈's card, `lib/home/cards.ts`), where that throw blanked the panel
+     * 오늘 is in. No page is no next page.
+     */
+    getNextPageParam: (last: FeedPage | null | undefined) => last?.next ?? null,
     staleTime: 10_000,
     refetchOnWindowFocus: true,
     queryFn: async ({ pageParam }) =>

@@ -147,6 +147,8 @@
   "app/tests/help-page.test.ts": 0,
   "app/tests/history-reads.test.ts": 0,
   "app/tests/history-unreadable.test.tsx": 3.02,
+  "app/tests/home-cards-frame.test.tsx": 2.6,
+  "app/tests/home-cards.test.ts": 0.1,
   "app/tests/home-frame.test.tsx": 2.2,
   "app/tests/home-panel.test.ts": 0.1,
   "app/tests/i18n-coverage.test.ts": 1.59,

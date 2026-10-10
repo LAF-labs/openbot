@@ -142,7 +142,8 @@ export function madeQueryOptions(botId: string, shelf: MadeShelf | null) {
   return infiniteQueryOptions({
     queryKey: madeKeys.of(botId, shelf),
     initialPageParam: null as string | null,
-    getNextPageParam: (last: MadePage) => last.next,
+    // Of whatever arrived: an answer that is no page has no next one (`lib/feed/queries.ts` says why).
+    getNextPageParam: (last: MadePage | null | undefined) => last?.next ?? null,
     // What the Bot makes arrives in the conversation; the page is read again whenever it is opened.
     staleTime: 5_000,
     refetchOnWindowFocus: true,
