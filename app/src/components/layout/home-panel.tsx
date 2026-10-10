@@ -1,11 +1,13 @@
 import { IconHome } from "@tabler/icons-react";
-import type { QueryKey } from "@tanstack/react-query";
+import { type QueryKey, useQuery } from "@tanstack/react-query";
 import { type KeyboardEvent, type PointerEvent, useId, useRef } from "react";
 import { BotDay } from "@/components/app-sidebar/bot-day";
+import { HomeCards } from "@/components/layout/home-cards";
 import { SectionBoundary } from "@/components/layout/section-boundary";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useMyBots } from "@/lib/agents/my-bots";
+import { primaryBot, useMyBots } from "@/lib/agents/my-bots";
+import { channelListQueryOptions } from "@/lib/channels/queries";
 import {
   HOME_PANEL_MIN,
   setHomeOpen,
@@ -13,6 +15,7 @@ import {
   useHomePanelFit,
 } from "@/lib/home/home-panel";
 import { t } from "@/lib/i18n";
+import { settledOf, useReading } from "@/lib/reading";
 import { cn } from "@/lib/utils";
 
 /**
@@ -23,8 +26,9 @@ import { cn } from "@/lib/utils";
  * when it steps aside, is `lib/home/home-panel.ts`. What it will hold is cards a person asks for
  * in a sentence (§2), and those are later pieces.
  *
- * WHAT IT HOLDS TODAY IS 오늘 (`app-sidebar/bot-day.tsx`): what is waiting on the person, what the
- * Bot did, what comes next. A frame with nothing in it would be a button that opens an empty
+ * WHAT IT HOLDS IS 오늘 (`app-sidebar/bot-day.tsx`) — what is waiting on the person, what the Bot
+ * did, what comes next — AND UNDER IT ITS FIRST CARDS, 소식 · 목표 · 만든 것 (`home-cards.tsx`,
+ * piece 3-4). ABOUT 오늘: a frame with nothing in it would be a button that opens an empty
  * box, and 오늘 is the one thing here that is already a panel — the record names it the first
  * candidate. THE SAME LIST WAS TAKEN OUT OF THE OLD COLUMN ON 2026-10-04 for being too many words,
  * and that has to be answered: there it stood under the conversation's row on every screen,
@@ -207,12 +211,21 @@ export function HomeButton() {
   );
 }
 
-/** 오늘, for the one Bot — or, on an account from before the cap, each Bot's under its name. */
+/** How many of 한 일 the panel lists before "n개 더 보기": it has cards under the list. */
+const ROWS_IN_HOME = 3;
+
+/**
+ * What 홈 holds: 오늘, for the one Bot — or, on an account from before the cap, each Bot's under
+ * its name — and under it the first cards (`home-cards.tsx`).
+ */
 function HomeToday() {
   const mine = useMyBots();
   const bots = mine.bots ?? [];
   const isSeveral = bots.length > 1;
   const headingId = useId();
+  // 만든 것 is one Bot's: the only one, or of several the one last spoken to, as 소식's page takes it.
+  const channels = useQuery(channelListQueryOptions());
+  const primary = primaryBot(bots, settledOf(useReading(channels))?.data);
 
   return (
     <div className="flex h-full flex-col gap-3 overflow-y-auto py-3">
@@ -236,9 +249,11 @@ function HomeToday() {
                 )}
               </p>
             }
+            rows={ROWS_IN_HOME}
           />
         </section>
       ))}
+      <HomeCards botId={primary?.id} />
     </div>
   );
 }

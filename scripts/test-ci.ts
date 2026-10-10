@@ -2572,6 +2572,21 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * with the conversation's least beside it, and the narrowing where a window cannot spare one.
  * By hand: 2146 and 12 is 2158, and 8 is 2166, and 1 is 2167.
  *
+ * RAISED 2026-10-10 FOR 홈'S FIRST CARDS, `app` from 2167 to 2205 (record §1 and §2, piece 3-4), by
+ * exactly thirty-eight. Twenty-eight in the new `home-cards.test.ts`, what each card says away
+ * from any screen: 소식's newest title with its time or its unseen count, and five things that are
+ * not a count; 목표's first goal in progress with how many and its number; 만든 것's newest thing,
+ * by its kind where it has no title; each not drawn while there is nothing to say; nine answers
+ * of the wrong shape that are nothing to say and never a throw, and a goal that keeps its title
+ * where its number is not one; and the time at a card's end. Ten in the new
+ * `home-cards-frame.test.tsx`, the panel as the app mounts it: a first day with none; the three
+ * under 오늘 in the menu's order, each the way to its page; the card of the open page not drawn;
+ * 소식 never marked seen from a card; an answer that did not come costing one card and not 오늘;
+ * three wrong shapes over the wire (one of which threw from the page's own query options until
+ * this change); three rows of 한 일 in the panel; and a Bot's answer landing asking for all
+ * three again. The run-ending test in `first-screen.test.tsx` now holds 만든 것 too, in place.
+ * By hand: 2167 and 28 is 2195, and 10 is 2205.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2601,7 +2616,7 @@ const GROUPS: readonly {
   processes?: number;
 }[] = [
   { name: "server", floor: 4012, roots: ["server"] },
-  { name: "app", floor: 2167, roots: ["app"] },
+  { name: "app", floor: 2205, roots: ["app"] },
   {
     name: "agent-computer",
     floor: 537,

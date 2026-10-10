@@ -8,6 +8,7 @@ import {
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { dayKeys } from "@/lib/agents/day";
+import { refreshWhatWorkWrote } from "@/lib/agents/work-wrote";
 import { workingKeys } from "@/lib/agents/working";
 import {
   isNotificationFrame,
@@ -417,6 +418,8 @@ function openConnection(queryClient: QueryClient): Connection {
         // A Bot that just spoke has, as a rule, just stopped working — and done something today.
         void queryClient.invalidateQueries({ queryKey: workingKeys.all });
         void queryClient.invalidateQueries({ queryKey: dayKeys.all });
+        // And may have made, found or logged something a screen that is always on is showing.
+        refreshWhatWorkWrote(queryClient);
       }
 
       channelActivity.dispatchEvent(

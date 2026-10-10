@@ -26,12 +26,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { conversationOf, useMyBots } from "@/lib/agents/my-bots";
+import { refreshWhatWorkWrote } from "@/lib/agents/work-wrote";
 import { workingLabel, workingQueryOptions } from "@/lib/agents/working";
 import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { channelKeys, channelListQueryOptions } from "@/lib/channels/queries";
-import { feedKeys, feedUnseenQueryOptions } from "@/lib/feed/queries";
-import { goalKeys, goalsQueryOptions } from "@/lib/goals/queries";
+import { feedUnseenQueryOptions } from "@/lib/feed/queries";
+import { goalsQueryOptions } from "@/lib/goals/queries";
 import { t } from "@/lib/i18n";
 import { settledOf, useReading } from "@/lib/reading";
 
@@ -94,8 +95,8 @@ function NewMark({ label }: { label: string }) {
  * A run ending is the moment a routine's answer lands in the conversation, and nothing pushes that
  * to the window — the socket carries only what a window reported. The working poll already notices
  * the run end; this turns that into a refresh of what the run may have written: the conversations
- * (the delivered answer and its unread mark), 소식's count (a feed run's posts land when it ends)
- * and 목표's (a goal is saved, and progress logged, by a turn or a check-in run).
+ * (the delivered answer and its unread mark), and 소식, 목표 and 만든 것
+ * (`lib/agents/work-wrote.ts`, which says why a Bot's answer landing asks for them too).
  *
  * It lived in the column, which was always mounted. It lives with the menu's button now, for the
  * same reason: this is on every screen of the app.
@@ -109,8 +110,7 @@ function useRefreshWhenARunEnds(workingIds: string): void {
     previous.current = workingIds;
     if ([...before].some((id) => !after.has(id))) {
       void queryClient.invalidateQueries({ queryKey: channelKeys.list() });
-      void queryClient.invalidateQueries({ queryKey: feedKeys.all });
-      void queryClient.invalidateQueries({ queryKey: goalKeys.all });
+      refreshWhatWorkWrote(queryClient);
     }
   }, [workingIds, queryClient]);
 }

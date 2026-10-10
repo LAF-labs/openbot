@@ -77,6 +77,7 @@ export function BotDay({
   botId,
   empty = null,
   onLeave,
+  rows = VISIBLE_ROWS,
   waitingOnly = false,
 }: {
   botId: string;
@@ -88,6 +89,12 @@ export function BotDay({
   empty?: ReactNode;
   /** Called before a press leaves for somewhere else: the drawer closes. */
   onLeave?: () => void;
+  /**
+   * How many of 한 일 are drawn before "n개 더 보기". Six on a page and in the drawer; 홈 asks for
+   * three, as the column this was written for did — it has cards under the list, and at the PC
+   * app's smallest window six rows put every one of them below the fold.
+   */
+  rows?: number;
   /** Only what is waiting on the owner: the drawer on the PC app, for the reason above. */
   waitingOnly?: boolean;
 }) {
@@ -108,7 +115,7 @@ export function BotDay({
   });
 
   const items = waitingOnly ? [] : (day.data?.items ?? []);
-  const shown = isExpanded ? items : items.slice(0, VISIBLE_ROWS);
+  const shown = isExpanded ? items : items.slice(0, rows);
   const hidden = items.length - shown.length;
   const isNewBot =
     channels.data !== undefined && isFirstConversation(channels.data, botId);
@@ -295,7 +302,7 @@ export function BotDay({
   );
 }
 
-/** Six, then "n개 더 보기": the drawer is a glance, and the conversation holds the rest. */
+/** Six, then "n개 더 보기", unless whoever draws it asks for fewer (`rows`). */
 const VISIBLE_ROWS = 6;
 
 function DayGroup({ children, title }: { children: ReactNode; title: string }) {
