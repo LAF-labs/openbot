@@ -40,6 +40,8 @@ export type ChannelRefusal =
   | "laf:channel_agents_invalid"
   | "laf:channel_agents_duplicate"
   | "laf:channel_one_bot"
+  | "laf:project_name_invalid"
+  | "laf:project_limit"
   | "laf:activity_invalid"
   | "laf:activity_text_required"
   | "laf:activity_too_long"

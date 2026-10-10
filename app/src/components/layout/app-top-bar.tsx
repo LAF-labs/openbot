@@ -6,6 +6,7 @@ import { BotPresenceLink } from "@/components/layout/bot-presence-link";
 import { HomeButton } from "@/components/layout/home-panel";
 import { ProfileMenu } from "@/components/layout/profile-menu";
 import { ReadNotice } from "@/components/layout/read-states";
+import { ScreenSwitch } from "@/components/layout/screen-switch";
 import { SectionBoundary } from "@/components/layout/section-boundary";
 import { UpdateNotice } from "@/components/layout/update-notice";
 import { agentListQueryOptions } from "@/lib/agents/queries";
@@ -46,8 +47,8 @@ import { cn } from "@/lib/utils";
  * folded. The cell is the row's and carries the attribute itself: it is most of the handle while
  * 홈 is wide.
  *
- * WHAT IS NOT HERE YET, each with a piece of its own: the switch between 채팅 and 프로젝트, and
- * the search (pieces 4-2, 4-3).
+ * THE SWITCH BETWEEN 채팅 AND 프로젝트 stands where the screen begins, after that cell
+ * (`screen-switch.tsx`, piece 4-2). WHAT IS NOT HERE YET: the search (piece 4-3).
  */
 
 /** The width the macOS window buttons take at the row's left, in the shell: three lights and air. */
@@ -130,6 +131,8 @@ export function AppTopBar({
         >
           <HomeButton />
         </div>
+        {/* Where the screen begins: which of the two it is, and the way to the other. */}
+        <ScreenSwitch />
         <div
           className="flex h-full min-w-0 flex-1 items-center gap-2"
           data-tauri-drag-region

@@ -29,6 +29,7 @@ import {
   useScreenPanelWidth,
 } from "@/lib/computer/screen-panel";
 import { CopilotProvider } from "@/lib/copilot/provider";
+import { isProject, projectName } from "@/lib/channels/projects";
 import { t } from "@/lib/i18n";
 
 const chatSearchSchema = z
@@ -235,7 +236,17 @@ function RouteComponent() {
           </>
         }
         agentId={agentId}
-        name={headerAgent?.name ?? channel.data?.name ?? t("Channel")}
+        /*
+         * A PROJECT IS CALLED BY ITS OWN NAME (piece 4-2). The main conversation is the Bot's and
+         * wears the Bot's name; a project is with the same Bot, and what tells it from the main
+         * one and from the other projects is what the person called it. The Bot's state stands
+         * beside either.
+         */
+        name={
+          isProject(channel.data)
+            ? projectName(channel.data ?? {})
+            : (headerAgent?.name ?? channel.data?.name ?? t("Channel"))
+        }
         pill={(presence) =>
           agentId ? (
             <PresenceDrawer botId={agentId} presence={presence} />

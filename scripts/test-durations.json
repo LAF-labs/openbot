@@ -191,6 +191,7 @@
   "app/tests/presence.test.ts": 0,
   "app/tests/press.test.ts": 0,
   "app/tests/profile-menu.test.tsx": 4.2,
+  "app/tests/projects.test.tsx": 2.4,
   "app/tests/profile-words.test.ts": 0.01,
   "app/tests/query-client.test.ts": 0.01,
   "app/tests/question-not-asked.test.ts": 0,

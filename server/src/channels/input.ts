@@ -1,6 +1,7 @@
 /**
  * What the channel routes accept, read off a body that may be anything, refused as a code.
  */
+import { cutOnGraphemes } from "../../../shared/sound-text";
 import type { ChannelRefusal } from "./routes";
 import type { ChannelActivity } from "./types";
 
@@ -42,6 +43,42 @@ export function parseChannelInput(input: unknown): ChannelInputParseResult {
   }
 
   return { ok: true, value: { agentIds: agentIds.sort() } };
+}
+
+/** As long a name as a project's row in a list can show; longer is cut, not refused. */
+export const PROJECT_NAME_MAX = 60;
+
+type ProjectInputParseResult =
+  | { ok: true; value: { agentId: string; name: string } }
+  | { ok: false; code: ChannelRefusal };
+
+/**
+ * A new project: which Bot, and what the person calls it.
+ *
+ * THE NAME IS THEIRS AND MAY BE NOTHING. Left out, empty or only spaces it is stored empty and the
+ * surface says "이름 없는 프로젝트" — a server sentence in a list is a server sentence on screen.
+ * One line: a line break in it becomes a space. Cut between characters as they are seen, so a
+ * name ending in an emoji is not left with half of one.
+ */
+export function parseProjectInput(input: unknown): ProjectInputParseResult {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return { ok: false, code: "laf:channel_input_invalid" };
+  }
+  const { agentId, name } = input as { agentId?: unknown; name?: unknown };
+  if (typeof agentId !== "string" || agentId.trim().length === 0) {
+    return { ok: false, code: "laf:channel_agents_required" };
+  }
+  if (name !== undefined && typeof name !== "string") {
+    return { ok: false, code: "laf:project_name_invalid" };
+  }
+  const oneLine = (name ?? "").replace(/\s+/g, " ").trim();
+  return {
+    ok: true,
+    value: {
+      agentId: agentId.trim(),
+      name: cutOnGraphemes(oneLine, PROJECT_NAME_MAX),
+    },
+  };
 }
 
 function isChannelInputObject(input: unknown): input is ChannelInputObject {

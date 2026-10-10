@@ -2774,6 +2774,19 @@ export const ko: Record<string, string> = {
   Updates: "소식",
   Menu: "메뉴",
   "Something new": "새로 온 것 있음",
+  // 채팅 | 프로젝트 (piece 4-2).
+  Chat: "채팅",
+  Projects: "프로젝트",
+  "Chat or projects": "채팅 또는 프로젝트",
+  "Untitled project": "이름 없는 프로젝트",
+  "New project": "새 프로젝트",
+  "Make the project": "프로젝트 만들기",
+  "Could not make the project. Try again.":
+    "프로젝트를 만들지 못했어요. 다시 시도해 주세요.",
+  "Work that runs over days gets a conversation of its own here.":
+    "며칠씩 이어지는 일은 여기서 따로 대화해요.",
+  "There are as many projects as there can be.":
+    "프로젝트를 더 만들 수 없어요.",
   // 홈, the panel at the left of the window (piece 3-2).
   Home: "홈",
   "Fold Home": "홈 접기",

@@ -12,7 +12,16 @@ import type { AgentActor } from "../src/agents/profile-types";
 import { createApp } from "../src/app";
 import type { AppVariables } from "../src/auth/guards";
 import { ChannelNotFoundError } from "../src/channels/errors";
-import { parseChannelInput } from "../src/channels/input";
+import {
+  PROJECTS_PER_BOT,
+  ProjectLimitError,
+} from "../src/channels/conversations";
+import {
+  PROJECT_NAME_MAX,
+  parseChannelInput,
+  parseProjectInput,
+} from "../src/channels/input";
+import { soloConversationOf } from "../src/channels/solo-channel";
 import {
   type ChannelStore,
   createChannelRoutes,
@@ -62,6 +71,15 @@ function fakeStore(
     async create(receivedActor, agentIds) {
       calls.push(["create", receivedActor, agentIds]);
       return channel({ agentIds });
+    },
+    async createProject(receivedActor, agentId, name) {
+      calls.push(["createProject", receivedActor, agentId, name]);
+      return channel({
+        id: "project-1",
+        agentIds: [agentId],
+        name,
+        kind: "project",
+      });
     },
     async get(receivedActor, id) {
       calls.push(["get", receivedActor, id]);
@@ -160,6 +178,129 @@ describe("channel input parser", () => {
       ok: false,
       code: "laf:channel_one_bot",
     });
+  });
+});
+
+/*
+ * A PROJECT IS ASKED FOR BY ITS OWN DOOR (2026-10-10, piece 4-2): which Bot, and what the person
+ * calls it. The name is theirs — one line, cut to what a list row shows, and allowed to be nothing.
+ */
+describe("project input parser", () => {
+  test("takes the Bot and the name as given, trimmed to one line", () => {
+    expect(
+      parseProjectInput({ agentId: " bot-1 ", name: "  가을\n메뉴  개편 " }),
+    ).toEqual({
+      ok: true,
+      value: { agentId: "bot-1", name: "가을 메뉴 개편" },
+    });
+  });
+
+  test("a name left out, empty or only spaces is stored empty: the surface says what to call it", () => {
+    for (const name of [undefined, "", "   ", "\n"]) {
+      expect(parseProjectInput({ agentId: "bot-1", name })).toEqual({
+        ok: true,
+        value: { agentId: "bot-1", name: "" },
+      });
+    }
+  });
+
+  test("a long name is cut between characters as they are seen, never through one", () => {
+    const flag = "🇰🇷";
+    const parsed = parseProjectInput({
+      agentId: "bot-1",
+      name: `${"가".repeat(PROJECT_NAME_MAX - 1)}${flag}나`,
+    });
+    // The flag is two code points and would end past the limit: it is left out whole.
+    expect(parsed).toEqual({
+      ok: true,
+      value: { agentId: "bot-1", name: "가".repeat(PROJECT_NAME_MAX - 1) },
+    });
+  });
+
+  test.each([
+    ["nothing", null, "laf:channel_input_invalid"],
+    ["a list", [], "laf:channel_input_invalid"],
+    ["no Bot", { name: "x" }, "laf:channel_agents_required"],
+    ["a Bot that is not a name", { agentId: 7 }, "laf:channel_agents_required"],
+    ["an empty Bot", { agentId: "  " }, "laf:channel_agents_required"],
+    [
+      "a name that is not words",
+      { agentId: "bot-1", name: 5 },
+      "laf:project_name_invalid",
+    ],
+  ])("%s is refused with a code", (_, body, code) => {
+    expect(parseProjectInput(body) as unknown).toEqual({ ok: false, code });
+  });
+
+  test("no body can say what kind of conversation it makes: only the Bot and the name are read", () => {
+    expect(
+      parseProjectInput({ agentId: "bot-1", name: "x", kind: "main", id: "c" }),
+    ).toEqual({ ok: true, value: { agentId: "bot-1", name: "x" } });
+  });
+});
+
+describe("the project door", () => {
+  const post = (app: ReturnType<typeof appFor>, body: unknown) =>
+    app.request("http://laf.test/projects", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  test("asks the store for a project of that Bot by that name, as the signed-in person, and answers the DTO", async () => {
+    const store = fakeStore();
+    const response = await post(appFor(store), {
+      agentId: "agent-1",
+      name: " 가을 메뉴 ",
+    });
+    expect(response.status).toBe(201);
+    expect(store.calls).toEqual([
+      ["createProject", actor, "agent-1", "가을 메뉴"],
+    ]);
+    expect(await json(response)).toEqual({
+      channel: {
+        id: "project-1",
+        name: "가을 메뉴",
+        agentIds: ["agent-1"],
+        threadId: "thread-1",
+        active: true,
+        kind: "project",
+      },
+    });
+  });
+
+  test("a body that is not a project asks the store nothing", async () => {
+    const store = fakeStore();
+    const response = await post(appFor(store), { name: "x" });
+    expect(response.status).toBe(400);
+    expect(await json(response)).toEqual({
+      error: "laf:channel_agents_required",
+      code: "laf:channel_agents_required",
+    });
+    expect(store.calls).toEqual([]);
+  });
+
+  test("one project too many is a fact with a code, and not a server error", async () => {
+    const store = fakeStore({
+      async createProject() {
+        throw new ProjectLimitError();
+      },
+    });
+    const response = await post(appFor(store), { agentId: "agent-1" });
+    expect(response.status).toBe(409);
+    expect(await json(response)).toEqual({
+      error: "laf:project_limit",
+      code: "laf:project_limit",
+    });
+  });
+
+  test("is behind the same sign-in as every other channel route", async () => {
+    const store = fakeStore();
+    const denied: MiddlewareHandler<{ Variables: AppVariables }> = (context) =>
+      Promise.resolve(context.json({ error: "denied" }, 401));
+    const response = await post(appFor(store, denied), { agentId: "agent-1" });
+    expect(response.status).toBe(401);
+    expect(store.calls).toEqual([]);
   });
 });
 
@@ -545,6 +686,95 @@ async function channelTableSnapshot() {
       .sort(),
   };
 }
+
+describe("a project, against the real tables", () => {
+  test("is always a new conversation of kind project, beside the main one — which stays the Bot's conversation", async () => {
+    const owner = await createPersistentUser();
+    const agentId = await createPersistentAgent({ name: "새벽", owner });
+    const main = await persistentStore.create(owner, [agentId]);
+    createdChannelIds.push(main.id);
+
+    const first = await persistentStore.createProject(
+      owner,
+      agentId,
+      "가을 메뉴",
+    );
+    const second = await persistentStore.createProject(
+      owner,
+      agentId,
+      "가을 메뉴",
+    );
+    createdChannelIds.push(first.id, second.id);
+
+    // Two presses are two projects: this door never answers one that exists.
+    expect(new Set([main.id, first.id, second.id]).size).toBe(3);
+    expect(new Set([main.threadId, first.threadId, second.threadId]).size).toBe(
+      3,
+    );
+    expect([first.kind, first.name, first.agentIds]).toEqual([
+      "project",
+      "가을 메뉴",
+      [agentId],
+    ]);
+    expect(await persistentStore.get(owner, first.id)).toEqual(first);
+
+    // What a routine delivers into, what 만든 것 reads and what "start a conversation" answers
+    // is still the main one, however many projects stand beside it.
+    expect(
+      (await soloConversationOf(database, owner.id, agentId))?.channelId,
+    ).toBe(main.id);
+    expect((await persistentStore.create(owner, [agentId])).id).toBe(main.id);
+
+    const listed = await persistentStore.list(owner);
+    expect(listed.map((one) => [one.id, one.kind]).sort()).toEqual(
+      [
+        [main.id, "main"],
+        [first.id, "project"],
+        [second.id, "project"],
+      ].sort(),
+    );
+  });
+
+  test("a project made before the Bot has ever been spoken to does not become its conversation", async () => {
+    const owner = await createPersistentUser();
+    const agentId = await createPersistentAgent({ name: "새벽", owner });
+    const project = await persistentStore.createProject(owner, agentId, "");
+    createdChannelIds.push(project.id);
+    expect(await soloConversationOf(database, owner.id, agentId)).toBeNull();
+    const main = await persistentStore.create(owner, [agentId]);
+    createdChannelIds.push(main.id);
+    expect(main.id).not.toBe(project.id);
+    expect(main.kind).toBe("main");
+  });
+
+  test("somebody else's Bot is not found, and nothing is made", async () => {
+    const owner = await createPersistentUser();
+    const stranger = await createPersistentUser();
+    const agentId = await createPersistentAgent({ name: "남의 봇", owner });
+    await expect(
+      persistentStore.createProject(stranger, agentId, "x"),
+    ).rejects.toMatchObject({ code: "laf:agent_not_found" });
+    expect(await persistentStore.list(stranger)).toEqual([]);
+  });
+
+  test("a Bot holds so many projects and no more", async () => {
+    const owner = await createPersistentUser();
+    const agentId = await createPersistentAgent({ name: "새벽", owner });
+    for (let made = 0; made < PROJECTS_PER_BOT; made += 1) {
+      createdChannelIds.push(
+        (await persistentStore.createProject(owner, agentId, `p${made}`)).id,
+      );
+    }
+    await expect(
+      persistentStore.createProject(owner, agentId, "one more"),
+    ).rejects.toBeInstanceOf(ProjectLimitError);
+    expect(
+      (await persistentStore.list(owner)).filter(
+        (one) => one.kind === "project",
+      ),
+    ).toHaveLength(PROJECTS_PER_BOT);
+  }, 30_000);
+});
 
 describe("channel store integration", () => {
   test("reads the creator's persisted channel exactly", async () => {

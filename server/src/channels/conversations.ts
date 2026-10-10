@@ -6,6 +6,7 @@ import {
   type AgentProfileStore,
 } from "../agents/profile-store";
 import type { AgentActor, AgentProfile } from "../agents/profile-types";
+import { and, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
   channelAgents,
@@ -97,6 +98,95 @@ export function createConversation(
         agentIds,
         profilesById,
       );
+    },
+    { isolationLevel: "read committed" },
+  );
+}
+
+/** How many projects one Bot may have beside its main conversation. */
+export const PROJECTS_PER_BOT = 50;
+
+/** A person asked for one more project than a Bot may have. */
+export class ProjectLimitError extends Error {
+  readonly code = "laf:project_limit" as const;
+  readonly status = 409 as const;
+  constructor() {
+    super("laf:project_limit");
+  }
+}
+
+/**
+ * A PROJECT: ANOTHER CONVERSATION WITH THE SAME BOT, BESIDE ITS MAIN ONE (2026-10-10, record §3,
+ * piece 4-2).
+ *
+ * A PATH OF ITS OWN, WHICH ALWAYS MAKES ONE. `createConversation` answers the conversation a Bot
+ * already has, on purpose — that is what stopped every message from Home minting a channel. A
+ * project is the thing that was refused there, asked for by name, so it does not go through that
+ * door: it never returns an existing channel and it never makes a `main`.
+ *
+ * NAMED BY THE PERSON, in their words, as given: the route has cut it to size
+ * (`parseProjectInput`). An empty name is stored empty — "이름 없는 프로젝트" is the surface's to say.
+ *
+ * COUNTED UNDER THE BOT'S LOCK, so two presses from two windows cannot both be the fiftieth. The
+ * count is of this person's channels with this Bot that say `project`.
+ */
+export function createProject(
+  { database, profileStore, threadIdentity }: ConversationDeps,
+  actor: AgentActor,
+  agentId: string,
+  name: string,
+): Promise<AgentChannel> {
+  return database.transaction(
+    async (transaction) => {
+      await lockProfiles(transaction, profileStore, actor, [agentId]);
+      const [{ count } = { count: 0 }] = await transaction
+        .select({ count: sql<number>`count(*)::int` })
+        .from(channels)
+        .innerJoin(
+          channelMemberships,
+          and(
+            eq(channelMemberships.channelId, channels.id),
+            eq(channelMemberships.userId, actor.id),
+          ),
+        )
+        .innerJoin(
+          channelAgents,
+          and(
+            eq(channelAgents.channelId, channels.id),
+            eq(channelAgents.agentId, agentId),
+          ),
+        )
+        .where(eq(channels.kind, "project"));
+      if (count >= PROJECTS_PER_BOT) throw new ProjectLimitError();
+
+      const id = `channel_${crypto.randomUUID()}`;
+      const threadId = threadIdentity.mint();
+      await transaction.insert(channels).values({
+        id,
+        name,
+        description: PRIVATE_AGENT_CHANNEL_DESCRIPTION,
+        kind: "project",
+      });
+      await transaction.insert(channelMemberships).values({
+        channelId: id,
+        userId: actor.id,
+      });
+      await transaction
+        .insert(channelAgents)
+        .values({ channelId: id, agentId });
+      await transaction.insert(channelThreads).values({
+        userId: actor.id,
+        channelId: id,
+        threadId,
+      });
+      return {
+        id,
+        name,
+        agentIds: [agentId],
+        threadId,
+        active: true,
+        kind: "project",
+      };
     },
     { isolationLevel: "read committed" },
   );
