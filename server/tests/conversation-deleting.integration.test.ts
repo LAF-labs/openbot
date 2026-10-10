@@ -772,8 +772,11 @@ describe("the two lists that keep the next one from being forgotten", () => {
         routes.push(`${method} ${path}`);
         for (const parameter of path.match(/:[A-Za-z]+/g) ?? []) {
           if (!ABOUT_A_CONVERSATION.test(parameter)) continue;
+          // THE ONE ROUTE, not the name: a `POST /projects/:projectId/…` written next month
+          // would be a write the gate cannot see, and must fail here like any other word.
           const isTheDeletingDoor =
-            parameter === ":projectId" &&
+            method === "delete" &&
+            path === "/projects/:projectId" &&
             file.endsWith("channels/conversation-routes.ts");
           if (
             parameter !== ":channelId" &&

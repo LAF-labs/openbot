@@ -879,7 +879,7 @@ const routineService = createRoutineService({
  * after the runner is. Not awaited: a webhook door has a ten-second bound per row, and boot must
  * not wait on somebody else's server to start answering requests.
  */
-void reportInterruptedRuns({
+const interruptedReported = reportInterruptedRuns({
   database,
   runs: lafRunner.interruptedAtBoot(),
   outbox: notificationOutbox,
@@ -998,10 +998,18 @@ const projectDeletion = createProjectDeletion({
  * A deletion a restart cut short is finished here: its mark has been refusing writes since, and
  * nothing of this process is writing into it. Not awaited — boot does not wait on a transaction to
  * start answering — and a failure is logged per project, to be tried again at the next boot.
+ *
+ * AFTER THE INTERRUPTED RUNS HAVE BEEN TOLD, which is the one thing at boot that writes a row
+ * naming a conversation by itself: a turn the last process died on, in a project it was half-way
+ * through deleting, is a notification with that project's id. Told first, the deletion takes it
+ * with the rest; the other way round it would be left pointing at a conversation that is gone.
  */
-void projectDeletion.finishPending().then((count) => {
-  if (count > 0) log.info("project_deletions_finished_at_boot", { count });
-});
+void interruptedReported
+  .catch(() => undefined)
+  .then(() => projectDeletion.finishPending())
+  .then((count) => {
+    if (count > 0) log.info("project_deletions_finished_at_boot", { count });
+  });
 
 /** The runtime, for the one door of it the app asks: which Bots it serves. See `mountCopilotRuntime`. */
 const copilotEndpoint = mountCopilotRuntime(
