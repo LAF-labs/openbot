@@ -305,7 +305,8 @@ async function runOnce(
           tools: COMPUTER_TOOLS,
           context: [],
           state: {},
-          forwardedProps: forwarded,
+          // Without the bridge, as the engine sends it: nothing of this run's stands behind one.
+          forwardedProps: { ...forwarded, toolDeferral: "off" },
         } as never,
         PINNED ?? liveProvider,
       );
@@ -398,7 +399,11 @@ async function runOnce(
          * deployment has opted back in — then the same fixed word is (`evalEffort`, `lib.ts`).
          * EVAL_EFFORT overrides both, for comparing two.
          */
-        forwardedProps: forwarded,
+        // A scenario that IS the delegated run rides what the engine sends one: no bridge.
+        forwardedProps:
+          scenario.mode === "browse"
+            ? { ...forwarded, toolDeferral: "off" }
+            : forwarded,
       } as never,
       PINNED ?? liveProvider,
     );
@@ -618,7 +623,9 @@ if (process.env.EVAL_DEFERRAL !== "0") {
           tools:
             scenario.mode === "routine"
               ? UNATTENDED_TOOLSET
-              : REALISTIC_TOOLSET,
+              : scenario.mode === "browse"
+                ? COMPUTER_TOOLS
+                : REALISTIC_TOOLSET,
           deferral,
         },
       );
