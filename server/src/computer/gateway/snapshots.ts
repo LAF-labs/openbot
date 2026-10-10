@@ -88,6 +88,10 @@ export function createSnapshotCache() {
     set: (computerId: string, entry: CachedSnapshot) => {
       snapshots.set(computerId, entry);
     },
+    /** The browser is gone: what was seen in it names nothing any more. */
+    forget: (computerId: string) => {
+      snapshots.delete(computerId);
+    },
     pageMoved,
     resolve,
   };
@@ -97,7 +101,7 @@ export type SnapshotCache = ReturnType<typeof createSnapshotCache>;
 
 export function createPageReads(deps: {
   /** The computer, addressed as the Bot that is asking. See `createComputerGateway`. */
-  as: (botId: string) => ComputerClient;
+  as: (computerId: string, botId?: string) => ComputerClient;
   /** Where a look that could not see into a frame is written down. See `writeSnapshotRow`. */
   auditStore: AuditStore;
   snapshots: SnapshotCache;
@@ -125,7 +129,7 @@ export function createPageReads(deps: {
     caller?: { botId: string; actor: ActionActor } & BotsLook,
   ): Promise<SnapshotResult> {
     // Whose look it is travels to the computer; said only by the Bot's own loop (`BotsLook`).
-    const result = await as(computerId).snapshot(
+    const result = await as(computerId, caller?.botId).snapshot(
       caller?.botsLook ? { botsLook: true } : {},
     );
     const elements = withoutSecrets(computerId, result);
@@ -160,12 +164,16 @@ export function createPageReads(deps: {
     return { ...result, elements };
   }
 
+  /**
+   * By the computer's id, as `snapshot` is: the main browser's is the Bot's own id, which is what
+   * every caller from before background browsers passes. The page that moved is that browser's.
+   */
   async function read(
-    botId: string,
+    computerId: string,
     options: ReadOptions = {},
   ): Promise<ReadResult> {
-    const result = await as(botId).read(options);
-    snapshots.pageMoved(botId, result.url);
+    const result = await as(computerId).read(options);
+    snapshots.pageMoved(computerId, result.url);
     return result;
   }
 

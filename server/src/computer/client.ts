@@ -14,7 +14,7 @@ import {
   HANDOFF_MAX_BYTES,
 } from "../../../shared/workspace-files";
 import type { BrowserWhereabouts } from "../account/whereabouts";
-import { BotIdRefusedError, isBotId } from "./bot-id";
+import { BotIdRefusedError, isBotId, isBrowserName } from "./bot-id";
 import type { SecretField } from "../../../shared/secret-ask";
 import type {
   ActionResult,
@@ -54,6 +54,9 @@ import { checkNavigationTarget, OWN_ADDRESS_REFUSED } from "./target";
  * the only place that knows the computer's address. Nothing downstream of here should be handed a
  * raw URL from a model.
  */
+
+/** The header that names which of the computer's browsers a call is for. Absent: the main one. */
+export const BROWSER_HEADER = "x-openbot-browser";
 
 export type ComputerClientOptions = {
   /**
@@ -411,7 +414,7 @@ export function createComputerClient(options: ComputerClientOptions) {
    * point it acts, and threading it through every signature would put the same argument in every call
    * site for a value that never changes within a request.
    */
-  function build(botId?: string) {
+  function build(botId?: string, browser?: string | null) {
     /**
      * Nothing usable came back, as the fact this client says itself: the caller stopped, the
      * deadline passed, or nobody was there. A caller that stopped mid-request is neither of the
@@ -454,6 +457,11 @@ export function createComputerClient(options: ComputerClientOptions) {
       if (botId !== undefined && !isBotId(botId)) {
         throw new BotIdRefusedError();
       }
+      // And which of its browsers, where it is not the main one: a name on the far side as the
+      // Bot's id is, and refused here the same way (`bot-id.ts`).
+      if (browser != null && !isBrowserName(browser)) {
+        throw new BotIdRefusedError();
+      }
 
       // A lookup that fails sends nothing: the computer keeps what it last had, and the click goes on.
       const whereabouts =
@@ -470,6 +478,8 @@ export function createComputerClient(options: ComputerClientOptions) {
           headers: {
             ...(init?.headers as Record<string, string> | undefined),
             ...(botId ? { "x-openbot-bot-id": botId } : {}),
+            // Absent for the main browser, which is every call from before there were others.
+            ...(browser ? { [BROWSER_HEADER]: browser } : {}),
             ...(token ? { "x-openbot-computer-token": token } : {}),
             ...(whereabouts
               ? {
@@ -997,9 +1007,34 @@ export function createComputerClient(options: ComputerClientOptions) {
         };
       },
 
-      /** The same computer, addressed as a particular Bot. */
-      forBot(id: string) {
-        return build(id);
+      /**
+       * Open the background browser this view names, or learn there is no room. `opened: false`
+       * is an answer and not a failure: the computer holds only so many at once
+       * (`agent-computer/src/browsers.ts`), and what to do about it is the caller's to decide.
+       */
+      async openBrowser(): Promise<{
+        opened: boolean;
+        open: number;
+        cap: number;
+      }> {
+        return (await post("/browsers/open", {})) as {
+          opened: boolean;
+          open: number;
+          cap: number;
+        };
+      },
+
+      /** Close the background browser this view names. False where none was open under it. */
+      async releaseBrowser(): Promise<{ released: boolean }> {
+        return (await post("/browsers/release", {})) as { released: boolean };
+      },
+
+      /**
+       * The same computer, addressed as a particular Bot — and, where one is named, as that Bot
+       * in one of the computer's background browsers rather than its main one.
+       */
+      forBot(id: string, inBrowser?: string | null) {
+        return build(id, inBrowser);
       },
     };
     return computer;

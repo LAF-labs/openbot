@@ -37,7 +37,7 @@ export type HandedFile = {
 
 export function createPersonFiles(deps: {
   /** The computer, addressed as the Bot whose folder it is. See `createComputerGateway`. */
-  as: (botId: string) => ComputerClient;
+  as: (computerId: string, botId?: string) => ComputerClient;
   auditStore: AuditStore;
 }) {
   const { as, auditStore } = deps;
@@ -97,7 +97,7 @@ export function createPersonFiles(deps: {
        * `workspacePathOf`). So the download is asked for, named and recorded in that spelling too.
        */
       const file = workspacePathOf(path) ?? path;
-      const bytes = await as(botId).downloadFile(file);
+      const bytes = await as(computerId, botId).downloadFile(file);
       const name = fileNameOf(file) || "file";
       const drawnAs = options.preview ? inlineImageTypeOf(name, bytes) : null;
       if (!drawnAs) {

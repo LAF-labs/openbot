@@ -10,6 +10,7 @@
 import { ACTION_FAILED, type AuditStore } from "../../audit";
 import { describeFailure } from "../../failure-text";
 import { log } from "../../log";
+import { browserOf } from "../bot-id";
 import { type ApprovalRegistry, fingerprintOf } from "../approvals";
 import type { ReviewSubject, ReviewVerdict } from "../auto-review";
 import { readableName } from "../../../../shared/element-label";
@@ -558,6 +559,9 @@ export function createGovern(options: {
      */
     const fingerprint = fingerprintOf({
       botId,
+      // Which of the Bot's browsers, where not the main one — and a computer that is another
+      // Bot's is refused here, before anything is asked or answered about it (`bot-id.ts`).
+      browser: browserOf(computerId, botId) ?? undefined,
       toolName,
       ref,
       key: subject.key,
