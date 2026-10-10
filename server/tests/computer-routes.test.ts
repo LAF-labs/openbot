@@ -1247,6 +1247,53 @@ describe("a secret being asked for and supplied", () => {
     }
   });
 
+  /*
+   * THE TICK THAT KEEPS WHAT WAS TYPED AS A SAVED LOGIN (2026-10-10, record §6, piece 2-6) is read
+   * here and passed on: that the person said so, and what to call it. This deployment's stand-in
+   * has no vault, so the gateway keeps nothing and says so — which is how this test tells a tick
+   * that was passed on from one that was not. What it keeps, and when, is the gateway's
+   * (`saved-login-fill.test.ts`).
+   */
+  test("a person's tick to keep the login is passed on with its name, and anything else under it is no tick", async () => {
+    const { app, seen } = surface(ADMIN);
+    await seen();
+    const post = (path: string, body: unknown) =>
+      app.request(path, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const answered = async (save: unknown) => {
+      await post("/bot-1/control/secret", {
+        label: "은행 비밀번호",
+        ref: "e4",
+        snapshotId: 7,
+      });
+      const response = await post("/bot-1/human/secret", {
+        values: [SECRET],
+        ...(save === undefined ? {} : { save }),
+      });
+      expect(response.status).toBe(200);
+      return (await response.json()) as Record<string, unknown>;
+    };
+    // Said, with a name: the gateway was asked, and answers that nothing was kept.
+    expect(await answered({ label: "은행" })).toMatchObject({
+      loginSaved: false,
+    });
+    // Not said: no tick, a name that is not one, or something that is not a tick at all.
+    for (const save of [
+      undefined,
+      {},
+      { label: "" },
+      { label: " " },
+      { label: 7 },
+      "yes",
+      true,
+    ]) {
+      expect(await answered(save)).not.toHaveProperty("loginSaved");
+    }
+  });
+
   test("a value nothing asked for reaches no computer: the door answers what the computer says of one", async () => {
     /*
      * It used to be passed on, and the computer put it wherever its own note of a request named.

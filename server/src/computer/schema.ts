@@ -424,6 +424,13 @@ export type SecretInto = {
   host: string;
   element: { role: string; name: string };
   fields: { ref: string; label: string; role: string; name: string }[];
+  /**
+   * What the person types into this card can be kept as a saved login, if they say so as they
+   * answer it (record §6, piece 2-6): the card is a sign-in — a name and a password, in one
+   * document — and nothing is saved for that document's origin yet. Said so that the window draws
+   * the choice only where choosing it does something.
+   */
+  savable?: true;
 };
 
 /**

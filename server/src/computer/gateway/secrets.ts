@@ -15,7 +15,7 @@ import type { AuditStore } from "../../audit";
 import { describeFailure } from "../../failure-text";
 import { log } from "../../log";
 import { LoginSealError } from "../../logins/crypto";
-import type { LoginVault } from "../../logins/store";
+import { LoginRefused, type LoginVault } from "../../logins/store";
 import {
   type ComputerClient,
   ComputerUnavailableError,
@@ -57,7 +57,15 @@ type Requested = {
   fields: { ref: string; role: string; name: string }[];
   /** The conversation whose run asked, where it said. Whose run the values are put in for. */
   threadId?: string;
+  /** Where the card's answer may be kept as a saved login, and which box is which. See `SignIn`. */
+  savable?: SignIn;
 };
+
+/**
+ * A card that is a sign-in, as the computer read it off the boxes' own markup: the origin of the
+ * one document they are all in, and what each box is, in the card's order.
+ */
+type SignIn = { origin: string; kinds: ("text" | "password")[] };
 
 /** A run that named no conversation, or one this server learnt of from the computer. */
 const ANY_RUN = "";
@@ -147,7 +155,8 @@ export function createSecrets(deps: {
    * What the deployment's people saved for their Bot's browser. Absent where there is no vault,
    * and then every value is asked of a person, as it always was.
    */
-  logins?: Pick<LoginVault, "forOrigin" | "open" | "used">;
+  logins?: Pick<LoginVault, "forOrigin" | "open" | "used"> &
+    Partial<Pick<LoginVault, "save" | "acceptsOrigin">>;
 }) {
   const { as, auditStore, snapshots, govern } = deps;
   /**
@@ -387,6 +396,12 @@ export function createSecrets(deps: {
     input: SecretRequest,
     fields: readonly { ref: string }[],
     pageUrl: string,
+    /**
+     * Told what was learnt on the way, whatever the answer: that the card is a sign-in, where,
+     * and how many logins are saved for there. A card nobody's login answers is still a sign-in,
+     * and that is what lets a person keep what they type into it (`supplySecret`).
+     */
+    learnt: { signIn?: SignIn & { saved: number } },
   ): Promise<
     | { choose: { id: string; label: string; site?: string }[] }
     | {
@@ -423,6 +438,13 @@ export function createSecrets(deps: {
     if (origins.size !== 1 || !origin) return null;
 
     const candidates = await vault.forOrigin(actor.id, origin);
+    learnt.signIn = {
+      origin,
+      kinds: kinds.filter(
+        (kind): kind is "text" | "password" => kind !== "other",
+      ),
+      saved: candidates.length,
+    };
     const named =
       typeof input.login === "string"
         ? candidates.find((login) => login.id === input.login)
@@ -593,6 +615,7 @@ export function createSecrets(deps: {
      * other intent's, decided next, with its own row. Without this a refused login would leave
      * the Bot no way to ask at all — the same call, answered the same way, for ever.
      */
+    const learnt: { signIn?: SignIn & { saved: number } } = {};
     const saved = await savedLoginFor(
       computerId,
       botId,
@@ -600,6 +623,7 @@ export function createSecrets(deps: {
       input,
       fields,
       cached.url,
+      learnt,
     );
     if (saved && "choose" in saved) {
       return { ...(await as(botId).control()), loginChoice: saved.choose };
@@ -774,11 +798,32 @@ export function createSecrets(deps: {
         throw new ComputerUnavailableError(STOPPED);
       },
     );
+    /*
+     * WHAT THE PERSON TYPES MAY BE KEPT, WHERE THE CARD IS A SIGN-IN NOBODY'S LOGIN ANSWERED
+     * (record §6, piece 2-6). A name and a password, in one document, with nothing saved for
+     * that document's origin: the same reading that would have let a saved login answer, come
+     * out empty. Not a card with a login already saved for there — that one is here because a
+     * rule refused it or the Bot was to choose, and a second copy is not what either wants. Not
+     * a lone password box: a login is a name and a password, and the name was typed a page ago.
+     * And only where a login can be saved for that origin at all: "nothing saved" is also what the
+     * vault answers for a sign-in served without TLS, where it will never save one — a tick
+     * drawn there could only fail, every time (the advisor's read of this change).
+     */
+    const signIn = learnt.signIn;
+    const savable: SignIn | undefined =
+      signIn &&
+      signIn.saved === 0 &&
+      signIn.kinds.includes("text") &&
+      deps.logins?.save &&
+      deps.logins.acceptsOrigin?.(signIn.origin) === true
+        ? { origin: signIn.origin, kinds: signIn.kinds }
+        : undefined;
     const into: SecretInto = {
       host,
       // The first box, for a window from before a card held several.
       element: { role: first.role, name: first.name },
       fields,
+      ...(savable ? { savable: true } : {}),
     };
     secretTargets.set(computerId, into);
     secretRequests.set(computerId, {
@@ -786,6 +831,7 @@ export function createSecrets(deps: {
       origin: originOf(cached.url),
       fields: fields.map(({ ref, role, name }) => ({ ref, role, name })),
       ...(actor.threadId ? { threadId: actor.threadId } : {}),
+      ...(savable ? { savable } : {}),
     });
     // ONE ROW FOR ONE CARD — it is also what tells a person a Bot is waiting on them
     // (`notifications/from-audit.ts`), and a card of three boxes is one thing to come back to.
@@ -810,6 +856,11 @@ export function createSecrets(deps: {
     actor: ActionActor,
     /** A value for every box of the card, in the card's order. */
     values: readonly string[],
+    /**
+     * Keep what was typed as a saved login, under the name the person's window gave it — where
+     * the card is one that can be (`Requested.savable`). Asked for by the person, as they answer.
+     */
+    options: { save?: { label: string } } = {},
   ) {
     /*
      * INTO THE FIELDS THAT WERE JUDGED, OR NOWHERE.
@@ -871,7 +922,44 @@ export function createSecrets(deps: {
           ? `${result.characters} characters`
           : `${result.characters} characters in ${request.fields.length} fields`,
     });
-    return result;
+    /*
+     * AND KEPT, WHERE THE PERSON SAID TO (record §6, piece 2-6). After the values are in the page
+     * — the sign-in is what they came to do, and it is not held up or undone by whether this
+     * works. The vault seals them, checks the origin by its own rule (HTTPS, or nothing is
+     * saved) and writes its own row (`account.login_saved`); a refusal — the vault is full, the
+     * address is not one a login is saved for — is said beside the answer and fails nothing.
+     * Asked for a card that cannot be kept, it is simply not kept: the window does not draw the
+     * choice there, and one that sent it anyway is told nothing was saved.
+     */
+    const savable = request.savable;
+    if (!options.save || !savable || !deps.logins?.save) {
+      return options.save ? { ...result, loginSaved: false } : result;
+    }
+    const typed = (kind: "text" | "password") =>
+      values[savable.kinds.indexOf(kind)] ?? "";
+    try {
+      await deps.logins.save(actor.id, {
+        label: options.save.label,
+        origins: [savable.origin],
+        username: typed("text"),
+        password: typed("password"),
+      });
+      return { ...result, loginSaved: true };
+    } catch (error) {
+      if (!(error instanceof LoginRefused)) {
+        log.warn("card_login_not_saved", {
+          bot: botId,
+          reason: describeFailure(error),
+        });
+      }
+      // The vault's own word where it refused; where it fell over there is none, and the window
+      // says only that it was not kept.
+      return {
+        ...result,
+        loginSaved: false,
+        ...(error instanceof LoginRefused ? { loginRefused: error.code } : {}),
+      };
+    }
   }
 
   return {

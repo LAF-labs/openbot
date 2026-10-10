@@ -1267,6 +1267,9 @@ export const ko: Record<string, string> = {
   "Login saved · your Bot signs in when it gets there":
     "로그인 저장됨 · 봇이 들어갈 때 로그인해요",
   "Save login": "로그인 저장",
+  "Save this login for next time": "이 로그인 저장하기",
+  "Saved to Accounts. Your Bot signs in here itself next time.":
+    "계정에 저장했어요. 다음부터는 봇이 직접 로그인해요.",
   "The Bot cannot sign in here: it needs a certificate on your device.":
     "봇은 여기에 로그인할 수 없어요 — 내 기기에 있는 인증서가 필요해요.",
 

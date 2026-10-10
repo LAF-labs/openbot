@@ -331,6 +331,23 @@ describe("a login a person saves", () => {
     expect(rows.length).toBe(written);
   });
 
+  // What a card's tick is offered for (`computer/gateway/secrets.ts`): the rule that saves is the
+  // rule that says whether saving is possible, so the two cannot disagree.
+  test("says whether a login could be saved for an address at all, by the rule it saves with", () => {
+    expect(vault.acceptsOrigin("https://nid.naver.com")).toBe(true);
+    expect(
+      vault.acceptsOrigin("https://NID.naver.com:443/nidlogin.login"),
+    ).toBe(true);
+    for (const address of [
+      "http://nid.naver.com",
+      "http://127.0.0.1:4395",
+      "about:blank",
+      "",
+    ]) {
+      expect(vault.acceptsOrigin(address)).toBe(false);
+    }
+  });
+
   test("gets a new key when a value changes, and keeps its key when only its name does", async () => {
     const [mine] = await vault.list(owner);
     if (!mine) throw new Error("the owner has no saved login");

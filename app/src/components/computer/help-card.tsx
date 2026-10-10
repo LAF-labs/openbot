@@ -17,6 +17,10 @@ import { labelForCode, outcomeOf } from "@/lib/computer/browsing";
 import { setScreenOpen } from "@/lib/computer/screen-panel";
 import { useDeclaredBotId } from "@/lib/copilot/active-bot";
 import { t } from "@/lib/i18n";
+import { loginKeys } from "@/lib/logins/queries";
+import { queryClient } from "@/query-client";
+import { loginRefusalText } from "@/lib/logins/refusals";
+import { BUSINESS_SITES } from "@/lib/sites/catalogue";
 import { useServerOwnsTurn } from "@/lib/turns/answers";
 import { skipOnServer } from "@/lib/turns/client";
 import { cn } from "@/lib/utils";
@@ -112,6 +116,15 @@ export function HelpCard({
   const [secretProblem, setSecretProblem] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const secretFieldId = useId();
+  /*
+   * KEEPING WHAT IS TYPED AS A SAVED LOGIN (2026-10-10, record §6, piece 2-6). Offered only where
+   * the server said the card is one that can be kept — a sign-in nothing is saved for yet — and
+   * off until the person ticks it. What became of it is said under the card, where it stays after
+   * the boxes have gone.
+   */
+  const isSavable = kind === "secret" && control?.secretInto?.savable === true;
+  const [isKeeping, setIsKeeping] = useState(false);
+  const [keptNote, setKeptNote] = useState<string | null>(null);
 
   const ending = status === "complete" ? endingOf(result) : null;
   /*
@@ -212,11 +225,31 @@ export function HelpCard({
             event.preventDefault();
             if (!botId || !isAnswered || isSending) return;
             setIsSending(true);
-            const sent = await supplySecret(botId, values);
+            const keeping = isSavable && isKeeping;
+            const sent = await supplySecret(
+              botId,
+              values,
+              keeping
+                ? { label: loginNameFor(control?.secretInto?.host ?? "") }
+                : undefined,
+            );
             setIsSending(false);
             // Cleared even on failure, so the plaintext is not left in the page.
             setTyped([]);
             setSecretProblem(sent.ok ? null : (sent.error ?? null));
+            if (sent.ok && keeping) {
+              setKeptNote(
+                sent.loginSaved
+                  ? t(
+                      "Saved to Accounts. Your Bot signs in here itself next time.",
+                    )
+                  : loginRefusalText(sent.loginRefused ?? ""),
+              );
+              // 계정's list and 연결's rows read the same list: it has one more now.
+              if (sent.loginSaved) {
+                void queryClient.invalidateQueries({ queryKey: loginKeys.all });
+              }
+            }
             await readControl(botId);
             pokeControl(botId);
           }}
@@ -253,6 +286,18 @@ export function HelpCard({
               />
             </div>
           ))}
+          {isSavable ? (
+            <label className="flex items-center gap-2 text-xs">
+              <input
+                checked={isKeeping}
+                className="size-3.5 accent-foreground"
+                disabled={isSending}
+                onChange={(event) => setIsKeeping(event.target.checked)}
+                type="checkbox"
+              />
+              {t("Save this login for next time")}
+            </label>
+          ) : null}
           {/* One press for the whole card, and only once every box holds something. */}
           <div className="flex">
             <Button disabled={!isAnswered || isSending} size="sm" type="submit">
@@ -282,6 +327,11 @@ export function HelpCard({
         >
           {secretProblem}
         </LiveRegion>
+      ) : null}
+
+      {/* What became of the tick: kept, or why not. Under the card for the same reason. */}
+      {kind === "secret" && keptNote ? (
+        <p className="ps-6 text-muted-foreground text-xs">{keptNote}</p>
       ) : null}
 
       {isWaiting ? (
@@ -392,6 +442,19 @@ type SecretBox = { ref: string; label: string; name: string; site?: string };
  * The boxes to draw for the value the computer is waiting for: every one the server resolved, or
  * — from a server or a computer that says only one — that one, as it has always been drawn.
  */
+/**
+ * What a login kept from the card is called, until the person renames it in 계정: the site's
+ * name where the address is one site's own, and the address otherwise. An id provider several
+ * sites sign in at (`nid.naver.com`) is nobody's alone, and is called by its address.
+ */
+function loginNameFor(host: string): string {
+  const sites = BUSINESS_SITES.filter((site) =>
+    [...site.hosts, ...(site.signInHosts ?? [])].includes(host),
+  );
+  const [only] = sites;
+  return sites.length === 1 && only ? t(only.name) : host;
+}
+
 function boxesOf(control: ControlState | null): SecretBox[] {
   if (!control?.secretWanted) return [];
   const into = control.secretInto;

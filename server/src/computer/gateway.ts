@@ -142,7 +142,8 @@ export type ComputerGatewayOptions = {
    * request for a sign-in's values is answered from the vault where the person saved a login for
    * that origin (`gateway/secrets.ts`); without it, every value is asked of a person.
    */
-  logins?: Pick<LoginVault, "forOrigin" | "open" | "used">;
+  logins?: Pick<LoginVault, "forOrigin" | "open" | "used"> &
+    Partial<Pick<LoginVault, "save" | "acceptsOrigin">>;
   /**
    * The high-risk check (`high-risk.ts`) and where it reads the owner's task from. Absent, nothing
    * is escalated — the gateway behaves as it did before the check existed.
