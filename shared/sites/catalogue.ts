@@ -70,6 +70,20 @@ export type BusinessSite = {
   loginUrl: string;
   /** The hosts that count as this site. A subdomain of one of these counts too. */
   hosts: readonly string[];
+  /**
+   * Where this site's sign-in boxes are, when that is not one of its own hosts: the id provider's.
+   *
+   * A saved login is put only into a document of an origin it was saved for
+   * (`shared/login-origin.ts`), and 네이버's sellers type their password at `nid.naver.com`, not
+   * at the Seller Centre — a login saved for the site's own hosts alone would never be used. The
+   * 계정 screen offers these with the site's hosts when a person saves a login for it
+   * (`app/src/components/logins/logins-screen.tsx`).
+   *
+   * ONLY WHERE IT IS KNOWN. 네이버's is the same for every 네이버 service and is in the decision
+   * record (`docs/laf/redesign-2026-10.md` §6). The others are left out until each has been
+   * looked at on the site itself: a wrong host here is a login that silently is not used.
+   */
+  signInHosts?: readonly string[];
   /** One sentence: 연결하면 봇이 할 수 있는 일. English key. */
   what: string;
   handoff: SiteHandoff;
@@ -169,6 +183,7 @@ const SITE_SPECS: readonly SiteSpec[] = [
     category: "enquiries",
     loginUrl: "https://sell.smartstore.naver.com",
     hosts: ["sell.smartstore.naver.com", "smartstore.naver.com"],
+    signInHosts: ["nid.naver.com"],
     what: "Read today's orders and the enquiries nobody has answered yet.",
     handoff: "login",
     prompts: [
@@ -185,6 +200,7 @@ const SITE_SPECS: readonly SiteSpec[] = [
     category: "reputation",
     loginUrl: "https://new.smartplace.naver.com",
     hosts: ["new.smartplace.naver.com", "smartplace.naver.com"],
+    signInHosts: ["nid.naver.com"],
     what: "Read the reviews on your shop's listing and check what it says about you.",
     handoff: "login",
     prompts: [
@@ -200,6 +216,7 @@ const SITE_SPECS: readonly SiteSpec[] = [
     category: "schedule",
     loginUrl: "https://partner.booking.naver.com",
     hosts: ["partner.booking.naver.com", "partner.talk.naver.com"],
+    signInHosts: ["nid.naver.com"],
     what: "Read tomorrow's bookings and the Talk messages waiting for a reply.",
     handoff: "login",
     prompts: [
@@ -341,6 +358,7 @@ const SITE_SPECS: readonly SiteSpec[] = [
     category: "settlement",
     loginUrl: "https://searchad.naver.com",
     hosts: ["searchad.naver.com", "manage.searchad.naver.com"],
+    signInHosts: ["nid.naver.com"],
     what: "Read what the ads spent, what they brought in, and which campaigns have stopped.",
     handoff: "login",
     prompts: [

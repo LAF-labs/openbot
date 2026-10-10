@@ -44,6 +44,7 @@ import { Route as AuthedAdminPluginsRouteImport } from './routes/_authed/admin/p
 import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed/settings/index'
 import { Route as AuthedSettingsAccountRouteImport } from './routes/_authed/settings/account'
 import { Route as AuthedSettingsConnectedAccountsRouteImport } from './routes/_authed/settings/connected-accounts'
+import { Route as AuthedSettingsLoginsRouteImport } from './routes/_authed/settings/logins'
 import { Route as AuthedSettingsShopRouteImport } from './routes/_authed/settings/shop'
 import { Route as AuthedAppAgentsIndexRouteImport } from './routes/_authed/_app/agents/index'
 import { Route as AuthedAppApproveApprovalIdRouteImport } from './routes/_authed/_app/approve/$approvalId'
@@ -224,6 +225,11 @@ const AuthedSettingsConnectedAccountsRoute =
     path: '/connected-accounts',
     getParentRoute: () => AuthedSettingsRouteRoute,
   } as any)
+const AuthedSettingsLoginsRoute = AuthedSettingsLoginsRouteImport.update({
+  id: '/logins',
+  path: '/logins',
+  getParentRoute: () => AuthedSettingsRouteRoute,
+} as any)
 const AuthedSettingsShopRoute = AuthedSettingsShopRouteImport.update({
   id: '/shop',
   path: '/shop',
@@ -284,6 +290,7 @@ export interface FileRoutesByFullPath {
   '/admin/plugins': typeof AuthedAdminPluginsRoute
   '/settings/account': typeof AuthedSettingsAccountRoute
   '/settings/connected-accounts': typeof AuthedSettingsConnectedAccountsRoute
+  '/settings/logins': typeof AuthedSettingsLoginsRoute
   '/settings/shop': typeof AuthedSettingsShopRoute
   '/admin/': typeof AuthedAdminIndexRoute
   '/settings/': typeof AuthedSettingsIndexRoute
@@ -322,6 +329,7 @@ export interface FileRoutesByTo {
   '/admin/plugins': typeof AuthedAdminPluginsRoute
   '/settings/account': typeof AuthedSettingsAccountRoute
   '/settings/connected-accounts': typeof AuthedSettingsConnectedAccountsRoute
+  '/settings/logins': typeof AuthedSettingsLoginsRoute
   '/settings/shop': typeof AuthedSettingsShopRoute
   '/admin': typeof AuthedAdminIndexRoute
   '/settings': typeof AuthedSettingsIndexRoute
@@ -364,6 +372,7 @@ export interface FileRoutesById {
   '/_authed/admin/plugins': typeof AuthedAdminPluginsRoute
   '/_authed/settings/account': typeof AuthedSettingsAccountRoute
   '/_authed/settings/connected-accounts': typeof AuthedSettingsConnectedAccountsRoute
+  '/_authed/settings/logins': typeof AuthedSettingsLoginsRoute
   '/_authed/settings/shop': typeof AuthedSettingsShopRoute
   '/_authed/_app/': typeof AuthedAppIndexRoute
   '/_authed/admin/': typeof AuthedAdminIndexRoute
@@ -407,6 +416,7 @@ export interface FileRouteTypes {
     | '/admin/plugins'
     | '/settings/account'
     | '/settings/connected-accounts'
+    | '/settings/logins'
     | '/settings/shop'
     | '/admin/'
     | '/settings/'
@@ -445,6 +455,7 @@ export interface FileRouteTypes {
     | '/admin/plugins'
     | '/settings/account'
     | '/settings/connected-accounts'
+    | '/settings/logins'
     | '/settings/shop'
     | '/admin'
     | '/settings'
@@ -486,6 +497,7 @@ export interface FileRouteTypes {
     | '/_authed/admin/plugins'
     | '/_authed/settings/account'
     | '/_authed/settings/connected-accounts'
+    | '/_authed/settings/logins'
     | '/_authed/settings/shop'
     | '/_authed/_app/'
     | '/_authed/admin/'
@@ -754,6 +766,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsConnectedAccountsRouteImport
       parentRoute: typeof AuthedSettingsRouteRoute
     }
+    '/_authed/settings/logins': {
+      id: '/_authed/settings/logins'
+      path: '/logins'
+      fullPath: '/settings/logins'
+      preLoaderRoute: typeof AuthedSettingsLoginsRouteImport
+      parentRoute: typeof AuthedSettingsRouteRoute
+    }
     '/_authed/settings/shop': {
       id: '/_authed/settings/shop'
       path: '/shop'
@@ -822,6 +841,7 @@ const AuthedAdminRouteRouteWithChildren =
 interface AuthedSettingsRouteRouteChildren {
   AuthedSettingsAccountRoute: typeof AuthedSettingsAccountRoute
   AuthedSettingsConnectedAccountsRoute: typeof AuthedSettingsConnectedAccountsRoute
+  AuthedSettingsLoginsRoute: typeof AuthedSettingsLoginsRoute
   AuthedSettingsShopRoute: typeof AuthedSettingsShopRoute
   AuthedSettingsIndexRoute: typeof AuthedSettingsIndexRoute
 }
@@ -829,6 +849,7 @@ interface AuthedSettingsRouteRouteChildren {
 const AuthedSettingsRouteRouteChildren: AuthedSettingsRouteRouteChildren = {
   AuthedSettingsAccountRoute: AuthedSettingsAccountRoute,
   AuthedSettingsConnectedAccountsRoute: AuthedSettingsConnectedAccountsRoute,
+  AuthedSettingsLoginsRoute: AuthedSettingsLoginsRoute,
   AuthedSettingsShopRoute: AuthedSettingsShopRoute,
   AuthedSettingsIndexRoute: AuthedSettingsIndexRoute,
 }

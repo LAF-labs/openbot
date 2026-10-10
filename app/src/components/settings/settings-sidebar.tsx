@@ -61,6 +61,12 @@ export const SETTINGS_NAV: RailNavItem[] = [
    * is a page that does not really exist.
    */
   {
+    // 계정: the sign-in names and passwords saved for the Bot's browser. Not "Your data" below,
+    // which is the person's own account here — what is kept of them, and leaving.
+    title: t("Accounts"),
+    linkOptions: { to: "/settings/logins" },
+  },
+  {
     title: t("Your data"),
     linkOptions: { to: "/settings/account" },
   },

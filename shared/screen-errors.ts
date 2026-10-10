@@ -104,6 +104,7 @@ export const SCREEN_ROUTES = [
   "/settings/",
   "/settings/account",
   "/settings/connected-accounts",
+  "/settings/logins",
   "/settings/shop",
   "/sign",
   "/skills",
