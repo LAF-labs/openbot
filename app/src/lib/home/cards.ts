@@ -10,8 +10,9 @@ import { kindLabel, type MadePage } from "@/lib/made/queries";
  *
  * Under 오늘 the panel holds three things a person otherwise goes to a page for, each as the one
  * fact that page would have opened on: the newest thing the Bot found, the goal being worked on,
- * the last thing it made. A card is a name, one figure at its right, and ONE line; the whole card
- * is the way to its page.
+ * the last thing it made. A card is a name, one figure at its right, and ONE line. Its name is the
+ * way to its page; its line is the way to the thing it names, where that has a place of its own
+ * (`thing` — the idea is from #151, the other pull request written for this piece).
  *
  * A CARD WITH NOTHING TO SAY IS NOT DRAWN. The list these stand beside was taken out of the old
  * column for being too many words (2026-10-04), and three boxes saying "아직 없어요" on a first
@@ -35,7 +36,17 @@ export type HomeCardView = {
   at: string | null;
   /** How many: unseen posts, goals in progress. Null where a time stands at the right instead. */
   count: number | null;
+  /**
+   * The thing the line names, where there is somewhere of its own to open it: that goal on 목표,
+   * the message a made thing was handed over in. Null where the page is all there is (소식), and
+   * where the answer did not say which — the card is then the way to its page and nothing else.
+   */
+  thing: HomeCardThing | null;
 };
+
+export type HomeCardThing =
+  | { kind: "goal"; id: string }
+  | { kind: "made"; channelId: string; messageId: string };
 
 const text = (value: unknown): string =>
   typeof value === "string" ? value.trim() : "";
@@ -68,6 +79,8 @@ export function feedCard(
     count,
     line,
     note: null,
+    // A post has no place of its own: 소식's page is where it is read.
+    thing: null,
   };
 }
 
@@ -84,11 +97,13 @@ export function goalsCard(
   const [first] = active;
   const line = text(record(first)?.title);
   if (!line) return null;
+  const id = text(record(first)?.id);
   return {
     at: null,
     count: active.length,
     line,
     note: measureLine(first as GoalView),
+    thing: id ? { id, kind: "goal" } : null,
   };
 }
 
@@ -102,7 +117,17 @@ export function madeCard(page: MadePage | undefined): HomeCardView | null {
   if (!item) return null;
   const line = text(item.title) || kindLabel(text(item.tool));
   if (!line) return null;
-  return { at: text(item.at) || null, count: null, line, note: null };
+  const channelId = text(item.channelId);
+  const messageId = text(item.messageId);
+  return {
+    at: text(item.at) || null,
+    count: null,
+    line,
+    note: null,
+    // Both or neither: a conversation with no message to go to is the conversation's foot.
+    thing:
+      channelId && messageId ? { channelId, kind: "made", messageId } : null,
+  };
 }
 
 /**
