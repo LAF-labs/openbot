@@ -9,6 +9,7 @@ import {
   delegateTargetOf,
   isDelegated,
 } from "../shared/tools/delegate";
+import { drivesTheBrowser } from "../server/src/runner/bot-lane";
 
 /**
  * THE HAND-OVER, AS BOTH SIDES READ IT (piece 6-2, `docs/laf/redesign-2026-10.md` §4).
@@ -48,13 +49,12 @@ describe("the tool a conversation hands its browsing over with", () => {
   });
 
   /*
-   * NOT YET AT THE HEAD OF ANY PROMPT. A core name is in every conversation's schema and in the
-   * harness's version, so adding one opens an epoch in every conversation there is. That is the
-   * second half's, with the turn that first offers it — until then nothing a deployment runs has
-   * changed, and this is what says so.
+   * AT THE HEAD OF THE PROMPT, NOT BEHIND THE BRIDGE. A name that is not core is reached through
+   * `tool_search`, and the conversation's Bot would have to look for the one way it has of
+   * opening a page.
    */
-  test("is not a core name until a turn is offered it", () => {
-    expect(CORE_TOOL_NAMES.has(DELEGATE.name)).toBe(false);
+  test("is a core name: the Bot of a conversation is handed it outright", () => {
+    expect(CORE_TOOL_NAMES.has(DELEGATE.name)).toBe(true);
   });
 });
 
@@ -99,5 +99,39 @@ describe("the mode a delegated run is told about itself in", () => {
     for (const name of ["update_profile", "remember", "manage_routine"]) {
       expect(staticPrompt("browse")).not.toContain(name);
     }
+  });
+});
+
+/*
+ * WHAT A CONVERSATION'S BOT IS TOLD, NOW THAT IT HOLDS NO TOOL OF THE BROWSER'S. The chat mode
+ * named the two tools that call a person, because it was the only mode with a person to call. They
+ * are the delegated run's now. A mode that names a tool its Bot is not handed has the model
+ * knocking on a door that is not there — the mistake `routine.ko.ts` records at its head.
+ */
+describe("the chat mode, for a Bot that hands its browsing over", () => {
+  const BROWSER = COMPUTER_TOOLS.map((tool) => tool.name).filter(
+    drivesTheBrowser,
+  );
+
+  test("there are eleven such tools, and the folder's three are not among them", () => {
+    expect(BROWSER).toHaveLength(COMPUTER_TOOLS.length - 3);
+  });
+
+  test.each(COMPUTER_TOOLS.map((tool) => tool.name).filter(drivesTheBrowser))(
+    "names no %s",
+    (name) => {
+      expect(staticPrompt("chat")).not.toContain(name);
+    },
+  );
+
+  test("names the hand-over, and says a value for a page is not its to ask a person for", () => {
+    expect(modeText("chat")).toContain(DELEGATE.name);
+    expect(modeText("chat")).toContain("네가 사람에게 묻지 않는다");
+    // The delegated run is told the other half: it asks, through the masked box.
+    expect(modeText("browse")).toContain("computer_request_secret");
+  });
+
+  test("a routine's mode is as it was: nobody to hand anything to", () => {
+    expect(modeText("routine")).not.toContain(DELEGATE.name);
   });
 });

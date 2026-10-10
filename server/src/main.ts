@@ -924,8 +924,19 @@ const connectionSwitchSources = connectionSourcesFrom({
   sites: computerClient && computerGateway ? siteConnections : null,
   agents: agentProfileStore,
 });
+/*
+ * A CONVERSATION HANDS ITS BROWSING TO A RUN OF ITS OWN (piece 6-2, `docs/laf/redesign-2026-10.md`
+ * §4): every conversation, the main one and a project's alike. Two places have to agree, and so
+ * read this one word: the turn's tools — `delegate` in place of the browser's own — and what the
+ * turn's Bot is handed of its past, which leaves out the browser steps it once took itself. One
+ * without the other is a Bot shown itself opening pages with nothing to open one with, which on
+ * the real stack called a tool it no longer had; or a Bot that still browses and cannot read what
+ * it did a minute ago.
+ */
+const DELEGATES_BROWSING = true;
 const chatTools = createChatTools({
   ...(computerGateway ? { gateway: computerGateway } : {}),
+  delegatesBrowsing: DELEGATES_BROWSING,
   pluginStore,
   logins: loginVault,
   approvals,
@@ -974,6 +985,7 @@ const turnEngine = createTurnEngine({
     : {}),
   resolveAgents: resolveAgentsFor,
   tools: (context, declared) => chatTools(context, declared),
+  handsBrowsingOver: DELEGATES_BROWSING,
   // An account the list no longer admits acts on nothing, a turn nobody watches included.
   admits: (userId) => admission.admitsPerson(userId),
   // On unless `FIRST_MOVE` says off, and only where Jev may be asked: the weather for the

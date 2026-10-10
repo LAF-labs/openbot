@@ -129,6 +129,8 @@ export const ko: Record<string, string> = {
   "Managing routines": "루틴 다루는 중",
   "Opening a skill": "스킬 여는 중",
   "Leaving a note for the routine": "루틴에 메모 남기는 중",
+  "Handing the browsing over": "브라우저로 알아보는 중",
+  "Used the browser": "브라우저로 알아봄",
   "Looking at the page": "화면 살펴보는 중",
   "Asking for a secret": "비밀값 묻는 중",
   "Asking for help": "도움 청하는 중",
