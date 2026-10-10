@@ -2490,7 +2490,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * outcome over; one in `frame-routes.test.ts` (refused by the call, whenever it arrives); one in
  * `saved-logins.integration.test.ts` (the vault hands a password to its owner for a page of its
  * origin and no other). Three at the root for the rule both sides now read from one file
- * (`hidden-values.test.ts`).
+ * (`hidden-values.test.ts`). Forty-two mutations each fail one of these.
  * By hand: 3958 and 15, 5, 4, 3, 1 and 1 are 3987; 935 and 3 are 938.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
