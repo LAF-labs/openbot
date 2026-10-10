@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Server } from "bun";
+import { soleBrowser } from "../agent-computer/src/browsers";
 import type { Computer } from "../agent-computer/src/computer";
 import type { StreamData } from "../agent-computer/src/live-screen";
 import { computerFetch } from "../agent-computer/src/routes";
@@ -103,7 +104,7 @@ beforeAll(async () => {
       stateDirectoryFor: (botId) => join(base, "state", botId),
     }),
   } as unknown as Computer;
-  const handle = computerFetch(computer);
+  const handle = computerFetch(soleBrowser(computer));
   container = Bun.serve({
     port: 0,
     hostname: "127.0.0.1",

@@ -30,6 +30,7 @@ import { guardNavigations } from "../src/navigation-guard";
 import { watchPage } from "../src/page-watch";
 import { createProfiles } from "../src/profiles";
 import { saysRendererDied } from "../src/respond";
+import { soleBrowser } from "../src/browsers";
 import { computerFetch } from "../src/routes";
 import { createSessions } from "../src/sessions";
 import { tabLost } from "../src/tab-loss";
@@ -188,7 +189,7 @@ async function startComputer(): Promise<Running> {
     hostname: "127.0.0.1",
     idleTimeout: 120,
     websocket: liveScreen(built),
-    fetch: computerFetch(built),
+    fetch: computerFetch(soleBrowser(built)),
   });
   return {
     url: `http://127.0.0.1:${server.port}`,

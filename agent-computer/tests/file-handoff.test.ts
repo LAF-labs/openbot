@@ -14,6 +14,7 @@ import type { Server } from "bun";
 import { FILE_PATH_HEADER } from "../../shared/workspace-files";
 import type { Computer } from "../src/computer";
 import type { StreamData } from "../src/live-screen";
+import { soleBrowser } from "../src/browsers";
 import { computerFetch } from "../src/routes";
 import { createSessions } from "../src/sessions";
 import { digestOf, keepTyped } from "../src/typed-values";
@@ -70,7 +71,7 @@ beforeEach(async () => {
     }),
     sessions,
   } as unknown as Computer;
-  const handle = computerFetch(computer);
+  const handle = computerFetch(soleBrowser(computer));
   // Only `/stream` touches the server, to upgrade a socket; no call here is one.
   ask = (request) => handle(request, {} as Server<StreamData>);
 });

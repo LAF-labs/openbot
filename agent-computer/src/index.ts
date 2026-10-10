@@ -2,6 +2,7 @@ import { serve } from "bun";
 import type { Page } from "playwright";
 import { buildOf } from "../../shared/log";
 import type { Computer } from "./computer";
+import { createBrowsers, sweepBackgroundProfiles } from "./browsers";
 import { readConfig } from "./config";
 import { deploymentEgress, ignoredEgressVariables } from "./egress";
 import { createEgressGuard, verdictOf } from "./egress-guard";
@@ -65,57 +66,6 @@ if (!config) {
  */
 const workspace = createWorkspace(config.workspaceDir);
 
-// Who had the wheel is a Bot's own, and the cookie jar is the deployment's, so the two live in
-// different directories. `legacyStateDirectoryFor` is the pre-2026-09-16 place, read as a fallback.
-const sessions = createSessions({
-  stateDirectoryFor: (botId) => profiles.stateDirectoryFor(botId),
-  legacyStateDirectoryFor: (botId) => profiles.legacyStateDirectoryFor(botId),
-});
-
-/**
- * WHOSE HOP THE GUARD JUST STOPPED.
- *
- * The navigation guard sits on the BROWSER target so it sees every tab and every redirect
- * (navigation-guard.ts) — and the browser now belongs to every Bot, so a stopped hop arrives with a
- * frame id and nothing else. Three questions, in order, and only the first two are facts:
- *
- *  1. Is a Bot's `/navigate` driving that exact frame? Then it is that Bot's, and the call waiting
- *     for an answer gets the refusal directly instead of as a note next time.
- *  2. Is that frame a tab's main frame we have seen handed to a Bot? `mainFrameIdOf` is the tab's
- *     target id, so a click that navigated a tab lands on its owner.
- *  3. Is exactly one Bot holding a tab at all? Then every frame in this browser is that Bot's. Not a
- *     guess — a count. It is what keeps a popup's first request and a refused iframe attributable on
- *     the machine this product actually runs on, where one person drives one Bot at a time.
- *
- * NOTHING ELSE IS GUESSED AT. Two Bots acting at once, and a refused sub-frame belonging to neither
- * of their in-flight navigations, is told to nobody — the hop is still stopped and still logged, and
- * a note in the wrong Bot's hands would be a lie about a page it never opened. That is the one thing
- * this change costs the guard, and it is here rather than in a document nobody reads.
- */
-const framesOwned = new Map<string, string>();
-
-const botForHop = (hop: NavigationHop): string | null => {
-  const navigating = sessions.botNavigating(hop.frameId);
-  if (navigating) return navigating;
-  const owner = framesOwned.get(hop.frameId);
-  if (owner) return owner;
-  const liveBots = profiles.liveBots();
-  return liveBots.length === 1 ? (liveBots[0] as string) : null;
-};
-
-/** A tab's main frame, remembered against the Bot it was handed to, and forgotten when it closes. */
-const rememberFrame = (botId: string, page: Page): void => {
-  void mainFrameIdOf(page)
-    .then((frameId) => {
-      if (!frameId) return;
-      framesOwned.set(frameId, botId);
-      page.once("close", () => {
-        if (framesOwned.get(frameId) === botId) framesOwned.delete(frameId);
-      });
-    })
-    .catch(() => undefined);
-};
-
 /**
  * Whether the host is holding the browser's egress firewall. See egress-guard.ts.
  *
@@ -126,76 +76,151 @@ const egress = createEgressGuard({
   enforce: config.egressFirewall,
   allowPrivateHosts: config.allowPrivateHosts,
   log,
-  onUnguarded: () => profiles.closeAll(),
+  // Every browser, not the main one alone: a background one is as much a way out.
+  onUnguarded: () => browsers.closeAll(),
 });
 
 /**
- * The deployment's browser and the profile that outlives it. See profiles.ts.
+ * ONE BROWSER, AND EVERYTHING THAT IS KEPT BESIDE IT (2026-10-10, piece 5-3, `browsers.ts`).
  *
- * `chromium.launch()` gives a fresh anonymous profile every time. The persistent profile lives on a
- * mounted volume so sign-in state survives the container, and every Bot opens that one — a site one
- * Bot signed into is signed in for the others, which is the promise the onboarding screen makes.
+ * What this builds was the whole of this file's state while the deployment had one browser: the
+ * sessions, whose frame is whose, and the browser on its profile. It is built once for the main
+ * browser on the volume, and again for each background browser on a directory of its own — so a
+ * Bot in a background browser has tabs, a snapshot and notes that are that browser's, and nothing
+ * it does there moves what the same Bot is looking at in the main one. The files, the firewall
+ * check and the configuration are the computer's, and every browser is handed the same.
  */
-const profiles = createProfiles(config.profilesDir, {
-  beforeBrowser: () => egress.ensureGuarded(),
-  onPage: (botId, page) => {
-    rememberFrame(botId, page);
-    watchPage(sessions.sessionFor(botId), botId, page, workspace);
-  },
-  // The tab a Bot was on died or was closed by its site: nothing acts for that Bot until it has
-  // looked at the tab it is on now, and whatever it had asked a person for on the lost one ends.
-  onTabLost: (botId, lost) => tabLost(sessions.sessionFor(botId), botId, lost),
-  // A Bot's tabs are kept to a number, and the one it used longest ago goes — never one a person
-  // has the wheel of or is watching, or one the Bot asked a person for something on.
-  holdsTab: (botId, page) => holdsTab(sessions.existing(botId), page),
-  // Before the first page is handed out, so no request this browser ever makes goes unjudged. Once
-  // for the browser, not once per Bot: there is one browser.
-  onContext: async (context) => {
-    await guardNavigations(context, {
-      allowPrivateHosts: config.allowPrivateHosts,
-      ownAddresses: config.ownAddresses,
-      behindProxy: deploymentEgress(process.env) !== null,
-      onRefused: (hop, refusal) => {
-        const botId = botForHop(hop);
-        if (!botId) {
-          log.warn("navigation_refused_unattributed", {
-            origin: originOf(hop.url),
-            redirected: hop.redirectedFrom !== null,
-            reason: refusal.reason,
-          });
-          return;
-        }
-        navigationRefused(sessions.sessionFor(botId), botId, hop, refusal);
-      },
-      holds: (hop) => {
-        const botId = botForHop(hop);
-        return botId
-          ? heldForJudgement(sessions.existing(botId)?.navigating, hop)
-          : false;
-      },
-    });
-  },
-  /*
-   * The person's logins did not start over because the container did. An upgrade from a profile per
-   * Bot takes over the one that was used most recently and leaves the rest untouched; the Bot whose
-   * call caused that launch is told which, and how many are still sitting on the volume, because
-   * "why is 배민 asking me to log in again" has an answer and it is this.
-   */
-  onProfileAdopted: (botId, adoption) =>
-    note(sessions.sessionFor(botId), {
-      code: "laf:profile_adopted",
-      adopted: adoption.adoptedFrom,
-      kept: adoption.kept,
-    }),
-});
+const seatAt = (root: string, browser: string | null): Computer => {
+  // Who had the wheel is a Bot's own, and the cookie jar is the deployment's, so the two live in
+  // different directories. `legacyStateDirectoryFor` is the pre-2026-09-16 place, read as a fallback.
+  const sessions = createSessions({
+    stateDirectoryFor: (botId) => profiles.stateDirectoryFor(botId),
+    legacyStateDirectoryFor: (botId) => profiles.legacyStateDirectoryFor(botId),
+  });
 
-const computer: Computer = { config, profiles, workspace, sessions, egress };
+  /**
+   * WHOSE HOP THE GUARD JUST STOPPED.
+   *
+   * The navigation guard sits on the BROWSER target so it sees every tab and every redirect
+   * (navigation-guard.ts) — and the browser now belongs to every Bot, so a stopped hop arrives with a
+   * frame id and nothing else. Three questions, in order, and only the first two are facts:
+   *
+   *  1. Is a Bot's `/navigate` driving that exact frame? Then it is that Bot's, and the call waiting
+   *     for an answer gets the refusal directly instead of as a note next time.
+   *  2. Is that frame a tab's main frame we have seen handed to a Bot? `mainFrameIdOf` is the tab's
+   *     target id, so a click that navigated a tab lands on its owner.
+   *  3. Is exactly one Bot holding a tab at all? Then every frame in this browser is that Bot's. Not a
+   *     guess — a count. It is what keeps a popup's first request and a refused iframe attributable on
+   *     the machine this product actually runs on, where one person drives one Bot at a time.
+   *
+   * NOTHING ELSE IS GUESSED AT. Two Bots acting at once, and a refused sub-frame belonging to neither
+   * of their in-flight navigations, is told to nobody — the hop is still stopped and still logged, and
+   * a note in the wrong Bot's hands would be a lie about a page it never opened. That is the one thing
+   * this change costs the guard, and it is here rather than in a document nobody reads.
+   */
+  const framesOwned = new Map<string, string>();
+
+  const botForHop = (hop: NavigationHop): string | null => {
+    const navigating = sessions.botNavigating(hop.frameId);
+    if (navigating) return navigating;
+    const owner = framesOwned.get(hop.frameId);
+    if (owner) return owner;
+    const liveBots = profiles.liveBots();
+    return liveBots.length === 1 ? (liveBots[0] as string) : null;
+  };
+
+  /** A tab's main frame, remembered against the Bot it was handed to, and forgotten when it closes. */
+  const rememberFrame = (botId: string, page: Page): void => {
+    void mainFrameIdOf(page)
+      .then((frameId) => {
+        if (!frameId) return;
+        framesOwned.set(frameId, botId);
+        page.once("close", () => {
+          if (framesOwned.get(frameId) === botId) framesOwned.delete(frameId);
+        });
+      })
+      .catch(() => undefined);
+  };
+
+  /**
+   * The deployment's browser and the profile that outlives it. See profiles.ts.
+   *
+   * `chromium.launch()` gives a fresh anonymous profile every time. The persistent profile lives on a
+   * mounted volume so sign-in state survives the container, and every Bot opens that one — a site one
+   * Bot signed into is signed in for the others, which is the promise the onboarding screen makes.
+   */
+  const profiles = createProfiles(root, {
+    beforeBrowser: () => egress.ensureGuarded(),
+    onPage: (botId, page) => {
+      rememberFrame(botId, page);
+      watchPage(sessions.sessionFor(botId), botId, page, workspace);
+    },
+    // The tab a Bot was on died or was closed by its site: nothing acts for that Bot until it has
+    // looked at the tab it is on now, and whatever it had asked a person for on the lost one ends.
+    onTabLost: (botId, lost) =>
+      tabLost(sessions.sessionFor(botId), botId, lost),
+    // A Bot's tabs are kept to a number, and the one it used longest ago goes — never one a person
+    // has the wheel of or is watching, or one the Bot asked a person for something on.
+    holdsTab: (botId, page) => holdsTab(sessions.existing(botId), page),
+    // Before the first page is handed out, so no request this browser ever makes goes unjudged. Once
+    // for the browser, not once per Bot: there is one browser.
+    onContext: async (context) => {
+      await guardNavigations(context, {
+        allowPrivateHosts: config.allowPrivateHosts,
+        ownAddresses: config.ownAddresses,
+        behindProxy: deploymentEgress(process.env) !== null,
+        onRefused: (hop, refusal) => {
+          const botId = botForHop(hop);
+          if (!botId) {
+            log.warn("navigation_refused_unattributed", {
+              ...(browser ? { browser } : {}),
+              origin: originOf(hop.url),
+              redirected: hop.redirectedFrom !== null,
+              reason: refusal.reason,
+            });
+            return;
+          }
+          navigationRefused(sessions.sessionFor(botId), botId, hop, refusal);
+        },
+        holds: (hop) => {
+          const botId = botForHop(hop);
+          return botId
+            ? heldForJudgement(sessions.existing(botId)?.navigating, hop)
+            : false;
+        },
+      });
+    },
+    /*
+     * The person's logins did not start over because the container did. An upgrade from a profile per
+     * Bot takes over the one that was used most recently and leaves the rest untouched; the Bot whose
+     * call caused that launch is told which, and how many are still sitting on the volume, because
+     * "why is 배민 asking me to log in again" has an answer and it is this.
+     */
+    onProfileAdopted: (botId, adoption) =>
+      note(sessions.sessionFor(botId), {
+        code: "laf:profile_adopted",
+        adopted: adoption.adoptedFrom,
+        kept: adoption.kept,
+      }),
+  });
+
+  return { config, profiles, workspace, sessions, egress };
+};
+
+const browsers = createBrowsers({
+  main: seatAt(config.profilesDir, null),
+  seatAt,
+  log: (event, facts) => log.info(event, facts),
+});
+// What a process that died left in `/tmp`: a container that restarts keeps it.
+void sweepBackgroundProfiles();
 
 const listener = serve<StreamData>({
   port: config.port,
   idleTimeout: 120,
-  websocket: liveScreen(computer),
-  fetch: computerFetch(computer),
+  // The screen a person watches is the main browser's; a background one has nobody watching.
+  websocket: liveScreen(browsers.main),
+  fetch: computerFetch(browsers),
 });
 
 // `listener.port` rather than `PORT`: on port 0 it is the port actually given.
@@ -266,7 +291,7 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
         reason: signal,
         note: "closing the browser so its profile is flushed",
       });
-      await profiles.closeAll();
+      await browsers.closeAll();
       process.exit(0);
     })();
   });
