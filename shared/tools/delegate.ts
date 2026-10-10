@@ -14,7 +14,7 @@ import type { JsonSchema } from "./standard-schema";
 /** 맡을 수 있는 쪽. 지금은 브라우저 하나다. */
 export const DELEGATE_TARGETS = ["browser"] as const;
 
-export type DelegateTarget = (typeof DELEGATE_TARGETS)[number];
+type DelegateTarget = (typeof DELEGATE_TARGETS)[number];
 
 export const DELEGATE: {
   name: string;

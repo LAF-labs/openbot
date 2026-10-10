@@ -574,6 +574,7 @@
   "tests/clean-checkout.test.ts": 0,
   "tests/compose.test.ts": 0.01,
   "tests/computer-browsers-wire.test.ts": 0.1,
+  "tests/delegate.test.ts": 0,
   "tests/desktop-front-door.test.ts": 0.01,
   "tests/desktop-held.test.ts": 0.17,
   "tests/desktop-shell.test.ts": 0.03,

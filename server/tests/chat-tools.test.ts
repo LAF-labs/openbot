@@ -32,7 +32,12 @@ import {
   createComputerGateway,
 } from "../src/computer/gateway";
 import type { ActionPolicy } from "../src/computer/policy";
-import { type LoopAgent, runTurnLoop } from "../src/runner/turn-loop";
+import {
+  type LoopAgent,
+  RunFailed,
+  RunStopped,
+  runTurnLoop,
+} from "../src/runner/turn-loop";
 import { RoutineError } from "../src/routines/errors";
 import type { RoutineService } from "../src/routines/service";
 import { createChatTools, routineAction } from "../src/turns/chat-tools";
@@ -57,6 +62,7 @@ import {
   withheldToolsText,
 } from "../../shared/tools/paused";
 import { COMPUTER_TOOLS } from "../../shared/tools/computer";
+import { DELEGATE } from "../../shared/tools/delegate";
 import { A_CLICK } from "./support/subjects";
 
 const owner: AgentActor = { id: "owner-1", role: "user" };
@@ -3722,5 +3728,270 @@ describe("the browser is asked for by the call that uses it", () => {
       call(),
     );
     expect(order).toEqual(["asked for the browser", "has the browser", "sent"]);
+  });
+});
+
+/*
+ * A CONVERSATION THAT HANDS ITS BROWSING OVER (piece 6-2). The browser's tools ride at the head of
+ * every turn whether or not the turn browses. Handed over, the turn is offered `delegate` and the
+ * three tools that reach the Bot's folder alone, and the browser's own are carried out only for
+ * the run a `delegate` call starts.
+ */
+describe("a conversation that hands its browsing over", () => {
+  const FOLDER = [
+    "computer_list_files",
+    "computer_read_file",
+    "computer_write_file",
+  ];
+  const BROWSER = COMPUTER_TOOLS.map((entry) => entry.name).filter(
+    (name) => !FOLDER.includes(name),
+  );
+  type Handed = Parameters<
+    NonNullable<Parameters<ReturnType<typeof createChatTools>>[0]["delegate"]>
+  >[0];
+  /** A computer that opens pages and says which. */
+  const opening = () => {
+    const opened: string[] = [];
+    const gateway = {
+      navigate: async (
+        _computer: string,
+        _bot: string,
+        _actor: unknown,
+        url: string,
+      ) => {
+        opened.push(url);
+        return { url, title: "예시" };
+      },
+    } as unknown as ComputerGateway;
+    return { gateway, opened };
+  };
+  /** A turn that delegates, and what it handed whoever it delegated to. */
+  const delegating = async (
+    answer: (run: Handed) => Promise<string> | string = () => "21도였어요.",
+    declared: Tool[] | null = null,
+  ) => {
+    const { gateway, opened } = opening();
+    const handed: Handed[] = [];
+    /** How many times the browser was asked for. */
+    const lane = { asked: 0 };
+    const toolkit = await createChatTools({
+      gateway,
+      delegatesBrowsing: true,
+      people: createPersonAnswers(),
+    })(
+      {
+        ...context,
+        borrowBrowser: async () => {
+          lane.asked += 1;
+          return true;
+        },
+        delegate: async (run) => {
+          handed.push(run);
+          return { answer: await answer(run), steps: [] };
+        },
+      },
+      declared,
+    );
+    return { toolkit, handed, opened, lane };
+  };
+  const TASK = { to: "browser", task: "네이버에서 서울 날씨를 찾아 줘." };
+
+  test("is offered `delegate` and the folder's three, and none of the browser's own", async () => {
+    const { toolkit } = await delegating();
+    const names = toolkit.tools.map((entry) => entry.name);
+    expect(names.filter((name) => name.startsWith("computer_"))).toEqual(
+      FOLDER,
+    );
+    expect(names).toContain(DELEGATE.name);
+    for (const name of BROWSER) expect(names).not.toContain(name);
+  });
+
+  test("whatever its window declared: the browser's tools are dropped, and `delegate` is this server's own words", async () => {
+    // A window open since before the upgrade: it still declares every tool of the computer's, and
+    // has never heard of `delegate` — or holds words of its own under that name.
+    const { toolkit } = await delegating(undefined, [
+      ...COMPUTER_TOOLS.map((entry) => tool(entry.name)),
+      { ...tool(DELEGATE.name), description: "a window's own words" },
+    ]);
+    const names = toolkit.tools.map((entry) => entry.name);
+    for (const name of BROWSER) expect(names).not.toContain(name);
+    expect(names.filter((name) => name.startsWith("computer_"))).toEqual(
+      FOLDER,
+    );
+    expect(toolkit.tools.filter((one) => one.name === DELEGATE.name)).toEqual([
+      {
+        name: DELEGATE.name,
+        description: DELEGATE.description,
+        parameters: DELEGATE.parameters,
+      },
+    ]);
+  });
+
+  test.each(BROWSER)("%s is not the turn's own to call", async (name) => {
+    const { toolkit, opened, handed } = await delegating();
+    const outcome = await toolkit.execute(
+      name,
+      { url: "https://example.com" },
+      call(),
+    );
+    expect(outcome).toMatchObject({ ok: false, code: "laf:tool_unknown" });
+    expect(opened).toEqual([]);
+    expect(handed).toEqual([]);
+  });
+
+  test("`delegate` hands the task on, with every tool of the computer's and the call it is for", async () => {
+    const { toolkit, handed } = await delegating();
+    const made = call("call-delegate");
+    const outcome = await toolkit.execute(
+      DELEGATE.name,
+      { to: "browser", task: "  네이버에서 서울 날씨를 찾아 줘.  " },
+      made,
+    );
+    expect(outcome).toEqual({ ok: true, answer: "21도였어요." });
+    expect(handed).toHaveLength(1);
+    const run = handed[0];
+    expect(run?.callId).toBe("call-delegate");
+    expect(run?.mode).toBe("browse");
+    expect(run?.instruction).toBe("네이버에서 서울 날씨를 찾아 줘.");
+    expect(run?.signal).toBe(made.signal);
+    // The browser's tools and the folder's: the run it is handed to is offered all fourteen.
+    expect(run?.tools.map((entry) => entry.name)).toEqual(
+      COMPUTER_TOOLS.map((entry) => entry.name),
+    );
+  });
+
+  test("what the delegated run calls is carried out on the computer, and nothing else is its to call", async () => {
+    const { toolkit, opened, lane } = await delegating(async (run) => {
+      const page = await run.execute(
+        "computer_navigate",
+        { url: "https://naver.com" },
+        call("call-open"),
+      );
+      const profile = await run.execute(
+        "update_profile",
+        { description: "나는 날씨 봇" },
+        call("call-profile"),
+      );
+      const handedOn = await run.execute(DELEGATE.name, TASK, call("call-2"));
+      return JSON.stringify([page, profile, handedOn]);
+    });
+    const outcome = await toolkit.execute(DELEGATE.name, TASK, call());
+    const [page, profile, handedOn] = JSON.parse(
+      (outcome as unknown as { answer: string }).answer,
+    );
+    expect(opened).toEqual(["https://naver.com"]);
+    expect(page.ok).toBe(true);
+    // Not the Bot's own tools, and not another hand-over: a delegated run delegates nothing.
+    expect(profile).toMatchObject({ ok: false, code: "laf:tool_unknown" });
+    expect(handedOn).toMatchObject({ ok: false, code: "laf:tool_unknown" });
+    // And a name that is no tool of the computer's never asked for the browser: once, for the page.
+    expect(lane.asked).toBe(1);
+  });
+
+  test.each([
+    ["no task", { to: "browser" }],
+    ["a task of spaces", { to: "browser", task: "   " }],
+    ["nobody to hand it to", { task: "서울 날씨" }],
+    [
+      "somebody this server does not know",
+      { to: "printer", task: "서울 날씨" },
+    ],
+  ])("%s is a call that was not made", async (_what, args) => {
+    const { toolkit, handed } = await delegating();
+    const outcome = await toolkit.execute(DELEGATE.name, args, call());
+    expect(outcome).toMatchObject({
+      ok: false,
+      code: "laf:tool_arguments_invalid",
+    });
+    expect(handed).toEqual([]);
+  });
+
+  test("a run that handed nothing back is a call that failed, never an empty answer", async () => {
+    const { toolkit } = await delegating(() => "");
+    const outcome = await toolkit.execute(DELEGATE.name, TASK, call());
+    expect(outcome).toMatchObject({ ok: false, code: "laf:tool_failed" });
+    expect(outcome).not.toHaveProperty("answer");
+  });
+
+  test.each([
+    ["the model's own failure", () => new RunFailed("429", [])],
+    ["a stop", () => new RunStopped([])],
+  ])(
+    "%s ends the turn: it is thrown on, not answered as a tool that failed",
+    async (_what, ending) => {
+      const thrown = ending();
+      const { toolkit } = await delegating(() => {
+        throw thrown;
+      });
+      await expect(toolkit.execute(DELEGATE.name, TASK, call())).rejects.toBe(
+        thrown,
+      );
+    },
+  );
+
+  test("anything else that goes wrong in the hand-over is a tool that failed", async () => {
+    const { toolkit } = await delegating(() => {
+      throw new Error("the Bot's row is gone");
+    });
+    const outcome = await toolkit.execute(DELEGATE.name, TASK, call());
+    expect(outcome).toMatchObject({ ok: false, code: "laf:tool_failed" });
+    expect(JSON.stringify(outcome)).not.toContain("row is gone");
+  });
+
+  test("where no turn can run one, `delegate` is no tool at all", async () => {
+    const { gateway } = opening();
+    const toolkit = await createChatTools({
+      gateway,
+      delegatesBrowsing: true,
+      people: createPersonAnswers(),
+    })(context, null);
+    expect(await toolkit.execute(DELEGATE.name, TASK, call())).toMatchObject({
+      ok: false,
+      code: "laf:tool_unknown",
+    });
+  });
+
+  test("not handed over, the turn keeps every tool of the computer's and `delegate` is unknown", async () => {
+    const { gateway, opened } = opening();
+    const handed: Handed[] = [];
+    const toolkit = await createChatTools({
+      gateway,
+      people: createPersonAnswers(),
+    })(
+      {
+        ...context,
+        delegate: async (run) => {
+          handed.push(run);
+          return { answer: "x", steps: [] };
+        },
+      },
+      null,
+    );
+    const names = toolkit.tools.map((entry) => entry.name);
+    expect(names.filter((name) => name.startsWith("computer_"))).toEqual(
+      COMPUTER_TOOLS.map((entry) => entry.name),
+    );
+    expect(names).not.toContain(DELEGATE.name);
+    expect(await toolkit.execute(DELEGATE.name, TASK, call())).toMatchObject({
+      ok: false,
+      code: "laf:tool_unknown",
+    });
+    expect(handed).toEqual([]);
+    await toolkit.execute(
+      "computer_navigate",
+      { url: "https://example.com" },
+      call(),
+    );
+    expect(opened).toEqual(["https://example.com"]);
+  });
+
+  test("without a computer there is nothing to hand over", async () => {
+    const toolkit = await createChatTools({
+      delegatesBrowsing: true,
+      people: createPersonAnswers(),
+    })(context, null);
+    const names = toolkit.tools.map((entry) => entry.name);
+    expect(names).not.toContain(DELEGATE.name);
+    expect(names.filter((name) => name.startsWith("computer_"))).toEqual([]);
   });
 });
