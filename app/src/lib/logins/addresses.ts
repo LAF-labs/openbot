@@ -7,6 +7,17 @@
  */
 import { BUSINESS_SITES } from "@/lib/sites/catalogue";
 
+/**
+ * The sites of the catalogue a login can be saved for: the ones a person signs in to with a name
+ * and a password. NOT ONE THAT TAKES A CERTIFICATE. 홈택스 is signed in to with a certificate that
+ * stays on the person's own device, and the 연결 screen says the Bot cannot sign in there; offered
+ * here, it would take a name and a password, say it had saved them, and never be able to use them
+ * (Codex's read of the change that drew this screen).
+ */
+export const LOGIN_SITES = BUSINESS_SITES.filter(
+  (site) => site.handoff === "login",
+);
+
 /** The select's value for a site that is not one of ours. A site id is never empty. */
 export const ANOTHER_SITE = "another";
 
@@ -16,7 +27,7 @@ export const ANOTHER_SITE = "another";
  * login goes only into a document of an origin it was saved for.
  */
 export function addressesOf(siteId: string): string[] {
-  const site = BUSINESS_SITES.find((one) => one.id === siteId);
+  const site = LOGIN_SITES.find((one) => one.id === siteId);
   if (!site) return [];
   const start = URL.canParse(site.loginUrl)
     ? [new URL(site.loginUrl).host]

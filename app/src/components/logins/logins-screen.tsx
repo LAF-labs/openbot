@@ -48,11 +48,13 @@ import {
   addressesIn,
   addressesOf,
   hostOf,
+  LOGIN_SITES,
 } from "@/lib/logins/addresses";
 import { t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
 import {
   LoginRefusal,
+  type LoginWritten,
   LOGINS_UNREACHABLE,
   removeLogin,
   type SavedLogin,
@@ -88,20 +90,46 @@ type Draft = {
 };
 
 const draftOf = (login: SavedLogin | null): Draft => ({
-  site: login?.site ?? ANOTHER_SITE,
+  // A site the form does not offer reads as another site, and stays what it is unless changed.
+  site: LOGIN_SITES.some((site) => site.id === login?.site)
+    ? (login?.site ?? ANOTHER_SITE)
+    : ANOTHER_SITE,
   label: login?.label ?? "",
   addresses: (login?.origins ?? []).map(hostOf).join("\n"),
   username: "",
   password: "",
 });
 
+/**
+ * What to send for a change: only what the person changed. The server keeps whatever a change
+ * does not name, so a form opened a while ago does not put back the name and the addresses it
+ * was opened with — another window may have narrowed where the login goes since, and resending
+ * the old addresses would widen it again without anybody having asked (Codex's read).
+ */
+function changesOf(opened: Draft, draft: Draft): LoginWritten {
+  return {
+    ...(draft.label === opened.label ? {} : { label: draft.label }),
+    ...(draft.site === opened.site
+      ? {}
+      : { site: draft.site === ANOTHER_SITE ? null : draft.site }),
+    ...(draft.addresses === opened.addresses
+      ? {}
+      : { origins: addressesIn(draft.addresses) }),
+    username: draft.username,
+    password: draft.password,
+  };
+}
+
 function LoginForm({
   login,
   onDone,
+  onSavingChange,
 }: {
   /** The login being changed, or null for a new one. */
   login: SavedLogin | null;
   onDone: () => void;
+  /** Told while a save is on its way, so the dialog around this is not closed under it. */
+  onSavingChange: (isSaving: boolean) => void;
 }) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<Draft>(() => draftOf(login));
@@ -114,11 +142,11 @@ function LoginForm({
 
   const handleSite = (chosen: string | null) => {
     const site = chosen ?? ANOTHER_SITE;
-    const name = BUSINESS_SITES.find((one) => one.id === site)?.name;
+    const name = LOGIN_SITES.find((one) => one.id === site)?.name;
     setDraft((current) => {
       const offered = addressesOf(current.site).join("\n");
       const wasOffered =
-        BUSINESS_SITES.find((one) => one.id === current.site)?.name ?? "";
+        LOGIN_SITES.find((one) => one.id === current.site)?.name ?? "";
       return {
         ...current,
         site,
@@ -139,21 +167,33 @@ function LoginForm({
 
   const handleSubmit = async () => {
     if (saving) return;
+    const written: LoginWritten = login
+      ? changesOf(draftOf(login), draft)
+      : {
+          label: draft.label,
+          site: draft.site === ANOTHER_SITE ? null : draft.site,
+          origins: addressesIn(draft.addresses),
+          username: draft.username,
+          password: draft.password,
+        };
+    // Nothing was changed: there is nothing to ask the server for.
+    if (
+      login &&
+      written.label === undefined &&
+      written.site === undefined &&
+      written.origins === undefined &&
+      !written.username &&
+      !written.password
+    ) {
+      onDone();
+      return;
+    }
     setProblem(null);
     setSaving(true);
+    onSavingChange(true);
     await ensure(
       () =>
-        writeLogin(
-          queryClient,
-          {
-            label: draft.label,
-            site: draft.site === ANOTHER_SITE ? null : draft.site,
-            origins: addressesIn(draft.addresses),
-            username: draft.username,
-            password: draft.password,
-          },
-          login?.id,
-        )
+        writeLogin(queryClient, written, login?.id)
           .then(onDone)
           .catch((caught: unknown) => {
             const refusal =
@@ -165,13 +205,16 @@ function LoginForm({
               ...(refusal.field ? { field: refusal.field } : {}),
             });
           }),
-      () => setSaving(false),
+      () => {
+        setSaving(false);
+        onSavingChange(false);
+      },
     );
   };
 
   const siteChoices = [
     { value: ANOTHER_SITE, label: t("Another site") },
-    ...BUSINESS_SITES.map((site) => ({ value: site.id, label: t(site.name) })),
+    ...LOGIN_SITES.map((site) => ({ value: site.id, label: t(site.name) })),
   ];
   const errorFor = (field: string) =>
     problem?.field === field ? [{ message: problem.text }] : null;
@@ -358,6 +401,7 @@ export function LoginsScreen() {
   const settled = settledOf(reading);
   /** `null` is closed; `"new"` a new login; otherwise the one being changed. */
   const [editing, setEditing] = useState<SavedLogin | "new" | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   /**
    * The login the question is about, and whether the question is open. Two things, because the
    * name has to outlast the answer: the dialog fades after it closes, and a title that lost its
@@ -417,7 +461,11 @@ export function LoginsScreen() {
         </PageEmpty>
       ) : null}
 
+      {/* Locked while a save is on its way: closed under it, the request would still save the
+          password with nothing left to say whether it had, and its late answer would close
+          whichever form was open by then (Codex's read). */}
       <Dialog
+        isBusy={isSaving}
         onOpenChange={(open) => (open ? null : setEditing(null))}
         open={editing !== null}
       >
@@ -428,6 +476,7 @@ export function LoginsScreen() {
               key={editing === "new" ? "new" : editing.id}
               login={editing === "new" ? null : editing}
               onDone={() => setEditing(null)}
+              onSavingChange={setIsSaving}
             />
           )}
         </DialogContent>
@@ -439,7 +488,21 @@ export function LoginsScreen() {
           "Your Bot will ask you to type it yourself the next time that site asks.",
         )}
         onConfirm={() =>
-          removing ? removeLogin(queryClient, removing.id) : Promise.resolve()
+          removing
+            ? removeLogin(queryClient, removing.id).catch((caught: unknown) => {
+                // Gone already — another window's doing — or it never arrived: the list is read
+                // again either way, and what is thrown on is a sentence. The dialog draws an
+                // error's own words, and a refusal's are its code (Codex's read).
+                void saved.refetch();
+                throw new Error(
+                  loginRefusalText(
+                    caught instanceof LoginRefusal
+                      ? caught.code
+                      : LOGINS_UNREACHABLE,
+                  ),
+                );
+              })
+            : Promise.resolve()
         }
         onOpenChange={(open) => (open ? null : setIsAsking(false))}
         open={isAsking}

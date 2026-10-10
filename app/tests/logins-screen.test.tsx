@@ -10,7 +10,12 @@ import {
 import { join } from "node:path";
 import { auditFactCodes } from "../../server/src/audit";
 import { loginOriginOf } from "../../shared/login-origin";
-import { addressesIn, addressesOf, hostOf } from "../src/lib/logins/addresses";
+import {
+  addressesIn,
+  addressesOf,
+  hostOf,
+  LOGIN_SITES,
+} from "../src/lib/logins/addresses";
 import { LOGIN_REFUSALS } from "../src/lib/logins/refusals";
 import { BUSINESS_SITES } from "../src/lib/sites/catalogue";
 import type { LoginsShown } from "./support/logins-render";
@@ -197,17 +202,42 @@ describe("Settings → 계정", () => {
       "login-username": "",
       "login-password": "",
     });
+    /*
+     * ONLY WHAT WAS CHANGED IS SENT (Codex's read). The server keeps whatever a change does not
+     * name; a form opened a while ago that sent back the addresses it was opened with would undo
+     * what another window had narrowed since, and widen where the login may go.
+     */
     expect(changed.writes).toEqual([
       {
         method: "PATCH",
         path: `/api/logins/${NAVER.id}`,
-        body: {
-          label: "네이버",
-          site: "naver-smartstore",
-          origins: ["nid.naver.com", "sell.smartstore.naver.com"],
-        },
+        body: { label: "네이버" },
       },
     ]);
+    expect(changed.passwordOnly).toEqual([
+      {
+        method: "PATCH",
+        path: `/api/logins/${NAVER.id}`,
+        body: { password: "new-pass" },
+      },
+    ]);
+    // And saved as it was opened, the server is asked for nothing.
+    expect(changed.untouched).toEqual({ writes: [], isDialogClosed: true });
+  }, 120_000);
+
+  /*
+   * A SAVE ON ITS WAY HOLDS ITS DIALOG (Codex's read). Closed under it, the request still saved the
+   * password with nothing left to say whether it had — and its late answer closed whichever form
+   * was open by then.
+   */
+  test("cannot be closed while a save is on its way — not by Escape, not by the × — and closes itself once it is saved", async () => {
+    const { pending } = await rendered();
+    expect(pending).toEqual({
+      isOpenAfterEscape: true,
+      isOpenAfterClose: true,
+      isCloseDisabled: true,
+      isClosedOnceSaved: true,
+    });
   }, 120_000);
 
   test("says a refusal in the person's words beside the box it is about, and keeps the form", async () => {
@@ -233,7 +263,12 @@ describe("Settings → 계정", () => {
       writesBeforeConfirm: 0,
       writes: [{ method: "DELETE", path: "/api/logins/login-2", body: null }],
       rowsAfter: [NAVER.label],
+      refusedText: expect.any(String),
     });
+    // A delete the server refuses is said as a sentence: the dialog draws an error's own words,
+    // and a refusal's own words are its code (Codex's read).
+    expect(removed.refusedText).toContain("That login is not saved any more.");
+    expect(removed.refusedText).not.toContain("laf:");
   }, 120_000);
 
   test("at the most one person may save, offers no more and says why", async () => {
@@ -275,6 +310,21 @@ describe("the addresses offered for a site this product knows", () => {
     expect(hostOf("https://nid.naver.com")).toBe("nid.naver.com");
     // What is not the usual scheme is not hidden: a developer's loopback address says so.
     expect(hostOf("http://127.0.0.1:4395")).toBe("http://127.0.0.1:4395");
+  });
+
+  /*
+   * NOT A SITE THAT TAKES A CERTIFICATE (Codex's read). 홈택스 is signed in to with a certificate
+   * that stays on the person's device; offered here it would take a name and a password, say it
+   * had saved them, and never be able to use them.
+   */
+  test("are offered only for sites a person signs in to with a name and a password", () => {
+    expect(LOGIN_SITES.length).toBeGreaterThan(5);
+    expect(LOGIN_SITES.every((site) => site.handoff === "login")).toBe(true);
+    expect(LOGIN_SITES.map((site) => site.id)).not.toContain("hometax");
+    expect(BUSINESS_SITES.find((site) => site.id === "hometax")?.handoff).toBe(
+      "certificate",
+    );
+    expect(addressesOf("hometax")).toEqual([]);
   });
 
   test("are every one an address a login can be saved for", () => {

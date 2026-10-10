@@ -25,6 +25,16 @@ export type LoginsShown = {
     /** What each box held when the form opened on a saved login. */
     opened: Record<string, string>;
     writes: Write[];
+    /** The requests when only a new password was typed, and when nothing was changed at all. */
+    passwordOnly: Write[];
+    untouched: { writes: Write[]; isDialogClosed: boolean };
+  };
+  /** A save that is still on its way, and everything that would close the dialog under it. */
+  pending: {
+    isOpenAfterEscape: boolean;
+    isOpenAfterClose: boolean;
+    isCloseDisabled: boolean;
+    isClosedOnceSaved: boolean;
   };
   refused: {
     writes: number;
@@ -41,6 +51,8 @@ export type LoginsShown = {
     writes: Write[];
     /** What the list drew once it was read again. */
     rowsAfter: string[];
+    /** What the question drew when the server said the login was already gone. */
+    refusedText: string;
   };
 };
 
@@ -76,6 +88,8 @@ function server(
   options: {
     logins?: (typeof NAVER)[];
     refuse?: { status: number; body: unknown };
+    /** A write is not answered until this is. */
+    hold?: Promise<void>;
   } = {},
 ) {
   let held = [...(options.logins ?? [])];
@@ -85,18 +99,27 @@ function server(
     if (!pathname.startsWith("/api/logins")) return undefined;
     if (method === "GET") return json({ logins: held, max: 100 });
     writes.push({ method, path: pathname, body: request.body });
+    if (options.hold) return options.hold.then(() => answer(request));
+    return answer(request);
+  };
+  const answer = (request: ApiRequest) => {
+    const { pathname, method } = request;
     if (options.refuse) return json(options.refuse.body, options.refuse.status);
     if (method === "DELETE") {
       held = held.filter((login) => !pathname.endsWith(login.id));
       return new Response(null, { status: 204 });
     }
-    const body = request.body as { label: string; origins: string[] };
+    // A change names only what changed, and the server keeps the rest: so does this.
+    const body = request.body as { label?: string; origins?: string[] };
+    const before = held.find((login) => pathname.endsWith(login.id)) ?? NAVER;
     const saved = {
-      ...NAVER,
-      id: method === "POST" ? "login-new" : NAVER.id,
-      label: body.label,
-      site: null,
-      origins: body.origins.map((origin) => `https://${origin}`),
+      ...before,
+      id: method === "POST" ? "login-new" : before.id,
+      label: body.label ?? before.label,
+      site: method === "POST" ? null : before.site,
+      origins: body.origins
+        ? body.origins.map((origin) => `https://${origin}`)
+        : before.origins,
     };
     held =
       method === "POST"
@@ -199,7 +222,72 @@ const changed = await (async (): Promise<LoginsShown["changed"]> => {
   await fill(view, { "login-label": "네이버" });
   await save(view);
   await view.waitFor(() => writes.length === 1, "the change");
-  const shown = { opened, writes: [...writes] };
+  const first = [...writes];
+  await view.waitFor(() => field("login-label") === null, "the form to close");
+
+  // Only a new password: nothing else of the login is said again.
+  await pressLabelled(view, "Change 네이버");
+  await view.waitFor(() => field("login-password") !== null, "the form again");
+  await fill(view, { "login-password": "new-pass" });
+  await save(view);
+  await view.waitFor(() => writes.length === 2, "the password's change");
+  const passwordOnly = writes.slice(1);
+  await view.waitFor(() => field("login-label") === null, "the form to close");
+
+  // Nothing at all: saved as it was opened, and the server is not asked for anything.
+  await pressLabelled(view, "Change 네이버");
+  await view.waitFor(() => field("login-label") !== null, "the form once more");
+  await save(view);
+  await view.settle(60);
+  const untouched = {
+    writes: writes.slice(2),
+    isDialogClosed: field("login-label") === null,
+  };
+  const shown = { opened, writes: first, passwordOnly, untouched };
+  await view.unmount();
+  return shown;
+})();
+
+// 2b. A save still on its way, and everything that would close the dialog under it.
+const pending = await (async (): Promise<LoginsShown["pending"]> => {
+  let release = () => {};
+  const hold = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const { api, writes } = server({ hold });
+  const view = await mountApp({ path: "/settings/logins", api });
+  await openAdd(view);
+  await fill(view, {
+    "login-addresses": "shop.example",
+    "login-label": "가게",
+    "login-username": "sajang",
+    "login-password": "hunter2",
+  });
+  await save(view);
+  await view.waitFor(() => writes.length === 1, "the save to be sent");
+  const popup = () => document.body.querySelector('[role="dialog"]');
+  const open = popup();
+  if (open) await view.press(open, "Escape");
+  await view.settle(40);
+  const isOpenAfterEscape = field("login-password") !== null;
+  const close = popup()?.querySelector<HTMLButtonElement>(
+    '[data-slot="dialog-close"]',
+  );
+  const isCloseDisabled = close ? close.disabled : false;
+  if (close) await view.click(close);
+  await view.settle(40);
+  const isOpenAfterClose = field("login-password") !== null;
+  release();
+  await view.waitFor(
+    () => field("login-password") === null,
+    "the dialog to close",
+  );
+  const shown = {
+    isOpenAfterEscape,
+    isOpenAfterClose,
+    isCloseDisabled,
+    isClosedOnceSaved: field("login-password") === null,
+  };
   await view.unmount();
   return shown;
 })();
@@ -270,19 +358,47 @@ const removed = await (async (): Promise<LoginsShown["removed"]> => {
     () => view.host.textContent?.includes(OTHER.label) !== true,
     "the row to go",
   );
-  const shown = {
+  const rowsAfter = [
+    ...view.host.querySelectorAll('[data-slot="item-title"]'),
+  ].map((title) => title.textContent?.trim() ?? "");
+  const firstWrites = [...writes];
+  await view.unmount();
+
+  // The same press on a login another window already deleted: the server says it is gone.
+  const gone = server({
+    logins: [NAVER],
+    refuse: {
+      status: 404,
+      body: { error: "laf:login_not_found", code: "laf:login_not_found" },
+    },
+  });
+  const again = await mountApp({ path: "/settings/logins", api: gone.api });
+  await pressLabelled(again, `Delete ${NAVER.label}`);
+  await again.waitFor(() => dialog() !== null, "the second question");
+  const confirmAgain = pageButton("Delete");
+  if (!confirmAgain) throw new Error("no second confirm");
+  await again.click(confirmAgain);
+  await again.waitFor(() => gone.writes.length === 1, "the refused delete");
+  await again.settle(80);
+  const refusedText = dialog()?.textContent ?? "";
+  await again.unmount();
+  return {
     question,
     writesBeforeConfirm,
-    writes: [...writes],
-    rowsAfter: [...view.host.querySelectorAll('[data-slot="item-title"]')].map(
-      (title) => title.textContent?.trim() ?? "",
-    ),
+    writes: firstWrites,
+    rowsAfter,
+    refusedText,
   };
-  await view.unmount();
-  return shown;
 })();
 
-const shown: LoginsShown = { siteBox, saved, changed, refused, removed };
+const shown: LoginsShown = {
+  siteBox,
+  saved,
+  changed,
+  pending,
+  refused,
+  removed,
+};
 console.log(`LOGINS_RENDER ${JSON.stringify(shown)}`);
 await GlobalRegistrator.unregister();
 process.exit(0);
