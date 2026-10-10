@@ -280,6 +280,27 @@ export const COMPUTER_TOOLS: readonly ComputerTool[] = [
 export const UNATTENDED_COMPUTER_TOOLS: readonly ComputerTool[] =
   COMPUTER_TOOLS.filter((tool) => tool.needsPerson !== true);
 
+/**
+ * 사람이 없는 실행이 받는 `computer_request_secret` — 이름과 인자는 같고, 답하는 것은 보관함뿐이다
+ * (2026-10-10, docs/laf/redesign-2026-10.md §6의 2-6).
+ *
+ * 목록의 그 도구는 사람에게 부탁하는 말로 적혀 있다("사람이 가려진 상자에 입력하면…"). 루틴에는
+ * 사람이 없으므로 그 설명을 그대로 주면 오지 않을 답을 기다리게 가르친다. 그래서 같은 이름에 설명만
+ * 다른 하나를 둔다. 인자는 목록의 것을 그대로 쓴다 — 서버가 읽는 꼴은 하나다(`shared/secret-ask.ts`).
+ *
+ * `UNATTENDED_COMPUTER_TOOLS`에 넣지 않는다: 저장해 둔 로그인이 하나도 없는 사람의 루틴에는 이 도구가
+ * 할 일이 없고, 도구 하나는 그 실행의 모든 턴에 실린다(CLAUDE.md "The footprint ladder"). 주는지는
+ * 실행을 시작할 때 `server/src/runner/unattended.ts`가 정한다.
+ */
+export const UNATTENDED_SAVED_LOGIN: ComputerTool = {
+  name: "computer_request_secret",
+  description:
+    "로그인 칸을 이 사람이 저장해 둔 로그인으로 채운다. 지금은 화면 앞에 아무도 없어서, 답하는 것은 저장해 둔 로그인뿐이다. 아이디 칸과 비밀번호 칸의 ref와 짧은 라벨을 fields에 **한 번에** 적는다. 그 사이트의 로그인이 저장돼 있으면 값은 페이지의 그 칸으로 바로 들어가고, 이 도구도 대화도 그 값을 너에게 주지 않는다. 채운 뒤 제출은 네가 누른다. 저장된 것이 없으면 채워지지 않았다는 답이 온다. 인증번호, 카드번호, 새 비밀번호의 칸은 여기서 채워지지 않는다. 이 값을 다른 방법으로 구하려 해서는 안 된다.",
+  parameters:
+    COMPUTER_TOOLS.find((tool) => tool.name === "computer_request_secret")
+      ?.parameters ?? object({}),
+};
+
 /** 이름으로 하나. 없는 이름은 undefined — 카탈로그에 없는 툴은 실행되지도 않는다. */
 export function computerTool(name: string): ComputerTool | undefined {
   return COMPUTER_TOOLS.find((tool) => tool.name === name);

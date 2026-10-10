@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { Message } from "@ag-ui/client";
 import { toolResultText } from "../../shared/prompt/tool-results.ko";
-import type { ComputerGateway } from "../src/computer/gateway";
+import { ROUTINE_NEEDS_SAVED_LOGIN_KO } from "../../shared/prompt/mode/routine.ko";
+import {
+  ActionRefusedError,
+  type ComputerGateway,
+} from "../src/computer/gateway";
 import {
   createUnattendedTools,
   type LoopAgent,
@@ -255,8 +259,19 @@ describe("what a browser tool hands a routine, read for a saved password", () =>
       text: `비밀번호 확인: ${SHOWN}`,
       truncated: false,
     }),
+    handedOver: (
+      botId: string,
+      run: { threadId?: string; toolCallId?: string },
+      hidden: boolean,
+    ) => {
+      told.push([botId, run.threadId, hidden]);
+    },
   } as unknown as ComputerGateway;
+  /** What the gateway was told of each call handed over: whose, under which run, and whether a hit. */
+  const told: Array<[string, string | undefined, boolean]> = [];
   const vault = (asked: string[][] = []) => ({
+    // Nothing saved as far as the toolkit's own question goes: no sign-in tool is offered here.
+    list: async () => [],
     passwordsAt: async (userId: string, addresses: readonly string[]) => {
       asked.push([userId, ...addresses]);
       return {
@@ -286,10 +301,26 @@ describe("what a browser tool hands a routine, read for a saved password", () =>
     expect(asked).toEqual([["person-1", "https://shop.example"]]);
   });
 
+  /*
+   * The page that showed it is on screen, and a window watching the same Bot keeps no picture
+   * while it is — so the gateway is told, under the RUN'S OWN NAME, which is what the routine's
+   * end takes the note back with (`routines/run.ts`, `ActionActor.runKey`).
+   */
+  test("the gateway is told of the call under the run's own name, and that it was a hit", async () => {
+    told.length = 0;
+    const toolkit = await createUnattendedTools({
+      gateway,
+      logins: vault(),
+    })("bot-1", { ...actor, runKey: "routine:run-7" });
+    await toolkit.execute("computer_read", {});
+    expect(told).toEqual([["bot-1", "routine:run-7", true]]);
+  });
+
   test("a vault that cannot be asked is a call that failed, never a page handed over unread", async () => {
     const toolkit = await createUnattendedTools({
       gateway,
       logins: {
+        list: async () => [],
         passwordsAt: async () => {
           throw new Error("the database is away");
         },
@@ -306,5 +337,168 @@ describe("what a browser tool hands a routine, read for a saved password", () =>
       ok: true,
       text: `비밀번호 확인: ${SHOWN}`,
     });
+  });
+});
+
+/*
+ * A ROUTINE SIGNS IN WITH A SAVED LOGIN (2026-10-10, record §6, piece 2-6). The same tool name a
+ * conversation asks a person with, in a routine's own words, offered only to a run of somebody who
+ * saved a login — and answered by the vault or by nothing: no card is opened for a person who is
+ * not there.
+ */
+describe("a sign-in in a run nobody is in front of", () => {
+  const SAVED = [{ id: "login-1" }] as never[];
+  const FIELDS = [
+    { ref: "e1", label: "아이디" },
+    { ref: "e2", label: "비밀번호" },
+  ];
+  const ARGS = { fields: FIELDS, snapshotId: 3 };
+  /** A gateway that answers the request as scripted, and says what it was asked with. */
+  const answering = (answer: Record<string, unknown> | (() => never)) => {
+    const asked: unknown[][] = [];
+    const gateway = {
+      requestSecret: async (...args: unknown[]) => {
+        asked.push(args);
+        return typeof answer === "function" ? answer() : answer;
+      },
+      handedOver: () => undefined,
+    } as unknown as ComputerGateway;
+    return { gateway, asked };
+  };
+  const vault = (saved: never[] | (() => never) = SAVED) => ({
+    list: async () => (typeof saved === "function" ? saved() : saved),
+    passwordsAt: async () => ({ shown: new Map(), unreadable: [] }),
+  });
+  const offered = (toolkit: { tools: { name: string }[] }) =>
+    toolkit.tools.filter((tool) => tool.name === "computer_request_secret");
+
+  test("the way to sign in is offered to a run of somebody who saved a login, in a routine's words, and to nobody else", async () => {
+    const { gateway } = answering({});
+    const withOne = await createUnattendedTools({ gateway, logins: vault() })(
+      "bot-1",
+      actor,
+    );
+    expect(offered(withOne)).toHaveLength(1);
+    const [tool] = offered(withOne) as { description?: string }[];
+    // Not the conversation's words, which promise a person at a masked box.
+    expect(tool?.description).toContain("화면 앞에 아무도 없어서");
+    expect(tool?.description).not.toContain("가려진 상자");
+
+    // Nothing saved, no vault, no computer, a vault that cannot be listed: not offered.
+    const none = [
+      createUnattendedTools({ gateway, logins: vault([]) }),
+      createUnattendedTools({ gateway }),
+      createUnattendedTools({ logins: vault() }),
+      createUnattendedTools({
+        gateway,
+        logins: vault(() => {
+          throw new Error("the database is away");
+        }),
+      }),
+    ];
+    for (const tools of none) {
+      const toolkit = await tools("bot-1", actor);
+      expect(offered(toolkit)).toEqual([]);
+      // And a name a model remembers from a conversation is no tool of this run's.
+      expect(
+        await toolkit.execute("computer_request_secret", ARGS),
+      ).toMatchObject({ ok: false, code: "laf:tool_unknown" });
+    }
+  });
+
+  test("the vault's answer is told as it is to a conversation, and the gateway is told nobody is there", async () => {
+    const { gateway, asked } = answering({
+      loginFilled: { id: "login-1", fields: 2 },
+    });
+    const toolkit = await createUnattendedTools({ gateway, logins: vault() })(
+      "bot-1",
+      { ...actor, runKey: "routine:run-7" },
+    );
+    expect(await toolkit.execute("computer_request_secret", ARGS)).toEqual({
+      ok: true,
+      code: "laf:login_filled",
+      result: toolResultText("laf:login_filled"),
+    });
+    expect(asked).toHaveLength(1);
+    const [computerId, botId, as, input, , , options] = asked[0] ?? [];
+    expect([computerId, botId]).toEqual(["bot-1", "bot-1"]);
+    // Under the run's own name, which is what its end lets go of the values by.
+    expect(as).toMatchObject({ id: "person-1", runKey: "routine:run-7" });
+    expect(input).toEqual({ fields: FIELDS, snapshotId: 3 });
+    expect(options).toEqual({ nobodyToAsk: true });
+  });
+
+  test("several saved logins are named back, and the one the Bot names is passed on", async () => {
+    const logins = [
+      { id: "login-1", label: "회사 계정" },
+      { id: "login-2", label: "개인 계정" },
+    ];
+    const { gateway, asked } = answering({ loginChoice: logins });
+    const toolkit = await createUnattendedTools({ gateway, logins: vault() })(
+      "bot-1",
+      actor,
+    );
+    expect(await toolkit.execute("computer_request_secret", ARGS)).toEqual({
+      ok: true,
+      code: "laf:login_choice",
+      result: toolResultText("laf:login_choice"),
+      logins,
+    });
+    await toolkit.execute("computer_request_secret", {
+      ...ARGS,
+      login: " login-2 ",
+    });
+    expect(asked[1]?.[3]).toEqual({
+      fields: FIELDS,
+      snapshotId: 3,
+      login: "login-2",
+    });
+  });
+
+  /*
+   * NOTHING SAVED IS A RUN THAT WAITS ON ITS PERSON, not an ordinary failure: the loop hears the
+   * two fields a question nobody answered carries, so the run is delivered even where the Bot
+   * answered [SILENT] and ends with a line for the person — not the sentence the Bot was told.
+   */
+  test("where the vault does not answer, the Bot is told to stop and the run is one that waits, with a line for the person", async () => {
+    const { gateway } = answering({ loginNotSaved: true });
+    const toolkit = await createUnattendedTools({ gateway, logins: vault() })(
+      "bot-1",
+      actor,
+    );
+    const outcome = await toolkit.execute("computer_request_secret", ARGS);
+    expect(outcome).toEqual({
+      ok: false,
+      code: "laf:login_not_saved",
+      reason: toolResultText("laf:login_not_saved"),
+      awaitingApproval: true,
+      question: ROUTINE_NEEDS_SAVED_LOGIN_KO,
+    });
+    // Two different readers: the Bot is told what to do, the person what happened.
+    expect(outcome.question).not.toBe(outcome.reason);
+    expect(String(outcome.question)).not.toContain("멈춰라");
+  });
+
+  test("a card that is no card, and a rule's no, are answered as they are anywhere", async () => {
+    const { gateway, asked } = answering(() => {
+      throw new ActionRefusedError(
+        'intent == "fill_login"',
+        "laf:policy_denied",
+      );
+    });
+    const toolkit = await createUnattendedTools({ gateway, logins: vault() })(
+      "bot-1",
+      actor,
+    );
+    expect(
+      await toolkit.execute("computer_request_secret", { snapshotId: 3 }),
+    ).toMatchObject({ ok: false, code: "laf:tool_arguments_invalid" });
+    expect(
+      await toolkit.execute("computer_request_secret", { fields: FIELDS }),
+    ).toMatchObject({ ok: false, code: "laf:tool_arguments_invalid" });
+    expect(asked).toEqual([]);
+    expect(
+      await toolkit.execute("computer_request_secret", ARGS),
+    ).toMatchObject({ ok: false, refused: true, code: "laf:policy_denied" });
   });
 });

@@ -101,6 +101,54 @@ describe("the computer tool catalogue", () => {
     ]);
   });
 
+  /*
+   * A ROUTINE'S OWN `computer_request_secret` (2026-10-10, record §6, piece 2-6): the same name and
+   * the same arguments — the server reads one shape — in words that do not promise a person. It is
+   * not on the list every routine gets: only a run of somebody who saved a login is handed it
+   * (`server/src/runner/unattended.ts`), because a tool rides on every turn of a run.
+   */
+  test("a routine's way to sign in is the same tool by name and arguments, said for a run with nobody in front of it, and is on no list", async () => {
+    const { UNATTENDED_COMPUTER_TOOLS, UNATTENDED_SAVED_LOGIN } = await import(
+      "../shared/tools/computer"
+    );
+    const asked = computerTool("computer_request_secret");
+    if (!asked)
+      throw new Error("the conversation's tool is not in the catalogue");
+    expect(UNATTENDED_SAVED_LOGIN.name).toBe("computer_request_secret");
+    expect(UNATTENDED_SAVED_LOGIN.parameters).toBe(asked.parameters);
+    expect(UNATTENDED_SAVED_LOGIN.description).not.toBe(asked.description);
+    // Nothing of a person at a masked box, a card, or waiting: none of that happens in a routine.
+    for (const promise of [
+      "사람에게 부탁",
+      "가려진 상자",
+      "카드 하나",
+      "기다리",
+    ]) {
+      expect(UNATTENDED_SAVED_LOGIN.description).not.toContain(promise);
+    }
+    expect(UNATTENDED_SAVED_LOGIN.description).toContain("저장해 둔 로그인");
+    expect(UNATTENDED_SAVED_LOGIN.needsPerson).toBeUndefined();
+    expect(UNATTENDED_COMPUTER_TOOLS.map((tool) => tool.name)).not.toContain(
+      "computer_request_secret",
+    );
+  });
+
+  /*
+   * THE ROUTINE'S WORDS NAME THE TOOL ONLY AS ONE THAT MAY BE THERE. It is handed to some runs and
+   * not others; a prompt that told every routine to call it would send most of them knocking on a
+   * door that is not there — the mistake `shared/prompt/mode/routine.ko.ts` opens by recording.
+   */
+  test("the routine's words speak of signing in as something a run may or may not have been given", async () => {
+    const { ROUTINE_KO, ROUTINE_NEEDS_SAVED_LOGIN_KO } = await import(
+      "../shared/prompt/mode/routine.ko"
+    );
+    expect(ROUTINE_KO).toContain("`computer_request_secret`이 주어져 있으면");
+    expect(ROUTINE_KO).toContain("인증번호, 승인");
+    // The line a person reads at the end of a run that stopped on a sign-in is not an order.
+    expect(ROUTINE_NEEDS_SAVED_LOGIN_KO).toContain("설정의 계정");
+    expect(ROUTINE_NEEDS_SAVED_LOGIN_KO).not.toMatch(/하라|해라|마라/);
+  });
+
   /** Registered nowhere, and now in no contract either. */
   test("does not name a tool nothing implements", () => {
     expect(computerTool("computer_screenshot")).toBeUndefined();

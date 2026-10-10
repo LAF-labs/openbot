@@ -111,6 +111,14 @@ export type ActionActor = {
   userId?: string;
   /** The conversation the action was raised from, when it was raised from one. See THREAD_HEADER. */
   threadId?: string;
+  /**
+   * The run the action is part of, where that is not a conversation's turn: a routine's run names
+   * itself here. What is held in the Bot's browser for a run is let go of at THAT run's end
+   * (`gateway/secrets.ts`, `valueRuns`), and a routine is in no conversation — without a name of
+   * its own its sign-in would be ended by whichever turn of the same Bot's finished next. Not
+   * `threadId`: that is where a question about an act is asked and what a row is filed under.
+   */
+  runKey?: string;
   /** The Bot's tool call the action carries out, when the surface named it. See TOOL_CALL_HEADER. */
   toolCallId?: string;
 };

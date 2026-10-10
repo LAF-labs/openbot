@@ -77,6 +77,8 @@ function stack(
   } = {},
 ) {
   const calls: string[] = [];
+  /** The run ends the computer was told of. */
+  const ends: string[] = [];
   const filled: unknown[] = [];
   const opened: string[] = [];
   const used: string[] = [];
@@ -121,7 +123,10 @@ function stack(
         url: LOGIN_PAGE.url,
       };
     },
-    runEnded: async () => ({ ended: true, closed: 1 }),
+    runEnded: async () => {
+      ends.push("runEnded");
+      return { ended: true, closed: 1 };
+    },
     forBot() {
       return client;
     },
@@ -161,22 +166,31 @@ function stack(
       { ref: "e1", label: "아이디" },
       { ref: "e2", label: "비밀번호" },
     ],
-    more: { login?: string; approvalId?: string } = {},
+    more: {
+      login?: string;
+      approvalId?: string;
+      /** A run with nobody in front of it: a routine's, under its own name. */
+      nobody?: { runKey: string };
+    } = {},
   ) => {
     await gateway.snapshot("bot-1");
     return gateway.requestSecret(
       "bot-1",
       "bot-1",
-      ACTOR,
+      more.nobody
+        ? { id: ACTOR.id, userId: ACTOR.userId, runKey: more.nobody.runKey }
+        : ACTOR,
       {
         fields,
         snapshotId: 3,
         ...(more.login ? { login: more.login } : {}),
       },
       more.approvalId,
+      undefined,
+      more.nobody ? { nobodyToAsk: true } : {},
     );
   };
-  return { gateway, approvals, calls, filled, opened, used, rows, ask };
+  return { gateway, approvals, calls, ends, filled, opened, used, rows, ask };
 }
 
 const fillRows = (rows: AuditEventInput[]) =>
@@ -487,5 +501,123 @@ describe("the fill is the Bot's act, judged as it happens", () => {
     // Noted before the values left: whatever did go in is the computer's to let go of.
     expect(gateway.holdsValues("bot-1")).toBe(true);
     expect(JSON.stringify(rows)).not.toContain(PASSWORD);
+  });
+});
+
+/*
+ * A RUN WITH NOBODY IN FRONT OF IT (2026-10-10, record §6, piece 2-6): a routine. It asks for a
+ * sign-in's boxes the way a conversation's turn does, and the vault answers or nothing does — a
+ * card opened for a person who is not there would hold the Bot's browser on a box nobody will
+ * fill, for the ten minutes a card waits.
+ */
+describe("a request for a sign-in's values from a run nobody is in front of", () => {
+  const NOBODY = { nobody: { runKey: "routine:run-1" } };
+
+  test("is answered from the vault as a conversation's is, with the same row", async () => {
+    const { calls, filled, rows, ask } = stack();
+    const answer = await ask(undefined, NOBODY);
+    expect(answer.loginFilled).toEqual({
+      id: "login-1",
+      site: "naver",
+      fields: 2,
+    });
+    expect(answer.loginNotSaved).toBeUndefined();
+    expect(calls).toEqual(["whereFields", "fillLogin"]);
+    expect(filled).toHaveLength(1);
+    expect(fillRows(rows).map((row) => row.eventType)).toEqual([
+      "computer.action_allowed",
+    ]);
+  });
+
+  test("opens no card where the vault does not answer — nothing saved, not a sign-in, a seal that does not open, no vault — and says so with no row", async () => {
+    const cases = [
+      stack({ logins: [] }),
+      stack({ where: { ...SIGN_IN, e2: { origin: ORIGIN, kind: "other" } } }),
+      stack({
+        open: () => {
+          throw new LoginSealError();
+        },
+      }),
+      stack({ vault: false }),
+    ];
+    for (const { calls, filled, rows, ask } of cases) {
+      const answer = await ask(undefined, NOBODY);
+      expect(answer.loginNotSaved).toBe(true);
+      expect(answer.secretWanted).toBeUndefined();
+      // Nobody was asked: the computer was never told to open a request.
+      expect(calls).not.toContain("requestSecret");
+      expect(filled).toEqual([]);
+      // No act was made and nobody was asked, so there is nothing for the trail to say.
+      expect(
+        rows.filter((row) => row.eventType.startsWith("computer.action_")),
+      ).toEqual([]);
+    }
+  });
+
+  test("names several saved logins back, as to a conversation, and puts nothing in", async () => {
+    const { calls, ask } = stack({
+      logins: [saved("login-1", "회사 계정"), saved("login-2", "개인 계정")],
+    });
+    const answer = await ask(undefined, NOBODY);
+    expect(answer.loginChoice?.map((login) => login.id)).toEqual([
+      "login-1",
+      "login-2",
+    ]);
+    expect(answer.loginNotSaved).toBeUndefined();
+    expect(calls).not.toContain("fillLogin");
+  });
+
+  test("a rule that refuses the saved login is the answer: there is no person for it to fall through to", async () => {
+    const { calls, filled, rows, ask } = stack({
+      policy: {
+        deny: ['intent == "fill_login" && page.host == "example.com"'],
+        ask: [],
+        allow: ["true"],
+      },
+    });
+    const refused = await ask(undefined, NOBODY).catch(
+      (error: unknown) => error,
+    );
+    expect(refused).toBeInstanceOf(ActionRefusedError);
+    expect(calls).not.toContain("requestSecret");
+    expect(filled).toEqual([]);
+    expect(fillRows(rows).map((row) => row.eventType)).toEqual([
+      "computer.action_refused",
+    ]);
+  });
+
+  // "승인" in the routine's own words: a rule that asks has nobody to ask either, and the question
+  // is raised as any is — the run stops on it, and no card for a value is opened beside it.
+  test("a rule that asks about the saved login raises its question, and nothing is opened or put in meanwhile", async () => {
+    const { calls, filled, rows, ask } = stack({
+      policy: {
+        deny: [],
+        ask: ['intent == "fill_login"'],
+        allow: ["true"],
+      },
+    });
+    const asked = await ask(undefined, NOBODY).catch((error: unknown) => error);
+    expect(asked).toBeInstanceOf(ActionNeedsApprovalError);
+    expect(calls).not.toContain("requestSecret");
+    expect(calls).not.toContain("fillLogin");
+    expect(filled).toEqual([]);
+    expect(fillRows(rows).map((row) => row.eventType)).toEqual([
+      "approval.requested",
+    ]);
+  });
+
+  /*
+   * A routine is in no conversation. Noted under none, its sign-in would be ended by whichever
+   * turn of the same Bot's finished next — the tab closed under a run still working in it.
+   */
+  test("what it put in is held under the run's own name: a conversation's end does not end it, and its own does", async () => {
+    const { gateway, ends, ask } = stack();
+    await ask(undefined, NOBODY);
+    expect(gateway.holdsValues("bot-1")).toBe(true);
+    await gateway.runEnded("bot-1", "thread-a");
+    await gateway.runEnded("bot-1", "routine:another-run");
+    expect([gateway.holdsValues("bot-1"), ends.length]).toEqual([true, 0]);
+    await gateway.runEnded("bot-1", "routine:run-1");
+    expect([gateway.holdsValues("bot-1"), ends.length]).toEqual([false, 1]);
   });
 });

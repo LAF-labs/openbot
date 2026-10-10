@@ -119,6 +119,12 @@ export type RoutineServiceOptions = {
    */
   tools?: (botId: string, actor: ActionActor) => Promise<UnattendedToolkit>;
   /**
+   * A run with tools is over, however it ended: told to the gateway, so that a login the run put
+   * into a page stops being held and its tab is closed (`computer/gateway/secrets.ts`). Named by
+   * the run's own key, not a conversation's — a routine is in none.
+   */
+  runEnded?: (botId: string, runKey: string) => Promise<void>;
+  /**
    * 목표: a run of a routine linked to a goal is told which goal it checks and offered
    * `log_progress` for that goal alone (`goals/tools.ts`, `withGoal`). Absent, a linked routine
    * runs as any other.

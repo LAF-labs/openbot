@@ -24,14 +24,17 @@
 import { randomUUID } from "node:crypto";
 import type { BaseEvent, Tool } from "@ag-ui/client";
 import type { PromptMode, RoutineNote } from "../../../shared/prompt";
+import { ROUTINE_NEEDS_SAVED_LOGIN_KO } from "../../../shared/prompt/mode/routine.ko";
 import {
   noteCodesOf,
   noteTexts,
   toolResultText,
 } from "../../../shared/prompt/tool-results.ko";
+import { secretFieldsOf } from "../../../shared/secret-ask";
 import {
   computerTool,
   UNATTENDED_COMPUTER_TOOLS,
+  UNATTENDED_SAVED_LOGIN,
 } from "../../../shared/tools/computer";
 import {
   type WithheldTools,
@@ -46,6 +49,8 @@ import {
 } from "../computer/gateway";
 import { BOTS_OWN_LOOK, readFileInputOf } from "../computer/schema";
 import { snapshotForModel } from "../computer/snapshot-lines";
+import { describeFailure } from "../failure-text";
+import { log } from "../log";
 import { createShownGuard } from "../logins/shown";
 import type { LoginVault } from "../logins/store";
 import {
@@ -361,9 +366,10 @@ export type UnattendedToolsOptions = {
   pluginStore?: Pick<PluginStore, "offeredToModel" | "callTool" | "viewSkill">;
   /**
    * The person's saved logins, for taking a saved password out of what the browser's tools hand
-   * a model (`logins/shown.ts`). Absent where there is no vault.
+   * a model (`logins/shown.ts`) — and for knowing whether this person saved any, which is whether
+   * a run of theirs is offered the way to sign in with one. Absent where there is no vault.
    */
-  logins?: Pick<LoginVault, "passwordsAt">;
+  logins?: Pick<LoginVault, "passwordsAt" | "list">;
 };
 
 /**
@@ -374,13 +380,15 @@ export type UnattendedToolsOptions = {
  */
 export function createUnattendedTools(options: UnattendedToolsOptions) {
   /*
-   * NOBODY IS TOLD WHICH CALLS THESE WERE (`seen`), because nobody keeps a picture of them: a
-   * picture is filed on a conversation's call by the window watching it, and this run is in no
-   * conversation. Telling the gateway would also need this run's end to take the note back, and
-   * a routine's end is not passed on to it yet (`docs/laf/redesign-2026-10.md` §6, 2-6).
+   * THE GATEWAY IS TOLD WHICH CALLS THESE WERE, as a conversation's turn tells it
+   * (`turns/chat-tools.ts`): a page that showed a saved password is on screen, and a window
+   * watching the same Bot keeps no picture while it is. The note is taken back at this run's end,
+   * which is passed on by whoever runs it (`routines/run.ts`, `runEnded`) under the run's own
+   * name (`ActionActor.runKey`).
    */
   const withoutSavedPasswords = createShownGuard({
     ...(options.logins ? { logins: options.logins } : {}),
+    seen: (run, hidden) => options.gateway?.handedOver(run.botId, run, hidden),
   });
   return async (
     botId: string,
@@ -395,8 +403,40 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
       granted.tools.map((tool) => [tool.toolName, tool.ref] as const),
     );
 
+    /*
+     * SIGNING IN WITH A SAVED LOGIN, OFFERED ONLY TO A RUN OF SOMEBODY WHO SAVED ONE (record §6,
+     * piece 2-6). A tool rides on every turn of the run, and for a person with nothing in the
+     * vault this one could only ever answer "nothing saved". Decided here, once, when the run's
+     * tools are assembled — a login saved while the run is going is the next run's. A vault that
+     * cannot be read offers nothing: the run goes on as every routine did before this.
+     */
+    const savesLogins =
+      gateway && options.logins
+        ? await options.logins
+            .list(actor.id)
+            .then((saved) => saved.length > 0)
+            .catch((error: unknown) => {
+              // Said, because the run goes on without the tool and would otherwise look like a
+              // routine that simply did not try to sign in.
+              log.warn("saved_logins_unlisted", {
+                bot: botId,
+                reason: describeFailure(error),
+              });
+              return false;
+            })
+        : false;
+
     const tools: Tool[] = [
       ...(gateway ? computerTools() : []),
+      ...(savesLogins
+        ? [
+            {
+              name: UNATTENDED_SAVED_LOGIN.name,
+              description: UNATTENDED_SAVED_LOGIN.description,
+              parameters: UNATTENDED_SAVED_LOGIN.parameters,
+            },
+          ]
+        : []),
       ...granted.tools.map((tool) => ({
         name: tool.toolName,
         description: tool.description,
@@ -629,6 +669,64 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
                 ),
               ),
             };
+          case "computer_request_secret": {
+            // Not a tool of this run's unless it was offered: a name a model remembers from a
+            // conversation is answered as any other name it has no tool for.
+            if (!savesLogins) return unknownTool();
+            const fields = secretFieldsOf(args);
+            const { snapshotId } = args;
+            if (!fields || typeof snapshotId !== "number") {
+              return invalidArguments();
+            }
+            // Which saved login, where the Bot was told this site has several. Never a value.
+            const login =
+              typeof args.login === "string" && args.login.trim()
+                ? args.login.trim()
+                : undefined;
+            /*
+             * NOBODY IS ASKED. The vault answers or nothing does: no card is opened for a person
+             * who is not there, and a rule that refuses the saved login is the answer
+             * (`gateway/secrets.ts`, `nobodyToAsk`).
+             */
+            const asked = await gateway.requestSecret(
+              c,
+              botId,
+              actor,
+              { fields, snapshotId, ...(login ? { login } : {}) },
+              approvalId,
+              signal,
+              { nobodyToAsk: true },
+            );
+            if (asked.loginFilled) {
+              return {
+                ok: true,
+                code: "laf:login_filled",
+                result: toolResultText("laf:login_filled"),
+              };
+            }
+            if (Array.isArray(asked.loginChoice)) {
+              return {
+                ok: true,
+                code: "laf:login_choice",
+                result: toolResultText("laf:login_choice"),
+                logins: asked.loginChoice,
+              };
+            }
+            return {
+              ok: false,
+              code: "laf:login_not_saved",
+              reason: toolResultText("laf:login_not_saved"),
+              /*
+               * THE RUN STOPPED ON ITS PERSON, said the way the loop hears it (`turn-loop.ts`):
+               * the same two fields a question nobody answered carries. The run is then kept as
+               * one that waits — delivered even if the Bot answered [SILENT], never posted to
+               * 소식 — and its answer ends with the line below, which is words for the person
+               * and not the sentence above, which is words for the Bot.
+               */
+              awaitingApproval: true,
+              question: ROUTINE_NEEDS_SAVED_LOGIN_KO,
+            };
+          }
           case "computer_list_files":
             return {
               ok: true,
@@ -693,7 +791,10 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
           {
             userId: actor.id,
             botId,
-            ...(actor.threadId ? { threadId: actor.threadId } : {}),
+            // The run's own name where it has one: what the note is taken back under.
+            ...((actor.runKey ?? actor.threadId)
+              ? { threadId: actor.runKey ?? actor.threadId }
+              : {}),
             ...(call?.id ? { toolCallId: call.id } : {}),
           },
           outcome,

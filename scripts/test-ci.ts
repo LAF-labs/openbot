@@ -2493,6 +2493,22 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * (`hidden-values.test.ts`). Forty-two mutations each fail one of these.
  * By hand: 3958 and 16, 5, 4, 3, 1 and 1 are 3988; 935 and 3 are 938.
  *
+ * RAISED 2026-10-10 FOR A ROUTINE THAT SIGNS IN WITH A SAVED LOGIN, `server` from 3988 to 4005 and
+ * `root` from 938 to 940 (record §6, "루틴의 로그인이 들어감"). Six in `saved-login-fill.test.ts`: a
+ * request from a run nobody is in front of is answered from the vault, opens no card where the
+ * vault does not answer, names several logins back, takes a rule's no as the answer and a rule's
+ * question as a question, and holds what it put in under the run's own name. Six in
+ * `unattended-facts.test.ts`: the tool is offered only to a run of somebody who saved a login,
+ * in a routine's words; the vault's answers are told as to a conversation; nothing saved is a
+ * run that waits, with a line for the person; a card that is no card and a rule's no; and the
+ * gateway is told of a call under the run's own name. Five in
+ * `routine-notepad.integration.test.ts`: the run's end is told under its own name whether it
+ * answered or failed, of no run that never had tools, without failing the run when the telling
+ * fails, a sign-in nobody saved a login for is delivered as a run that waits, and the line such
+ * an answer ends with is not carried into the next run as the Bot's report. Two at the
+ * root for the tool by another description and the routine's words.
+ * By hand: 3988 and 6, 6 and 5 are 4005; 938 and 2 are 940.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2521,7 +2537,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 3988, roots: ["server"] },
+  { name: "server", floor: 4005, roots: ["server"] },
   { name: "app", floor: 2157, roots: ["app"] },
   {
     name: "agent-computer",
@@ -2529,7 +2545,7 @@ const GROUPS: readonly {
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 938, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 940, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
