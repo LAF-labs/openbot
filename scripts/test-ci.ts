@@ -2729,7 +2729,8 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * RAISED 2026-10-11 FOR THE CONVERSATION THAT DELEGATES, `server` by twenty-two (to 4247) and
  * `root` by fourteen (to 1066) (record §4, the second half of piece 6-2). Three to `server` in
  * `result-spillover.test.ts`: a long result of a run a project's turn delegated to, filed in that
- * project's folder. Nineteen to `server` in
+ * project's folder; and one more in `chat-tools.test.ts` (to 4248): a delegated run's call made
+ * as the conversation that delegated. Nineteen to `server` in
  * `turn-engine.integration.test.ts`: the Bot's own old browser steps left out of what it is
  * handed — one case a tool of the computer's, the words that stay, a reply that only took a step,
  * its other calls, a thread with none, and the turn after the change. Fourteen to `root` in
@@ -2764,7 +2765,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4247, roots: ["server"] },
+  { name: "server", floor: 4248, roots: ["server"] },
   { name: "app", floor: 2259, roots: ["app"] },
   {
     name: "agent-computer",
