@@ -30,6 +30,7 @@ import {
   scrubByRule,
 } from "../src/context/forget-scrub";
 import type { JevAsker } from "../src/context/vendor/fast-jev-compaction/index";
+import { recentLines } from "../src/log";
 
 /**
  * FORGETTING THAT REALLY FORGETS, measured where it matters: the text the next request sends.
@@ -550,6 +551,28 @@ describe("a standing line among the dated ones", () => {
   );
 
   /*
+   * The owner writes 화·목 on 수첩 too. The line was read with its shorthand spelled out and the
+   * fact was not, so a notebook line in shorthand never met a summary line, written out or not
+   * (third review of pull request 196). Each row fails with the fact's tokens taken as said; the
+   * last two also with the list's last weekday left unread before its 만.
+   */
+  const SHORTHAND: ReadonlyArray<[fact: string, line: string]> = [
+    ["지은이는 화·목만 출근", "- 지은(포장 알바): 매주 화·목 출근"],
+    ["지은이는 화, 목만 출근", "- 지은(포장 알바): 매주 화요일·목요일 출근"],
+    ["지은이는 화·목만 출근", "- 포장 알바 지은이: 화요일, 목요일에만 나옴"],
+    [
+      "지은이는 월/수/금에 나와",
+      "- 지은(포장 알바): 월요일, 수요일, 금요일 출근",
+    ],
+  ];
+  test.each(SHORTHAND)(
+    "a notebook line in weekday shorthand meets the summary line %#",
+    (fact, line) => {
+      expect(lineCarries(line, fact)).toBe(true);
+    },
+  );
+
+  /*
    * A standing line of the SAME KIND shares words that name nothing — a role (포장 알바), a
    * recurrence (매달), the digits of a price or a day (18,000원 → "18"; 5일 inside 25일) — and a
    * first arm that took any two words erased unrelated facts: every line here was dropped by it
@@ -573,6 +596,25 @@ describe("a standing line among the dated ones", () => {
     // standing arm, so this row fails if `isDated` ever stops telling them apart.
     [DEADLINE, "- 9/14 세무사: 매달 5일 자료 넘김 완료"],
     [DEADLINE, "- 9/14: 부가세 신고: 세무사가 매달 25일에 처리"],
+    /*
+     * The clauses of the arm, each held by a row that fails with that clause alone reverted
+     * (third review of pull request 196 found all four could go with the suite green):
+     * - the body must hold a predicate word or a number: 지은's wage line names her and her role
+     *   (three fact words, all in the head) and says nothing the fact says;
+     * - a recurrence word never counts: 매달 shared with a head that holds two subject words would
+     *   be the third word, and 매주 shared with a supplier's product line the same;
+     * - a subject word in the body is not the predicate word the body must hold, and the subject
+     *   split is what tells 지은 from 출근: the wage line with her name in its body;
+     * - a digit-led word counts only whole, as a number: 5일 inside 25일 is not the fact's day.
+     */
+    [JIEUN, "- 지은(포장 알바): 시급 11,000원"],
+    [JIEUN, "- 지은(포장 알바): 매주 토요일 출근"],
+    [DEADLINE, "- 매출 정산: 스마트스토어 매달 25일 입금"],
+    [
+      "한빛농산 유자는 매주 월요일 아침에 들어온다.",
+      "- 한빛농산 유자청: 매주 금요일 납품",
+    ],
+    [JIEUN, "- 포장 알바 시급: 지은 11,000원, 민수 12,000원"],
   ];
   test.each(STAYS)("an unrelated line stays %#", (fact, line) => {
     expect(lineCarries(line, fact)).toBe(false);
@@ -616,6 +658,29 @@ describe("a standing line among the dated ones", () => {
     },
   );
 
+  /*
+   * KNOWN LIMIT, NOT A WISH: the number clause stands in for the three words, so one fact word in
+   * the line's head and one of the fact's numbers whole in its body carry a line of ANOTHER fact
+   * that happens to share both — the accountant's fee paid on the 5th for the 정산 deadline on the
+   * 5th, a 10만 원 threshold of another supplier, the shop's 6시 closing for the 6시 chat hours.
+   * Each of these lines is lost by the rule arm today. Measured on a run's real summaries this
+   * shape occurred 0 times in 21,564 line × fact checks, and no simpler rule did better (third
+   * review of pull request 196), so the rows assert what the arm does, not what it should: a
+   * change that keeps one of these lines must move its row to STAYS on purpose.
+   */
+  const OVER_FORGETS: ReadonlyArray<[fact: string, line: string]> = [
+    [DEADLINE, "- 세무사 상담료: 매달 5일 입금"],
+    [DEADLINE, "- 정산: 스마트스토어 매달 5일 입금됨"],
+    [DAESUNG, "- 결제: 한일포장 10만 원 이상 주문 시 월말 정산"],
+    ["채팅 문의는 저녁 6시까지만 받는다.", "- 저녁 마감: 6시 (매장 문 닫음)"],
+  ];
+  test.each(OVER_FORGETS)(
+    "known limit: the number clause drops the unrelated line %#",
+    (fact, line) => {
+      expect(lineCarries(line, fact)).toBe(true);
+    },
+  );
+
   test.each([
     ["- 9/21: …", true],
     ["- 9/14~9/16: …", true],
@@ -656,6 +721,60 @@ describe("a standing line among the dated ones", () => {
     const keptTail = boundedSummary(tailFirst);
     expect(cutOf(tailFirst, keptTail, "2026-09-26 (토)")?.lastDay).toBe(true);
     expect(cutOf("- 9/26: 짧다", "- 9/26: 짧다", "2026-09-26 (토)")).toBeNull();
+  });
+
+  /*
+   * `cutOf` was tested and the close's logging of it was not: the log line reverted, the suite
+   * stayed green (third review of pull request 196). The log is read by event and content — the
+   * ring is shared with every other file in the process, never by index.
+   */
+  test("a close over the bound logs the cut, counts only, and a close under it logs nothing", async () => {
+    const summarizer = (lines: string[]) =>
+      createDaySummarizer(
+        {
+          baseUrl: "https://model.example.test/v1",
+          model: "z-ai/glm-5.3-flash",
+          apiKey: async () => "k",
+          fetch: (async () =>
+            new Response(
+              JSON.stringify({
+                choices: [{ message: { content: lines.join("\n") } }],
+              }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            )) as unknown as typeof fetch,
+        },
+        { timeoutMs: 5_000 },
+      );
+    const cuts = () =>
+      recentLines
+        .lines()
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+        .filter((line) => line.event === "day_summary_cut");
+    const standing = Array.from(
+      { length: 160 },
+      (_, i) => `- 거래처 ${i}: 매달 ${(i % 28) + 1}일 계좌이체로 결제`,
+    );
+    const whole = [...standing, "- 9/26: 오늘의 열린 일"];
+    const before = cuts().length;
+    const summary = await summarizer(whole)({
+      previous: null,
+      transcript: "사장님: 오늘 거래처 정리",
+      day: "2026-09-26 (토)",
+    });
+    const expected = cutOf(whole.join("\n"), summary, "2026-09-26 (토)");
+    expect(expected?.lines).toBeGreaterThan(0);
+    const logged = cuts().slice(before);
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toMatchObject({ level: "info", ...expected });
+    // Counts only: no line of the summary reaches the log.
+    expect(JSON.stringify(logged[0])).not.toContain("거래처");
+    // A summary within the bound is not a cut.
+    await summarizer(["- 9/26: 짧다"])({
+      previous: null,
+      transcript: "사장님: 짧게",
+      day: "2026-09-26 (토)",
+    });
+    expect(cuts().length).toBe(before + 1);
   });
 
   test("the bound cuts the oldest dated lines and reaches the standing block last", () => {
