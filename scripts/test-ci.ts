@@ -2869,6 +2869,12 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * spells it, and a closed door that names the owner on the administrator line alone admitting
  * nobody else. 4402 and 2 is 4404.
  *
+ * RAISED 2026-10-11 FOR THE PROVIDER'S WORD ON AN ADDRESS, `server` by four (to 4408), all in the
+ * new `sign-in-verified.integration.test.ts`: an address the provider does not vouch for makes no
+ * account on its first arrival; a verified arrival afterwards takes the seat and keeps it; a row
+ * from before the rule gets no session while unproved; and is let in once the address is vouched
+ * for. 4404 and 4 is 4408.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2897,7 +2903,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4404, roots: ["server"] },
+  { name: "server", floor: 4408, roots: ["server"] },
   { name: "app", floor: 2402, roots: ["app"] },
   {
     name: "agent-computer",
