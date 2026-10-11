@@ -5,13 +5,16 @@ import { createAccountDeletion } from "../src/account/deletion";
 import { createAccountExport } from "../src/account/export";
 import { pseudonymFor } from "../src/account/pseudonym";
 import { createRetentionJob } from "../src/account/retention";
+import { cascadeAnchors, TABLE_LIFECYCLE } from "../src/account/tables";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import { type AuditEventInput, createAuditStore } from "../src/audit";
 import { createDeploymentAdmission } from "../src/auth/admission";
 import { createSignInAllowlist } from "../src/auth/allowlist";
 import { createDatabase } from "../src/db/client";
 import {
+  agentGuidance,
   agentMemories,
+  agentMemoryReceipts,
   agentPreferences,
   agentProfiles,
   agents,
@@ -22,12 +25,18 @@ import {
   channelThreads,
   computerStandingApprovals,
   credentials,
+  lafAlimtalkTemplates,
   lafAnswerRatings,
   lafAttachments,
+  lafFeedback,
+  lafNotifications,
+  lafPartnerConnections,
   lafRoutineNotepads,
   lafRoutineRuns,
+  lafRoutineSuggestionDismissals,
   lafRoutines,
   lafSavedLogins,
+  lafSiteConnections,
   lafThreadMessages,
   lafThreadRuns,
   skills,
@@ -270,6 +279,63 @@ async function makePerson(label: string): Promise<Person> {
     payload: { note: `account-lifecycle ${suite}` },
   });
 
+  /*
+   * THE EIGHT TABLES THE REVIEW OF 2026-10-11 FOUND WITH NO DECISION: each names the person, each
+   * went by cascade, none was in the file. Seeded for both people so the file is checked for one
+   * and not the other, and the deletion for the cascade actually firing.
+   */
+  await database.insert(agentGuidance).values({
+    id: `${id}-guidance`,
+    agentId: botId,
+    ownerUserId: id,
+    content: `${label} likes short answers.`,
+    day: "2026-10-10",
+  });
+  await database.insert(agentMemoryReceipts).values({
+    id: `${id}-receipt-row`,
+    agentId: botId,
+    ownerUserId: id,
+    job: "dream",
+    checked: 3,
+    confirmed: 1,
+  });
+  await database.insert(lafSiteConnections).values({
+    userId: id,
+    siteId: `${label}-store`,
+    botId,
+  });
+  await database.insert(lafFeedback).values({
+    id: `${id}-feedback`,
+    userId: id,
+    text: `${label} wrote to the operator.`,
+    route: "/settings/account",
+  });
+  await database.insert(lafRoutineSuggestionDismissals).values({
+    userId: id,
+    suggestionKey: `${label}-suggestion`,
+  });
+  await database.insert(lafNotifications).values({
+    id: `${id}-notification`,
+    kind: "approval.waiting",
+    botId,
+    userId: id,
+    channelId,
+    subject: { kind: "browser", intent: "read", host: `${label}.example.test` },
+  });
+  await database.insert(lafPartnerConnections).values({
+    provider: "kakao-alimtalk",
+    userId: id,
+    // The vendor's handle: decides whose channel a message leaves from, so never in the file.
+    account: `${id}-senderkey`,
+    details: { searchId: `@${label}shop` },
+  });
+  await database.insert(lafAlimtalkTemplates).values({
+    userId: id,
+    code: "laf_approval",
+    templateId: `${id}-template`,
+    status: "approved",
+  });
+
   return {
     id,
     email,
@@ -455,12 +521,67 @@ describe("the export", () => {
     ).toBe(true);
     expect(document.truncated).toEqual([]);
 
-    // The serialised whole, checked for the two things that must never be in it.
+    // A conversation says what it is: the main one or a project (migration 0064).
+    expect(document.channels).toEqual([
+      expect.objectContaining({ id: leaver.channelId, kind: "main" }),
+    ]);
+
+    // The eight sections that were missing until 2026-10-11, each this person's rows only.
+    expect(document.memoryReceipts).toEqual([
+      expect.objectContaining({ id: `${leaver.id}-receipt-row`, job: "dream" }),
+    ]);
+    expect(document.siteConnections).toEqual([
+      expect.objectContaining({ siteId: "leaver-store", needsLogin: false }),
+    ]);
+    expect(document.feedback).toEqual([
+      expect.objectContaining({
+        id: `${leaver.id}-feedback`,
+        text: "leaver wrote to the operator.",
+      }),
+    ]);
+    expect(document.suggestionDismissals).toEqual([
+      expect.objectContaining({ suggestionKey: "leaver-suggestion" }),
+    ]);
+    expect(document.notifications).toEqual([
+      expect.objectContaining({
+        id: `${leaver.id}-notification`,
+        kind: "approval.waiting",
+      }),
+    ]);
+    expect(document.connectedAccounts).toEqual([]);
+    expect(document.partnerConnections).toEqual([
+      {
+        provider: "kakao-alimtalk",
+        details: { searchId: "@leavershop" },
+        status: "linked",
+        connectedAt: expect.any(String),
+        updatedAt: expect.any(String),
+      },
+    ]);
+    expect(document.alimtalkTemplates).toEqual([
+      expect.objectContaining({ code: "laf_approval", status: "approved" }),
+    ]);
+
+    // The serialised whole, checked for the things that must never be in it.
     const serialised = JSON.stringify(document);
     expect(serialised).not.toContain(stayer.id);
     expect(serialised).not.toContain('"notion"');
     expect(serialised).not.toContain("credentialKeyId");
     expect(serialised).not.toContain("not-a-real-secret");
+    // The vendor's senderKey: not the person's to carry around, and not a key of any section.
+    expect(serialised).not.toContain("senderkey");
+    expect(serialised).not.toContain('"account":');
+  });
+
+  test("every section the catalogue names is a key of the file", async () => {
+    const document = await readExport(leaver.id);
+    const sections = new Set(
+      Object.values(TABLE_LIFECYCLE)
+        .map((lifecycle) => lifecycle.exported)
+        .filter((section): section is string => section !== null),
+    );
+    const missing = [...sections].filter((section) => !(section in document));
+    expect(missing).toEqual([]);
   });
 
   test("a weekday routine's days leave as a list, not as the driver's typed array", async () => {
@@ -504,6 +625,62 @@ describe("the export", () => {
       .update(lafRoutines)
       .set({ delivery: "chat" })
       .where(eq(lafRoutines.id, leaver.routineId));
+  });
+});
+
+/**
+ * THE LIST THAT KEEPS THE NEXT TABLE FROM BEING FORGOTTEN (`account/tables.ts`), held against the
+ * database's own catalogue — the way `NAMES_A_CONVERSATION` is in `conversation-deleting`. Eight
+ * tables had arrived since the export was written with no decision anywhere; this is what makes
+ * the ninth fail here rather than wait for a review.
+ */
+describe("every table in the database has a decision", () => {
+  test("the catalogue names every table, and no table that is not there", async () => {
+    const rows = (await database.execute(sql`
+      select c.relname as name
+      from pg_catalog.pg_class c
+      where c.relnamespace = current_schema()::regnamespace
+        and c.relkind in ('r', 'p')
+    `)) as unknown as Array<{ name: string }>;
+    expect(rows.map((row) => row.name).sort()).toEqual(
+      Object.keys(TABLE_LIFECYCLE).sort(),
+    );
+  });
+
+  test("a table left to the cascade actually cascades, from the person or from what is deleted by name", async () => {
+    // Every ON DELETE CASCADE key in the schema: which table hangs off which.
+    const keys = (await database.execute(sql`
+      select t.relname as child, r.relname as parent
+      from pg_catalog.pg_constraint k
+      join pg_catalog.pg_class t on t.oid = k.conrelid
+      join pg_catalog.pg_class r on r.oid = k.confrelid
+      where k.contype = 'f'
+        and k.confdeltype = 'c'
+        and t.relnamespace = current_schema()::regnamespace
+    `)) as unknown as Array<{ child: string; parent: string }>;
+
+    const reached = cascadeAnchors();
+    const waiting = new Set(
+      Object.entries(TABLE_LIFECYCLE)
+        .filter(([, lifecycle]) => lifecycle.deletion === "cascade")
+        .map(([table]) => table),
+    );
+    // A cascade table is reached once one of its cascading parents is; repeat until nothing moves,
+    // so `laf_goal_entries` is reached through `laf_goals` whichever order the rows came in.
+    let moved = true;
+    while (moved) {
+      moved = false;
+      for (const table of waiting) {
+        if (
+          keys.some((key) => key.child === table && reached.has(key.parent))
+        ) {
+          reached.add(table);
+          waiting.delete(table);
+          moved = true;
+        }
+      }
+    }
+    expect([...waiting]).toEqual([]);
   });
 });
 
@@ -707,6 +884,84 @@ describe("deletion", () => {
         .from(lafSavedLogins)
         .where(eq(lafSavedLogins.userId, leaver.id)),
     ).toEqual([]);
+
+    // Every count the catalogue promises the trail is in the tally, by that name.
+    for (const lifecycle of Object.values(TABLE_LIFECYCLE)) {
+      if (lifecycle.counted)
+        expect(result.counts).toHaveProperty(lifecycle.counted);
+    }
+
+    // THE EIGHT TABLES LEFT TO THE CASCADE, SEEN TO HAVE GONE: a schema file's `onDelete` is a
+    // claim about a migration, and this is where the claim is checked against rows.
+    await gone(
+      "guidance",
+      database
+        .select()
+        .from(agentGuidance)
+        .where(eq(agentGuidance.ownerUserId, leaver.id)),
+    );
+    await gone(
+      "memoryReceipts",
+      database
+        .select()
+        .from(agentMemoryReceipts)
+        .where(eq(agentMemoryReceipts.ownerUserId, leaver.id)),
+    );
+    await gone(
+      "siteConnections",
+      database
+        .select()
+        .from(lafSiteConnections)
+        .where(eq(lafSiteConnections.userId, leaver.id)),
+    );
+    await gone(
+      "feedback",
+      database
+        .select()
+        .from(lafFeedback)
+        .where(eq(lafFeedback.userId, leaver.id)),
+    );
+    await gone(
+      "suggestionDismissals",
+      database
+        .select()
+        .from(lafRoutineSuggestionDismissals)
+        .where(eq(lafRoutineSuggestionDismissals.userId, leaver.id)),
+    );
+    await gone(
+      "notifications",
+      database
+        .select()
+        .from(lafNotifications)
+        .where(eq(lafNotifications.userId, leaver.id)),
+    );
+    await gone(
+      "partnerConnections",
+      database
+        .select()
+        .from(lafPartnerConnections)
+        .where(eq(lafPartnerConnections.userId, leaver.id)),
+    );
+    await gone(
+      "alimtalkTemplates",
+      database
+        .select()
+        .from(lafAlimtalkTemplates)
+        .where(eq(lafAlimtalkTemplates.userId, leaver.id)),
+    );
+    // And the stayer's copies of the same did not go with them.
+    expect(
+      await database
+        .select({ id: lafFeedback.id })
+        .from(lafFeedback)
+        .where(eq(lafFeedback.userId, stayer.id)),
+    ).toEqual([{ id: `${stayer.id}-feedback` }]);
+    expect(
+      await database
+        .select({ siteId: lafSiteConnections.siteId })
+        .from(lafSiteConnections)
+        .where(eq(lafSiteConnections.userId, stayer.id)),
+    ).toEqual([{ siteId: "stayer-store" }]);
 
     // THE OTHER ACCOUNT, ROW FOR ROW. This is the assertion the second person exists for.
     expect(
