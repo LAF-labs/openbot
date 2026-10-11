@@ -22,11 +22,16 @@
  * mechanism the seat count uses for the same reason.
  */
 import type { Message } from "@ag-ui/client";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { type FirstMoveMark, isFirstMove } from "../../../shared/first-move";
 import type { DelegatedMark } from "../../../shared/tools/delegate";
+import {
+  type ProjectsMark,
+  projectsReadBy,
+  REMOVED_PROJECT_RESULT,
+} from "../../../shared/tools/projects";
 import type { Database } from "../db/client";
-import { lafThreadMessages } from "../db/schema";
+import { channels, lafThreadMessages } from "../db/schema";
 import { storable } from "../db/schema/json";
 import { redactSecretTyping } from "./secret-redaction";
 
@@ -51,6 +56,10 @@ import { redactSecretTyping } from "./secret-redaction";
  * handed its browsing to (`shared/tools/delegate.ts`). Such a message is the conversation's for a
  * person to read and is never handed to the Bot that delegated (`turns/engine.ts`).
  *
+ * `lafProjects` names the projects a tool result read (`shared/tools/projects.ts`): the main
+ * conversation's copy of what was said somewhere else. A result naming a project that is gone is
+ * not kept as it arrived — see `appendMessages`.
+ *
  * A room's messages also carried `lafRoomReceipts`, which members read one and how their part came
  * out. Rooms were removed on 2026-09-24 and migration 0047 deleted their rows and took the key off
  * any message still holding it.
@@ -59,7 +68,8 @@ import { redactSecretTyping } from "./secret-redaction";
  */
 export type StoredMessage = Message &
   FirstMoveMark &
-  DelegatedMark & {
+  DelegatedMark &
+  ProjectsMark & {
     lafAt?: string;
     lafAgentId?: string;
     lafRedacted?: boolean;
@@ -208,6 +218,53 @@ export function keepFirstMoves(
 }
 
 /**
+ * Keep the projects a stored tool result says it read, on a copy that does not say so — as
+ * `keepFirstMoves` keeps its mark, and for its reason: "updated in place when the incoming copy
+ * differs" is the path a copy without the mark would take the mark off by, and with the mark gone
+ * nothing would ever cover what the result holds when its project is deleted. Nothing takes a
+ * project off the list; a copy that names another adds it.
+ */
+export function keepProjectsRead(
+  messages: readonly StoredMessage[],
+  held: readonly StoredMessage[],
+): StoredMessage[] {
+  const known = new Map<string, string[]>();
+  for (const message of held) {
+    const ids = projectsReadBy(message);
+    if (ids.length > 0) known.set(message.id, ids);
+  }
+  if (known.size === 0) return [...messages];
+  return messages.map((message) => {
+    const kept = known.get(message.id);
+    if (!kept) return message;
+    // The stored order first, so a copy that says the same thing is the same row.
+    return {
+      ...message,
+      lafProjects: [...new Set([...kept, ...projectsReadBy(message)])],
+    };
+  });
+}
+
+/**
+ * A tool result that read a project which is no longer there, as it is kept: one fixed sentence
+ * in the result's place. The call and its answer stay a pair, so the history a provider is handed
+ * is still well formed; what the project said is not in it.
+ */
+export function withoutGoneProjects(
+  messages: readonly StoredMessage[],
+  live: ReadonlySet<string>,
+): StoredMessage[] {
+  return messages.map((message) => {
+    if (message.role !== "tool") return message;
+    const read = projectsReadBy(message);
+    if (read.length === 0 || read.every((id) => live.has(id))) return message;
+    return message.content === REMOVED_PROJECT_RESULT
+      ? message
+      : { ...message, content: REMOVED_PROJECT_RESULT };
+  });
+}
+
+/**
  * A stable rendering of a message, for deciding whether a row would actually change.
  *
  * Key order is not stable across the paths a message takes — one copy is built from a stream, the
@@ -306,6 +363,15 @@ async function unstoredOf(
  * because "updated in place when the incoming copy differs" is exactly the path an unredacted copy
  * would come back on.
  *
+ * Nor is A TOOL RESULT THAT READ A PROJECT WHICH IS GONE (`lafProjects`, record §3 "메인에 옮겨진
+ * 프로젝트 내용"): it is written as one fixed sentence. Decided here, against the database and inside
+ * the transaction, and not by the turn that holds the result — a turn learns of a deletion from
+ * nobody, and the deletion rewrites the rows it can see at the moment it runs
+ * (`channels/deleting.ts`). The project's row is read `FOR SHARE`, which is what orders the two:
+ * either this append commits first and the deletion's rewrite finds its row, or the project is
+ * marked or gone by the time it is read and the row is written already covered. There is no third
+ * order in which a copy lands uncovered behind the rewrite.
+ *
  * Returns the tail of the thread as it now stands, in order: the window this append read, with what
  * it wrote. Never the whole conversation — see THREAD_READ_WINDOW.
  */
@@ -402,12 +468,39 @@ export async function appendMessages(
     );
 
     /*
+     * THE PROJECTS THESE RESULTS READ, STILL THERE OR NOT. Only when a message names one, which is
+     * a turn that used the project tool.
+     *
+     * THE ORDER IS THE THREAD'S ADVISORY LOCK, THEN THE PROJECT'S ROW, THEN THE WRITES — and it is
+     * what keeps this from deadlocking with a deletion, which locks the project's row `FOR UPDATE`
+     * and then rewrites rows of this thread, and never takes the thread's advisory lock. Waiting
+     * here for the project's row, this transaction has written nothing the deletion could be
+     * waiting for. Read after a first write, the two would wait on each other.
+     */
+    const marked = keepProjectsRead(merged, heldMessages);
+    const named = [...new Set(marked.flatMap(projectsReadBy))];
+    const live = new Set(
+      named.length === 0
+        ? []
+        : (
+            await transaction
+              .select({ id: channels.id })
+              .from(channels)
+              .where(
+                and(inArray(channels.id, named), isNull(channels.deletingAt)),
+              )
+              .for("share")
+          ).map((row) => row.id),
+    );
+    const kept = withoutGoneProjects(marked, live);
+
+    /*
      * Counted off `held` rather than off `stored`, so a row this module could not parse still holds
      * its number. Reusing a `seq` a broken row occupies would take the primary key down with it.
      */
     let next = held.reduce((highest, row) => Math.max(highest, row.seq), 0);
     const fresh = new Map<string, typeof lafThreadMessages.$inferInsert>();
-    for (const message of merged) {
+    for (const message of kept) {
       // A batch can name the same message twice — the caller's history, plus a reply the run just
       // rebuilt. The second one is an edit of the first, never a second row.
       const waiting = fresh.get(message.id);

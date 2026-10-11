@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { BRIDGE_TOOL_NAMES, DEFERRED_TOOL_PREFIX } from "@shared/tools/bridge";
 import { COMPUTER_TOOLS } from "@shared/tools/computer";
 import { NOW_TOOL_NAME } from "@shared/tools/now";
+import { READ_PROJECTS } from "@shared/tools/projects";
 import { ROUTINE_NOTE } from "@shared/tools/routine-note";
 import { SELF_TOOLS } from "@shared/tools/self";
 import { SKILL_VIEW } from "@shared/tools/skills";
@@ -157,6 +158,14 @@ describe("the step labels", () => {
       expect(line.label).not.toContain("some_tool");
       expect(line.label).not.toBe("Used a connected service");
     }
+  });
+
+  test("the main conversation's look into the projects is one line: what was done is where", () => {
+    // No service's title beside it — "프로젝트 살펴보는 중 · 프로젝트" would say the place twice.
+    expect(stepLineOf(READ_PROJECTS)).toEqual({
+      label: "Looking in the projects",
+    });
+    expect(ko["Looking in the projects"]).toBe("프로젝트 살펴보는 중");
   });
 
   test("the two the owner saw on the walk", () => {

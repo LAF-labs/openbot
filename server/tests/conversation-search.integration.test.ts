@@ -355,6 +355,156 @@ describe("what was said, in every conversation a person has", () => {
   });
 });
 
+describe("the Bot's own reading of it", () => {
+  /** A second Bot of the same person's, as an account from before 2026-09-24 may hold. */
+  const SECOND = `search-second-bot-${tag}`;
+  const ITS = { channel: `search-second-${tag}`, thread: randomUUID() };
+
+  beforeAll(async () => {
+    await database.insert(agents).values({
+      id: SECOND,
+      name: SECOND,
+      type: "remote_ag_ui" as const,
+      configuration: {},
+    });
+    await database.insert(channels).values({
+      id: ITS.channel,
+      name: "둘째 봇",
+      description: "",
+      kind: "main",
+    });
+    await database
+      .insert(channelMemberships)
+      .values({ channelId: ITS.channel, userId: ME });
+    await database
+      .insert(channelAgents)
+      .values({ channelId: ITS.channel, agentId: SECOND });
+    await database.insert(channelThreads).values({
+      userId: ME,
+      channelId: ITS.channel,
+      threadId: ITS.thread,
+    });
+    await database.insert(lafThreadMessages).values({
+      threadId: ITS.thread,
+      seq: 1,
+      message: {
+        id: "second-said",
+        role: "user",
+        content: `${word("토익")} 단어장은 둘째 봇에게 맡겼어`,
+      },
+      at: at(50),
+    });
+  });
+
+  afterAll(async () => {
+    await database
+      .delete(lafThreadMessages)
+      .where(eq(lafThreadMessages.threadId, ITS.thread));
+    await database.delete(channels).where(eq(channels.id, ITS.channel));
+    await database.delete(agents).where(eq(agents.id, SECOND));
+  });
+
+  const read = (
+    q: string,
+    more: { agentId?: string; limit?: number; cursor?: string | null } = {},
+  ) =>
+    search({
+      cursor: more.cursor ? parseSearchCursor(more.cursor) : null,
+      terms: searchTerms(q) ?? [],
+      userId: ME,
+      ...(more.agentId ? { agentId: more.agentId } : {}),
+      ...(more.limit === undefined ? {} : { limit: more.limit }),
+    });
+
+  test("is of the conversations that Bot is in: a person reads them all, a Bot not its neighbour's", async () => {
+    expect(ids(await read(word("토익")))).toContain("second-said");
+    const mine = ids(await read(word("토익"), { agentId: BOT }));
+    expect(mine).toEqual(expect.arrayContaining(["m-ask", "m-answer"]));
+    expect(mine).not.toContain("second-said");
+    expect(ids(await read(word("토익"), { agentId: SECOND }))).toEqual([
+      "second-said",
+    ]);
+  });
+
+  test("a page as short as asked walks back over the same hits in the same order, none twice and none missed", async () => {
+    const walk = async (limit?: number) => {
+      const seen: string[] = [];
+      let cursor: string | null = null;
+      do {
+        const page: SearchPage = await read(word("반복"), {
+          agentId: BOT,
+          cursor,
+          ...(limit === undefined ? {} : { limit }),
+        });
+        if (limit !== undefined) {
+          expect(page.hits.length).toBeLessThanOrEqual(limit);
+        }
+        seen.push(...ids(page));
+        cursor = page.next;
+      } while (cursor);
+      return seen;
+    };
+    const whole = await walk();
+    const short = await walk(7);
+    expect(whole.length).toBeGreaterThan(7);
+    expect(short).toEqual(whole);
+    expect(new Set(short).size).toBe(short.length);
+  });
+
+  test("what the asking run wrote is left out, and a row no run wrote is not", async () => {
+    const RUN = `search-run-${tag}`;
+    await database.insert(lafThreadMessages).values([
+      {
+        threadId: ITS.thread,
+        seq: 2,
+        message: {
+          id: "second-asking",
+          role: "user",
+          content: `${word("토익")} 어디서 얘기했는지 찾아 줘`,
+        },
+        at: at(51),
+        runId: RUN,
+      },
+      {
+        threadId: ITS.thread,
+        seq: 3,
+        message: {
+          id: "second-other-run",
+          role: "assistant",
+          content: `${word("토익")} 는 지난번에 얘기했어요`,
+        },
+        at: at(52),
+        runId: `search-earlier-${tag}`,
+      },
+    ]);
+    const found = async (notOfRun?: string) =>
+      ids(
+        await search({
+          cursor: null,
+          terms: [word("토익")],
+          userId: ME,
+          agentId: SECOND,
+          ...(notOfRun ? { notOfRun } : {}),
+        }),
+      );
+    expect(await found()).toEqual([
+      "second-other-run",
+      "second-asking",
+      "second-said",
+    ]);
+    // `second-said` was written by no run at all: left in, where a plain `<>` would drop it.
+    expect(await found(RUN)).toEqual(["second-other-run", "second-said"]);
+  });
+
+  test("a page is never longer than a screen's, whatever is asked, and never shorter than one hit", async () => {
+    expect(
+      (await read(word("반복"), { limit: 10_000 })).hits.length,
+    ).toBeLessThanOrEqual(SEARCH_PAGE);
+    expect((await read(word("반복"), { limit: 0 })).hits).toHaveLength(1);
+    expect((await read(word("반복"), { limit: -3 })).hits).toHaveLength(1);
+  });
+});
+
 describe("the door", () => {
   const routes = new Hono<{ Variables: AppVariables }>();
   const asMe: MiddlewareHandler<{ Variables: AppVariables }> = async (

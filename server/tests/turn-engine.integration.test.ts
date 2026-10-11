@@ -4,6 +4,10 @@ import type { BaseEvent, Message } from "@ag-ui/client";
 import { eq, inArray } from "drizzle-orm";
 import { isFirstMove } from "../../shared/first-move";
 import { COMPUTER_TOOLS } from "../../shared/tools/computer";
+import {
+  READ_PROJECTS,
+  REMOVED_PROJECT_RESULT,
+} from "../../shared/tools/projects";
 import { createDatabase } from "../src/db/client";
 import {
   agents,
@@ -234,6 +238,8 @@ function engineWith(
     handsBrowsingOver?: boolean;
     /** What records the Bot's answer at the turn's end, where a case holds it open. */
     announce?: () => Promise<void>;
+    /** Which projects a call's result read (`ChatToolkit.projectsRead`). */
+    projectsRead?: NonNullable<ChatToolkit["projectsRead"]>;
   } = {},
 ) {
   const hub = createTurnHub({ keepEndedMs: 50 });
@@ -270,6 +276,7 @@ function engineWith(
             )
           : (execute as ChatToolkit["execute"]),
       ...(options.withheld ? { withheld: options.withheld } : {}),
+      ...(options.projectsRead ? { projectsRead: options.projectsRead } : {}),
     }),
     ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
     ...(firstMove ? { firstMove } : {}),
@@ -1472,6 +1479,114 @@ describe("a run the turn delegated to", () => {
  * full of that Bot opening pages. Handed that, the first thing it did on the real stack was call
  * `computer_navigate` — a tool it had just lost — and be refused.
  */
+describe("a result that read a project (record §3, piece 4-4)", () => {
+  const READ = {
+    id: "call-read",
+    name: READ_PROJECTS,
+    args: '{"kind":"summary","project":"제주 여행"}',
+  };
+  const aProject = async () => {
+    const id = `channel_turn-engine-project-${randomUUID().slice(0, 8)}`;
+    madeChannels.push(id);
+    await database.insert(channels).values({
+      id,
+      name: "제주 여행",
+      description: "",
+      kind: "project",
+    });
+    return id;
+  };
+  const send = (
+    engine: ReturnType<typeof engineWith>["engine"],
+    place: { threadId: string; channelId: string },
+    text: string,
+  ) =>
+    engine.send({
+      ...place,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked(text)],
+      tools: null,
+    });
+
+  test("is filed saying which project it read, and the Bot is never handed the mark — this turn or the next", async () => {
+    const place = await aConversation();
+    const project = await aProject();
+    const bot = scriptedBot("숙소는 애월이에요.", READ);
+    const { engine } = engineWith(
+      bot,
+      async () => ({ ok: true, summary: "숙소는 애월" }),
+      { projectsRead: (id) => (id === READ.id ? [project] : undefined) },
+    );
+    const first = await send(engine, place, "제주 여행 어디까지 됐지?");
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    await until(async () => (await statusOf(first.turnId)) === "done");
+
+    const stored = await messagesFor(database, place.threadId);
+    const result = stored.find((message) => message.role === "tool");
+    expect(result).toMatchObject({
+      toolCallId: READ.id,
+      content: '{"ok":true,"summary":"숙소는 애월"}',
+      lafProjects: [project],
+    });
+    // Only the result: the question, the call and the answer carry no such mark.
+    expect(
+      stored.filter((message) => "lafProjects" in message).map((m) => m.role),
+    ).toEqual(["tool"]);
+
+    const second = await send(engine, place, "고마워");
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    await until(async () => (await statusOf(second.turnId)) === "done");
+    // Every run, the first turn's second and the next turn's: AG-UI's fields and none of the store's.
+    for (const input of bot.inputs) {
+      expect(JSON.stringify(input)).not.toContain("lafProjects");
+    }
+    expect(bot.inputs.at(-1)?.some((message) => message.role === "tool")).toBe(
+      true,
+    );
+  });
+
+  test("of a project deleted while the call was out is never filed: the thread holds the fixed sentence in its place", async () => {
+    const place = await aConversation();
+    const project = await aProject();
+    const bot = scriptedBot("확인했어요.", READ);
+    const { engine } = engineWith(
+      bot,
+      async () => {
+        // The person deletes the project after the tool read it and before the turn files the result.
+        await database.delete(channels).where(eq(channels.id, project));
+        return { ok: true, summary: "지운 프로젝트의 숙소는 애월" };
+      },
+      { projectsRead: (id) => (id === READ.id ? [project] : undefined) },
+    );
+    const sent = await send(engine, place, "제주 여행 어디까지 됐지?");
+    expect(sent.ok).toBe(true);
+    if (!sent.ok) return;
+    await until(async () => (await statusOf(sent.turnId)) === "done");
+
+    const rows = await database
+      .select({ message: lafThreadMessages.message })
+      .from(lafThreadMessages)
+      .where(eq(lafThreadMessages.threadId, place.threadId));
+    // Not in any row, at any step of the turn's writing: the first write was already covered.
+    expect(JSON.stringify(rows)).not.toContain("지운 프로젝트의 숙소");
+    const stored = await messagesFor(database, place.threadId);
+    expect(stored.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "tool",
+      "assistant",
+    ]);
+    expect(stored[2]).toMatchObject({
+      toolCallId: READ.id,
+      content: REMOVED_PROJECT_RESULT,
+      lafProjects: [project],
+    });
+  });
+});
+
 describe("a thread as a Bot that hands its browsing over is handed it", () => {
   const says = (id: string, content: string, calls: [string, string][] = []) =>
     ({

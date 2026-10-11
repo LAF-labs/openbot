@@ -22,6 +22,7 @@ import {
   WEB_SEARCH_TOOL_NAME,
 } from "../../shared/tools/bridge";
 import { GOALS_FAMILY } from "../../shared/tools/goals";
+import { PROJECTS_FAMILY } from "../../shared/tools/projects";
 import { NOW_TOOL } from "../../shared/tools/now";
 import { ALIMTALK_TOOLS } from "../src/plugins/alimtalk/tools";
 import { CATALOGUE } from "../src/plugins/catalogue";
@@ -84,12 +85,12 @@ describe("the name the server mints is the deferral flag", () => {
    * "connected services" they told a Bot with nothing connected to look again in other words
    * (`DEPLOYMENT_FAMILIES`, `shared/tools/bridge.ts`).
    */
-  test("what runs on a key of the fleet's, and 목표, are nobody's connection", () => {
+  test("what runs on a key of the fleet's, 목표 and the project tool are nobody's connection", () => {
     const onTheFleetsKey = CATALOGUE.filter(
       (entry) => entry.auth.kind === "deployment-key",
     ).map((entry) => entry.key);
     expect([...DEPLOYMENT_FAMILIES].sort()).toEqual(
-      [...onTheFleetsKey, GOALS_FAMILY].sort(),
+      [...onTheFleetsKey, GOALS_FAMILY, PROJECTS_FAMILY].sort(),
     );
     // And no account a person connects is among them.
     for (const entry of CATALOGUE) {

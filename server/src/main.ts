@@ -61,6 +61,10 @@ import {
   createChannelEventHub,
 } from "./channels/events";
 import { createChannelStore } from "./channels/routes";
+import {
+  createProjectSummaries,
+  createProjectTools,
+} from "./channels/project-tool";
 import { createThreadProjects } from "./channels/thread-projects";
 import { websocket as channelSocket } from "./channels/socket";
 import { createStallGuard } from "./channels/stall-guard";
@@ -935,6 +939,22 @@ const connectionSwitchSources = connectionSourcesFrom({
  * it did a minute ago.
  */
 const DELEGATES_BROWSING = true;
+/*
+ * THE MAIN CONVERSATION'S WAY INTO THE PROJECTS (record §3, piece 4-4; `channels/project-tool.ts`):
+ * one tool behind the bridge, reading through the search a person's own screen reads through. The
+ * summaries it makes are kept here, in this process, and dropped with their project.
+ */
+const searchConversations = createConversationSearch({ database });
+const projectSummaries = createProjectSummaries();
+const projectTools = createProjectTools({
+  database,
+  search: searchConversations,
+  summaries: projectSummaries,
+  summarize: modelCalls.summarizeProject,
+  budgetSpent: modelCalls.budgetSpent,
+  timeZoneOf: async (userId) =>
+    (await whereaboutsStore.read(userId)).timeZone ?? config.botTimeZone,
+});
 const chatTools = createChatTools({
   ...(computerGateway ? { gateway: computerGateway } : {}),
   delegatesBrowsing: DELEGATES_BROWSING,
@@ -950,6 +970,11 @@ const chatTools = createChatTools({
   components: componentStore,
   persona: shopStore,
   goals: goalStore,
+  // Not in a project's conversation: a project holds its own record, and reads no other's.
+  projects: async ({ userId, botId, threadId, runId }) =>
+    (await threadProjects.of(threadId)) === null
+      ? projectTools({ userId, agentId: botId, runId })
+      : null,
   auditStore: bootAuditStore,
   // What a waiting connect card asks: 연결's own reading, from the sources the screen is drawn from.
   connections: (userId) =>
@@ -1043,7 +1068,10 @@ const projectDeletion = createProjectDeletion({
         },
       }
     : {}),
-  forgotten: threadProjects.forget,
+  forgotten: (channelId) => {
+    threadProjects.forget(channelId);
+    projectSummaries.forget(channelId);
+  },
   endApprovals: (threadId, actor) =>
     standingApprovals.endThread(threadId, actor),
   auditStore: bootAuditStore,
@@ -1257,7 +1285,7 @@ const app = createApp({
     }),
   // 만든 것: the cards and tables a Bot made, read out of its conversation.
   readMade: createMadeReader({ database }),
-  searchConversations: createConversationSearch({ database }),
+  searchConversations,
   // 소식: the posts a feed routine wrote, and the person's presses on them.
   feed: feedStore,
   // 목표: the goals the person set, and their timelines.

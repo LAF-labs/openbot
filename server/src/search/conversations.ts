@@ -32,6 +32,7 @@ import {
 import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
 import {
+  channelAgents,
   channelMemberships,
   channels,
   channelThreads,
@@ -52,6 +53,23 @@ export type ConversationSearch = (input: {
   terms: readonly string[];
   /** The `next` of the page before, or null for the newest. */
   cursor: SearchCursor | null;
+  /**
+   * Only the conversations this Bot is in: what the Bot's own search reads
+   * (`channels/project-tool.ts`). A person reads every conversation they have; a Bot of an account
+   * from before 2026-09-24, which may hold several, reads its own and not its neighbours'. In the
+   * query and never over the page it returned, because a page filtered afterwards ends where the
+   * unfiltered one did and its cursor skips what the filter would have kept.
+   */
+  agentId?: string;
+  /** Hits a page, at most `SEARCH_PAGE`: the Bot reads fewer than a screen draws. */
+  limit?: number;
+  /**
+   * Leave out what one run wrote: the turn that is asking. Measured on the real stack (2026-10-11):
+   * a Bot asked "제주 여행 프로젝트에서 항공편을 어떻게 하기로 했지?" searched for 제주 and was
+   * handed, first, that very question and its own "찾아볼게요" — two of a page of ten, newest
+   * first, in front of the project's line it was looking for.
+   */
+  notOfRun?: string;
 }) => Promise<SearchPage>;
 
 /** Where a page ended: the last row's own place in the order, to the microsecond it was written. */
@@ -117,8 +135,13 @@ export function createConversationSearch(options: {
   database: Database;
 }): ConversationSearch {
   const { database } = options;
-  return async ({ userId, terms, cursor }) => {
+  return async ({ userId, terms, cursor, agentId, limit, notOfRun }) => {
     if (terms.length === 0) return { hits: [], next: null };
+    // A number that is no number is a page: `limit(NaN)` is a query the database refuses.
+    const size =
+      typeof limit === "number" && Number.isFinite(limit)
+        ? Math.min(SEARCH_PAGE, Math.max(1, Math.floor(limit)))
+        : SEARCH_PAGE;
     const message = lafThreadMessages.message;
     const said = sql`laf_message_text(${message})`;
     const rows = (await database
@@ -163,6 +186,12 @@ export function createConversationSearch(options: {
         and(
           // The partial index's predicate, as the migration wrote it.
           sql`${message} ->> 'role' in ('user', 'assistant')`,
+          agentId
+            ? sql`exists (select 1 from ${channelAgents} where ${channelAgents.channelId} = ${channels.id} and ${channelAgents.agentId} = ${agentId})`
+            : undefined,
+          notOfRun
+            ? sql`${lafThreadMessages.runId} is distinct from ${notOfRun}`
+            : undefined,
           ...terms.map(
             (term) => sql`${said} ilike ${likePattern(term)} escape '\\'`,
           ),
@@ -176,9 +205,9 @@ export function createConversationSearch(options: {
         sql`${lafThreadMessages.threadId} desc`,
         sql`${lafThreadMessages.seq} desc`,
       )
-      .limit(SEARCH_PAGE + 1)) as Row[];
+      .limit(size + 1)) as Row[];
 
-    const page = rows.slice(0, SEARCH_PAGE);
+    const page = rows.slice(0, size);
     const hits: SearchHit[] = [];
     for (const row of page) {
       // A row with no id is on no screen: there is nowhere to go to.
@@ -202,7 +231,7 @@ export function createConversationSearch(options: {
     return {
       hits,
       next:
-        rows.length > SEARCH_PAGE && last
+        rows.length > size && last
           ? `${last.cursorAt}~${last.threadId}~${last.seq}`
           : null,
     };

@@ -44,6 +44,10 @@ import {
   users,
   lafAttachments,
 } from "../src/db/schema";
+import {
+  READ_PROJECTS,
+  REMOVED_PROJECT_RESULT,
+} from "../../shared/tools/projects";
 import { createConversationSearch } from "../src/search/conversations";
 import { TEST_POOL } from "./support/database";
 
@@ -325,6 +329,8 @@ describe("deleting a project", () => {
       counts: {
         channels: 1,
         conversationContexts: 1,
+        // The main conversation had read nothing of it.
+        mainCopies: 0,
         memoryEvidence: 1,
         notifications: 1,
         threadMessages: 1,
@@ -357,6 +363,104 @@ describe("deleting a project", () => {
       waited: true,
     });
     expect(JSON.stringify(trail)).not.toContain("가을 메뉴");
+  });
+
+  test("what the main conversation was handed of it is covered: the result keeps its place and loses its content, and another project's is as it was", async () => {
+    const project = await conversation("project");
+    const beside = await conversation("project");
+    /*
+     * In a main conversation made for this case, and not the file's own: a case that stopped
+     * halfway would leave these rows in the one every later case counts.
+     */
+    const main = await conversation("main");
+    const copy = (seq: number, read: string[], content: string) => ({
+      threadId: main.thread,
+      seq,
+      message: {
+        id: `copy-${seq}-${project.thread}`,
+        role: "tool",
+        toolCallId: `call-${seq}-${project.thread}`,
+        content,
+        lafProjects: read,
+      },
+    });
+    const SEQS = [901, 902, 903, 904];
+    await database.insert(lafThreadMessages).values([
+      copy(901, [project.channel], `{"ok":true,"summary":"${WORD} 요약"}`),
+      // A search that read both: what it holds of the other project goes with it.
+      copy(902, [beside.channel, project.channel], `${WORD} 두 곳`),
+      copy(903, [beside.channel], "다른 프로젝트의 요약"),
+      // The call the first result answers: an assistant's message is never touched.
+      {
+        threadId: main.thread,
+        seq: 904,
+        message: {
+          id: `asked-${project.thread}`,
+          role: "assistant",
+          content: "",
+          toolCalls: [
+            {
+              id: `call-901-${project.thread}`,
+              type: "function",
+              function: { name: READ_PROJECTS, arguments: "{}" },
+            },
+          ],
+        },
+      },
+    ]);
+    const forgotten: string[] = [];
+    const deletion = createProjectDeletion({
+      database,
+      forgotten: (channelId) => forgotten.push(channelId),
+      stopThread: async () => {},
+    });
+
+    const outcome = await deletion.delete({
+      channelId: project.channel,
+      userId: ME,
+    });
+    expect(outcome).toMatchObject({ ok: true, counts: { mainCopies: 2 } });
+    expect(forgotten).toEqual([project.channel]);
+
+    const rows = await database
+      .select({
+        seq: lafThreadMessages.seq,
+        message: lafThreadMessages.message,
+      })
+      .from(lafThreadMessages)
+      .where(
+        and(
+          eq(lafThreadMessages.threadId, main.thread),
+          inArray(lafThreadMessages.seq, SEQS),
+        ),
+      )
+      .orderBy(lafThreadMessages.seq);
+    const [first, both, other, asked] = rows.map(
+      (row) => row.message as Record<string, unknown>,
+    );
+    // The fixed sentence, to the letter the store writes — one string in two places.
+    expect(first).toEqual({
+      id: `copy-901-${project.thread}`,
+      role: "tool",
+      toolCallId: `call-901-${project.thread}`,
+      content: REMOVED_PROJECT_RESULT,
+      lafProjects: [project.channel],
+    });
+    expect(both?.content).toBe(REMOVED_PROJECT_RESULT);
+    expect(other?.content).toBe("다른 프로젝트의 요약");
+    expect(asked?.toolCalls).toHaveLength(1);
+    // Nothing the project said is left in the main conversation's rows.
+    expect(JSON.stringify([first, both])).not.toContain(WORD);
+    // The main conversations themselves are as they were: one message each, and every row.
+    expect(await left(MAIN)).toEqual(WHOLE);
+    expect(await left(main)).toMatchObject({ channels: 1, threads: 1 });
+
+    // A second deletion finds the other project's copies, and the one already covered stays so.
+    const next = await deletion.delete({
+      channelId: beside.channel,
+      userId: ME,
+    });
+    expect(next).toMatchObject({ ok: true, counts: { mainCopies: 2 } });
   });
 
   test("the Bot's main conversation is not a project, and is not deleted from here", async () => {
