@@ -19,7 +19,11 @@ import { ConnectionChoices } from "@/components/connections/connection-choices";
 import { LiveRegion } from "@/components/layout/live-region";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
-import { focusRing } from "@/components/ui/focus";
+import {
+  focusRing,
+  focusRingBare,
+  selectedWhenPressed,
+} from "@/components/ui/focus";
 import { Input } from "@/components/ui/input";
 import { MessageContent, Message as MessageRow } from "@/components/ui/message";
 import { writeLine } from "@/lib/agents/notebook";
@@ -265,9 +269,14 @@ function Said({
  * THE FILLS ARE THE PAGE'S. On the bubble's grey a row under the pointer and the chosen row were
  * lifted towards the page (`bg-background/60`, `/70`) — which on the page itself is the page
  * painted on the page, and drew nothing. Under the pointer a row takes the fill a row of this app
- * takes there (`bg-accent`), and the chosen one the fill of a surface that is filled in
- * (`bg-muted`): read back from the engines, 8% and 9% of the grey where there was the page's own
- * colour at 60% and 70%.
+ * takes there (`bg-accent`), read back from the engine as 8% of the grey where there was the
+ * page's own colour at 60%.
+ *
+ * THE CHOSEN ROW IS DRAWN AS EVERY OTHER CHOSEN THING (`selectedWhenPressed`, `ui/focus.ts`): the
+ * accent's hairline, its 8% tint and its ink, keyed to the `aria-pressed` the row already says.
+ * Until 2026-10-11 it was a solid grey border on `bg-muted` — the one chosen thing in the app that
+ * stayed grey after the accent arrived, on the first screen a person sees. Only the dash-to-solid
+ * stays here, since no other chosen thing starts out dashed.
  */
 function OptionRows({
   chosen,
@@ -293,7 +302,7 @@ function OptionRows({
         return (
           <button
             aria-pressed={isChosen}
-            className={`flex min-h-11 w-full items-center rounded-xl border border-foreground/25 border-dashed px-3 py-2 text-left transition-colors enabled:hover:border-foreground/50 enabled:hover:bg-accent disabled:cursor-default data-[chosen=true]:border-foreground/60 data-[chosen=true]:border-solid data-[chosen=true]:bg-muted data-[dimmed=true]:opacity-45 ${focusRing}`}
+            className={`flex min-h-11 w-full items-center rounded-xl border border-foreground/25 border-dashed px-3 py-2 text-left transition-colors enabled:hover:border-foreground/50 enabled:hover:bg-accent disabled:cursor-default aria-pressed:border-solid data-[dimmed=true]:opacity-45 ${selectedWhenPressed} ${focusRing}`}
             data-chosen={isChosen}
             data-dimmed={locked && !isChosen}
             disabled={locked || disabled}
@@ -453,7 +462,7 @@ function PersonaQuestion({
       {persona ? (
         <p className="px-1 text-right text-muted-foreground text-xs">
           <Link
-            className={`underline underline-offset-2 hover:text-foreground ${focusRing}`}
+            className={`underline underline-offset-2 hover:text-foreground ${focusRingBare}`}
             to="/settings/shop"
           >
             {t("Change")}
@@ -776,7 +785,7 @@ function NotebookFollowUp({
           <p>
             {t("I wrote it in the Notebook, where you can change it any time.")}{" "}
             <Link
-              className={`underline underline-offset-2 ${focusRing}`}
+              className={`underline underline-offset-2 ${focusRingBare}`}
               to="/notebook"
             >
               {t("Open the Notebook")}
@@ -813,7 +822,7 @@ function ConnectStep({ persona }: { persona: Persona }) {
       </div>
       <p className="mt-2 text-xs">
         <Link
-          className={`underline underline-offset-2 ${focusRing}`}
+          className={`underline underline-offset-2 ${focusRingBare}`}
           to="/settings/connected-accounts"
         >
           {t("See every connection")}

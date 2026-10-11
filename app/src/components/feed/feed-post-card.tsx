@@ -6,7 +6,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
-import { focusRing } from "@/components/ui/focus";
+import { focusRingBare } from "@/components/ui/focus";
 import { activeLocale, t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -83,7 +83,7 @@ export function FeedPostCard({
               <a
                 className={cn(
                   "text-link underline-offset-4 hover:underline",
-                  focusRing,
+                  focusRingBare,
                 )}
                 href={source.url}
                 rel="noreferrer"

@@ -11,7 +11,7 @@ import { type ReactNode, useState } from "react";
 import { footerLinksFor } from "@/components/app-sidebar/places";
 import { StopAllDialog } from "@/components/app-sidebar/stop-all-dialog";
 import { PageShell } from "@/components/layout/page-shell";
-import { focusRing } from "@/components/ui/focus";
+import { focusRing, focusRingBare } from "@/components/ui/focus";
 import { Skeleton } from "@/components/ui/skeleton";
 import { primaryBot, useMyBots } from "@/lib/agents/my-bots";
 import { signOutMutationOptions } from "@/lib/auth/mutations";
@@ -33,7 +33,7 @@ export const Route = createFileRoute("/_authed/_app/menu")({
   component: MenuPage,
 });
 
-const ROW_CLASS = `flex min-h-12 items-center gap-3 px-4 text-sm transition-colors hover:bg-accent ${focusRing}`;
+const ROW_CLASS = `flex min-h-12 items-center gap-3 px-4 text-sm transition-colors hover:bg-accent ${focusRingBare}`;
 
 function MenuPage() {
   const mine = useMyBots();

@@ -1,6 +1,6 @@
 import type { FeedQuotePart } from "@shared/feed";
 import { IconLayoutList, IconX } from "@tabler/icons-react";
-import { focusRing } from "@/components/ui/focus";
+import { focusRingBare } from "@/components/ui/focus";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -31,7 +31,7 @@ export function FeedQuoteChip({
           aria-label={t("Remove “{title}”", { title: part.filename })}
           className={cn(
             "flex size-6 shrink-0 items-center justify-center rounded-md hover:bg-accent hover:text-foreground",
-            focusRing,
+            focusRingBare,
           )}
           onClick={onRemove}
           type="button"
