@@ -156,7 +156,11 @@ import { createDiagnosticsSource } from "./support/diagnostics";
 import { createFeedbackStore } from "./support/feedback";
 import { createPackageStatusReader, loadTenantPackage } from "./tenant-package";
 import { createChatTools } from "./turns/chat-tools";
-import { byConversation, createTurnEngine } from "./turns/engine";
+import {
+  byConversation,
+  createTurnEngine,
+  delegatedThreadOf,
+} from "./turns/engine";
 import {
   createFirstMove,
   firstMoveForTurns,
@@ -1037,7 +1041,17 @@ const turnEngine = createTurnEngine({
 const projectDeletion = createProjectDeletion({
   database,
   stopThread: (threadId) => turnEngine.stopThread(threadId),
-  dropContext: (threadId) => conversations.drop(threadId),
+  /*
+   * The conversation's context, and its delegated side's: a browsing run is made on a thread of
+   * its own, named after the conversation (`delegatedThreadOf`), and the store keeps a context
+   * for that thread as for any other — never written, read by nothing once the run has ended,
+   * and holding the deleted project's pages for the six hours until the unkept sweep. Dropped
+   * at the same moment; dropping a thread the store never saw is nothing.
+   */
+  dropContext: async (threadId) => {
+    await conversations.drop(threadId);
+    await conversations.drop(delegatedThreadOf(threadId));
+  },
   /*
    * The project's folder, on the computer of each Bot in it — as the person, who alone may name a
    * project to remove (`agent-computer/src/file-routes.ts`). After the long results still being
