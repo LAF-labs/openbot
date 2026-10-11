@@ -3,9 +3,13 @@ import {
   type FileScope,
   fileScopeHeader,
   fileScopeOf,
+  isBareFileName,
+  isOlderThanItsFolder,
   isProjectFolderId,
   MAIN_SCOPE,
+  olderCopyNameOf,
   PERSON_SCOPE,
+  PROJECT_FOLDERS_SINCE,
   placedForWrite,
   projectScope,
   scopeLists,
@@ -241,5 +245,55 @@ describe("a project's id as a folder's name", () => {
 
   test("a scope is not made of anything else", () => {
     expect(() => projectScope("../x")).toThrow();
+  });
+});
+
+describe("what a project filed before it had a folder", () => {
+  test.each([
+    ["uploads/2026-09-26-1a2b3c4d-매출.csv", "2026-09-26-1a2b3c4d-매출.csv"],
+    ["uploads/a b (2).txt", "a b (2).txt"],
+    // Filed since: in the project's folder, and gone with it.
+    ["projects/channel_a/uploads/2026-10-11-1a2b3c4d-매출.csv", null],
+    // One name in that one folder, and nothing else.
+    ["uploads/deeper/x.csv", null],
+    ["uploads/", null],
+    ["uploads/..", null],
+    ["uploads/.", null],
+    ["Uploads/x.csv", null],
+    ["./uploads/x.csv", null],
+    ["notes.md", null],
+    ["uploads/a\\b.csv", null],
+    ["", null],
+  ])("the name of %j is %j", (path, name) => {
+    expect(olderCopyNameOf(path)).toBe(name);
+  });
+
+  test.each([
+    ["x.csv", true],
+    ["9월 정산 (2).csv", true],
+    ["", false],
+    [".", false],
+    ["..", false],
+    ["a/b", false],
+    ["a\\b", false],
+    ["a\0b", false],
+    ["x".repeat(256), false],
+    [7, false],
+    [null, false],
+  ])("%j is one file's name: %j", (name, is) => {
+    expect(isBareFileName(name)).toBe(is);
+  });
+});
+
+describe("a project older than its folder", () => {
+  test.each([
+    ["2026-09-01T00:00:00Z", true],
+    [new Date("2026-10-10T16:07:46Z"), true],
+    [PROJECT_FOLDERS_SINCE, false],
+    ["2026-10-12T00:00:00Z", false],
+    // Nothing to read is not "older": the sentence that says files stay is said of a known date.
+    ["not a date", false],
+  ])("made %j: %j", (madeAt, older) => {
+    expect(isOlderThanItsFolder(madeAt)).toBe(older);
   });
 });

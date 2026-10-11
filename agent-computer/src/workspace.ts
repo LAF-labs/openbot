@@ -24,6 +24,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createReadStream } from "node:fs";
 import {
   copyFile,
+  lstat,
   mkdir,
   open,
   readdir,
@@ -32,16 +33,19 @@ import {
   rm,
   stat,
   statfs,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { ATTACHMENT_MAX_BYTES } from "../../shared/attachments";
 import {
   type FileScope,
+  isBareFileName,
   isProjectFolderId,
   projectFolder,
   scopeLists,
   scopeRefusal,
+  UPLOADS_DIRECTORY,
 } from "../../shared/file-scope";
 import { HANDOFF_MAX_BYTES } from "../../shared/workspace-files";
 import { sliceOnCharacters } from "../../shared/sound-text";
@@ -50,6 +54,11 @@ import { sliceOnCharacters } from "../../shared/sound-text";
  * A path that is not the Bot's to name. The message is for this process's own tests and logs; what
  * leaves the process is `code` (`failures.ts`), because the surface owns the words.
  */
+/** Whether a filesystem call failed because nothing is at that path. */
+function isMissing(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === "ENOENT";
+}
+
 export class WorkspacePathError extends Error {
   readonly code = "laf:file_path_refused" as const;
   constructor(message: string) {
@@ -879,13 +888,42 @@ export function createWorkspace(
      * PROJECT'S ID, NEVER BY A PATH, so nothing that can name a file can aim this at one.
      * Answers whether there was a folder.
      */
-    async removeProject(id: string): Promise<boolean> {
-      if (!isProjectFolderId(id)) {
+    async removeProject(
+      id: string,
+      /**
+       * What the project filed in `uploads/` before it had a folder, by name
+       * (`shared/file-scope.ts`, `olderCopyNameOf`): the copies of its own attachments, read by the
+       * server from the project's own rows. Each is one name in that one folder; anything else
+       * refuses the whole call before anything is removed.
+       */
+      olderCopies: readonly string[] = [],
+    ): Promise<boolean> {
+      if (!isProjectFolderId(id) || !olderCopies.every(isBareFileName)) {
         throw new WorkspacePathError("That is not a project's id.");
       }
-      const folder = resolve(await realpath(rootPath), projectFolder(id));
+      const root = await realpath(rootPath);
+      const folder = resolve(root, projectFolder(id));
       const was = await stat(folder).catch(() => null);
       await rm(folder, { recursive: true, force: true });
+      for (const name of olderCopies) {
+        const copy = resolve(root, UPLOADS_DIRECTORY, name);
+        /*
+         * The name itself, never where a link leads: `lstat` and `unlink` both stop at a link, so
+         * a link goes and its target stays. A folder under that name is not a copy and stays.
+         *
+         * ONLY "IT IS NOT THERE" IS NOT A FAILURE — the clock asking a second time. Anything else
+         * (the disk refusing, a read-only volume) fails the call, as the folder's removal does:
+         * swallowed, the project's rows would go and the copy would stay with nothing naming it.
+         */
+        const found = await lstat(copy).catch((error: unknown) => {
+          if (isMissing(error)) return null;
+          throw error;
+        });
+        if (!found || found.isDirectory()) continue;
+        await unlink(copy).catch((error: unknown) => {
+          if (!isMissing(error)) throw error;
+        });
+      }
       return was !== null;
     },
   };

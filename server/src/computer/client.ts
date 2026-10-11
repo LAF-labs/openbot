@@ -826,10 +826,16 @@ export function createComputerClient(options: ComputerClientOptions) {
       /**
        * A project's folder, removed with everything in it (`/files/project/remove`): by the
        * project's id, never a path, and only as the person. Answers whether there was one.
+       * `olderCopies` are the names of what the project filed in `uploads/` before it had a
+       * folder (`shared/file-scope.ts`, `olderCopyNameOf`).
        */
-      async removeProjectFolder(projectId: string): Promise<boolean> {
+      async removeProjectFolder(
+        projectId: string,
+        olderCopies: readonly string[] = [],
+      ): Promise<boolean> {
         const answer = (await post("/files/project/remove", {
           projectId,
+          ...(olderCopies.length > 0 ? { olderCopies } : {}),
         })) as { removed?: unknown };
         return answer.removed === true;
       },

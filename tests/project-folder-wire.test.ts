@@ -1,5 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Server } from "bun";
@@ -17,6 +24,7 @@ import { createResultSpill } from "../server/src/computer/spillover";
 import {
   FILE_SCOPE_HEADER,
   MAIN_SCOPE,
+  OLDER_COPIES_PER_CALL,
   PERSON_SCOPE,
   projectScope,
 } from "../shared/file-scope";
@@ -361,6 +369,57 @@ describe("a project, deleted", () => {
     // Asked again by the clock, there is nothing to remove, and that is not a failure.
     expect(await person.removeProjectFolder("channel_a")).toBe(false);
   });
+
+  test("what it filed in uploads/ before it had a folder goes with it, by name", async () => {
+    await mkdir(join(root, "uploads"), { recursive: true });
+    await writeFile(join(root, "uploads", "2026-09-26-1a2b3c4d-매출.csv"), "x");
+    await writeFile(join(root, "uploads", "main.csv"), "the main's");
+    const person = client.forBot(BOT, undefined, PERSON_SCOPE);
+
+    // The folder went in the test above; the copies are still asked for, as the clock would.
+    expect(
+      await person.removeProjectFolder("channel_a", [
+        "2026-09-26-1a2b3c4d-매출.csv",
+      ]),
+    ).toBe(false);
+
+    expect(await readdir(join(root, "uploads"))).toEqual(["main.csv"]);
+  });
+
+  test.each([
+    [["../메모.md"]],
+    [["uploads/main.csv"]],
+    [[""]],
+    ["main.csv"],
+    [[7]],
+    // One more than a call carries: the server sends them in as many calls as they need.
+    [Array.from({ length: OLDER_COPIES_PER_CALL + 1 }, (_, n) => `${n}.csv`)],
+  ])(
+    "copies named by anything but a name, or more than a call carries, are refused whole: %#",
+    async (olderCopies) => {
+      const came = await fetch(
+        `http://127.0.0.1:${container.port}/files/project/remove`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-openbot-computer-token": TOKEN,
+            "x-openbot-bot-id": BOT,
+            [FILE_SCOPE_HEADER]: "person",
+          },
+          body: JSON.stringify({ projectId: "channel_b", olderCopies }),
+        },
+      );
+      expect(came.status).toBe(400);
+      expect(await came.json()).toMatchObject({
+        code: "laf:request_invalid",
+        field: "olderCopies",
+      });
+      expect(await readdir(join(root, "projects"))).toEqual(["channel_b"]);
+      expect(await readdir(join(root, "uploads"))).toEqual(["main.csv"]);
+      expect(await readFile(join(root, "메모.md"), "utf8")).toBe("main's");
+    },
+  );
 
   test.each([
     ["a project's run", projectScope("channel_b")],

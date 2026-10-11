@@ -2788,8 +2788,11 @@ export const ko: Record<string, string> = {
   // Deleting a project (piece 4-5).
   "Delete “{title}”": "‘{title}’ 지우기",
   "Delete the project “{title}”?": "‘{title}’ 프로젝트를 지울까요?",
-  "The project and everything said in it go. What your Bot learned there stays.":
-    "프로젝트와 그 안에서 나눈 대화가 모두 지워져요. 봇이 거기서 기억한 것은 남아요.",
+  "The project, everything said in it and the files made in it go. What your Bot learned there stays.":
+    "프로젝트와 그 안에서 나눈 대화, 거기서 만든 파일이 모두 지워져요. 봇이 거기서 기억한 것은 남아요.",
+  // Only for a project older than its folder (`shared/file-scope.ts`, `PROJECT_FOLDERS_SINCE`).
+  "Files made before projects had folders of their own stay in your Bot's folder.":
+    "프로젝트가 자기 폴더를 갖기 전에 만든 파일은 봇의 폴더에 남아요.",
   "Only a project can be deleted here.": "여기서는 프로젝트만 지울 수 있어요.",
   "That project is being deleted.": "그 프로젝트는 지우는 중이에요.",
   // 검색, every conversation at once (piece 4-3).

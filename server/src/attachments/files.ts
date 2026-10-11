@@ -7,6 +7,7 @@
  * AND the bytes are text.
  */
 import { fileTypeFromBuffer } from "file-type";
+import { UPLOADS_DIRECTORY } from "../../../shared/file-scope";
 import {
   ATTACHMENT_TYPES,
   type AttachmentKind,
@@ -103,5 +104,5 @@ export function workspacePathFor(
   const day = at.toISOString().slice(0, 10);
   const dot = name.lastIndexOf(".");
   const stem = dot > 0 ? name.slice(0, dot) : name;
-  return `uploads/${day}-${id.slice(0, 8)}-${stem}.${readableExtension}`;
+  return `${UPLOADS_DIRECTORY}/${day}-${id.slice(0, 8)}-${stem}.${readableExtension}`;
 }

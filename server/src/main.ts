@@ -1,6 +1,6 @@
 import "./telemetry-off";
 import { serve } from "bun";
-import { PERSON_SCOPE } from "../../shared/file-scope";
+import { OLDER_COPIES_PER_CALL, PERSON_SCOPE } from "../../shared/file-scope";
 import { HARNESS_VERSION } from "../../shared/prompt/harness";
 import { createConsentStore } from "./account/consent";
 import { createAccountDeletion } from "./account/deletion";
@@ -1020,12 +1020,25 @@ const projectDeletion = createProjectDeletion({
    */
   ...(computerClient
     ? {
-        removeFolder: async (channelId: string, botIds: readonly string[]) => {
+        removeFolder: async (channelId, bots) => {
           await resultSpill?.settledFor(channelId);
-          for (const botId of botIds) {
-            await computerClient
-              .forBot(botId, undefined, PERSON_SCOPE)
-              .removeProjectFolder(channelId);
+          for (const { botId, olderCopies } of bots) {
+            const asPerson = computerClient.forBot(
+              botId,
+              undefined,
+              PERSON_SCOPE,
+            );
+            // In as many calls as the names need (`OLDER_COPIES_PER_CALL`): one call past what
+            // the computer takes would be refused every minute for ever, the mark never lifted.
+            // Each call is whole by itself — the folder's removal is asked again and finds none.
+            let from = 0;
+            do {
+              await asPerson.removeProjectFolder(
+                channelId,
+                olderCopies.slice(from, from + OLDER_COPIES_PER_CALL),
+              );
+              from += OLDER_COPIES_PER_CALL;
+            } while (from < olderCopies.length);
           }
         },
       }

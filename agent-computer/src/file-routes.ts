@@ -11,7 +11,9 @@
 import {
   FILE_SCOPE_HEADER,
   fileScopeOf,
+  isBareFileName,
   isProjectFolderId,
+  OLDER_COPIES_PER_CALL,
 } from "../../shared/file-scope";
 import { FILE_PATH_HEADER } from "../../shared/workspace-files";
 import type { BotRoute } from "./computer";
@@ -219,7 +221,9 @@ export const putFile: BotRoute = async ({ request }, { workspace }) => {
  * project does last on this side (`server/src/channels/deleting.ts`).
  *
  * BY THE PROJECT'S ID, NEVER A PATH, AND ONLY AT THE PERSON'S OWN DOOR: no call a Bot's run makes
- * says `person`, so nothing a Bot can be talked into reaches this.
+ * says `person`, so nothing a Bot can be talked into reaches this. `olderCopies` are names, each
+ * one file in `uploads/`: what the project filed there before it had a folder
+ * (`shared/file-scope.ts`).
  */
 export const removeProjectFolder: BotRoute = async (
   { request, session },
@@ -228,8 +232,19 @@ export const removeProjectFolder: BotRoute = async (
   if (fileScopeOf(request.headers.get(FILE_SCOPE_HEADER))?.kind !== "person") {
     return invalid("fileScope");
   }
-  const body = await bodyOf<{ projectId?: unknown }>(request);
+  const body = await bodyOf<{ projectId?: unknown; olderCopies?: unknown }>(
+    request,
+  );
   if (!isProjectFolderId(body?.projectId)) return invalid("projectId");
+  // Names, each one file in `uploads/`: a path here would be this door removing by path.
+  const olderCopies = body.olderCopies ?? [];
+  if (
+    !Array.isArray(olderCopies) ||
+    olderCopies.length > OLDER_COPIES_PER_CALL ||
+    !olderCopies.every(isBareFileName)
+  ) {
+    return invalid("olderCopies");
+  }
   // A download its last page is still sending would make the folder again, for nothing to remove.
   if (
     session.fileScope?.kind === "project" &&
@@ -238,7 +253,9 @@ export const removeProjectFolder: BotRoute = async (
     delete session.fileScope;
   }
   try {
-    return json({ removed: await workspace.removeProject(body.projectId) });
+    return json({
+      removed: await workspace.removeProject(body.projectId, olderCopies),
+    });
   } catch (error) {
     return fileFailure(error);
   }
