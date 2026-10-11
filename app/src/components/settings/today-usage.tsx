@@ -11,7 +11,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { t } from "@/lib/i18n";
-import { todayUsageReading, USAGE_NOTICE_AT } from "@/lib/usage/today";
+import { nearlySpent, todayUsageReading } from "@/lib/usage/today";
 import { cn } from "@/lib/utils";
 
 /**
@@ -33,7 +33,8 @@ export const TodayUsageSection = () => {
   });
   if (!reading) return null;
   const usage = reading.state === "ready" ? reading.data : null;
-  const nearlySpent = usage ? usage.ratio >= USAGE_NOTICE_AT : false;
+  // The same 80% the notice turns on at, read off the same number (`lib/usage/today.ts`).
+  const warning = usage ? nearlySpent(usage) : false;
 
   return (
     <PageSection title={t("Free trial")}>
@@ -83,7 +84,7 @@ export const TodayUsageSection = () => {
                   className={cn(
                     "h-1.5 w-28 appearance-none overflow-hidden rounded-full bg-muted",
                     "[&::-webkit-progress-bar]:bg-muted",
-                    nearlySpent
+                    warning
                       ? "[&::-moz-progress-bar]:bg-warning [&::-webkit-progress-value]:bg-warning"
                       : "[&::-moz-progress-bar]:bg-primary [&::-webkit-progress-value]:bg-primary",
                   )}
