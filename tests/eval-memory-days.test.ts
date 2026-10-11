@@ -186,6 +186,28 @@ describe("the table of what an owner says in passing", () => {
     expect(new Set(said).size).toBe(7);
   });
 
+  test("sixty busy days: seven weeks before a pairing comes round again, and no number is the table's", () => {
+    const days = Array.from({ length: 61 }, (_, day) => day);
+    // The first week is what it was before the weeks were told apart.
+    expect(busyTurn(0, 0).owner).toContain(
+      "김해 박 사장님한테서 블루베리잼 24병",
+    );
+    expect(busyTurn(6, 2).owner).toContain("봉서아 고객이 생강청");
+    // Who complained about what, and how it was settled: not twice in seven weeks.
+    const complaints = days
+      .slice(0, 49)
+      .map((day) => busyTurn(day, 2).owner.split(" 답장 초안")[0] ?? "");
+    expect(new Set(complaints).size).toBe(49);
+    const all = days
+      .flatMap((day) => [0, 1, 2, 3].map((turn) => busyTurn(day, turn)))
+      .map((said) => `${said.owner}\n${said.bot}`)
+      .join("\n");
+    for (const price of ["9,500원", "11,000원", "18,000원"]) {
+      expect([price, all.includes(` ${price}`)]).toEqual([price, false]);
+    }
+    for (const one of FACTS) expect(survivalIn(one, all)).toBe("gone");
+  });
+
   test("three things must not be written: a one-off, a secret, a standing order", () => {
     expect(MUST_NOTS.map((item) => item.kind)).toEqual([
       "one-off",
