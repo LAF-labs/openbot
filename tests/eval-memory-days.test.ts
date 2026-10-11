@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { answerText, TURNS } from "../evals/cache-days";
+import { answerText, TURNS } from "../evals/days-talk";
 import {
   busyTurn,
   FACT_KINDS,
