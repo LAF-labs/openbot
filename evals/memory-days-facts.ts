@@ -14,6 +14,8 @@
  * None of them is in the pack's two memories, and no question below is answered by another fact.
  */
 
+import { answerText, TURNS } from "./days-talk";
+
 export const FACT_KINDS = [
   "supplier-terms",
   "unit-price",
@@ -56,10 +58,40 @@ const n = (digits: string, unit: string) =>
   new RegExp(`(?<![\\d,])${digits}\\s?${unit}`);
 
 /**
+ * A day of the month that is that day, and a day at all: "5일 전에 말씀하셨어요" says when
+ * something was said, not which day a deadline falls on. The same four words the shapes below leave
+ * out of a value of the kind.
+ */
+const day = (digits: string) =>
+  new RegExp(`(?<![\\d,])${digits}\\s?일(?!\\s?(이내|안|전|후))`);
+
+/**
+ * What a price is the price OF. "유자는 18,000원이다" on 수첩 is a number with nothing it buys:
+ * a line that has to stand alone must say per kilogram. An answer to "킬로당 얼마였지?" need not
+ * say it again (`recallOf`).
+ */
+const PER_KILO =
+  /(?<![\d.,])1\s?(kg|㎏|킬로|키로)|(kg|㎏|킬로(그램)?|키로)\s?(당|에|마다)|\/\s?(kg|㎏)/i;
+
+/**
+ * A weekday as it is said or written: `화요일`, and the shorthand a list is written in — `월·수`,
+ * `화, 목`, `월/수/금`. The letters of a list stand alone: not the 일 of 배송일, not the 수 of 수량.
+ */
+const WEEKDAY =
+  /[월화수목금토일]요일|(?<![가-힣])[월화수목금토일](?:\s?[·,/]\s?[월화수목금토일])+(?=요일|[에은는이가만도로과와]|[\s.,!?)]|$)/g;
+
+/**
  * An hour as it is said or written: `6시`, `18시`, `18:00`. Not `3시간`, and not the minutes of a
  * clock read as an hour of their own.
  */
 const CLOCK = /(?<![\d:])\d{1,2}(\s?시(?!간)|:\d{2})/g;
+
+/** Which days a schedule holds on, said as something other than weekdays. Not "주말은 쉬어요". */
+const OTHER_DAYS =
+  /주말(?!\s?(은|엔|에는|에)?\s?(쉬|안\s?받|휴무|제외|빼))|매일|연중무휴/;
+
+/** How many of a thing: `한 병`, `세 개`, `3병`. */
+const HOW_MANY = /(?<![\d,.])\d+\s?(개|병)|(한|두|세|네|다섯)\s?(개|병)/;
 
 export const FACTS: readonly Fact[] = [
   {
@@ -94,7 +126,7 @@ export const FACTS: readonly Fact[] = [
     // Said on 14 September: "next month" named is October, and the day written out is 10/10.
     values: [
       /다음\s?달|익월|다음\s?월|(?<!\d)10\s?월|(?<![\d/])10\/10(?!\d)/,
-      /(?<![\d,])10\s?일|(?<![\d/])10\/10(?!\d)/,
+      new RegExp(`${day("10").source}|(?<![\\d/])10\\/10(?!\\d)`),
     ],
     shape:
       /선결제|바로\s?결제|즉시\s?결제|월\s?말|말일|(?<![\d월]\s?)\d{1,2}\s?일(?!\s?(이내|안|전|후))/g,
@@ -110,7 +142,7 @@ export const FACTS: readonly Fact[] = [
     note: "유자는 청운농원에서 1kg에 18,000원에 들여온다.",
     ask: "청운농원 유자 들여오는 값이 킬로당 얼마였지?",
     entity: /청운\s?농원|유자/,
-    values: [/(?<![\d,])18,?000|1만\s?8천|만\s?팔천/],
+    values: [/(?<![\d,])18,?000|1만\s?8천|만\s?팔천/, PER_KILO],
     shape:
       /(?<![\d,])\d{1,3},\d{3}\s?원|(?<![\d,])\d{4,6}\s?원|\d만\s?\d천\s?원/g,
   },
@@ -128,7 +160,7 @@ export const FACTS: readonly Fact[] = [
     note: "딸기는 논산 김 사장님네서 1kg에 11,000원에 들여온다(이번 달에 9,500원에서 올랐다).",
     ask: "논산에서 받는 딸기, 지금 킬로당 얼마에 들어오지?",
     entity: /딸기|논산/,
-    values: [/(?<![\d,])11,?000|1만\s?1천|만\s?천\s?원/],
+    values: [/(?<![\d,])11,?000|1만\s?1천|만\s?천\s?원/, PER_KILO],
     shape:
       /(?<![\d,])\d{1,3},\d{3}\s?원|(?<![\d,])\d{4,6}\s?원|\d만\s?\d천\s?원/g,
     stale: /(?<![\d,])9,?500|9천\s?5백/,
@@ -147,8 +179,10 @@ export const FACTS: readonly Fact[] = [
     values: [
       /(?<![\d:])10\s?(시|:00|\s?[~\-–]\s?\d)/,
       /(?<![\d:])(4|16)\s?(시|:00)/,
+      // Weekdays only: the same hours on a weekend, or every day, are another schedule.
+      /평일|주중|월\s?[~\-–]\s?금|월요일부터\s?금요일/,
     ],
-    shape: CLOCK,
+    shape: new RegExp(`${CLOCK.source}|${OTHER_DAYS.source}`, "g"),
   },
   {
     id: "business-hours/correction",
@@ -182,7 +216,7 @@ export const FACTS: readonly Fact[] = [
       /화요일|화\s?[·,/와과]\s?목|화목/,
       /목요일|[·,/와과]\s?목(?!록)|화목/,
     ],
-    shape: /[월화수목금토일]요일/g,
+    shape: WEEKDAY,
   },
   {
     id: "staff-days/correction",
@@ -200,7 +234,7 @@ export const FACTS: readonly Fact[] = [
     entity: /민수/,
     // A summary writes the change as an arrow: `토→일`.
     values: [/일요일|→\s?일(?![가-힣\d])/],
-    shape: /[월화수목금토일]요일/g,
+    shape: WEEKDAY,
     stale: /토요일|토\s?→/,
   },
   {
@@ -231,8 +265,15 @@ export const FACTS: readonly Fact[] = [
     note: "단골 오 사장님네 카페는 딸기잼을 300g 병 세 개로 나눠 받는다(전에는 1kg 큰 병이었다).",
     ask: "오 사장님네 카페에 나가는 잼은 어떤 용량으로 담아 보내야 하지?",
     entity: /오\s?사장/,
-    values: [/(?<![\d,])300\s?(g|그램)/i],
-    shape: /(?<![\d,.])\d+\s?(kg|g|킬로|그램)/gi,
+    // Three jars of 300g: one jar of 300g is a third of what the café gets.
+    values: [
+      /(?<![\d,])300\s?(g|그램)/i,
+      /세\s?(개|병)|(?<![\d,.])3\s?(개|병)|[x×]\s?3(?!\d)/i,
+    ],
+    shape: new RegExp(
+      `(?<![\\d,.])\\d+\\s?(kg|g|킬로|그램)|${HOW_MANY.source}`,
+      "gi",
+    ),
     stale: /(?<![\d,.])1\s?(kg|킬로)/i,
   },
   {
@@ -245,7 +286,7 @@ export const FACTS: readonly Fact[] = [
     note: "매출 정산 자료는 매달 5일까지 세무사에게 넘겨야 한다.",
     ask: "세무사님께 자료 보내는 마감이 다달이 며칠이었지?",
     entity: /세무사/,
-    values: [n("5", "일")],
+    values: [day("5")],
     shape: /(?<![\d월]\s?)\d{1,2}\s?일(?!\s?(이내|안|전|후))|월\s?말|말일/g,
   },
   {
@@ -264,7 +305,7 @@ export const FACTS: readonly Fact[] = [
     ask: "기획전 신청은 주마다 무슨 요일이 마감이었지?",
     entity: /기획전/,
     values: [/금요일|→\s?금(?![가-힣\d])/],
-    shape: /[월화수목금토일]요일/g,
+    shape: WEEKDAY,
     stale: /수요일|수\s?→/,
   },
 ];
@@ -432,6 +473,66 @@ export function busyTurn(
   return { owner: said.owner, bot: `${said.bot} ${ROUTINE} ${ROUTINE}` };
 }
 
+/** One exchange of day 1 before the fact is said. */
+export type Exchange = {
+  /** Its place in the day, for the messages' ids. */
+  key: string;
+  hour: number;
+  owner: string;
+  bot: string;
+  /** Whether the Bot read a page before answering, as it does after a day's second request. */
+  page: boolean;
+};
+
+/**
+ * DAY 1 UP TO THE MESSAGE THAT CARRIES THE THING. A correction's first statement opens it either
+ * way.
+ *
+ * Quiet, it is the `days` case's morning: its 09:00 request (where no correction stands there) and
+ * its 11:00 one with the page.
+ *
+ * Busy, it is a busy day like the ones after it: `busyTurn`'s first three exchanges before the
+ * fact and the fourth in the evening, so the first night's close reads the fact beside eight other
+ * things. Until the review of pull request 183 the busy arm's first day had the quiet morning and
+ * only the evening was busy — two other things, where every later day had eight — and the first
+ * close, whose summary every later one is merged into, had it easier than the arm said.
+ */
+export function beforeTheFact(item: Fact | MustNot, busy: boolean): Exchange[] {
+  const before = "before" in item ? item.before : undefined;
+  const first: Exchange[] = before
+    ? [{ key: "0", hour: 9, owner: before.owner, bot: before.bot, page: false }]
+    : [];
+  if (busy) {
+    return [
+      ...first,
+      { key: "b0", hour: before ? 10 : 9, ...busyTurn(0, 0), page: false },
+      { key: "b1", hour: 11, ...busyTurn(0, 1), page: true },
+      { key: "b2", hour: 13, ...busyTurn(0, 2), page: false },
+    ];
+  }
+  return [
+    ...(before
+      ? first
+      : [
+          {
+            key: "0",
+            hour: 9,
+            owner: TURNS[0] ?? "",
+            bot: answerText(0, 0),
+            page: false,
+          },
+        ]),
+    {
+      key: "1",
+      hour: 11,
+      owner: TURNS[1] ?? "",
+      // The `days` case's own answer to its first day's second request.
+      bot: "미발송 주문은 3건입니다. 20260046번 주문은 15,000원 결제 건이고, 나머지는 오늘 발송하시면 됩니다.",
+      page: true,
+    },
+  ];
+}
+
 const present = (text: string, patterns: readonly RegExp[]) =>
   patterns.filter((pattern) => pattern.test(text)).length;
 
@@ -451,17 +552,25 @@ export type Written = "whole" | "part" | "stale" | "other";
 /**
  * A written line against the fact: `whole` names what the fact is about and holds every value;
  * `part` holds some of them, or all of them and not what they are about — "매주 금요일까지" on
- * 수첩 is a Friday with no task; `stale` a correction's old value and not its new one; `other` is
- * a line about something else.
+ * 수첩 is a Friday with no task; `stale` a correction's old value and nothing of what replaced it;
+ * `other` is a line about something else.
  */
 export function writtenOf(fact: Fact, line: string): Written {
   const held = present(line, fact.values);
   if (held === fact.values.length) {
     return fact.entity.test(line) ? "whole" : "part";
   }
-  if (held > 0) return "part";
-  if (fact.stale?.test(line) && fact.entity.test(line)) return "stale";
-  return "other";
+  // What the morning's first statement already held — a price's "1kg에" — is not the correction.
+  const said = fact.before?.owner ?? "";
+  const corrected = fact.values.filter((value) => !value.test(said));
+  if (
+    fact.stale?.test(line) &&
+    fact.entity.test(line) &&
+    present(line, corrected) === 0
+  ) {
+    return "stale";
+  }
+  return held > 0 ? "part" : "other";
 }
 
 /** Whether a text a Bot is given still holds the fact: on one line, on lines about it, or not. */
@@ -504,9 +613,36 @@ const DENIAL = [
 /** The Bot saying it does not have it. */
 const UNSURE =
   /모르|기억(이|은|에|하지)?\s?(안|나지|없|못)|확인(이|은|을)?\s?(안|어렵|못|되지|할 수 없)|찾지\s?못|찾을\s?수\s?없|못\s?찾|안\s?보이|보이지\s?않|남아\s?있지\s?않|알\s?수\s?없|적혀\s?있지\s?않|(기록|내용|정보|메모)(이|은|는|에|에는|도)?\s?(따로\s?)?없/;
-/** The Bot asking the owner for it. */
-const ASKS =
-  /알려\s?주|말씀해\s?주|다시\s?(한\s?번\s?)?(알려|말씀)|가르쳐\s?주|\?|일까요|인가요|되나요|신가요/;
+/** The Bot asking to be told. */
+const TELL_ME =
+  /알려\s?주|말씀해\s?주|가르쳐\s?주|다시\s?(한\s?번\s?)?(알려|말씀)|확인해\s?주(시|세)/;
+/** A question about a value: when, which day, how much, where. */
+const WHICH =
+  /언제|며칠|몇|무슨|얼마|어디|어떤|어느|맞(나요|을까요|죠|습니까)|(이|였|었)(나요|을까요|던가요)/;
+/** An offer of more help, which asks the owner for nothing: "다른 것도 도와드릴까요?" */
+const OFFER =
+  /도와\s?드릴|해\s?드릴까요|드릴까요|필요하(신|시|세)|다른\s?(것|게|거|일)|궁금한/;
+
+/**
+ * Whether the answer asks the owner for the fact: a sentence that asks to be told, or a question
+ * about it — one that names what the fact is about, a value of its kind, or which/when/how much.
+ * Not any question mark: "다른 것도 도와드릴까요?" was read as asking again, and a Bot that
+ * dodged the question looked as though it had asked for what it lacked (review of pull request 183).
+ */
+export function asksFor(fact: Fact, answer: string): boolean {
+  return answer
+    .split(/(?<=[.!?？\n])/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence && !OFFER.test(sentence))
+    .some(
+      (sentence) =>
+        TELL_ME.test(sentence) ||
+        (/[?？]$/.test(sentence) &&
+          (fact.entity.test(sentence) ||
+            WHICH.test(sentence) ||
+            (sentence.match(fact.shape) ?? []).length > 0)),
+    );
+}
 
 /**
  * An answer to "what was it again", by rule, in this order:
@@ -517,33 +653,43 @@ const ASKS =
  *               금요일이었어요. 매주 같은 요일인지는 기록에 없어요" (measured, 2026-10-11: a summary
  *               had turned "every Friday" into one date)
  *   denies      it says nobody said it, or that there is no such thing
- *   asks-again  it says it does not have it, or asks the owner for it
+ *   asks-again  it says it does not have it, or asks the owner for it (`asksFor`)
  *   other       nothing above: an empty answer, or one about something else
  *
  * `correct` is read first on purpose: "말씀하신 적은 없지만 수첩에는 월말 결제로 적혀 있어요" gave
  * the owner the fact, and "9,500원에서 11,000원으로 올랐어요" is the correction told whole. A value
  * named only to ask about it, by a Bot that says it does not have the fact ("기억이 안 나요 —
  * 5일이었나요?"), is a question and not a claim.
+ *
+ * WHAT THE QUESTION ALREADY SAYS, THE ANSWER NEED NOT. "킬로당 얼마였지?" — "18,000원이에요" is the
+ * whole answer; the same words on 수첩 are not the whole fact (`writtenOf`). So an answer is held
+ * to the values its question does not state (`askedOf`).
  */
 export function recallOf(fact: Fact, answer: string): Recall {
   const text = answer.trim();
   if (!text) return "other";
-  const held = present(text, fact.values);
+  const asked = askedOf(fact);
+  const held = present(text, asked);
   // Every value, beside a sentence that it does not know: the fact was not given whole.
-  if (held === fact.values.length) {
+  if (held === asked.length) {
     return UNSURE.test(text) ? "partial" : "correct";
   }
   const saysAnother =
     strangersIn(fact, text).length > 0 || (fact.stale?.test(text) ?? false);
   if (saysAnother) {
-    return held === 0 && UNSURE.test(text) && ASKS.test(text)
+    return held === 0 && UNSURE.test(text) && asksFor(fact, text)
       ? "asks-again"
       : "wrong";
   }
   if (held > 0) return "partial";
   if (DENIAL.some((shape) => shape.test(text))) return "denies";
-  if (UNSURE.test(text) || ASKS.test(text)) return "asks-again";
+  if (UNSURE.test(text) || asksFor(fact, text)) return "asks-again";
   return "other";
+}
+
+/** The values an answer has to give: the fact's, less what its question states. */
+export function askedOf(fact: Fact): RegExp[] {
+  return fact.values.filter((value) => !value.test(fact.ask));
 }
 
 /** `2/3` — a count, never a percentage of three. */

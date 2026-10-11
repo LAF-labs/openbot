@@ -116,6 +116,7 @@ import {
   textOf,
 } from "./lib";
 import {
+  beforeTheFact,
   busyTurn,
   FACTS,
   type Fact,
@@ -591,22 +592,19 @@ function pageStep(day: number, when: Date): StampedMessage[] {
 }
 
 /**
- * Day 1 up to the owner's message that carries the thing: the `days` case's morning, with a
- * correction's first statement in place of the 09:00 turn.
+ * Day 1 up to the owner's message that carries the thing (`beforeTheFact`): the `days` case's
+ * morning, or — in the busy arm — a busy day's.
  */
-function untilSaid(item: Fact | MustNot): StampedMessage[] {
-  const before = "before" in item ? item.before : undefined;
+function untilSaid(item: Fact | MustNot, busy = false): StampedMessage[] {
   return [
-    stamped("d0u0", "user", before?.owner ?? DAY_TURNS[0] ?? "", at(0, 9)),
-    stamped("d0a0", "assistant", before?.bot ?? answerText(0, 0), at(0, 9)),
-    stamped("d0u1", "user", DAY_TURNS[1] ?? "", at(0, 11)),
-    ...pageStep(0, at(0, 11)),
-    stamped(
-      "d0a1",
-      "assistant",
-      "미발송 주문은 3건입니다. 20260046번 주문은 15,000원 결제 건이고, 나머지는 오늘 발송하시면 됩니다.",
-      at(0, 11),
-    ),
+    ...beforeTheFact(item, busy).flatMap((said) => {
+      const when = at(0, said.hour);
+      return [
+        stamped(`d0u${said.key}`, "user", said.owner, when),
+        ...(said.page ? pageStep(0, when) : []),
+        stamped(`d0a${said.key}`, "assistant", said.bot, when),
+      ];
+    }),
     stamped("d0u2", "user", item.said, at(0, HOURS[SAID_TURN] ?? 15)),
   ];
 }
@@ -807,7 +805,7 @@ async function walkOnce(fact: Fact, arm: Arm, run: number): Promise<Walk> {
   };
   try {
     // Day 1, up to the fact.
-    const opening = untilSaid(fact);
+    const opening = untilSaid(fact, arm === "passing-busy");
     for (const message of opening) {
       thread.push(message);
       if (message.role === "user") {
