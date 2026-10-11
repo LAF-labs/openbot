@@ -32,6 +32,52 @@ function formatNumber(value: number): string {
   return String(Math.round(value * 100) / 100);
 }
 
+/**
+ * THE ROOM A LABEL NEEDS BEFORE IT IS DRAWN, as a container query on its own column
+ * (`@container/bar` under each bar, `@container/tick` under each axis label). Twelve months of
+ * seven-digit figures in 홈's 255px card (2026-10-11) put each column at 11px: the values were
+ * drawn over one another and every month was cut to "1..". Under the width its text needs, a
+ * label is kept for a screen reader and taken off the screen; the bars still say what they say,
+ * and the card is pressed to be read where it was made.
+ *
+ * The width is the text's own, measured at this type size: "12" is 15px, "1,234" 33px,
+ * "1,234,000" 58px, "12,345,678" 66px; "월" 11px, "1월" 16px, "12월" 23px, "Jan" 20px. Whole
+ * class names in a table, because Tailwind sees a class only where it is written out.
+ */
+const VALUE_ROOM = {
+  short: "@max-[1.5rem]/bar:sr-only",
+  medium: "@max-[2.5rem]/bar:sr-only",
+  long: "@max-[4.5rem]/bar:sr-only",
+  longer: "@max-[5rem]/bar:sr-only",
+} as const;
+
+const LABEL_ROOM = {
+  bar: {
+    one: "@max-[1rem]/bar:sr-only",
+    two: "@max-[1.5rem]/bar:sr-only",
+    more: "@max-[2rem]/bar:sr-only",
+  },
+  tick: {
+    one: "@max-[1rem]/tick:sr-only",
+    two: "@max-[1.5rem]/tick:sr-only",
+    more: "@max-[2rem]/tick:sr-only",
+  },
+} as const;
+
+function valueRoom(text: string): string {
+  if (text.length <= 3) return VALUE_ROOM.short;
+  if (text.length <= 6) return VALUE_ROOM.medium;
+  if (text.length <= 9) return VALUE_ROOM.long;
+  return VALUE_ROOM.longer;
+}
+
+function labelRoom(text: string, under: keyof typeof LABEL_ROOM): string {
+  const room = LABEL_ROOM[under];
+  if (text.length <= 1) return room.one;
+  if (text.length <= 2) return room.two;
+  return room.more;
+}
+
 /** Nothing to draw is a sentence. An empty axis reads as a component that failed. */
 function Empty() {
   return (
@@ -79,11 +125,14 @@ export function BarChartCard({
         // Columns stretch to full row height so percentage bar heights use the chart area.
         <div className="flex items-stretch gap-2" style={{ height: HEIGHT }}>
           {points.map((entry, index) => (
+            // Each column measures itself, and a label with no room gives way (`valueRoom`).
             <div
-              className="flex min-w-0 flex-1 flex-col items-center justify-end gap-1.5"
+              className="@container/bar flex min-w-0 flex-1 flex-col items-center justify-end gap-1.5"
               key={entry.label}
             >
-              <span className="text-xs tabular-nums text-muted-foreground">
+              <span
+                className={`${valueRoom(formatNumber(entry.value))} text-xs tabular-nums text-muted-foreground`}
+              >
                 {formatNumber(entry.value)}
               </span>
               {/* The bar lives in its own flexible box so the number above and the label below keep
@@ -101,7 +150,9 @@ export function BarChartCard({
                   }}
                 />
               </div>
-              <span className="w-full truncate text-center text-xs text-muted-foreground">
+              <span
+                className={`${labelRoom(entry.label, "bar")} w-full truncate text-center text-xs text-muted-foreground`}
+              >
                 {entry.label}
               </span>
             </div>
@@ -177,7 +228,12 @@ export function PieChartCard({
               />
             ))}
           </svg>
-          <ul className="min-w-0 flex-1 space-y-1.5">
+          {/*
+           * The legend asks for a width of its own, so beside a donut in 홈's 255px card it wraps
+           * underneath instead of being squeezed to its percentages with no names (measured
+           * 2026-10-11: 39px, every label truncated away). Beside a conversation it still fits.
+           */}
+          <ul className="min-w-0 flex-1 basis-32 space-y-1.5">
             {slices.map((slice) => (
               <li className="flex items-center gap-2 text-sm" key={slice.label}>
                 <span
@@ -288,10 +344,23 @@ function Plot({
           );
         })}
       </svg>
-      <div className="flex justify-between">
+      {/*
+       * One column per label, each measuring itself, as the bar chart's columns do (`labelRoom`):
+       * a label with no room is kept for a screen reader and taken off the screen rather than cut
+       * to "1...", which twelve months in 홈's 255px card were (2026-10-11). The first and last sit
+       * on the axis's ends, where their points are.
+       */}
+      <div className="flex">
         {labels.map((label) => (
-          <span className="truncate text-xs text-muted-foreground" key={label}>
-            {label}
+          <span
+            className="@container/tick min-w-0 flex-1 text-center first:text-left last:text-right"
+            key={label}
+          >
+            <span
+              className={`${labelRoom(label, "tick")} block truncate text-xs text-muted-foreground`}
+            >
+              {label}
+            </span>
           </span>
         ))}
       </div>
