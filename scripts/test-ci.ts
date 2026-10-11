@@ -2841,8 +2841,31 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * area, legend and all), a donut the same, and no mark with a colour written on the element. 5 and
  * 6 is 11; 2391 and 11 is 2402.
  *
+ * RAISED 2026-10-11 FOR WHAT AN OWNER SAID IN PASSING, `root` from 1440 to 1647, all in one new
+ * file, `tests/eval-memory-days.test.ts` — the half of `eval:memory-days` that needs no model.
+ * Eighty-eight on the table: seven a fact for twelve facts (the owner's message holds the fact and
+ * never asks to be remembered, a correction has a morning and an aside none, the scripted answer
+ * restates nothing, the question gives no value away, the notebook's line is one the product
+ * would keep, the shape finds every value, a week of other talk never reads as the fact) and
+ * four on the table whole. Fifty-four on the rules that read what came back: five on a written
+ * line, two on a summary's lines and five on its shorthand, forty on an answer's six classes, two
+ * on the counts — eight of those from the review of pull request 183 (a clock written with a
+ * colon as the value, as the old value and as neither; its minutes; the same clock in a summary;
+ * a line that holds the values and not what they are about). 88 and 54 is 142; 1440 and 142 is
+ * 1582. Thirty more from its second review: two on the day the fact is said (a busy arm's first
+ * day is a busy day, a quiet one is as it was), eight on a written line that lacks what a price is
+ * the price of, the days a schedule holds on, or how many jars; eighteen answers (hours on other
+ * days, a list of weekdays in shorthand, "5일 전에", a price asked per kilo, one jar for three, a
+ * question that asks for nothing), one on what asking for the fact is, and one that prints a
+ * saved report in a process with no model key. 1582 and 30 is 1612. Thirty-five from its third:
+ * five written lines (a deadline without its "매달" or "매주", hours with the halves of the day
+ * swapped), fourteen answers (those hours, the right day in the wrong month, a deadline asked
+ * "다달이", a correction told backwards), nine on what telling a correction backwards is, one on
+ * a turn that looked in two places, and six on where the decisions model may be asked. 1612 and
+ * 35 is 1647.
+ *
  * RAISED 2026-10-11 FOR THINKING, HANDED OVER (record §4, piece 6-3's second part): `server` from
- * 4402 to 4412, `app` from 2402 to 2403, `root` from 1440 to 1498, all in files that were there.
+ * 4402 to 4412, `app` from 2402 to 2403, `root` from 1647 to 1705, all in files that were there.
  * Server, ten: six in `effort-on-the-wire.integration.test.ts` (the run handed thinking sent the
  * deep effort whatever the deployment and the caller say — three — and no other mode sent it —
  * three), two in `result-spillover.test.ts` (a delegated thread of either kind read as its
@@ -2857,7 +2880,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * forty-two in `tests/eval-delegation.test.ts` — thirty-seven on the judges of the five new
  * scenarios, and five that walk the pack (the three new conversations held to no tool of the
  * browser's, the two runs handed thinking held to no tool at all). By hand: 6 and 2 is 8, and 1
- * is 9, and 1 is 10; 4402 and 10 is 4412. 8 and 8 is 16, and 42 is 58; 1440 and 58 is 1498.
+ * is 9, and 1 is 10; 4402 and 10 is 4412. 8 and 8 is 16, and 42 is 58; 1647 and 58 is 1705.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -2916,7 +2939,7 @@ const GROUPS: readonly {
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 1498, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 1705, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

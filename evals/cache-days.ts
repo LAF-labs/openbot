@@ -49,6 +49,7 @@ import {
   systemPromptText,
 } from "../shared/prompt";
 import { HARNESS_VERSION } from "../shared/prompt/harness";
+import { answerText, TURNS } from "./days-talk";
 import { longPage } from "./fixtures";
 import { eventsOfSse } from "./lib";
 import {
@@ -100,7 +101,7 @@ const DAYS = Math.max(
 );
 /** 2026-09-14, a Monday, 09:00 in Seoul. The eval's zone is the deployment's default. */
 const START = new Date("2026-09-14T00:00:00Z");
-const at = (day: number, hour: number, minute = 0) =>
+export const at = (day: number, hour: number, minute = 0) =>
   new Date(
     START.getTime() + day * 86_400_000 + ((hour - 9) * 60 + minute) * 60_000,
   );
@@ -112,27 +113,7 @@ const ASK_SUPPLIER =
 const ASK_REFUND =
   "첫날 네가 봤던 20260046번 주문, 환불 사유가 뭐였지? 페이지 다시 열지 말고 기억나는 대로 한 줄로만. 모르면 모른다고 해.";
 
-const TURNS = [
-  "좋은 아침. 오늘 들어온 주문 몇 건인지 정리해줘.",
-  "주문 관리 들어가서 아직 발송 안 된 주문 확인해줘.",
-  "고객 문의 들어온 거 답장 초안 짧게 써줘.",
-  "오늘 마감 전에 할 일 세 가지만 정리해줘.",
-];
-
-/** A Bot's answer of the length real ones run to. Scripted, so both arms carry the same bytes. */
-function answerText(day: number, turn: number): string {
-  const lines = [
-    `${day + 1}일차 ${turn + 1}번째 요청 정리입니다.`,
-    `오늘 들어온 주문은 ${12 + day}건이고, 그중 ${3 + (day % 3)}건은 아직 발송 전입니다.`,
-    "발송 전 주문은 오후 네 시 택배 마감 전에 송장을 출력하면 오늘 안에 나갈 수 있습니다.",
-    "고객 문의는 배송 일정 문의가 대부분이라, 주문번호와 예상 도착일을 넣은 짧은 답장을 권해 드립니다.",
-    "재고는 유자청 500g이 조금 부족해 보여서 이번 주 안에 추가 발주를 검토하시면 좋겠습니다.",
-    "그 밖의 주문은 결제 완료 상태이고, 특이사항이나 취소 요청은 없습니다.",
-  ];
-  return Array.from({ length: 3 }, () => lines.join(" ")).join("\n");
-}
-
-function orderPage(day: number): string {
+export function orderPage(day: number): string {
   const detail =
     day === 0
       ? "\n주문번호 20260046 · 고객 박지영 · 유자청 500g 1개 · 15,000원 · 결제완료\n고객 요청사항: 선물 포장 부탁드려요\n환불 사유: 파손 (택배 상자 찌그러짐, 병 금 감)"
@@ -235,7 +216,7 @@ async function ask(
  * A fetch that asks OpenRouter for its own price of each call and hands the dollars to `spent` —
  * the close's calls go through `askModel`, which reads tokens only.
  */
-function pricedFetch(spent: (usd: number) => void): typeof fetch {
+export function pricedFetch(spent: (usd: number) => void): typeof fetch {
   return (async (url: Parameters<typeof fetch>[0], init?: RequestInit) => {
     let body = init?.body;
     if (typeof body === "string") {
