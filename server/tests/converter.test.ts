@@ -52,6 +52,41 @@ function pdfWith(text: string): Uint8Array {
   return new TextEncoder().encode(body);
 }
 
+/** A PDF of `pages` pages, each with a line of text and its number. */
+function pdfPages(pages: number, textPerPage: string): Uint8Array {
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  const kids: string[] = [];
+  for (let index = 0; index < pages; index += 1) {
+    const page = objects.length + 1;
+    kids.push(`${page} 0 R`);
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${page + 1} 0 R /Resources << /Font << /F1 3 0 R >> >> >>`,
+    );
+    const stream = `BT /F1 10 Tf 20 700 Td (page ${index + 1} ${textPerPage}) Tj ET`;
+    objects.push(
+      `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+    );
+  }
+  objects[1] = `<< /Type /Pages /Kids [${kids.join(" ")}] /Count ${pages} >>`;
+  let body = "%PDF-1.4\n";
+  const offsets: number[] = [];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(body));
+    body += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xref = Buffer.byteLength(body);
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) {
+    body += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  }
+  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return new TextEncoder().encode(body);
+}
+
 function workbook(rows: (string | number)[][]): Uint8Array {
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(rows), "매출");
@@ -107,6 +142,54 @@ describe("a file read in a fresh child", () => {
       );
     }
   });
+
+  test("a workbook saved with a password is one that could not be opened, not one nobody recognises", async () => {
+    // A Compound File named .xlsx: what Excel writes around an encrypted workbook. The sheet reader
+    // refuses it, so the person hears the sentence that mentions the password.
+    const encrypted = new Uint8Array([
+      0xd0,
+      0xcf,
+      0x11,
+      0xe0,
+      0xa1,
+      0xb1,
+      0x1a,
+      0xe1,
+      ...new Array(600).fill(0),
+    ]);
+    expect(
+      await convertUpload({ name: "통장.xlsx", bytes: encrypted }),
+    ).toMatchObject({
+      outcome: "unreadable",
+      mimeType: "application/vnd.ms-excel",
+    });
+  });
+
+  /*
+   * MEASURED 2026-10-11 before the page-by-page reading: in a child from source under its gigabyte,
+   * this very PDF was killed for its memory at 610 ms; under the sidecar's bundle and 512 MB, a 6 MB
+   * PDF of 5,000 pages was. Sixty pages are read whatever stands behind them now, so the child
+   * stays near what one page costs.
+   */
+  test("a PDF of two thousand pages is read within the child's bound, sixty pages of it", async () => {
+    const outcome = await convertInFreshProcess(
+      {
+        name: "book.pdf",
+        bytes: pdfPages(
+          2000,
+          "Americano 4500 won, lorem ipsum dolor sit amet ".repeat(20),
+        ),
+      },
+      { command: COMMAND },
+    );
+    if (!outcome.ok || outcome.conversion.outcome !== "read") {
+      throw new Error(JSON.stringify(outcome));
+    }
+    const { extracted } = outcome.conversion;
+    expect(extracted.shown).toBe("2000쪽 중 앞부분");
+    expect(extracted.whole).toContain("page 60");
+    expect(extracted.whole).not.toContain("page 61");
+  }, 30_000);
 
   test("a photo is only named, and something else is refused", async () => {
     const png = new Uint8Array([
@@ -214,6 +297,24 @@ describe("where a deployment reads files", () => {
     if (outcome.ok && outcome.conversion.outcome === "read") {
       expect(outcome.conversion.extracted.body).toContain("메뉴");
     }
+    // The name rides in a header. Measured 2026-10-11: two thousand characters of it came back 431
+    // from the socket, read as the converter being down, and the person was told to try again later.
+    const longNamed = await converter.convert({
+      name: `${"가".repeat(2_000)}.csv`,
+      bytes: CP949_CSV,
+    });
+    expect(longNamed.ok ? longNamed.conversion.outcome : longNamed).toBe(
+      "read",
+    );
+    // Cut by UTF-16 units, the last 255 began on the emoji's second half, `encodeURIComponent`
+    // threw inside the fetch, and the file was "unavailable" every time (review of #193).
+    const emojiNamed = await converter.convert({
+      name: `a😀${"매출".repeat(125)}.csv`,
+      bytes: CP949_CSV,
+    });
+    expect(emojiNamed.ok ? emojiNamed.conversion.outcome : emojiNamed).toBe(
+      "read",
+    );
     await daemon.stop();
     expect(
       await converter.convert({ name: "매출.csv", bytes: CP949_CSV }),

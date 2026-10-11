@@ -61,6 +61,25 @@ export type Converter = {
  */
 const SIDECAR_WAIT_MS = CONVERSION_LIMITS.timeoutMs * 2 + 5_000;
 
+/**
+ * The most of a file's name the converter is told. It reads only the ending (CSV has no magic
+ * number, an old Excel file is told from an old Word file by its name), and the name travels to
+ * the sidecar in a header: measured 2026-10-11, a name of 2,000 characters came back 431 from the
+ * socket, which the server reads as the converter being down — and the person was told to try
+ * again in a moment. No filesystem keeps a name past 255, so nothing honest is cut.
+ */
+const CONVERTER_NAME_CHARS = 255;
+
+function nameForConverter(name: string): string {
+  // By code points, not UTF-16 units: a cut that lands inside an emoji leaves a lone surrogate,
+  // and `encodeURIComponent` throws on one — which the sidecar path read as the converter being
+  // down, for that file, every time.
+  const characters = Array.from(name);
+  return characters.length > CONVERTER_NAME_CHARS
+    ? characters.slice(-CONVERTER_NAME_CHARS).join("")
+    : name;
+}
+
 const FAILURES: ReadonlySet<string> = new Set<ConversionFailure>([
   "timeout",
   "memory",
@@ -146,10 +165,11 @@ export function createConverter(
   );
   return {
     setting: setting.kind,
-    async convert(input) {
-      if (input.bytes.byteLength > ATTACHMENT_MAX_BYTES) {
+    async convert(given) {
+      if (given.bytes.byteLength > ATTACHMENT_MAX_BYTES) {
         return { ok: false, failure: "too_large" };
       }
+      const input = { ...given, name: nameForConverter(given.name) };
       switch (setting.kind) {
         case "sidecar":
           return viaSidecar(

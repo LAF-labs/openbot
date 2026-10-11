@@ -10,7 +10,7 @@
  * sees it as a picture in the message instead.
  */
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_TYPES,
@@ -294,7 +294,12 @@ export function createAttachmentService(options: {
           name: lafAttachments.name,
           mimeType: lafAttachments.mimeType,
           modelText: lafAttachments.modelText,
-          data: lafAttachments.data,
+          /*
+           * THE BYTES ONLY FOR A PHOTO, which is the one kind the model is handed as itself. A sheet
+           * or a PDF is read from `model_text`; its bytes — up to ten megabytes each — were pulled
+           * out of Postgres on every turn of the conversation and dropped on the floor.
+           */
+          data: sql<Buffer | null>`case when ${lafAttachments.mimeType} like 'image/%' then ${lafAttachments.data} else null end`,
         })
         .from(lafAttachments)
         .where(
@@ -314,7 +319,9 @@ export function createAttachmentService(options: {
           mimeType: row.mimeType,
           kind,
           modelText: row.modelText,
-          ...(kind === "image" ? { image: row.data.toString("base64") } : {}),
+          ...(kind === "image" && row.data
+            ? { image: Buffer.from(row.data).toString("base64") }
+            : {}),
         });
       }
       return found;
