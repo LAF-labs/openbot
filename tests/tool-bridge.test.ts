@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+  answeredWithoutCalling,
+  argumentsNotCarriedText,
   BRIDGE_TOOLS,
   DEFERRED_TOOL_PREFIX,
   DEPLOYMENT_FAMILIES,
@@ -10,6 +12,7 @@ import {
   familiesOf,
   isBridgeToolName,
   isDeferredToolName,
+  missingRequiredArguments,
   OPEN_ACCOUNTS_HEAD,
   oneLine,
   openAccountsIn,
@@ -19,6 +22,7 @@ import {
   searchResultText,
   searchTools,
   splitExposure,
+  undescribedToolText,
   unwrapToolCall,
   type WireTool,
 } from "../shared/tools/bridge";
@@ -1469,5 +1473,77 @@ describe("what a Bot is told of tools that wait for review under no name", () =>
     expect(
       describedToolNames([lineOnly], [cardOf(false)]).has(CONNECT_CARD),
     ).toBe(true);
+  });
+});
+
+describe("a call by name whose arguments did not come", () => {
+  const READ: WireTool = {
+    name: "mcp__projects__read",
+    description: "프로젝트의 대화와 파일에서 찾는다. (projects)",
+    parameters: {
+      type: "object",
+      properties: { kind: { type: "string" }, terms: { type: "string" } },
+      required: ["kind", "terms"],
+    },
+  };
+
+  test("what is missing is what the schema requires and the call does not hold", () => {
+    const { parameters } = READ;
+    expect(missingRequiredArguments(parameters, {})).toEqual(["kind", "terms"]);
+    expect(missingRequiredArguments(parameters, { kind: "search" })).toEqual([
+      "terms",
+    ]);
+    expect(
+      missingRequiredArguments(parameters, { kind: "search", terms: "권리금" }),
+    ).toEqual([]);
+    // A value is the server's to judge: null, empty and false all came.
+    expect(
+      missingRequiredArguments(parameters, { kind: null, terms: "" }),
+    ).toEqual([]);
+  });
+
+  test.each([
+    ["no schema", undefined],
+    ["a schema that is not an object", "object"],
+    ["no required list", { type: "object", properties: {} }],
+    ["an empty one", { type: "object", required: [] }],
+    ["one that is not a list", { type: "object", required: "kind" }],
+  ])("nothing is missing where nothing is required — %s", (_, parameters) => {
+    expect(missingRequiredArguments(parameters, {})).toEqual([]);
+  });
+
+  test("the answer says what did not come, which door carries arguments, and the schema", () => {
+    const text = argumentsNotCarriedText(READ, ["terms"]);
+    const [said, line] = text.split("\n");
+    expect(said).toContain("'mcp__projects__read'");
+    expect(said).toContain("(terms 없음)");
+    expect(said).toContain("tool_call");
+    // The line is the one a lookup hands over, so the conversation still counts as shown it.
+    expect(describedToolNames([text], [READ])).toEqual(new Set([READ.name]));
+    expect(JSON.parse(line ?? "")).toMatchObject({ name: READ.name });
+  });
+
+  test("this service's two answers to a call it did not make are told from everything else", () => {
+    const uncalled = [
+      undescribedToolText([READ], READ.name),
+      argumentsNotCarriedText(READ, ["kind", "terms"]),
+    ];
+    for (const answer of uncalled) {
+      expect(answeredWithoutCalling(READ.name, answer)).toBe(true);
+      // Another tool's answer is not this call's.
+      expect(answeredWithoutCalling("mcp__gmail__send_message", answer)).toBe(
+        false,
+      );
+    }
+    for (const result of [
+      '{"hits":[]}',
+      "",
+      "laf:tool_arguments_invalid",
+      searchResultText([READ], `select:${READ.name}`),
+      // A result that merely quotes the sentence is a result.
+      `{"text":${JSON.stringify(uncalled[1])}}`,
+    ]) {
+      expect(answeredWithoutCalling(READ.name, result)).toBe(false);
+    }
   });
 });

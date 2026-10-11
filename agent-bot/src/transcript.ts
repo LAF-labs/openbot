@@ -5,6 +5,7 @@ import { jsonObjectOf } from "../../shared/json-object";
 import { textOf } from "../../shared/message-content";
 import { soundText } from "../../shared/sound-text";
 import { isStreamCutResult } from "../../shared/stream-cut";
+import { answeredWithoutCalling, TOOL_CALL } from "../../shared/tools/bridge";
 import { reasoningDetailsOf } from "./reasoning";
 import type { ProviderSession } from "./turn";
 
@@ -43,14 +44,28 @@ export type TranscriptMessage = RunAgentInput["messages"][number];
  * same way on every 다시 시도 (2026-09-27). Left out, the next request reads as though the cut round
  * had not begun, which is the truth about it: nothing it asked for was carried out. The thread
  * keeps the call for the person.
+ *
+ * AND ONE THING SHOWN THE WAY IT WAS ASKED: a call that crossed the bridge goes back as the
+ * `tool_call` it was (`asItCrossed`). The thread keeps it under the real tool's name — the surface,
+ * the boundary and the audit row must not be able to tell it from a direct call (`./run`) — and
+ * handed back like that, the Bot read its own past as calling the tool by name, and did: a
+ * function the request does not declare, whose arguments the provider does not carry. Measured
+ * 2026-10-11 (Muse Spark, provider Meta; a conversation with four past calls to the project tool):
+ * shown under the real name, the next call came by name with `{}` 2 times in 8 and 4 in 10; shown
+ * as `tool_call`, 0 in 12. Not a rewrite of old history in the sense above: the same call renders
+ * the same on every request for as long as its tool stands behind the bridge, and a tool moving in
+ * or out of the offered list already changes the head of the prompt.
  */
 export function toProviderMessages(
   transcript: readonly TranscriptMessage[],
   /** The model this request goes to: reasoning is handed back only to the model that wrote it. */
   model = "",
+  /** The names of the tools behind the bridge in this request. Empty where no bridge is offered. */
+  behindTheBridge: ReadonlySet<string> = NO_NAMES,
 ) {
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
   const cut = cutCallIds(transcript);
+  const answeredHere = uncalledIds(transcript, behindTheBridge);
 
   for (const message of transcript) {
     if (message.role === "user") {
@@ -78,10 +93,14 @@ export function toProviderMessages(
         .map((call) => ({
           id: call.id,
           type: "function" as const,
-          function: {
-            name: call.function.name,
-            arguments: readableArguments(call.function.arguments),
-          },
+          function:
+            behindTheBridge.has(call.function.name) &&
+            !answeredHere.has(call.id)
+              ? asItCrossed(call.function.name, call.function.arguments)
+              : {
+                  name: call.function.name,
+                  arguments: readableArguments(call.function.arguments),
+                },
         }));
       // A turn that was nothing but calls the cut took is nothing, to the model.
       const allCut = !!message.toolCalls?.length && !toolCalls?.length;
@@ -143,6 +162,56 @@ function sound(
     return { ...part, text: mended };
   });
   return changed ? ({ ...message, content: parts } as typeof message) : message;
+}
+
+const NO_NAMES: ReadonlySet<string> = new Set();
+
+/**
+ * The calls to a tool behind the bridge that never crossed it: made by the tool's own name and
+ * answered by this service instead (`answeredWithoutCalling`) — the schema it had not been shown,
+ * or the arguments that did not come. Those stay as the Bot made them. The answer says "called by
+ * its name"; a history saying `tool_call` beside it would make one of the two a lie, and inside
+ * the run it would hand the model back a turn it did not write.
+ */
+function uncalledIds(
+  transcript: readonly TranscriptMessage[],
+  behindTheBridge: ReadonlySet<string>,
+): Set<string> {
+  const ids = new Set<string>();
+  if (behindTheBridge.size === 0) return ids;
+  const names = new Map<string, string>();
+  for (const message of transcript) {
+    if (message.role === "assistant") {
+      for (const call of message.toolCalls ?? []) {
+        if (behindTheBridge.has(call.function.name)) {
+          names.set(call.id, call.function.name);
+        }
+      }
+      continue;
+    }
+    if (message.role !== "tool") continue;
+    const name = names.get(message.toolCallId);
+    if (name && answeredWithoutCalling(name, textOf(message.content))) {
+      ids.add(message.toolCallId);
+    }
+  }
+  return ids;
+}
+
+/**
+ * A call to a tool behind the bridge, as the `tool_call` that carried it.
+ *
+ * Arguments that are not an object stay under the tool's own name, as `{}` (`readableArguments`):
+ * that call is the one the loop answered with a fact, and it is what the Bot is recovering from.
+ * Nothing here throws — whatever is in a thread is in every request after it.
+ */
+function asItCrossed(
+  name: string,
+  rawArguments: string,
+): { name: string; arguments: string } {
+  const args = parseToolArguments(rawArguments);
+  if (args === null) return { name, arguments: "{}" };
+  return { name: TOOL_CALL, arguments: JSON.stringify({ name, args }) };
 }
 
 /** The calls answered with the cut's fact: left out of every request, with their answers. */

@@ -1,9 +1,11 @@
 import type { RunAgentInput } from "@ag-ui/core";
 import {
+  argumentsNotCarriedText,
   BRIDGE_TOOLS,
   type BridgeToolName,
   coerceStringifiedArguments,
   isBridgeToolName,
+  missingRequiredArguments,
   searchResultText,
   splitExposure,
   TOOL_CALL,
@@ -191,7 +193,18 @@ export function isDeferredCall(name: string, exposed: ExposedTools): boolean {
   return exposed.bridged && exposed.deferred.some((tool) => tool.name === name);
 }
 
-/** A deferred tool called by its own name: the same rule as `tool_call`. */
+/**
+ * A deferred tool called by its own name: the same rule as `tool_call` — and one more, which only
+ * this door needs.
+ *
+ * ITS ARGUMENTS MAY NOT HAVE COME. The tool is not in the request's schema, and a provider does
+ * not carry arguments for a function nobody declared: the name arrives with `{}`
+ * (`argumentsNotCarriedText`, `shared/tools/bridge.ts`, for the measurement). So a call by name
+ * that lacks an argument the tool's schema requires is not forwarded: it is answered here, in the
+ * same run, with what is missing and how to call it — through `tool_call`, whose arguments ARE
+ * declared. A call through `tool_call` is not held to this: what it lacks, the model left out,
+ * and the server's own check says so in the tool's words.
+ */
 export function answerDeferredCall(
   name: string,
   rawArguments: string,
@@ -201,6 +214,17 @@ export function answerDeferredCall(
   const args = parseArguments(rawArguments);
   // Not an object: the loop's own recovery answers it, the way it answers any real call's.
   if (!args || typeof args !== "object" || Array.isArray(args)) return null;
+  const tool = deferred.find((candidate) => candidate.name === name);
+  // Only once its schema has been shown: before that the answer is the schema itself, below.
+  if (tool && described.has(tool.name)) {
+    const missing = missingRequiredArguments(
+      tool.parameters,
+      args as Record<string, unknown>,
+    );
+    if (missing.length > 0) {
+      return { kind: "answer", text: argumentsNotCarriedText(tool, missing) };
+    }
+  }
   return settleDeferredCall(
     name,
     args as Record<string, unknown>,

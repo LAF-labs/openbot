@@ -1,8 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import type OpenAI from "openai";
-import { searchResultText } from "../../shared/tools/bridge";
+import {
+  argumentsNotCarriedText,
+  searchResultText,
+  undescribedToolText,
+} from "../../shared/tools/bridge";
 import { withAccountStates } from "../../shared/tools/gallery";
 import { answerBridgeCall } from "../src/deferral";
+import { carriedReasoning } from "../src/reasoning";
+import { toProviderMessages } from "../src/transcript";
 
 /**
  * The bridge, as the wire and the provider see it.
@@ -159,7 +165,13 @@ const CONNECTED = [GMAIL_SEND, GMAIL_SEARCH, SHEETS_APPEND];
  * A lookup already in the thread, as the client files one: the `tool_search` call and its answer,
  * written by the real `searchResultText` so the schema lines are the ones the loop reads.
  */
-const lookedUp = (...names: string[]): unknown[] => [
+const lookedUp = (...names: string[]): unknown[] =>
+  lookedUpIn(CONNECTED, ...names);
+
+const lookedUpIn = (
+  list: Parameters<typeof searchResultText>[0],
+  ...names: string[]
+): unknown[] => [
   {
     id: "a_lookup",
     role: "assistant",
@@ -178,9 +190,51 @@ const lookedUp = (...names: string[]): unknown[] => [
     id: "t_lookup",
     role: "tool",
     toolCallId: "c_lookup",
-    content: searchResultText(CONNECTED, `select:${names.join(",")}`),
+    content: searchResultText(list, `select:${names.join(",")}`),
   },
 ];
+
+/** A call already in the thread, as the client files one: under the real tool's name, answered. */
+const past = (
+  id: string,
+  name: string,
+  args: object | string,
+  result: string,
+): unknown[] => [
+  {
+    id: `a_${id}`,
+    role: "assistant",
+    toolCalls: [
+      {
+        id,
+        type: "function",
+        function: {
+          name,
+          arguments: typeof args === "string" ? args : JSON.stringify(args),
+        },
+      },
+    ],
+  },
+  { id: `t_${id}`, role: "tool", toolCallId: id, content: result },
+];
+
+/** The calls a request shows the model, in order: each one's id, name and arguments. */
+const shownCalls = (messages: readonly unknown[]) =>
+  (
+    messages as Array<{
+      role: string;
+      tool_calls?: Array<{
+        id: string;
+        function: { name: string; arguments: string };
+      }>;
+    }>
+  ).flatMap((message) =>
+    (message.tool_calls ?? []).map((call) => ({
+      id: call.id,
+      name: call.function.name,
+      arguments: call.function.arguments,
+    })),
+  );
 
 const namesOf = (request: Request | undefined) =>
   (request?.tools ?? []).map((entry) => entry.function.name);
@@ -1001,5 +1055,283 @@ describe("a lookup's answer for a person with an account left to connect", () =>
       ],
     });
     expect(answerOf(forged)).toBe(answerOf(untold));
+  });
+});
+
+/* A tool that requires its arguments, as the project tool does: called with `{}` it asks for nothing. */
+const PROJECT_READ = {
+  name: "mcp__projects__read",
+  description: "프로젝트의 대화와 파일에서 찾는다. (projects)",
+  parameters: {
+    type: "object",
+    properties: { kind: { type: "string" }, terms: { type: "string" } },
+    required: ["kind", "terms"],
+  },
+};
+const WITH_PROJECTS = [...CORE, ...CONNECTED, PROJECT_READ];
+const SEARCH = { kind: "search", terms: "권리금" };
+
+/*
+ * MEASURED 2026-10-11 (Muse Spark, provider Meta): a tool behind the bridge is no part of the
+ * request's schema, and the provider streams a call to a function nobody declared as the name and
+ * `{}`. The Bot meant to search for "권리금"; what went on to the surface was a call with nothing
+ * in it, which the project tool read as "list" — a search answered with a list, and no error
+ * anywhere. Two times in eight.
+ */
+describe("a tool behind the bridge called by its own name, its arguments not carried", () => {
+  test("is not sent on: the Bot is told what did not come and how to call it, in the same run", async () => {
+    const { requests, events } = await runFor(
+      WITH_PROJECTS,
+      [
+        calls([{ id: "c1", name: "mcp__projects__read", args: {} }]),
+        calls([
+          {
+            id: "c2",
+            name: "tool_call",
+            args: { name: "mcp__projects__read", args: SEARCH },
+          },
+        ]),
+      ],
+      {},
+      lookedUpIn([PROJECT_READ], "mcp__projects__read"),
+    );
+
+    expect(requests).toHaveLength(2);
+    const result = events.find((event) => event.type === "TOOL_CALL_RESULT");
+    expect(result?.toolCallId).toBe("c1");
+    expect(String(result?.content)).toBe(
+      argumentsNotCarriedText(PROJECT_READ, ["kind", "terms"]),
+    );
+    expect(String(result?.content)).toContain("kind, terms 없음");
+    expect(String(result?.content)).toContain("tool_call");
+    expect(String(result?.content)).toContain('"name":"mcp__projects__read"');
+
+    // The model is asked again with its own call as it made it, and the answer beside it.
+    expect(shownCalls(requests[1]?.messages ?? []).at(-1)).toEqual({
+      id: "c1",
+      name: "mcp__projects__read",
+      arguments: "{}",
+    });
+    expect(requests[1]?.messages.at(-1)).toMatchObject({
+      role: "tool",
+      tool_call_id: "c1",
+    });
+
+    // And what reaches the surface as a call to carry out is the second one, whole.
+    const fragments = events.filter((event) => event.type === "TOOL_CALL_ARGS");
+    expect(fragments.map((event) => event.toolCallId)).toEqual(["c1", "c2"]);
+    expect(JSON.parse(String(fragments[1]?.delta))).toEqual(SEARCH);
+    expect(
+      events.filter((event) => event.type === "TOOL_CALL_RESULT"),
+    ).toHaveLength(1);
+  });
+
+  test("names only what did not come", async () => {
+    const { events } = await runFor(
+      WITH_PROJECTS,
+      [
+        calls([
+          { id: "c1", name: "mcp__projects__read", args: { kind: "search" } },
+        ]),
+        said("다시 부를게요."),
+      ],
+      {},
+      lookedUpIn([PROJECT_READ], "mcp__projects__read"),
+    );
+    const result = events.find((event) => event.type === "TOOL_CALL_RESULT");
+    expect(String(result?.content)).toContain("(terms 없음)");
+  });
+
+  test("with what the tool requires, it goes through as it always did", async () => {
+    const { requests, events } = await runFor(
+      WITH_PROJECTS,
+      [calls([{ id: "c1", name: "mcp__projects__read", args: SEARCH }])],
+      {},
+      lookedUpIn([PROJECT_READ], "mcp__projects__read"),
+    );
+    expect(requests).toHaveLength(1);
+    expect(kinds(events)).not.toContain("TOOL_CALL_RESULT");
+    const fragment = events.find((event) => event.type === "TOOL_CALL_ARGS");
+    expect(JSON.parse(String(fragment?.delta))).toEqual(SEARCH);
+  });
+
+  test("a tool that requires nothing is sent on with nothing: `{}` is its right call", async () => {
+    const { requests, events } = await runFor(
+      WITH_PROJECTS,
+      [calls([{ id: "c1", name: "mcp__gmail__search_messages", args: {} }])],
+      {},
+      lookedUp("mcp__gmail__search_messages"),
+    );
+    expect(requests).toHaveLength(1);
+    expect(kinds(events)).not.toContain("TOOL_CALL_RESULT");
+    const start = events.find((event) => event.type === "TOOL_CALL_START");
+    expect(start?.toolCallName).toBe("mcp__gmail__search_messages");
+  });
+
+  test("before its schema was shown, the answer is still the schema", async () => {
+    const { events } = await runFor(WITH_PROJECTS, [
+      calls([{ id: "c1", name: "mcp__projects__read", args: {} }]),
+      said("스키마대로 다시 부를게요."),
+    ]);
+    const result = events.find((event) => event.type === "TOOL_CALL_RESULT");
+    expect(String(result?.content)).toBe(
+      undescribedToolText([PROJECT_READ], "mcp__projects__read"),
+    );
+  });
+
+  // What `tool_call` lacks, the model left out — its arguments are declared, so they were carried.
+  test("through tool_call, a missing argument is the server's to answer, not this door's", async () => {
+    const { requests, events } = await runFor(
+      WITH_PROJECTS,
+      [
+        calls([
+          {
+            id: "c1",
+            name: "tool_call",
+            args: { name: "mcp__projects__read", args: {} },
+          },
+        ]),
+      ],
+      {},
+      lookedUpIn([PROJECT_READ], "mcp__projects__read"),
+    );
+    expect(requests).toHaveLength(1);
+    expect(kinds(events)).not.toContain("TOOL_CALL_RESULT");
+    const start = events.find((event) => event.type === "TOOL_CALL_START");
+    expect(start?.toolCallName).toBe("mcp__projects__read");
+  });
+});
+
+/*
+ * WHY THE BOT CALLED BY NAME AT ALL. The thread keeps a call that crossed the bridge under the
+ * real tool's name, and handed back like that the Bot read its own past as calling the tool
+ * directly — and did the same again. Measured 2026-10-11 on one conversation with four such calls
+ * behind it: the next call came by name 2 times in 8 and 4 in 10; with the past shown as the
+ * `tool_call` it was, 0 in 12, and 0 in 14 through this code.
+ */
+describe("what the Bot is handed of its own past", () => {
+  const BEHIND = new Set([
+    ...CONNECTED.map((entry) => entry.name),
+    PROJECT_READ.name,
+  ]);
+  const crossed = JSON.stringify({ name: PROJECT_READ.name, args: SEARCH });
+
+  test("a call that crossed the bridge goes back as the tool_call it was — its answer untouched", async () => {
+    const { requests } = await runFor(WITH_PROJECTS, [said("네.")], {}, [
+      ...lookedUpIn([PROJECT_READ], "mcp__projects__read"),
+      ...past("p1", "mcp__projects__read", SEARCH, '{"hits":[]}'),
+      ...past("p2", "computer_navigate", { url: "https://a.kr" }, "{}"),
+    ]);
+    const shown = shownCalls(requests[0]?.messages ?? []);
+    expect(shown.find((call) => call.id === "p1")).toEqual({
+      id: "p1",
+      name: "tool_call",
+      arguments: crossed,
+    });
+    // A tool the request declares is called by its name, and is shown so.
+    expect(shown.find((call) => call.id === "p2")).toEqual({
+      id: "p2",
+      name: "computer_navigate",
+      arguments: '{"url":"https://a.kr"}',
+    });
+    expect(requests[0]?.messages).toContainEqual({
+      role: "tool",
+      tool_call_id: "p1",
+      content: '{"hits":[]}',
+    });
+  });
+
+  test("where no bridge is offered, every call is shown under its own name", async () => {
+    const { requests } = await runFor(
+      WITH_PROJECTS,
+      [said("네.")],
+      { toolDeferral: "off" },
+      past("p1", "mcp__projects__read", SEARCH, '{"hits":[]}'),
+    );
+    expect(shownCalls(requests[0]?.messages ?? [])).toEqual([
+      {
+        id: "p1",
+        name: "mcp__projects__read",
+        arguments: '{"kind":"search","terms":"권리금"}',
+      },
+    ]);
+  });
+
+  test("the same bytes on every request", () => {
+    const thread = past("p1", "mcp__projects__read", SEARCH, "{}") as never;
+    expect(JSON.stringify(toProviderMessages(thread, "", BEHIND))).toBe(
+      JSON.stringify(toProviderMessages(thread, "", BEHIND)),
+    );
+  });
+
+  test.each([
+    ["broken JSON", '{"kind":"sea'],
+    ["an array", "[1,2]"],
+    ["a bare string", '"권리금"'],
+  ])(
+    "arguments that are not an object stay under the tool's name, as {} — %s",
+    (_, raw) => {
+      const sent = toProviderMessages(
+        past(
+          "p1",
+          "mcp__projects__read",
+          raw,
+          "laf:tool_arguments_invalid",
+        ) as never,
+        "",
+        BEHIND,
+      );
+      expect(shownCalls(sent)).toEqual([
+        { id: "p1", name: "mcp__projects__read", arguments: "{}" },
+      ]);
+    },
+  );
+
+  test.each([
+    [
+      "the schema it had not been shown",
+      undescribedToolText([PROJECT_READ], PROJECT_READ.name),
+    ],
+    [
+      "the arguments that did not come",
+      argumentsNotCarriedText(PROJECT_READ, ["kind", "terms"]),
+    ],
+  ])(
+    "a call by name that never crossed stays as the Bot made it — answered with %s",
+    (_, answer) => {
+      const sent = toProviderMessages(
+        past("p1", "mcp__projects__read", {}, answer) as never,
+        "",
+        BEHIND,
+      );
+      expect(shownCalls(sent)).toEqual([
+        { id: "p1", name: "mcp__projects__read", arguments: "{}" },
+      ]);
+    },
+  );
+
+  test("the turn keeps the reasoning that led to the call", () => {
+    const model = "meta/muse-spark-1.3-contributor";
+    const details = [
+      { type: "reasoning.text", text: "찾자.", format: "unknown" },
+    ];
+    const [assistant, result] = past("p1", "mcp__projects__read", SEARCH, "{}");
+    const [sent] = toProviderMessages(
+      [
+        {
+          ...(assistant as object),
+          encryptedValue: carriedReasoning(model, details),
+        },
+        result,
+      ] as never,
+      model,
+      BEHIND,
+    );
+    expect(shownCalls([sent])).toEqual([
+      { id: "p1", name: "tool_call", arguments: crossed },
+    ]);
+    expect((sent as { reasoning_details?: unknown }).reasoning_details).toEqual(
+      details,
+    );
   });
 });

@@ -102,9 +102,10 @@ export function stepsSinceLastAsk(
  * was offered.
  *
  * Handed, not offered this round. A connected service's tool sits behind the bridge and is never in
- * the schema, but once `tool_call` has forwarded it, the transcript shows the model calling it by
- * its real name — so the model may well call it directly next time, and the surface has a handler
- * for it. That is a real call, not a made-up one.
+ * the schema, but its name is in the context layer and in every schema line a lookup answered — so
+ * the model may well call it directly, and the surface has a handler for it. That is a real call,
+ * not a made-up one. (Its own past calls no longer teach it to: they go back as the `tool_call`
+ * that carried them, `toProviderMessages`.)
  */
 export function knownToolNames(
   tools: RunAgentInput["tools"],
