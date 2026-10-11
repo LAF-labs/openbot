@@ -419,11 +419,31 @@ export function unsummarisedSummary(
         ? shortDay(first)
         : `${shortDay(first)}~${shortDay(last)}`
       : "날짜 모름";
-  const line = `- ${when}: 이 기간의 대화 ${span.length}건은 요약되지 않았다 (요약이 ${CLOSE_FALLBACK_AFTER}번 실패). 그동안의 일은 이 요약에 없다.`;
+  const line = `- ${when}: 이 기간의 대화 ${span.length}건은 ${GAP_WORDS} (요약이 ${CLOSE_FALLBACK_AFTER}번 실패). 그동안의 일은 이 요약에 없다.`;
   return {
     summary: boundedSummary([previous ?? "", line].filter(Boolean).join("\n")),
     days: days.length,
   };
+}
+
+/** The words every gap line carries, by which one is known again. */
+const GAP_WORDS = "요약되지 않았다";
+
+/**
+ * The summary with every gap line `previous` held that the summariser's rewrite left out, put
+ * back at its head. Measured 2026-10-11 with the real summariser: told to carry `previous` unless
+ * the transcript settled it, it rewrote the summary the night after a fallback without the line
+ * naming the days it never covered — so the Bot would have known about the gap for one day. A
+ * gap is not settled by a day's talk; it goes at the head because the bound gives up the head
+ * first, and that is the right order to forget it in.
+ */
+export function withGapsKept(summary: string, previous: string | null): string {
+  const gaps = (previous ?? "")
+    .split("\n")
+    .filter((line) => line.includes(GAP_WORDS) && !summary.includes(line));
+  return gaps.length > 0
+    ? boundedSummary([...gaps, summary].join("\n"))
+    : summary;
 }
 
 /** The frozen system message, with the summary of what the cut replaced at its end. */
@@ -885,10 +905,12 @@ export function createConversationStore(
          * transcript the summariser read, and a model told not to write something sometimes writes
          * it anyway.
          */
-        summary =
+        summary = withGapsKept(
           forgotten.length > 0
             ? (await scrub({ summary: written, forgotten })).summary
-            : written;
+            : written,
+          previous,
+        );
       }
       /*
        * THE DREAM, BEFORE THE CLOSE CAN BE TAKEN, so the standing guidance it writes is in the frozen
