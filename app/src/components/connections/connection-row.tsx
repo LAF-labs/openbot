@@ -37,7 +37,7 @@ export type RowTone = "muted" | "good" | "warn";
 
 const TONES: Record<RowTone, string> = {
   muted: "text-muted-foreground",
-  good: "text-primary",
+  good: "text-foreground",
   warn: "text-destructive",
 };
 

@@ -94,7 +94,7 @@ function Banner({ botId, onStop, isStoppable }: BannerProps) {
     <>
       {announcement}
       <div className="shrink-0 px-4 pt-1 pb-2">
-        <div className="mx-auto flex max-w-3xl items-center gap-2 rounded-2xl border border-border bg-card p-1.5 shadow-card">
+        <div className="mx-auto flex max-w-3xl items-center gap-2 rounded-2xl border border-border bg-card p-1.5">
           <button
             aria-label={
               isAsking ? t("Go to the question") : t("View the Bot's screen")

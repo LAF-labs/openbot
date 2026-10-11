@@ -39,7 +39,8 @@ const NAV_LINK_CLASS = "hover:text-foreground";
  */
 export const documentLinkComponents = {
   a: ({ href, children, ...rest }: ComponentProps<"a">) => {
-    const className = "underline underline-offset-2 hover:no-underline";
+    const className =
+      "text-link underline underline-offset-2 hover:no-underline";
     if (href === "/legal/terms" || href === "/legal/privacy") {
       return (
         <Link className={className} to={href}>

@@ -5,16 +5,20 @@
  * and came out as four surfaces: `rounded-2xl border p-2.5`, `rounded-md border bg-card px-3 py-2`
  * at full width, `rounded-2xl border p-3` with an amber edge, `rounded-2xl border bg-card p-3`. Side
  * by side in one conversation they read as four different apps' widgets. The same card now carries
- * all four — the corner, the width, the fill, the lift and the padding — and what differs is what is
+ * all four — the corner, the width, the fill and the padding — and what differs is what is
  * in it, which is the only thing that should.
  *
  * Strings, like `focus.ts`, so they compose into an existing `cn()` without a new component, and so
  * Tailwind sees the utilities here whether or not a card is on screen.
  */
 
-/** The card: 16px corners, the width a card keeps beside a 3xl transcript, a hairline and a lift. */
+/**
+ * The card: 16px corners, the width a card keeps beside a 3xl transcript, and a hairline. No lift:
+ * it had a small shadow (`shadow-card`) from 2026-09-24 to 2026-10-11, and only what floats over
+ * the page casts one now — a card is part of the page.
+ */
 export const chatCard =
-  "max-w-md rounded-2xl border border-border bg-card text-card-foreground shadow-card";
+  "max-w-md rounded-2xl border border-border bg-card text-card-foreground";
 
 /** The card's padding, apart so a card with a picture edge-to-edge can leave it off. */
 export const chatCardPadding = "p-3";

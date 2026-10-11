@@ -60,7 +60,7 @@ export const RailNav = ({
       {items.map((item) => (
         <Link
           activeOptions={item.isExact ? { exact: true } : undefined}
-          className="shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm transition-colors hover:bg-foreground/5 data-[status=active]:bg-foreground/8 data-[status=active]:font-medium data-[status=active]:hover:bg-foreground/8"
+          className="shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-sm transition-colors hover:bg-foreground/5 data-[status=active]:bg-primary/8 data-[status=active]:font-medium data-[status=active]:text-link data-[status=active]:hover:bg-primary/8"
           key={item.title}
           {...item.linkOptions}
         >

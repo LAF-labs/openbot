@@ -27,7 +27,7 @@ export function SearchButton() {
       className={cn(
         buttonVariants({ size: "icon", variant: "ghost" }),
         "shrink-0",
-        isOpen && "bg-accent",
+        isOpen && "bg-primary/8 text-link",
         focusRing,
       )}
       data-search-button

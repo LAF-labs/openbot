@@ -217,7 +217,7 @@ const AlimtalkRow = ({
               <span
                 className={
                   template.status === "approved"
-                    ? "font-medium text-primary"
+                    ? "font-medium text-foreground"
                     : template.status === "rejected"
                       ? "font-medium text-destructive"
                       : "text-muted-foreground"

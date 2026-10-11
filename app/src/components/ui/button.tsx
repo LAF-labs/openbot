@@ -1,7 +1,11 @@
 import { Button as ButtonPrimitive } from "@base-ui/react/button"
 import { cva, type VariantProps } from "class-variance-authority"
 
-import { focusRing, selectedWhenPressed } from "@/components/ui/focus"
+import {
+  focusRing,
+  focusRingOnFill,
+  selectedWhenPressed,
+} from "@/components/ui/focus"
 import { cn } from "@/lib/utils"
 
 /*
@@ -13,8 +17,8 @@ import { cn } from "@/lib/utils"
  * `cursor: not-allowed` never appeared and why a tooltip explaining WHY the button is off could
  * never be attached to the button itself.
  *
- * The second half is what made the screens look wrong. `bg-primary` is near-black; at 50% over the
- * page it lands on a mid-grey with white text on it — which is not a disabled control, it is a
+ * The second half is what made the screens look wrong. `bg-primary` was near-black then; at 50% over
+ * the page it landed on a mid-grey with white text on it — which is not a disabled control, it is a
  * perfectly ordinary-looking secondary button that happens not to work. Dropping the fill entirely
  * (see the `default` variant) is what makes it read as inert.
  *
@@ -30,19 +34,19 @@ const buttonVariants = cva(
     variants: {
       variant: {
         /*
-         * Near-black, not blue. Grok's filled control is `fill/primary` and the accent hue is spent
-         * only on links, focus and the dot that says a Bot needs you — which is why one blue button
-         * per screen used to read as an ad and now reads as the thing to press.
+         * THE ACCENT (#2079e7, the owner, 2026-10-11). It was near-black from the Grok measure to
+         * that day — the accent hue was spent only on links, focus and the dot that says a Bot
+         * needs you — and the fill, its hover and the label on it are still `--app-accent`'s four
+         * lines in `styles.css`, whatever they say.
          */
         /*
          * `disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100` is the whole
-         * point of the block at the top of this file: the near-black fill LEAVES when the button
+         * point of the block at the top of this file: the accent fill LEAVES when the button
          * is off, instead of being faded to a mid-grey that looks like a working control. The
          * `opacity-100` cancels the base's fade — a muted fill does not need dimming as well, and
          * dimmed muted text stops being readable.
          */
-        default:
-          "bg-primary text-primary-foreground not-disabled:hover:bg-primary-hover disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100",
+        default: `bg-primary text-primary-foreground not-disabled:hover:bg-primary-hover disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100 ${focusRingOnFill}`,
         outline:
           "border-border bg-background not-disabled:hover:bg-muted not-disabled:hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:not-disabled:hover:bg-input/50",
         secondary:
@@ -51,7 +55,7 @@ const buttonVariants = cva(
           "not-disabled:hover:bg-muted not-disabled:hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:not-disabled:hover:bg-muted/50",
         destructive:
           "bg-destructive/10 text-destructive not-disabled:hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:not-disabled:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
-        link: "text-primary underline-offset-4 not-disabled:hover:underline",
+        link: "text-link underline-offset-4 not-disabled:hover:underline",
       },
       size: {
         // 32px — Grok's `height/lg`, the size every dialog and pane CTA is drawn at.

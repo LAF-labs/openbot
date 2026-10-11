@@ -89,5 +89,10 @@ export function ScreenSwitch() {
 
 const PART =
   "flex h-7 items-center gap-1.5 rounded-full px-3 font-medium transition-colors";
-const ON = "bg-background text-foreground shadow-sm";
+/*
+ * The chosen side is the page's own ground with the word in the accent's ink (2026-10-11). It was
+ * lifted by a small shadow; only what floats over the page casts one now, and this is a part of
+ * the row.
+ */
+const ON = "bg-background text-link";
 const OFF = "text-muted-foreground hover:text-foreground";

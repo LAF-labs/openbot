@@ -103,7 +103,7 @@ export function SettingsSidebar({
                   <SidebarMenuButton
                     // `h-row`, not `h-10`. The rhythm this claims to share with the app sidebar is
                     // 54px (`--sand-row-height`), and this rail drew 40.
-                    className="h-row hover:bg-foreground/5 data-[status=active]:bg-foreground/8 data-[status=active]:hover:bg-foreground/8"
+                    className="h-row hover:bg-foreground/5 data-[status=active]:bg-primary/8 data-[status=active]:text-link data-[status=active]:hover:bg-primary/8"
                     render={(props) => (
                       <Link
                         activeOptions={
