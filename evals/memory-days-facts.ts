@@ -648,8 +648,9 @@ export type Survival = "whole" | "part" | "gone";
 
 /**
  * A summary is dated bullet lines, and a number in one is only the fact's when the line is about
- * the fact — `- 9/15: 주문 13건` holds a 5 and says nothing of the fifth. So only the lines that
- * name the fact's entity are read: every value among them is `whole`, some is `part`, none is `gone`.
+ * the fact — `- 9/15: 주문 13건` holds a 5 and says nothing of the fifth. So the lines that name
+ * the fact's entity are read: every value among them is `whole`, some is `part`. Failing that, one
+ * line that holds every value under another name is `part`; anything else is `gone`.
  */
 export function survivalIn(fact: Fact, text: string): Survival {
   const about = text
@@ -661,7 +662,23 @@ export function survivalIn(fact: Fact, text: string): Survival {
   if (present(about, fact.values) === fact.values.length) return "whole";
   // Part of the fact is part of what the owner would ask for: "매달" beside another day, or
   // "1kg에" beside another price, is the frame of the fact around something else.
-  return present(about, askedOf(fact)) > 0 ? "part" : "gone";
+  if (present(about, askedOf(fact)) > 0) return "part";
+  /*
+   * EVERY VALUE ON ONE LINE THAT DOES NOT NAME WHAT IT IS ABOUT is part of the fact too, as it is
+   * of a written line (`writtenOf`). Measured on the walks of weeks (2026-10-11): the summariser
+   * wrote a regular's name wrong — 한정숙 as 한정숍 in one walk for forty-five nights, as 한숭니
+   * in another — and kept "택배 경비실 맡김" beside it. Read as gone, that was a fact the Bot went
+   * on answering from; read as whole, it would be a summary that names nobody the owner knows.
+   */
+  return text
+    .split("\n")
+    .some(
+      (line) =>
+        present(line, fact.values) === fact.values.length &&
+        !undoes(fact, line),
+    )
+    ? "part"
+    : "gone";
 }
 
 export const RECALLS = [

@@ -205,6 +205,13 @@ const REQUEST_TIMEOUT_MS = 180_000;
 /** How many client-loop rounds a turn may spend, as `eval:model` allows. */
 const MAX_ROUNDS = 4;
 
+/**
+ * A turn that was still calling tools when its rounds ran out. Not a failed measurement: it is what
+ * the Bot did — looked in one place after another and had not answered. Counted on its own, beside
+ * the answers.
+ */
+const STILL_LOOKING = "still calling after the last round";
+
 type WireTool = { name: string; description: string; parameters?: unknown };
 
 /**
@@ -349,7 +356,7 @@ async function botTurn(input: {
           content: await input.answerTo(call),
         });
       }
-      if (round === MAX_ROUNDS) problem = "still calling after the last round";
+      if (round === MAX_ROUNDS) problem = STILL_LOOKING;
     }
   } catch (error) {
     problem = error instanceof Error ? error.message : String(error);
@@ -1138,10 +1145,37 @@ function printNights(walks: readonly Walk[]) {
     `  the summary carried after night: ${marks.map((day) => `${day} mean ${(meanOf(at(day)) ?? 0).toFixed(0)} max ${Math.max(0, ...at(day))}`).join(" · ")}`,
   );
   /*
+   * A WALK WHOSE CLOSES STOPPED. Seven nights in a row with no close is not a night's refusal: on
+   * the first walks of weeks two conversations never closed again once one close ran out its time
+   * (`eval-pack.md`). From there the summary is the last one written, standing still, and the
+   * whole conversation is carried behind it — so such a walk says nothing about what a summary
+   * keeps, and is counted apart from the walks whose closes went on.
+   */
+  const stoppedAfter = (walk: Walk): number | null => {
+    let run = 0;
+    for (const night of walk.nights) {
+      run = night.made ? 0 : run + 1;
+      if (run === 7) return night.day - 7;
+    }
+    return null;
+  };
+  const stopped = walks.filter((walk) => stoppedAfter(walk) !== null);
+  for (const walk of stopped) {
+    const carried = walk.mornings.at(-1)?.spent.promptTokens ?? 0;
+    console.log(
+      `  closes stopped: ${walk.id} run ${walk.run} — none after night ${stoppedAfter(walk)}; the last morning's question carried ${carried} prompt tokens`,
+    );
+  }
+  const going = (walk: Walk, day: number) => {
+    const last = stoppedAfter(walk);
+    return last === null || day <= last;
+  };
+  /*
    * Whether the summary after a night holds the fact, read now: from the night's own summary where
    * the report kept it, and otherwise from the morning asked on, which kept its summary always.
    */
   const keptAfter = (walk: Walk, day: number): Survival | null => {
+    if (!going(walk, day)) return null;
     const fact = factOf(walk.id);
     const summary =
       walk.nights.find((night) => night.day === day)?.summary ??
@@ -1154,10 +1188,10 @@ function printNights(walks: readonly Walk[]) {
       .filter((state): state is Survival => state !== null);
   const read = marks.filter((day) => states(day).length > 0);
   console.log(
-    `  walks whose summary holds the fact after night (whole · part · gone): ${read.map((day) => `${day}: ${(["whole", "part", "gone"] as const).map((state) => states(day).filter((value) => value === state).length).join(" · ")}`).join("   ")}`,
+    `  walks whose closes went on, the fact in the summary after night (whole · part · gone): ${read.map((day) => `${day}: ${(["whole", "part", "gone"] as const).map((state) => states(day).filter((value) => value === state).length).join(" · ")}`).join("   ")}`,
   );
   console.log(
-    "\n  the last night read on which each walk's summary held the fact whole (— never; ✓ through the last)\n",
+    "\n  the last night read on which each walk's summary held the fact whole (— never; ✓ through the last; a walk whose closes stopped is read up to there)\n",
   );
   for (const fact of FACTS) {
     const mine = walks.filter((walk) => walk.id === fact.id);
@@ -1229,10 +1263,14 @@ function printWalks(report: Report) {
     for (const fact of FACTS) {
       const mine = walks.filter((walk) => walk.id === fact.id);
       for (const closes of CLOSES) {
-        const mornings = mine
+        const asked = mine
           .flatMap((walk) => walk.mornings)
-          .filter((morning) => morning.closes === closes && !morning.problem);
-        if (mornings.length === 0) continue;
+          .filter((morning) => morning.closes === closes);
+        const unanswered = asked.filter(
+          (morning) => morning.problem === STILL_LOOKING,
+        ).length;
+        const mornings = asked.filter((morning) => !morning.problem);
+        if (mornings.length === 0 && unanswered === 0) continue;
         const classes = mornings.map((morning) =>
           recallOf(fact, morning.answer),
         );
@@ -1247,7 +1285,7 @@ function printWalks(report: Report) {
         const mean = (pick: (spent: Spent) => number, digits: number) =>
           (meanOf(mornings.map((m) => pick(m.spent))) ?? 0).toFixed(digits);
         console.log(
-          `  ${pad(fact.id, 30)} after ${closes}  ${counts.join(" · ")}` +
+          `  ${pad(fact.id, 30)} after ${closes}  ${counts.join(" · ")}${unanswered ? ` (+${unanswered} still looking)` : ""}` +
             `   searched its past ${outOf(looked.length, mornings.length)}${looked.length ? ` (found it ${outOf(found.length, looked.length)})` : ""}` +
             ` · looked elsewhere ${outOf(elsewhere.length, mornings.length)}` +
             `   ${mean((s) => s.requests, 1)} req  ${mean((s) => s.promptTokens, 0)} tok  $${mean((s) => s.costUsd, 5)}  ${mean((s) => s.seconds, 1)}s`,
@@ -1257,32 +1295,37 @@ function printWalks(report: Report) {
     const lost = walks.flatMap((walk) => [
       ...(walk.problem ? [`${walk.id} run ${walk.run} — ${walk.problem}`] : []),
       ...walk.mornings
-        .filter((morning) => morning.problem)
+        .filter(
+          (morning) => morning.problem && morning.problem !== STILL_LOOKING,
+        )
         .map((m) => `${walk.id} after ${m.closes} — ${m.problem}`),
     ]);
     if (lost.length > 0)
       console.log(`\n  not measured (${lost.length}): ${lost.join("; ")}`);
   }
   const totals = (arm: Arm) => {
+    // Every turn that ran: the answered ones, and the ones still looking when the rounds ran out.
     const mornings = report.walks
       .filter((walk) => walk.arm === arm)
       .flatMap((walk) =>
         walk.mornings
-          .filter((morning) => !morning.problem)
+          .filter(
+            (morning) => !morning.problem || morning.problem === STILL_LOOKING,
+          )
           .map((morning) => ({ walk, morning })),
       );
     if (mornings.length === 0) return;
-    const classes = mornings.map(({ walk, morning }) => {
+    const classOf = ({ walk, morning }: (typeof mornings)[number]) => {
       const fact = factOf(walk.id);
       return fact ? recallOf(fact, morning.answer) : ("other" as Recall);
-    });
+    };
     for (const closes of CLOSES) {
-      const at = mornings
-        .map((row, index) => ({ row, kind: classes[index] }))
-        .filter(({ row }) => row.morning.closes === closes);
+      const at = mornings.filter((row) => row.morning.closes === closes);
       if (at.length === 0) continue;
+      const answered = at.filter((row) => !row.morning.problem);
+      const kinds = answered.map(classOf);
       console.log(
-        `  ${pad(arm, 12)} after ${closes}: ${RECALLS.map((name) => `${name} ${at.filter(({ kind }) => kind === name).length}`).join(" · ")}  of ${at.length}`,
+        `  ${pad(arm, 12)} after ${closes}: ${RECALLS.map((name) => `${name} ${kinds.filter((kind) => kind === name).length}`).join(" · ")} · still looking after ${MAX_ROUNDS} rounds ${at.length - answered.length}  of ${at.length}`,
       );
     }
     const looked = mornings.filter(
