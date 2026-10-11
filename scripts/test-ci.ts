@@ -2788,6 +2788,11 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `jev-decisions.test.ts`: what a decision is filed as costing — a figure where the provider said
  * one, and none for a figure below nothing, for words, for nothing said.
  *
+ * RAISED 2026-10-11 FOR THE REVIEW OF THE PROJECT REGISTRY AND THE SEARCH, `server` by five (to
+ * 4395): one in `channel-routes.test.ts` (two presses at once for the last project make one), four
+ * in `conversation-search.integration.test.ts` (a snippet cut between characters as a person sees
+ * them — a flag, a family, a decomposed syllable, a skin tone at its start).
+ *
  * RAISED 2026-10-11 FOR A CALL BY NAME THAT ARRIVED EMPTY, `root` from 1295 to 1318, all in files
  * that were there. Fifteen in agent-bot's `deferral.test.ts`: six on the call itself (not sent on
  * and answered in the run, only what is missing named, the call that has what it needs, the tool
@@ -2827,7 +2832,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4390, roots: ["server"] },
+  { name: "server", floor: 4395, roots: ["server"] },
   { name: "app", floor: 2261, roots: ["app"] },
   {
     name: "agent-computer",
