@@ -33,7 +33,9 @@
 | `agents` + `agent_profiles` | 내가 만든 봇 — 이름, 직무, 말투, 생각 깊이, "묻지 마" 문장 | 본인 | 계정을 지울 때까지 |
 | `agent_preferences` | 봇을 숨겼는지·고정했는지·알림을 받는지 | 본인 | 계정을 지울 때까지 |
 | `agent_memories` | 봇이 나에 대해 기억한 사실 (한 줄에 하나) | 본인 | 잊으라고 할 때까지 |
-| `channels` + `channel_memberships` + `channel_threads` | 대화방과 그 방에 누가 있는지, 어느 대화인지 | 그 방의 사람 | 계정을 지울 때까지 |
+| `agent_guidance` | 수첩의 **지침** — 밤의 정리(dream)가 하루의 대화에서 읽어 낸 "사장님은 짧은 답을 좋아한다" 같은 줄과, 수첩에서 사람이 고쳐 쓴 줄. 잊은 줄도 행으로 남는다 | 본인(수첩) | 계정·봇이 지워질 때까지(cascade). 내보내기 `guidance` |
+| `agent_memory_receipts` | 수첩의 뒷일 영수증 — 시간마다의 점검·밤의 정리·잊기가 **몇 줄**을 보고 몇 줄을 확인·정리했는지. 수와 어느 일이었는지뿐, 내용은 없다 | 본인(오늘 화면) | 계정·봇이 지워질 때까지(cascade). 내보내기 `memoryReceipts` |
+| `channels` + `channel_memberships` + `channel_threads` | 대화방과 그 방에 누가 있는지, 어느 대화인지. 방의 `kind`가 봇의 **메인 대화**인지 그 옆의 **프로젝트**인지를 말한다(2026-10-10, 마이그레이션 0064) — 내보내기의 `channels`가 그 값을 싣는다 | 그 방의 사람 | 계정을 지울 때까지. 프로젝트는 그 화면에서 지우는 순간(`deleting_at`을 찍고 멈춘 뒤 지운다 — `server/src/channels/deleting.ts`) |
 | `laf_thread_messages` | **대화 전문.** 내가 쓴 것과 봇이 답한 것 전부 | 그 방의 사람 | 계정을 지울 때까지 |
 | `laf_conversation_contexts` | 대화마다 봇이 받은 맥락의 사본(이름·직무·가게·위치·오늘 날짜·기억·스킬 목록)과 내 메시지에 붙은 알림(바뀐 날짜·위치·새 기억) — 요청마다 같은 글을 보내 캐시를 살리려고 얼려 둔 것(`server/src/context/conversations.ts`) | 아무도(서버만, 봇에게 보낼 때만) | 기억을 잊게 하면 다음 실행에서 그 기억 없이 새로 그리고 알림에서도 뺀다. 봇·계정을 지울 때 같이 |
 | `laf_attachments` | **사장님이 봇에게 붙인 파일** — 사진·엑셀·CSV·PDF의 바이트 그대로(파일 하나 10MB, 사진은 앱이 긴 변 2000px JPEG로 줄여 보내므로 보통 수백 KB), 이름, 종류, 크기, 모델이 읽는 글(표·PDF에서 꺼낸 내용, 사진의 이름 줄), 봇 컴퓨터에 둔 사본의 경로. 대화의 메시지에는 파일이 아니라 이 행의 **id**만 실린다 | 본인(그 대화에서) | 계정·대화방·봇 중 하나라도 지워질 때까지 |
@@ -41,8 +43,10 @@
 | `laf_routines` | 정해진 시각에 반복하는 지시문 | 본인, 봇 주인 | 계정을 지울 때까지 |
 | `laf_routine_runs` | 루틴이 실행된 기록과 그 답 (최근 20건) | 본인, 봇 주인 | **1년**(그 전에 20건을 넘기면 그때 정리) |
 | `laf_routine_notepads` | 루틴의 메모장 — 지난 실행이 어디까지 처리했는지(리뷰·주문번호, 시각)와 짧은 사실 몇 줄. 루틴의 실행만 쓰고 사람은 읽고 비운다 | 본인, 봇 주인 | 비우거나 루틴을 지울 때까지 |
-| `laf_routine_suggestion_dismissals` | 추천 루틴 카드와 아이디어 카드에 "다음에"라고 한 것 (카드 이름과 시각뿐 — 아이디어는 `idea:` 뒤에 카드 이름) | 본인 | 계정을 지울 때까지 |
-| `laf_feedback` | 문의·의견 칸에 쓴 글. "지금 화면을 같이 보냄"을 켰으면 그때 보고 있던 화면의 **주소**와 마지막 **실패 코드** — 스크린샷도, 대화 내용도 아니다. `LAF_ALERT_WEBHOOK_URL`이 있으면 같은 글이 운영자의 알림 채널로도 간다 | 운영자(DB로) | 계정을 지울 때까지 |
+| `laf_routine_suggestion_dismissals` | 추천 루틴 카드와 아이디어 카드에 "다음에"라고 한 것 (카드 이름과 시각뿐 — 아이디어는 `idea:` 뒤에 카드 이름) | 본인 | 계정을 지울 때까지(cascade). 내보내기 `suggestionDismissals` |
+| `laf_notifications` | **알림함** — 사람에게 알릴 것이 생겼을 때 한 행: 어떤 일인지(`kind`), 어느 봇·대화·질문에 대한 것인지, 카드가 그리는 사실(`subject` — 주소·버튼 이름 같은 것, 값은 없음), 어느 문으로 전해졌고 언제 봤는지. 함대에 보내는 `fleet.*` 행은 사람을 가리키지 않는다 | 본인(앱의 알림) | **30일**(보존 작업), 또는 계정을 지울 때까지(cascade). 내보내기 `notifications` |
+| `laf_site_connections` | 봇의 브라우저로 **어느 사이트에 로그인해 두었는지** — 사이트 키, 어느 봇의 브라우저였는지, 처음 이어진 때, 마지막으로 로그인이 살아 있던 때, 지금은 다시 로그인이 필요한지. 세션 자체(쿠키)는 행이 아니라 컴퓨터의 프로필에 있다 | 본인(사이트 연결 카드) | 계정을 지울 때까지(cascade). 내보내기 `siteConnections` |
+| `laf_feedback` | 문의·의견 칸에 쓴 글. "지금 화면을 같이 보냄"을 켰으면 그때 보고 있던 화면의 **주소**와 마지막 **실패 코드** — 스크린샷도, 대화 내용도 아니다. "진단 정보 같이 보내기"를 켰으면 그때 보여 준 진단 묶음(빌드·상태·실패 수·id — 메시지는 없음). `LAF_ALERT_WEBHOOK_URL`이 있으면 같은 글이 운영자의 알림 채널로도 간다 | 운영자(DB로) | 계정을 지울 때까지(cascade). 내보내기 `feedback` — 본인이 쓴 글이다 |
 | `laf_answer_ratings` | 봇의 답 아래 **좋아요·아쉬워요**. 어느 대화의 어느 답(메시지 **id**)에, 어느 봇에게, 어느 쪽을 눌렀는지. 아쉬워요면 고른 이유(키: `not-as-asked`·`wrong-facts`·`too-slow`·`other`)와 적은 글(500자까지). **답의 내용은 담지 않는다** — 칸이 없다. 답 하나에 한 사람 한 행이고, 다시 누르면 바뀐다. 아쉬워요에 글을 적었을 때만 `LAF_ALERT_WEBHOOK_URL`로 봇 이름·이유·글·id가 간다(같은 글을 다시 보내면 다시 가지 않는다) | 본인(그 대화에서), 운영자(DB로) | 계정·대화방·봇 중 하나라도 지워질 때까지 |
 | `laf_goals` | **목표** — 이 사람이 대화에서 정하고 카드에서 예를 누른 목표. 분류, 제목, 달성 기준, 지켜볼 숫자(단위·처음 값·목표 값), 마감일, 상태(진행·완료·그만둠), 흐름(잘 가고 있음·조금 밀림·늦어짐). 진행 중인 목표의 제목·달성 기준·마감은 봇이 목표 툴을 부를 때 결과로 모델에게 간다 | 본인 | 계정·봇이 지워질 때까지(보존 기한 없음 — 본인의 기록). 목표 화면에서 지우면 바로 지워진다. 내보내기에 들어간다 |
 | `laf_goal_entries` | **목표의 기록** — 한 줄씩: 언제, 무엇(봇이 적은 한 문장), 잰 값, 흐름, 누가 적었는지, 어느 대화 턴·루틴 실행이 적었는지 | 본인 | 목표와 함께 지워진다. 내보내기에 들어간다 |
@@ -51,7 +55,9 @@
 | `skills` | `/`로 부르는 내 지시문 | 본인(배포가 만든 것은 모두) | 계정을 지울 때까지 |
 | `computer_standing_approvals` | 다시 묻지 말라고 한 것과 그 범위 | 본인 | 철회할 때까지(철회해도 기록은 남음) |
 | `credentials` | 연결한 서비스의 토큰 — **암호화되어 저장**, 화면에 다시 나오지 않음 | 아무도 | 연결 해제 또는 계정 삭제 |
-| `mcp_user_credentials` | 어떤 서비스에 누가 자기 계정을 연결했는지 | 본인 | 연결 해제 또는 계정 삭제 |
+| `mcp_user_credentials` | 어떤 서비스에 누가 자기 계정을 연결했는지 — 어느 서버에, 어떤 범위로, 언제, 마지막 호출이 됐는지. 금고 행을 가리키는 id가 있다 | 본인 | 연결 해제 또는 계정 삭제(cascade). 내보내기 `connectedAccounts`(금고 포인터는 뺀다) |
+| `laf_partner_connections` | **카카오톡 채널 등록**(알림톡) — 사람이 적은 검색용 아이디 같은 사실(`details`), 상태, 시각. 그리고 벤더가 준 발신프로필 키(`account`) — 비밀은 아니지만 어느 채널에서 메시지가 나가는지를 정하는 값이라 브라우저로도 내보내기로도 나가지 않는다 | 본인(연결 카드) | 연결 해제, 또는 계정 삭제(행을 지우기 전에 벤더 쪽 등록을 먼저 물린다 — `retirePartnersFor`; 행은 cascade). 내보내기 `partnerConnections`(`account` 없이) |
+| `laf_alimtalk_templates` | 그 등록 아래 각 알림톡 템플릿의 상태 — 심사 중·사용 가능·반려와 그 이유, 마지막으로 물어본 때 | 본인 | 계정을 지울 때까지(cascade). 내보내기 `alimtalkTemplates` |
 | `audit_events` | **한 일의 기록.** 봇이 무엇을 하려 했고 허용됐는지 거절됐는지, 누가 승인했는지 | 본인(관리 메뉴) | **1년** |
 | `action_policy` | 이 배포가 무엇을 멈추고 묻는가 | 본인(관리 메뉴) | 바뀔 때까지 |
 
@@ -144,22 +150,42 @@
 - `profile` — `users` 행(이메일, 이름, 가입 시각, 가게의 일과 매일 쓰는 곳 `shop`, 누구인지 `persona`와
   `personaFollowUp`)과 내 권한
 - `bots` — 내가 소유한 봇 전부(지운 봇 포함)와 그 프로필
-- `botPreferences`, `memories` — 봇 표시 설정, 봇이 기억한 사실(잊은 것 포함)
-- `channels`, `conversations` — 내가 속한 방과 **모든 대화 전문**
+- `botPreferences`, `memories`, `guidance`, `memoryReceipts` — 봇 표시 설정, 봇이 기억한 사실(잊은 것
+  포함), 수첩의 지침 줄(잊은 것 포함), 수첩 뒷일의 영수증(수뿐)
+- `channels`, `conversations` — 내가 속한 방(메인 대화인지 프로젝트인지 `kind`로)과 **모든 대화 전문**
 - `answerRatings` — 봇의 답에 누른 좋아요·아쉬워요, 고른 이유와 적은 글(답 자체는 위
   `conversations`에 한 번만 있다)
 - `attachments` — 봇에게 붙인 파일의 이름·종류·크기·시각과 봇이 읽은 글. **파일의 바이트는 들어 있지
   않다** — JSON 하나에 영수증 사진 한 달치를 base64로 넣으면 아무도 열 수 없는 파일이 된다. 파일은 그
   대화의 메시지에서 다시 내려받을 수 있고, `conversations`의 메시지가 같은 id로 가리킨다
-- `routines`, `routineRuns`, `routineNotepads`, `runs` — 루틴과 실행 기록, 루틴의 메모장
+- `routines`, `routineRuns`, `routineNotepads`, `runs`, `suggestionDismissals` — 루틴과 실행 기록, 루틴의
+  메모장, 추천 카드에 "다음에"라고 한 것
+- `feedPosts`, `goals`, `goalEntries` — 소식의 글, 목표와 그 기록
 - `skills`, `standingApprovals` — 내 스킬, 내가 준 상시 허용
 - `savedLogins` — 봇의 브라우저에 맡긴 로그인이 **어느 것인지**: 붙인 이름, 사이트, 넣어도 되는 출처,
   저장·수정·마지막으로 쓴 시각. **아이디와 비밀번호는 들어 있지 않다** — 봉한 값도 넣지 않는다
+- `siteConnections` — 봇의 브라우저로 어느 사이트에 로그인해 두었는지와 그 때
+- `notifications` — 나에게 알리려던 것(최근 30일)과 어느 문으로 전해졌는지
+- `feedback` — 문의·의견 칸에 내가 쓴 글과, 같이 보내기로 한 화면의 주소·실패 코드·진단 묶음
+- `connectedAccounts`, `partnerConnections`, `alimtalkTemplates` — 연결한 서비스가 어느 것인지(금고
+  포인터 없이), 카카오톡 채널 등록(발신프로필 키 없이), 템플릿의 심사 상태
 - `auditEvents` — **내가 행위자인** 기록만
+
+표마다의 결정 — 어느 구간으로 나가는지, 지울 때 이름을 불러 지우는지 cascade에 맡기는지 가명
+처리하는지 — 는 `server/src/account/tables.ts`에 한 번 적혀 있고,
+`server/tests/account-lifecycle.integration.test.ts`가 데이터베이스의 카탈로그(`pg_class`)를 그 목록과
+맞춰 본다: **결정 없이 표가 하나 생기면 그 테스트가 떨어진다.** cascade라고 적힌 표는 실제로 사람·봇·대화·
+루틴·목표에서 `ON DELETE CASCADE`로 닿는지를 `pg_constraint`에서 읽어 확인한다 — 스키마 파일의
+`onDelete`는 마이그레이션에 대한 주장이지 사실이 아니다. 2026-10-11의 검토에서 그 사이에 생긴 표 여덟
+개(위 `guidance`부터 `alimtalkTemplates`까지)가 cascade로는 지워지되 파일에는 없었고, 그때 이 목록과
+테스트를 두었다.
 
 **들어 있지 않은 것**
 
 - 암호화된 자격증명, OAuth 토큰, 봇 설정 안의 인증 정보(금고를 가리키는 포인터까지 제외)
+- `laf_conversation_contexts` — 대화가 봇에게 들려준 맥락의 얼린 사본. 파일에 이미 있는 기억과 대화에서
+  조립된 것이라 따로 싣지 않는다(지울 때는 대화와 함께 이름을 불러 지운다, 개수 `conversationContexts`)
+- 카카오톡 채널의 발신프로필 키(`laf_partner_connections.account`)와 금고 행의 id
 - 로그인 보관함의 값(아이디·비밀번호)과 그 봉한 꼴, 감싼 키. 내보내기는 그 표의 열을 하나씩 이름으로
   고르므로, 표에 열이 늘어도 여기에 넣기 전까지는 파일에 들어가지 않는다
 - `accounts`(로그인 제공자 토큰과 비밀번호 해시), `sessions`
@@ -272,6 +298,12 @@ id를 가진 사람은 가명 행과 이 행을 같은 사람으로 이을 수 �
 보존 기간이 지우는 것이므로, `AUDIT_RETENTION_DAYS=0`인 배포에서는 남는다.
 
 **6. 백업.** §4.
+
+**7. 사용량 행.** 모든 런의 `model.usage` 행(`audit_events`, `copilot.ts`)은 행위자가 없다 — 사람이
+아니라 런이 쓴 것이라 `actor_user_id`가 비어 있고, payload에는 런·대화·봇의 id와 토큰 수가 있다. 그래서
+가명 처리는 이 행을 건드리지 않고(바꿀 칸이 없다), 내보내기의 `auditEvents`에도 들어가지 않는다(내가
+행위자인 행만 싣는다). 가리키는 대화와 봇은 계정과 함께 사라지므로 남는 것은 아무에게도 닿지 않는 id와
+수이고, **1년 보존이 끝나면서 사라진다.**
 
 ### 탈퇴가 함대에 닿는 길
 
@@ -546,6 +578,7 @@ VM이 아니라 정문이 답한다. CI가 `app/scripts/render-legal.ts`로 두 
 | 내보내기 | `server/src/account/export.ts` |
 | 가게의 일과 매일 쓰는 곳 — 저장, 봇에게 실리는 한 줄, 경계가 읽지 않음 | `server/src/account/shop.ts`, `server/src/agents/shop-context.ts`, `shared/prompt/shop.ko.ts`, `server/tests/shop-boundary.test.ts` |
 | 삭제(무엇이 어떤 순서로, 무엇이 cascade인지) | `server/src/account/deletion.ts` |
+| 표마다의 결정 한 목록 — 내보내기의 어느 구간인지, 지울 때 무엇이 되는지 — 와 그것을 카탈로그에 맞춰 보는 테스트 | `server/src/account/tables.ts`, `server/tests/account-lifecycle.integration.test.ts` "every table in the database has a decision" |
 | 로그인 보관함 — 봉하기, 저장·수정·삭제, 문, 출처 정리, 값이 어디에도 없음을 확인하는 테스트 | `server/src/logins/crypto.ts`, `server/src/logins/store.ts`, `server/src/logins/routes.ts`, `shared/login-origin.ts`, `server/tests/saved-logins.integration.test.ts` |
 | 가명 | `server/src/account/pseudonym.ts` |
 | 보존 기간 청소 | `server/src/account/retention.ts` |
