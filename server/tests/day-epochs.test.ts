@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { recentLines } from "../src/log";
 import {
   contextFactsFor,
   contextLayerText,
@@ -11,6 +12,10 @@ import {
   type PrepareInput,
 } from "../src/context/conversations";
 import {
+  unsummarisedSummary,
+  withGapsKept,
+} from "../src/context/conversations";
+import {
   boundedSummary,
   closePoint,
   type DaySummarizer,
@@ -18,6 +23,7 @@ import {
   SUMMARY_MAX_CHARS,
   transcriptOf,
 } from "../src/context/day-close";
+import type { SummaryScrubber } from "../src/context/forget-scrub";
 
 /**
  * The day's close, measured where it matters: what the next request carries.
@@ -92,18 +98,23 @@ function dayOfTalk(thread: Thread, day: number, needle = "") {
 }
 
 /** What the middleware hands the store, minus the stamps the client never sends. */
-function input(thread: Thread, now: Date, tools = "t1"): PrepareInput {
+function input(
+  thread: Thread,
+  now: Date,
+  tools = "t1",
+  bot = "bot_miso",
+): PrepareInput {
   const facts = contextFactsFor({
     mode: "chat",
     now,
     timeZone: ZONE,
-    bot: { id: "bot_miso", name: "미소" },
+    bot: { id: bot, name: "미소" },
     memories: ["택배는 우체국을 쓴다."],
     person: { timeZone: ZONE, locale: "ko-KR" },
   });
   return {
     threadId: "thread_miso",
-    botId: "bot_miso",
+    botId: bot,
     mode: "chat",
     messages: thread.map(({ lafAt: _stamp, ...message }) => message) as never,
     key: { harness: "h1", model: "m", effort: "balanced", tools },
@@ -119,6 +130,11 @@ function harness(
     busy?: () => boolean;
     compact?: Compactor;
     persistence?: ConversationPersistence;
+    /** The Bot's id, when a test reads the log and must know its own lines from a neighbour's. */
+    bot?: string;
+    /** What the owner forgot on 수첩, and the scrub that takes it out of what the summariser wrote. */
+    forgotten?: () => string[];
+    scrub?: SummaryScrubber;
   } = {},
 ) {
   const thread: Thread = [];
@@ -136,6 +152,7 @@ function harness(
     ...(options.compact
       ? { compaction: { thresholdTokens: 1_000_000, compact: options.compact } }
       : {}),
+    ...(options.scrub ? { scrub: options.scrub } : {}),
     days: {
       summarize: async (request) => {
         if (options.summarize) asked.push(request);
@@ -143,6 +160,9 @@ function harness(
       },
       history: async () => thread,
       busy: async () => options.busy?.() ?? false,
+      ...(options.forgotten
+        ? { forgotten: async () => options.forgotten?.() ?? [] }
+        : {}),
       fallbackTimeZone: ZONE,
     },
   });
@@ -155,7 +175,7 @@ function harness(
     },
     run: (now: Date, tools?: string) => {
       clock = now.getTime();
-      return store.prepare(input(thread, now, tools));
+      return store.prepare(input(thread, now, tools, options.bot));
     },
   };
 }
@@ -574,5 +594,525 @@ describe("a day's close, prepared at night and taken in the morning", () => {
     await store.settled();
     expect([...rows.keys()]).toEqual([]);
     expect(saved).toEqual(["thread_miso"]);
+  });
+});
+
+/**
+ * A close that keeps failing. Measured in `eval:memory-days`' sixty-night walk (pull request 200):
+ * two of twenty-four conversations stopped closing after one timed-out close and never started
+ * again, because every later night's attempt carried the same summary and one more day of
+ * transcript — larger each night, and nothing ever gave up — so the whole conversation was carried
+ * behind the last summary, 176K–246K prompt tokens a question instead of 8K.
+ */
+describe("a close that keeps failing", () => {
+  /** A summariser that answers the first `answers` times and then takes too long, forever. */
+  function flaky(answers: number) {
+    let calls = 0;
+    const summarize: DaySummarizer = async () => {
+      calls += 1;
+      if (calls <= answers) return `- 요약 ${calls}`;
+      throw new Error("summary: took too long");
+    };
+    return summarize;
+  }
+  /** This Bot's lines of one event, wherever they sit in the process-wide buffer. */
+  const logged = (bot: string, event: string) =>
+    recentLines
+      .lines()
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((line) => line.bot === bot && line.event === event);
+  const morning = (thread: Thread, day: number, minutes = 0) => {
+    thread.push(user(`d${day}u0`, "좋은 아침", at(day, minutes)));
+  };
+
+  test("each failure is counted, and the count and the time spent are in the log line", async () => {
+    const bot = "bot_counted";
+    const { store, thread, run, setClock } = harness({
+      summarize: flaky(0),
+      bot,
+    });
+    dayOfTalk(thread, 0);
+    run(at(0, 200));
+    setClock(at(1, -480));
+    expect(await store.tick()).toBe(0);
+    morning(thread, 1);
+    run(at(1));
+    setClock(at(2, -480));
+    expect(await store.tick()).toBe(0);
+    const failed = logged(bot, "day_close_failed");
+    expect(failed.map((line) => line.failures)).toEqual([1, 2]);
+    expect(failed.every((line) => typeof line.ms === "number")).toBe(true);
+  });
+
+  test("a retry sends no more than the attempt that failed: the oldest unclosed day alone, on the same summary", async () => {
+    const { store, thread, asked, run, setClock } = harness({
+      summarize: flaky(1),
+    });
+    dayOfTalk(thread, 0);
+    run(at(0, 200));
+    setClock(at(1, -480));
+    expect(await store.tick()).toBe(1);
+    morning(thread, 1);
+    expect(run(at(1)).epoch.reason).toBe("day_boundary");
+    for (const day of [1, 2]) {
+      dayOfTalk(thread, day);
+      run(at(day, 200));
+      setClock(at(day + 1, -480));
+      await store.tick();
+    }
+    expect(asked).toHaveLength(3);
+    // Two days were unclosed; the retry was asked about the first of them, exactly as before.
+    expect(asked[2]?.transcript).toBe(asked[1]?.transcript ?? "");
+    expect(asked[1]?.previous).toBe("- 요약 1");
+    expect(asked[2]?.previous).toBe("- 요약 1");
+    expect(asked[2]?.transcript).toContain("1일차");
+    expect(asked[2]?.transcript).not.toContain("2일차");
+  });
+
+  test("a retry under the close floor widens a day at a time, never past what the failed attempt sent, so a short day never leaves a close stuck", async () => {
+    const { store, thread, asked, run, setClock } = harness({
+      summarize: flaky(0),
+    });
+    // A day of two words, then a busy one: the first night has nothing worth closing.
+    thread.push(user("d0u0", "안녕", at(0)), answer("d0a0", "네.", at(0, 1)));
+    run(at(0, 2));
+    setClock(at(1, -480));
+    expect(await store.tick()).toBe(0);
+    expect(asked).toHaveLength(0);
+    // The night that closes them together fails; the nights after must still try.
+    for (const day of [1, 2, 3]) {
+      dayOfTalk(thread, day);
+      run(at(day, 200));
+      setClock(at(day + 1, -480));
+      await store.tick();
+    }
+    expect(asked).toHaveLength(3);
+    expect(asked[1]?.transcript).toBe(asked[0]?.transcript ?? "");
+    expect(asked[2]?.transcript).toContain("안녕");
+    expect(asked[2]?.transcript).toContain("1일차");
+    expect(asked[2]?.transcript).not.toContain("2일차");
+    dayOfTalk(thread, 4);
+    run(at(4, 200));
+    setClock(at(5, -480));
+    expect(await store.tick()).toBe(1);
+    morning(thread, 5);
+    const first = run(at(5));
+    expect(first.epoch.reason).toBe("day_boundary");
+    expect(first.messages.map((message) => message.id)).toEqual(["d5u0"]);
+  });
+
+  test("the owner's messages through a morning are attempts, not failures: at most one failure counts a day", async () => {
+    const bot = "bot_morning";
+    const { store, thread, asked, run, setClock } = harness({
+      summarize: flaky(0),
+      bot,
+    });
+    dayOfTalk(thread, 0);
+    run(at(0, 200));
+    setClock(at(1, -480));
+    await store.tick();
+    // 09:30, 10:01, 10:32: each message a new look at the close, half an hour after the last.
+    for (const [n, minutes] of [30, 61, 92].entries()) {
+      thread.push(user(`d1u${n}`, `부탁 ${n}`, at(1, minutes)));
+      run(at(1, minutes));
+      setClock(at(1, minutes + 1));
+      await store.tick();
+    }
+    expect(asked).toHaveLength(4);
+    expect(
+      logged(bot, "day_close_failed").map((line) => line.failures),
+    ).toEqual([1, 1, 1, 1]);
+    expect(logged(bot, "day_close_unsummarised")).toHaveLength(0);
+    dayOfTalk(thread, 1);
+    run(at(1, 300));
+    setClock(at(2, -480));
+    await store.tick();
+    expect(logged(bot, "day_close_failed").at(-1)?.failures).toBe(2);
+  });
+
+  test("only the summariser's own failure counts: the database being down three nights is not three failures", async () => {
+    const bot = "bot_dbdown";
+    let nights = 0;
+    const { store, thread, asked, run, setClock } = harness({
+      summarize: flaky(0),
+      bot,
+      busy: () => {
+        nights += 1;
+        if (nights <= 3) throw new Error("db down");
+        return false;
+      },
+    });
+    for (const day of [0, 1, 2, 3]) {
+      dayOfTalk(thread, day);
+      run(at(day, 200));
+      setClock(at(day + 1, -480));
+      await store.tick();
+    }
+    // Three nights nothing was asked; the fourth asked, and that is the first failure.
+    expect(asked).toHaveLength(1);
+    expect(logged(bot, "day_close_unsummarised")).toHaveLength(0);
+    expect(
+      logged(bot, "day_close_failed").map((line) => line.failures),
+    ).toEqual([0, 0, 0, 1]);
+    morning(thread, 4);
+    expect(run(at(4)).epoch.reason).not.toBe("day_boundary");
+  });
+
+  test("after three failed closes the day is closed without the summariser: the old summary carried, the days it does not cover named, and the morning carries today alone", async () => {
+    const bot = "bot_fallback";
+    const { store, thread, asked, run, setClock } = harness({
+      summarize: flaky(1),
+      bot,
+    });
+    dayOfTalk(thread, 0);
+    run(at(0, 200));
+    setClock(at(1, -480));
+    expect(await store.tick()).toBe(1);
+    for (const day of [1, 2, 3, 4]) {
+      dayOfTalk(thread, day);
+      run(at(day, 200));
+      setClock(at(day + 1, -480));
+      await store.tick();
+    }
+    // One answer, three failures, and the fourth night asked nothing of the summariser.
+    expect(asked).toHaveLength(4);
+    morning(thread, 5);
+    const first = run(at(5));
+    expect(first.epoch.reason).toBe("day_boundary");
+    expect(first.messages.map((message) => message.id)).toEqual(["d5u0"]);
+    // What the summariser wrote is carried as it was; what it never wrote is named, never invented.
+    expect(first.system).toContain("- 요약 1");
+    expect(first.system).toContain("- 9/25~9/28: ");
+    expect(first.system).toContain("요약되지 않았다");
+    expect(first.system).not.toContain("1일차");
+    expect(first.system).not.toContain("48");
+    const said = logged(bot, "day_close_unsummarised");
+    expect(said).toHaveLength(1);
+    expect(said[0]).toMatchObject({ messages: 48, days: 4, failures: 3 });
+  });
+
+  test("the night after, the summariser is asked again: on the carried summary, about today's day alone", async () => {
+    const { store, thread, asked, run, setClock } = harness({
+      summarize: flaky(0),
+    });
+    // Three failures, then the fourth night closes without the summariser.
+    for (const day of [0, 1, 2, 3]) {
+      dayOfTalk(thread, day);
+      run(at(day, 200));
+      setClock(at(day + 1, -480));
+      await store.tick();
+    }
+    expect(asked).toHaveLength(3);
+    morning(thread, 4);
+    expect(run(at(4)).epoch.reason).toBe("day_boundary");
+    dayOfTalk(thread, 4);
+    run(at(4, 200));
+    setClock(at(5, -480));
+    await store.tick();
+    expect(asked).toHaveLength(4);
+    expect(asked[3]?.previous).toContain("요약되지 않았다");
+    expect(asked[3]?.transcript).toContain("4일차");
+    expect(asked[3]?.transcript).not.toContain("3일차");
+  });
+
+  test("a gap line the summariser leaves out of its rewrite is put back: the Bot keeps knowing what its summary does not hold", async () => {
+    let calls = 0;
+    const { store, thread, run, setClock } = harness({
+      summarize: async () => {
+        calls += 1;
+        // Measured 2026-10-11 with the real summariser: told to carry `previous`, it rewrote the
+        // summary without the line saying which days it never covered.
+        if (calls <= 3) throw new Error("summary: took too long");
+        return "- 9/29: 이 사람이 유자 40박스를 주문했다";
+      },
+    });
+    for (const day of [0, 1, 2, 3]) {
+      dayOfTalk(thread, day);
+      run(at(day, 200));
+      setClock(at(day + 1, -480));
+      await store.tick();
+    }
+    morning(thread, 4);
+    run(at(4));
+    dayOfTalk(thread, 4);
+    run(at(4, 200));
+    setClock(at(5, -480));
+    expect(await store.tick()).toBe(1);
+    morning(thread, 5);
+    const first = run(at(5));
+    expect(first.epoch.reason).toBe("day_boundary");
+    expect(first.system).toContain("유자 40박스");
+    expect(first.system).toContain("- 9/24~9/27: ");
+    expect(first.system).toContain("요약되지 않았다");
+  });
+
+  test("the count survives a restart and an unrelated new epoch, and goes with the close that succeeds", async () => {
+    const rows = new Map<
+      string,
+      Parameters<ConversationPersistence["save"]>[0]
+    >();
+    const persistence: ConversationPersistence = {
+      loadAll: async () => [...rows.values()],
+      save: async (row) => {
+        rows.set(row.threadId, row);
+      },
+    };
+    const first = harness({ summarize: flaky(0), persistence });
+    dayOfTalk(first.thread, 0);
+    first.run(at(0, 200));
+    first.setClock(at(1, -480));
+    await first.store.tick();
+    await first.store.settled();
+    expect(rows.get("thread_miso")?.epoch).toMatchObject({
+      closeFailures: 1,
+      closeFailedDay: "2026-09-25",
+    });
+    // The surface's tool list changes: a new epoch, the same count.
+    first.thread.push(user("d1u0", "좋은 아침", at(1)));
+    expect(first.run(at(1), "t2").epoch.reason).toBe("tools_changed");
+    await first.store.settled();
+    expect(rows.get("thread_miso")?.epoch).toMatchObject({ closeFailures: 1 });
+
+    // A restart: the next night is the second failure, not the first.
+    let calls = 0;
+    const second = harness({
+      summarize: async () => {
+        calls += 1;
+        if (calls === 1) throw new Error("summary: took too long");
+        return "- 요약 둘";
+      },
+      persistence,
+    });
+    second.thread.push(...first.thread);
+    expect(await second.store.load()).toBe(1);
+    dayOfTalk(second.thread, 1);
+    second.run(at(1, 200), "t2");
+    second.setClock(at(2, -480));
+    await second.store.tick();
+    await second.store.settled();
+    expect(rows.get("thread_miso")?.epoch).toMatchObject({ closeFailures: 2 });
+    expect(second.asked).toHaveLength(1);
+    dayOfTalk(second.thread, 2);
+    second.run(at(2, 200), "t2");
+    second.setClock(at(3, -480));
+    expect(await second.store.tick()).toBe(1);
+    second.thread.push(user("d3u0", "좋은 아침", at(3)));
+    const taken = second.run(at(3), "t2");
+    expect(taken.epoch.reason).toBe("day_boundary");
+    expect(taken.system).toContain("- 요약 둘");
+    await second.store.settled();
+    expect(rows.get("thread_miso")?.epoch).not.toHaveProperty("closeFailures");
+  });
+
+  test("a gap line is known by its dates, not its wording: a merged or reworded one is not put back beside the model's, a dropped one is", () => {
+    const gap = (when: string) =>
+      `- ${when}: 이 기간의 대화는 요약되지 않았다.`;
+    const gaps = (text: string) =>
+      text.split("\n").filter((line) => line.includes("요약되지 않았다"));
+    const merged = withGapsKept(
+      `${gap("9/25~9/28")}\n- 9/29: 유자 40박스`,
+      `${gap("9/25~9/26")}\n${gap("9/27~9/28")}`,
+      "2026-09-30",
+    );
+    expect(gaps(merged)).toEqual([gap("9/25~9/28")]);
+    const reworded = withGapsKept(
+      "- 9/25~9/26: 이틀 치 대화는 요약되지 않았다\n- 9/29: 유자 40박스",
+      gap("9/25~9/26"),
+      "2026-09-30",
+    );
+    expect(gaps(reworded)).toHaveLength(1);
+    const dropped = withGapsKept(
+      "- 9/29: 유자 40박스",
+      `${gap("9/25~9/26")}\n- 9/27: 감 10박스`,
+      "2026-09-30",
+    );
+    expect(dropped).toBe(`${gap("9/25~9/26")}\n- 9/29: 유자 40박스`);
+  });
+
+  test("a new gap line joins the one before it when the days touch, and stands apart when they do not", () => {
+    const gap = (when: string) =>
+      `- ${when}: 이 기간의 대화는 요약되지 않았다.`;
+    const span: Thread = [
+      user("u3", "셋째 날", at(3)),
+      answer("a3", "네.", at(3, 1)),
+      user("u4", "넷째 날", at(4)),
+    ];
+    const joined = unsummarisedSummary(
+      `- 9/20: 유자 40박스\n${gap("9/25~9/26")}`,
+      span,
+      ZONE,
+    );
+    expect(joined.summary.split("\n")).toEqual([
+      "- 9/20: 유자 40박스",
+      expect.stringMatching(/^- 9\/25~9\/28: .*요약되지 않았다/),
+    ]);
+    expect(joined.days).toBe(2);
+    const apart = unsummarisedSummary(gap("9/20~9/21"), span, ZONE);
+    expect(apart.summary.split("\n").map((line) => line.slice(0, 12))).toEqual([
+      "- 9/20~9/21:",
+      "- 9/27~9/28:",
+    ]);
+  });
+
+  test("a gap line put back survives a rewrite near the bound: the summary's oldest line pays, never the line saying what is missing", () => {
+    const gap = "- 9/25~9/26: 이 기간의 대화는 요약되지 않았다.";
+    // A rewrite within a gap line's length of the bound: the shape of a long conversation (#200:
+    // 126 of 1,324 closes were at 2,700 or more).
+    const lines: string[] = [];
+    while (lines.join("\n").length < SUMMARY_MAX_CHARS - 10) {
+      lines.push(`- 9/${(lines.length % 20) + 1}: 오래된 일 ${lines.length}`);
+    }
+    lines.push("- 9/29: 한빛농산 유자 40박스");
+    const rewrite = boundedSummary(lines.join("\n"));
+    expect(rewrite.length).toBeGreaterThan(SUMMARY_MAX_CHARS - gap.length);
+    const kept = withGapsKept(rewrite, gap, "2026-09-30");
+    expect(kept.length).toBeLessThanOrEqual(SUMMARY_MAX_CHARS);
+    expect(kept.split("\n")[0]).toBe(gap);
+    expect(kept).toContain("한빛농산 유자 40박스");
+    // What paid for the line: the rewrite's oldest lines, whole, and no more than the line's length
+    // plus the one line cut in the middle.
+    const rest = kept.slice(gap.length + 1);
+    expect(rewrite.endsWith(rest)).toBe(true);
+    expect(rewrite.length - rest.length).toBeLessThan(gap.length + 1 + 20);
+  });
+
+  test.each([
+    ["an en dash", "- 9/25–9/28: 이 기간의 대화는 요약되지 않았다."],
+    ["a hyphen", "- 9/25-9/28: 이 기간의 대화는 요약되지 않았다."],
+    ["the last day alone", "- 9/25~28: 이 기간의 대화는 요약되지 않았다."],
+    ["a round bullet", "• 9/25~9/28: 이 기간의 대화는 요약되지 않았다."],
+    ["a star bullet", "* 9/25~9/28: 이 기간의 대화는 요약되지 않았다."],
+    ["a numbered line", "1. 9/25~9/28: 이 기간의 대화는 요약되지 않았다."],
+    ["월 and 일", "- 9월 25일~9월 28일: 이 기간의 대화는 요약되지 않았다."],
+    ["dots", "- 9.25~9.28: 이 기간의 대화는 요약되지 않았다."],
+    ["ISO dates", "- 2026-09-25~2026-09-28: 이 기간의 대화는 요약되지 않았다."],
+    ["no colon", "- 9/25~9/28 대화는 요약되지 않았다 (요약 없음)"],
+    [
+      "a word in between",
+      "- 9/25~9/28: 이 기간의 대화는 따로 요약되지 않았다.",
+    ],
+    [
+      "the earlier wording with a second sentence",
+      "- 9/25~9/28: 이 기간의 대화는 요약되지 않았다. 그때 나눈 대화는 그대로 남아 있어 찾아볼 수 있다.",
+    ],
+  ])(
+    "a gap line the summariser rewrote with %s is the same gap: not put back beside it",
+    (_shape, line) => {
+      const kept = withGapsKept(
+        `${line}\n- 9/29: 유자 40박스`,
+        "- 9/25~9/28: 이 기간의 대화는 요약되지 않았다.",
+        "2026-09-30",
+      );
+      expect(kept.split("\n")).toEqual([line, "- 9/29: 유자 40박스"]);
+    },
+  );
+
+  test("a line in the owner's words about something not summarised is no gap: kept as a line, and never widened over", () => {
+    const report =
+      "- 9/24: 이 사람이 상반기 보고서가 요약되지 않았다고 했다; 팀장이 다시 쓰라고 했다";
+    const span: Thread = [
+      user("u1", "첫째 날", at(1)),
+      answer("a1", "네.", at(1, 1)),
+      user("u4", "넷째 날", at(4)),
+    ];
+    const made = unsummarisedSummary(`- 요약 1\n${report}`, span, ZONE);
+    expect(made.summary.split("\n")).toEqual([
+      "- 요약 1",
+      report,
+      "- 9/25~9/28: 이 기간의 대화는 요약되지 않았다.",
+    ]);
+    // Nor put back when the rewrite leaves it out: that is the summariser's own call on a real line.
+    expect(withGapsKept("- 요약 2", report, "2026-09-30")).toBe("- 요약 2");
+    // Reported speech about the conversation itself is still the owner's line, not the server's.
+    expect(
+      withGapsKept(
+        "- 요약 2",
+        "- 9/24: 이 사람이 그날 대화가 요약되지 않았다고 했다",
+        "2026-09-30",
+      ),
+    ).toBe("- 요약 2");
+    // And something other than the conversation not being summarised is not the period's gap.
+    const paper =
+      "- 9/24: 상반기 보고서는 요약되지 않았다; 팀장이 다시 쓰라고 했다";
+    expect(withGapsKept("- 요약 2", paper, "2026-09-30")).toBe("- 요약 2");
+    expect(unsummarisedSummary(paper, span, ZONE).summary.split("\n")[0]).toBe(
+      paper,
+    );
+  });
+
+  test("the gap line is one sentence, the same for a span and for a day, with nothing after it", () => {
+    const span: Thread = [
+      user("u1", "첫째 날", at(1)),
+      answer("a1", "네.", at(1, 1)),
+      user("u4", "넷째 날", at(4)),
+    ];
+    expect(unsummarisedSummary(null, span, ZONE).summary).toBe(
+      "- 9/25~9/28: 이 기간의 대화는 요약되지 않았다.",
+    );
+    expect(
+      unsummarisedSummary("- 요약 1", span.slice(0, 2), ZONE).summary,
+    ).toBe("- 요약 1\n- 9/25: 이 기간의 대화는 요약되지 않았다.");
+  });
+
+  test("the day after a bounded success: the frozen layer names the bounded day, the summariser was told it, and the rest closes in the daytime for the owner's next message", async () => {
+    let calls = 0;
+    const { store, thread, asked, run, setClock } = harness({
+      summarize: async () => {
+        calls += 1;
+        if (calls === 1) throw new Error("summary: took too long");
+        return `- 요약 ${calls}`;
+      },
+    });
+    dayOfTalk(thread, 0);
+    run(at(0, 200));
+    setClock(at(1, -480));
+    expect(await store.tick()).toBe(0);
+    dayOfTalk(thread, 1);
+    run(at(1, 200));
+    setClock(at(2, -480));
+    // The retry is bounded to 9/24 alone, and the close it makes is 9/25's, not today's.
+    expect(await store.tick()).toBe(1);
+    expect(asked[1]?.day.slice(0, 10)).toBe("2026-09-25");
+    morning(thread, 2);
+    const first = run(at(2));
+    expect(first.epoch.reason).toBe("day_boundary");
+    expect(first.system).toContain("2026-09-25 전까지");
+    expect(first.messages.map((message) => message.id)).toEqual([
+      ...Array.from({ length: 6 }, (_, n) => [`d1u${n}`, `d1a${n}`]).flat(),
+      "d2u0",
+    ]);
+    // What remains, 9/25, is closed in the daytime — a close of today would wait for tomorrow.
+    setClock(at(2, 10));
+    expect(await store.tick()).toBe(1);
+    expect(asked[2]?.day.slice(0, 10)).toBe("2026-09-26");
+    expect(asked[2]?.previous).toBe("- 요약 2");
+    thread.push(user("d2u1", "두 번째", at(2, 30)));
+    const second = run(at(2, 30));
+    expect(second.epoch.reason).toBe("day_boundary");
+    expect(second.system).toContain("2026-09-26 전까지");
+    expect(second.system).toContain("- 요약 3");
+    expect(second.messages.map((message) => message.id)).toEqual([
+      "d2u0",
+      "d2u1",
+    ]);
+  });
+
+  test("a scrub that throws after the summariser answered is not the summariser's failure: nothing is counted", async () => {
+    const bot = "bot_scrub";
+    const { store, thread, asked, run, setClock } = harness({
+      bot,
+      forgotten: () => ["유자 40박스"],
+      scrub: async () => {
+        throw new Error("judge down");
+      },
+    });
+    dayOfTalk(thread, 0);
+    run(at(0, 200));
+    setClock(at(1, -480));
+    expect(await store.tick()).toBe(0);
+    expect(asked).toHaveLength(1);
+    expect(
+      logged(bot, "day_close_failed").map((line) => line.failures),
+    ).toEqual([0]);
   });
 });
