@@ -3068,6 +3068,12 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * now go (300개 for 300g, 300인분), two more of Codex's calls carried and two not, and the
  * property in both directions. The file measures 136 against main's 69; main's floor (4534 when this landed) and 67 is 4601.
  *
+ * RAISED 2026-10-12 FOR THE WAY BACK TO WHAT THE SUMMARY LACKS: `root` from 1705 to 1710, five in
+ * `project-read-tool.test.ts` — the summary header names the search as the tool list calls it
+ * and puts it before "모른다"; the tool's one line and its kinds lead with this conversation's
+ * past; two more words a Bot would look with find the tool first; and none of `eval:memory-days`'
+ * facts is in the header, the label or the description.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -3125,7 +3131,7 @@ const GROUPS: readonly {
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 1705, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 1710, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
