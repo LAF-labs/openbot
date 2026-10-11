@@ -95,19 +95,17 @@ export function MetricsCard({
        * rather than being cut, since a cut figure is a wrong figure.
        */}
       <div className="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-x-6 gap-y-4">
-        {metrics.map((metric, index) => (
+        {metrics.map((metric) => (
           <div key={metric.label}>
             <p className="truncate text-xs text-muted-foreground">
               {metric.label}
             </p>
             {/*
-             * THE FIRST FIGURE IS WHAT THE CARD IS ABOUT, and is written in the accent (the owner,
-             * 2026-10-11: one thing per card). Only the first: six figures in the accent are six
-             * things, and the card has none again. As text, so the ink (`text-link`), not the fill.
+             * THE FIGURES ARE THE INK, ALL OF THEM. For a day (2026-10-11) the first was written in
+             * the accent, as a chart's first series is; the owner saw it and chose none: one blue
+             * figure among black ones reads as a figure that is different, and it is not.
              */}
-            <p
-              className={`mt-0.5 break-words text-xl font-semibold tabular-nums ${index === 0 ? "text-link" : ""}`}
-            >
+            <p className="mt-0.5 break-words text-xl font-semibold tabular-nums">
               {metric.value}
             </p>
             {metric.change ? (

@@ -36,8 +36,10 @@ const buttonVariants = cva(
         /*
          * THE ACCENT (#2079e7, the owner, 2026-10-11). It was near-black from the Grok measure to
          * that day — the accent hue was spent only on links, focus and the dot that says a Bot
-         * needs you — and the fill, its hover and the label on it are still `--app-accent`'s four
-         * lines in `styles.css`, whatever they say.
+         * needs you. `bg-primary-fill`, not `bg-primary`: the fill is a step darker than the
+         * accent (#1a6dd6) so that white reads on it at 5.00:1, where on the accent it was 4.24.
+         * The fill, its hover and the label on it are `--app-accent-fill`, `-hover` and
+         * `-foreground` in `styles.css`, whatever they say.
          */
         /*
          * `disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100` is the whole
@@ -46,7 +48,7 @@ const buttonVariants = cva(
          * `opacity-100` cancels the base's fade — a muted fill does not need dimming as well, and
          * dimmed muted text stops being readable.
          */
-        default: `bg-primary text-primary-foreground not-disabled:hover:bg-primary-hover disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100 ${focusRingOnFill}`,
+        default: `bg-primary-fill text-primary-foreground not-disabled:hover:bg-primary-hover disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100 ${focusRingOnFill}`,
         outline:
           "border-border bg-background not-disabled:hover:bg-muted not-disabled:hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:not-disabled:hover:bg-input/50",
         secondary:

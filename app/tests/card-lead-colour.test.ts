@@ -8,8 +8,8 @@ import {
 
 /*
  * ONE THING PER CARD IS IN THE ACCENT (the owner, 2026-10-11, `docs/laf/redesign-2026-10.md` §1
- * "색과 깊이"): the first figure of a key-figures card, the fill of a progress bar, a chart's first
- * series. A bar chart drew each bar in the next colour of the palette and a progress card each row,
+ * "색과 깊이"): the fill of a progress bar, a chart's first series — and no figure of a key-figures
+ * card, whose figures are all the ink (the owner again, on seeing the first one blue). A bar chart drew each bar in the next colour of the palette and a progress card each row,
  * which made a bar's colour its place in the row and left the card with nothing to look at first.
  *
  * The colours are classes on the sheet's `--chart-1` … `--chart-6` (`gallery/palette.ts`), the
@@ -53,7 +53,7 @@ describe("what a card is about is in the accent, and only that", () => {
     expect(series(markup, "bg")).toEqual(["1", "1", "1"]);
   });
 
-  test("of a key-figures card's figures only the first is written in the accent's ink", () => {
+  test("a key-figures card's figures are the ink, every one: none is written in the accent", () => {
     const markup = drawn("showMetrics", {
       title: "이번 달 주요 수치",
       metrics: [
@@ -69,7 +69,7 @@ describe("what a card is about is in the accent, and only that", () => {
       isLead: (match[1] as string).split(/\s+/).includes("text-link"),
     }));
     expect(figures).toEqual([
-      { value: "12,450,000원", isLead: true },
+      { value: "12,450,000원", isLead: false },
       { value: "342건", isLead: false },
       { value: "41%", isLead: false },
     ]);
