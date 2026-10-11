@@ -751,12 +751,16 @@ describe("the greeting speaks the way the answers do", () => {
         disabled: true,
       });
     }
-    // What those two say is drawn by these, and the fill is one the page shows.
+    // What those two say is drawn by these: the chosen row in the words every other chosen thing
+    // uses (`selectedWhenPressed`, keyed to `aria-pressed`), the dash turning solid, the rest dimmed.
     const names = (rowNamed(view, "Office worker")?.className ?? "").split(
       /\s+/,
     );
-    expect(names).toContain("data-[chosen=true]:border-solid");
-    expect(names).toContain("data-[chosen=true]:bg-muted");
+    expect(names).toContain("aria-pressed:border-solid");
+    expect(names).toContain("aria-pressed:border-primary");
+    expect(names).toContain("aria-pressed:bg-primary/8");
+    expect(names).toContain("aria-pressed:text-link");
+    expect(names).not.toContain("data-[chosen=true]:bg-muted");
     expect(names).toContain("data-[dimmed=true]:opacity-45");
   });
 
