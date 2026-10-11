@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+// The evaluation's own table, so the instruction can be held to say none of it.
+import { FACTS } from "../../evals/memory-days-facts";
 import {
   contextFactsFor,
   contextLayerText,
@@ -390,12 +392,32 @@ describe("what the summariser is told", () => {
    * 2026-10-11). The instruction now keeps such a fact as an undated line, after the dated ones.
    */
   test("a standing fact keeps its recurrence, undated, after the dated lines", () => {
-    expect(DAY_SUMMARY_SYSTEM).toContain("매달 5일까지, 매주 금요일까지");
-    expect(DAY_SUMMARY_SYSTEM).toContain(
-      "undated line with its recurrence words kept",
-    );
+    expect(DAY_SUMMARY_SYSTEM).toContain("A standing fact holds until");
+    expect(DAY_SUMMARY_SYSTEM).toContain("on its own undated line");
     expect(DAY_SUMMARY_SYSTEM).toContain("after the dated lines");
     expect(DAY_SUMMARY_SYSTEM).toContain("A date passing does not settle it");
+  });
+
+  /*
+   * The sample of the shape is a visible placeholder, never a fact that looks real: a concrete
+   * example line in a summariser's instruction can be copied into a real person's summary — a
+   * person with no 세무사 could find one carried into what their Bot believes (review of pull
+   * request 196). And the first wording's examples were the evaluation's own rows, so the rows it
+   * measured were measured with the answer in the instruction.
+   */
+  test("the sample line is a bracketed placeholder, not a real-looking fact", () => {
+    expect(DAY_SUMMARY_SYSTEM).toContain("`- <무엇>: <언제마다 / 어떤 조건>`");
+    expect(DAY_SUMMARY_SYSTEM).toContain("never this placeholder");
+  });
+
+  test("nothing the evaluation's table says is in the instruction", () => {
+    for (const fact of FACTS) {
+      expect(fact.entity.test(DAY_SUMMARY_SYSTEM)).toBe(false);
+      for (const value of fact.values) {
+        expect(value.test(DAY_SUMMARY_SYSTEM)).toBe(false);
+      }
+      if (fact.stale) expect(fact.stale.test(DAY_SUMMARY_SYSTEM)).toBe(false);
+    }
   });
 });
 
