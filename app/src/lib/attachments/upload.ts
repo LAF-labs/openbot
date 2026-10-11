@@ -80,8 +80,19 @@ export function refusalBeforeUpload(
   return null;
 }
 
-/** The server's refusal codes, in the owner's words. Walked by `attachments.test.ts`. */
-export function uploadRefusalText(code: unknown): string {
+/**
+ * The server's refusal codes, in the owner's words. Walked by `attachments.test.ts`.
+ *
+ * `image` is whether the file was offered as a photo (`isImageFile`): a photo the server does not
+ * recognise is a photo in a format nothing here decodes — an iPhone's HEIC, which the picker
+ * offers because a WebKit window converts it before it is sent (`shrunk`) and a Chromium one
+ * cannot. Told "attach a photo" about the photo they just attached, the person has nowhere to go;
+ * told to save it as a JPG, they do.
+ */
+export function uploadRefusalText(
+  code: unknown,
+  options: { image?: boolean } = {},
+): string {
   switch (code) {
     case "laf:attachment_too_large":
     // The server's own body limit, in front of the upload door: on this door a body too large is a
@@ -89,9 +100,13 @@ export function uploadRefusalText(code: unknown): string {
     case "laf:body_too_large":
       return t("This file is too large. Files up to 10 MB can be attached.");
     case "laf:attachment_type_unsupported":
-      return t(
-        "This file could not be recognised. Attach a photo, an Excel or CSV file, or a PDF.",
-      );
+      return options.image
+        ? t(
+            "This photo is in a format that cannot be read here. Save it as a JPG or PNG and attach it again.",
+          )
+        : t(
+            "This file could not be recognised. Attach a photo, an Excel or CSV file, or a PDF.",
+          );
     case "laf:attachment_image_unsupported":
       return t(
         "This Bot's model cannot see photos. Attach an Excel, CSV or PDF file instead.",

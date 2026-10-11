@@ -326,7 +326,9 @@ export function Composer({
             current.filter((item) => item.localId !== localId),
           );
           setAttachNotice(
-            uploadRefusalText((error as { code?: unknown } | null)?.code),
+            uploadRefusalText((error as { code?: unknown } | null)?.code, {
+              image,
+            }),
           );
         },
       );

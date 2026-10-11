@@ -2906,6 +2906,8 @@ export const ko: Record<string, string> = {
     "파일이 너무 커요. 10MB까지 붙일 수 있어요.",
   "This file could not be recognised. Attach a photo, an Excel or CSV file, or a PDF.":
     "어떤 파일인지 알아볼 수 없어요. 사진, 엑셀·CSV, PDF를 붙여 주세요.",
+  "This photo is in a format that cannot be read here. Save it as a JPG or PNG and attach it again.":
+    "이 사진은 여기서 읽을 수 없는 형식이에요. JPG나 PNG로 저장해서 다시 붙여 주세요.",
   "This file could not be opened. It may be damaged or password-protected.":
     "파일을 열 수 없어요. 손상됐거나 암호가 걸려 있을 수 있어요.",
   "The file could not be attached. Please try again.":

@@ -149,6 +149,18 @@ describe("what the composer says before anything is sent", () => {
       expect(said).not.toContain("laf:");
       expect(isTranslated(said)).toBe(true);
     }
+    // A photo the server does not recognise is a photo in a format nothing here decodes (HEIC in a
+    // Chromium window): told "attach a photo" about the photo they just attached, the person has
+    // nowhere to go. The sentence for a photo says what to save it as.
+    const unknownPhoto = uploadRefusalText("laf:attachment_type_unsupported", {
+      image: true,
+    });
+    expect(unknownPhoto).not.toContain("laf:");
+    expect(isTranslated(unknownPhoto)).toBe(true);
+    expect(unknownPhoto).not.toBe(
+      uploadRefusalText("laf:attachment_type_unsupported"),
+    );
+    expect(unknownPhoto).toMatch(/JPG/);
     // Refused for its size by the server's own body limit or by the upload door: the same words,
     // and never the fallback's "try again", which for a file too large could never work.
     expect(uploadRefusalText("laf:body_too_large")).toBe(
