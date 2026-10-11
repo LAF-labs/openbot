@@ -13,7 +13,11 @@ import {
   createProjectMutationOptions,
   deleteProject,
 } from "@/lib/channels/mutations";
-import { projectName, projectsOf } from "@/lib/channels/projects";
+import {
+  projectDeletionWords,
+  projectName,
+  projectsOf,
+} from "@/lib/channels/projects";
 import {
   type ChannelSummary,
   channelKeys,
@@ -194,9 +198,7 @@ function ProjectsOfBot({
       )}
       <ConfirmDialog
         confirmLabel={t("Delete")}
-        description={t(
-          "The project and everything said in it go. What your Bot learned there stays.",
-        )}
+        description={asking ? projectDeletionWords(asking) : ""}
         onConfirm={async () => {
           if (asking) await deleteProject(queryClient, asking.id);
         }}

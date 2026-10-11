@@ -9,6 +9,7 @@ import {
 } from "bun:test";
 import {
   isProject,
+  projectDeletionWords,
   projectName,
   projectsOf,
 } from "../src/lib/channels/projects";
@@ -416,11 +417,23 @@ describe("deleting a project", () => {
       ko["Delete “{title}”"],
       ko["Delete the project “{title}”?"],
     ]).toEqual(["‘{title}’ 지우기", "‘{title}’ 프로젝트를 지울까요?"]);
-    expect(
-      ko[
-        "The project and everything said in it go. What your Bot learned there stays."
-      ],
-    ).toBeString();
+  });
+
+  test("the question says the files go too — and, for a project older than its folder, which ones stay", () => {
+    const goes =
+      "The project, everything said in it and the files made in it go. What your Bot learned there stays.";
+    const stays =
+      "Files made before projects had folders of their own stay in your Bot's folder.";
+    expect(ko[goes]).toContain("파일");
+    expect(ko[stays]).toContain("남아요");
+    // Made since projects have folders: everything of it is in its folder.
+    expect(projectDeletionWords({ createdAt: "2026-10-12T00:00:00Z" })).toBe(
+      goes,
+    );
+    // A conversation that became a project by migration: what it wrote went in the Bot's folder.
+    expect(projectDeletionWords({ createdAt: "2026-09-01T00:00:00Z" })).toBe(
+      `${goes} ${stays}`,
+    );
   });
 
   describe("the request", () => {

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
+  chmod,
   mkdir,
   mkdtemp,
   readdir,
@@ -307,6 +308,82 @@ describe("a project's folder, removed", () => {
         "channel_a",
         "channel_b",
       ]);
+      expect(await readFile(join(root, "notes.md"), "utf8")).toBe(
+        "the Bot's own",
+      );
+    },
+  );
+
+  test("takes the copies it filed in uploads/ before it had a folder, by name, and no other file there", async () => {
+    await mkdir(join(root, "uploads", "kept-folder"), { recursive: true });
+    await writeFile(join(root, "uploads", "a.csv"), "A's older copy");
+    await writeFile(join(root, "uploads", "b 매출.csv"), "A's other copy");
+    await writeFile(
+      join(root, "uploads", "main.csv"),
+      "the main conversation's",
+    );
+    // A link under one of the names: the link goes, and what it led to stays.
+    await symlink(join(root, "notes.md"), join(root, "uploads", "linked.csv"));
+    const ws = createWorkspace(root);
+
+    expect(
+      await ws.removeProject("channel_a", [
+        "a.csv",
+        "b 매출.csv",
+        "linked.csv",
+        // Not there any more, and a folder under a copy's name: neither is a failure.
+        "gone.csv",
+        "kept-folder",
+      ]),
+    ).toBe(true);
+
+    expect((await readdir(join(root, "uploads"))).sort()).toEqual([
+      "kept-folder",
+      "main.csv",
+    ]);
+    expect(await readFile(join(root, "notes.md"), "utf8")).toBe(
+      "the Bot's own",
+    );
+    expect(await readdir(join(root, "projects"))).toEqual(["channel_b"]);
+  });
+
+  // Not as root, which no folder's mode refuses: the gate's runner and a laptop are neither.
+  test.skipIf(process.getuid?.() === 0)(
+    "a copy that could not be removed fails the removal — the mark has to stay for it",
+    async () => {
+      await mkdir(join(root, "uploads"), { recursive: true });
+      await writeFile(join(root, "uploads", "a.csv"), "A's older copy");
+      // What a disk that refuses looks like from here: the folder will not give the name up.
+      await chmod(join(root, "uploads"), 0o555);
+      const ws = createWorkspace(root);
+
+      const came = await refused(() =>
+        ws.removeProject("channel_a", ["a.csv"]),
+      );
+      await chmod(join(root, "uploads"), 0o755);
+
+      expect(came).not.toBe("came back");
+      expect(await readdir(join(root, "uploads"))).toEqual(["a.csv"]);
+    },
+  );
+
+  test.each(["../notes.md", "..", "deeper/a.csv", "/etc/passwd", ""])(
+    "a copy named by a path refuses the whole removal: %j",
+    async (name) => {
+      await mkdir(join(root, "uploads"), { recursive: true });
+      await writeFile(join(root, "uploads", "a.csv"), "A's older copy");
+      const ws = createWorkspace(root);
+
+      expect(
+        await refused(() => ws.removeProject("channel_a", ["a.csv", name])),
+      ).toBe("laf:file_path_refused");
+
+      // Nothing went: not the folder, not the copy named properly beside the bad one.
+      expect((await readdir(join(root, "projects"))).sort()).toEqual([
+        "channel_a",
+        "channel_b",
+      ]);
+      expect(await readdir(join(root, "uploads"))).toEqual(["a.csv"]);
       expect(await readFile(join(root, "notes.md"), "utf8")).toBe(
         "the Bot's own",
       );

@@ -2685,6 +2685,15 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * that is not the server's own fact is not a deletion) and one fewer in `search.test.tsx`, whose
  * table of refusals is gone with its test.
  *
+ * RAISED 2026-10-11 FOR WHAT A PROJECT FILED BEFORE IT HAD A FOLDER (record §3, piece 4-2's third
+ * part): `server` from 4248 to 4249 (the deletion names its own older copies to the removal, in
+ * `conversation-deleting.integration.test.ts`), `app` from 2259 to 2260 (the question says the
+ * files go, and which stay, in `projects.test.tsx`), `root` from 1066 to 1101 — twenty-eight in
+ * `file-scope.test.ts` (a copy's name from its row's path, what one file's name is, a project
+ * older than its folder) and seven in `project-folder-wire.test.ts` (the copies removed by name
+ * over the wire, and six shapes refused whole). 1066 and 28 is 1094, and 7 is 1101.
+ * (agent-computer's seven are in its own note below.)
+ *
  * RAISED 2026-10-11 FOR A PROJECT'S FOLDER, `server` from 4187 to 4193 and `root` from 946 to 1034
  * (record §3, piece 4-2's second part), by exactly what it brought. Root: sixty-three in
  * `file-scope.test.ts`, the rule as a table — what a scope reaches, where a write goes, what a
@@ -2765,8 +2774,8 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4248, roots: ["server"] },
-  { name: "app", floor: 2259, roots: ["app"] },
+  { name: "server", floor: 4249, roots: ["server"] },
+  { name: "app", floor: 2260, roots: ["app"] },
   {
     name: "agent-computer",
     /*
@@ -2784,12 +2793,17 @@ const GROUPS: readonly {
      * way in and through a link, and two in `korean-sites.test.ts`, a real download landing in
      * the project's folder and one nobody's run asked for not being kept. 581 and 28 is 609, and
      * 2 is 611.
+     *
+     * RAISED 2026-10-11 FOR WHAT A PROJECT FILED BEFORE IT HAD A FOLDER, from 611 to 618: seven
+     * in `workspace-scope.test.ts` — the copies taken by name and nothing beside them, one that
+     * could not be removed failing the call, and five names that are paths refusing the whole
+     * removal.
      */
-    floor: 611,
+    floor: 618,
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 1066, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 1101, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

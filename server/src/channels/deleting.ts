@@ -41,9 +41,9 @@
  * hand the gate one and the deletion another.
  *
  * WHAT IS NOT REMOVED, AND WHY, is written beside `NAMES_A_CONVERSATION` below and in the record:
- * the audit trail (append-only), and the readable copies of attachments a project filed in the
- * Bot's main folder before it had a folder of its own (2026-10-11) — moving those is piece 4-2's
- * third part. Everything filed since is in `projects/<id>/` and goes with it.
+ * the audit trail (append-only), and what a project older than its folder downloaded or wrote
+ * into the Bot's own folder — nothing says whose those are (`shared/file-scope.ts`,
+ * `PROJECT_FOLDERS_SINCE`). Its attachments' readable copies are removed by name, with the folder.
  */
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
@@ -56,11 +56,13 @@ import {
   channels,
   channelAgents,
   channelThreads,
+  lafAttachments,
   lafConversationContexts,
   lafNotifications,
   lafThreadMessages,
   lafThreadRuns,
 } from "../db/schema";
+import { olderCopyNameOf } from "../../../shared/file-scope";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
 
@@ -258,6 +260,9 @@ export const NAMES_A_CONVERSATION: Readonly<
   "channel_threads.thread_id": "deleted",
 };
 
+/** One Bot of a project's, and the names of what the project filed in its `uploads/`. */
+export type ProjectFiles = { botId: string; olderCopies: readonly string[] };
+
 export type ProjectDeletionResult =
   | { ok: true; counts: Record<string, number> }
   | {
@@ -297,7 +302,7 @@ export function createProjectDeletion(dependencies: {
    */
   removeFolder?: (
     channelId: string,
-    botIds: readonly string[],
+    bots: readonly ProjectFiles[],
   ) => Promise<void>;
   /** Told once the project is gone (`thread-projects.ts`). */
   forgotten?: (channelId: string) => void;
@@ -367,9 +372,36 @@ export function createProjectDeletion(dependencies: {
         .select({ agentId: channelAgents.agentId })
         .from(channelAgents)
         .where(eq(channelAgents.channelId, channelId));
+      /*
+       * AND WHAT IT FILED BEFORE IT HAD A FOLDER: the readable copies of its own attachments, in
+       * the Bot's `uploads/`, named by the rows that go in the transaction below. By name, and
+       * only a name in that one folder (`olderCopyNameOf`) — a copy filed since is in the
+       * project's folder and goes with it.
+       */
+      const filed = await database
+        .select({
+          agentId: lafAttachments.agentId,
+          workspacePath: lafAttachments.workspacePath,
+        })
+        .from(lafAttachments)
+        .where(
+          and(
+            eq(lafAttachments.channelId, channelId),
+            isNotNull(lafAttachments.workspacePath),
+          ),
+        );
       const removed = await removeFolder(
         channelId,
-        bots.map((row) => row.agentId),
+        bots.map((row) => ({
+          botId: row.agentId,
+          olderCopies: filed.flatMap((one) => {
+            const name =
+              one.agentId === row.agentId && one.workspacePath
+                ? olderCopyNameOf(one.workspacePath)
+                : null;
+            return name ? [name] : [];
+          }),
+        })),
       ).then(
         () => true,
         (error: unknown) => {

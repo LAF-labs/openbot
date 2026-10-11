@@ -1,3 +1,4 @@
+import { isOlderThanItsFolder } from "@shared/file-scope";
 import type { ChannelSummary } from "@/lib/channels/queries";
 import { t } from "@/lib/i18n";
 
@@ -41,4 +42,21 @@ export function isProject(
 export function projectName(channel: { name?: unknown }): string {
   const name = typeof channel.name === "string" ? channel.name.trim() : "";
   return name || t("Untitled project");
+}
+
+/**
+ * What deleting a project takes, said before the press (`routes/_authed/_app/projects.tsx`).
+ *
+ * A project's files go with it since it has a folder of its own (`@shared/file-scope`). One older
+ * than its folder holds files nothing can tell are its own — what it downloaded and wrote went in
+ * the Bot's folder beside everything else — and those stay: said here, where the person can still
+ * decide, and not after.
+ */
+export function projectDeletionWords(project: { createdAt: string }): string {
+  const goes = t(
+    "The project, everything said in it and the files made in it go. What your Bot learned there stays.",
+  );
+  return isOlderThanItsFolder(project.createdAt)
+    ? `${goes} ${t("Files made before projects had folders of their own stay in your Bot's folder.")}`
+    : goes;
 }

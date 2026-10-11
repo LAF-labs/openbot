@@ -42,6 +42,7 @@ import {
   lafThreadMessages,
   lafThreadRuns,
   users,
+  lafAttachments,
 } from "../src/db/schema";
 import { createConversationSearch } from "../src/search/conversations";
 import { TEST_POOL } from "./support/database";
@@ -595,9 +596,9 @@ describe("deleting a project", () => {
       dropContext: async () => {
         order.push(`forget its context: rows ${await rows()}`);
       },
-      removeFolder: async (channelId, botIds) => {
+      removeFolder: async (channelId, bots) => {
         order.push(
-          `remove the folder of ${channelId === project.channel ? "the project" : channelId} for ${botIds.join()}: rows ${await rows()}`,
+          `remove the folder of ${channelId === project.channel ? "the project" : channelId} for ${bots.map((bot) => bot.botId).join()}: rows ${await rows()}`,
         );
       },
       forgotten: (channelId) => {
@@ -617,6 +618,78 @@ describe("deleting a project", () => {
       "forgotten the project",
       "deleted: rows 0",
     ]);
+  });
+
+  test("what it filed in the Bot's uploads/ before it had a folder is named to the removal — its own copies, and no other conversation's", async () => {
+    const project = await conversation("project");
+    const attachment = (
+      id: string,
+      channelId: string,
+      workspacePath: string | null,
+    ) => ({
+      id: `${id}-${tag}`,
+      userId: ME,
+      channelId,
+      agentId: BOT,
+      name: `${id}.csv`,
+      mimeType: "text/csv",
+      bytes: 1,
+      data: Buffer.from("x"),
+      modelText: "",
+      workspacePath,
+    });
+    await database.insert(lafAttachments).values([
+      attachment("older", project.channel, "uploads/2026-09-26-older.csv"),
+      attachment("older-2", project.channel, "uploads/2026-09-27-둘째.csv"),
+      // Filed since the folder: it goes with the folder, and is not named.
+      attachment(
+        "newer",
+        project.channel,
+        `projects/${project.channel}/uploads/2026-10-11-newer.csv`,
+      ),
+      // A picture has no readable copy, and a path this does not remove from is left alone.
+      attachment("picture", project.channel, null),
+      attachment("elsewhere", project.channel, "made/report.csv"),
+      // The main conversation's own attachment, in the same folder.
+      attachment("main", MAIN.channel, "uploads/2026-09-26-main.csv"),
+    ]);
+    const asked: unknown[] = [];
+    const deletion = createProjectDeletion({
+      database,
+      stopThread: async () => undefined,
+      removeFolder: async (channelId, bots) => {
+        asked.push({ channelId, bots });
+      },
+    });
+
+    await deletion.delete({ channelId: project.channel, userId: ME });
+
+    expect(asked).toEqual([
+      {
+        channelId: project.channel,
+        bots: [
+          {
+            botId: BOT,
+            olderCopies: expect.arrayContaining([
+              "2026-09-26-older.csv",
+              "2026-09-27-둘째.csv",
+            ]),
+          },
+        ],
+      },
+    ]);
+    expect(
+      (asked[0] as { bots: { olderCopies: string[] }[] }).bots[0]?.olderCopies,
+    ).toHaveLength(2);
+    // The rows went with the project; the main conversation's is as it was.
+    const left = await database
+      .select({ id: lafAttachments.id })
+      .from(lafAttachments)
+      .where(eq(lafAttachments.userId, ME));
+    expect(left.map((row) => row.id)).toEqual([`main-${tag}`]);
+    await database
+      .delete(lafAttachments)
+      .where(eq(lafAttachments.id, `main-${tag}`));
   });
 
   test("a folder that could not be removed keeps the project marked with every row, and the clock removes both", async () => {

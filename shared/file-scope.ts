@@ -161,3 +161,61 @@ export function placedForWrite(scope: FileScope, path: string): string | null {
   if (isUnderProjects(names)) return null;
   return [projectFolder(scope.id), ...names].join("/");
 }
+
+/**
+ * WHAT A PROJECT FILED BEFORE IT HAD A FOLDER (piece 4-2's third part, 2026-10-11).
+ *
+ * An attachment's readable copy was filed in the Bot's own `uploads/` until projects had folders,
+ * and its row still says where. Those copies are NOT MOVED into the project's folder: the path is
+ * in the words the conversation already holds — the attachment's text names it to the model — and
+ * a moved file would make every one of them wrong. They are removed when the project is, by name:
+ * the server reads the names from the project's own rows and the computer removes exactly those,
+ * in `uploads/` and nowhere else.
+ */
+export const UPLOADS_DIRECTORY = "uploads";
+
+/** How many names one removal carries: what the server sends at most and the computer takes. */
+export const OLDER_COPIES_PER_CALL = 500;
+
+/** A name that is one file in a folder: no separator, not `.` or `..`, nothing that ends a path. */
+export function isBareFileName(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 255 &&
+    value !== "." &&
+    value !== ".." &&
+    !value.includes("/") &&
+    !value.includes("\\") &&
+    !value.includes("\0")
+  );
+}
+
+/**
+ * The name of an older copy, from the path its row holds: `uploads/<one name>`, to the letter.
+ * Null for anything else — a path already in a project's folder (it goes with the folder), a
+ * path somewhere this does not remove from, a string that is no such path.
+ */
+export function olderCopyNameOf(workspacePath: string): string | null {
+  const prefix = `${UPLOADS_DIRECTORY}/`;
+  if (!workspacePath.startsWith(prefix)) return null;
+  const name = workspacePath.slice(prefix.length);
+  return isBareFileName(name) ? name : null;
+}
+
+/**
+ * When projects began to have folders: the moment the code landed on main (#169, `2e288b8a`,
+ * `git log -1 --format=%cI`). A project made before
+ * it — a conversation that became a project by migration 0064, from an account that had several
+ * before 2026-09-24 — holds files nobody can tell are its own: what it downloaded and wrote went
+ * in the Bot's folder beside everything else. Deleting it leaves those, and the surface says so
+ * before the person presses. No deployment could make a project between this moment and its own
+ * upgrade: the screen that makes one ships with the folder.
+ */
+export const PROJECT_FOLDERS_SINCE = "2026-10-10T16:07:47.000Z";
+
+/** Whether a project is older than its folder, from when its conversation was made. */
+export function isOlderThanItsFolder(createdAt: string | Date): boolean {
+  const made = new Date(createdAt).getTime();
+  return Number.isFinite(made) && made < Date.parse(PROJECT_FOLDERS_SINCE);
+}
