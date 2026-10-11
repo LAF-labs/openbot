@@ -2929,13 +2929,28 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * review of pull request 196); and a line that is still the placeholder dropped before the summary
  * is stored. Thirty-seven on the scrub's standing-line arm and the bound: five terse standing
  * shapes carrying a forgotten fact (a grouped line among them); fifteen unrelated lines of the
- * same kind that stay — a role, a recurrence, a price's or a day's digits shared, two of them
- * dated and under the ratio (the second review's probes, every one of which a first arm had
- * dropped); one forget on a mixed summary taking one line; four pins of the arm's known limits;
+ * same kind that stay — a role, a price's or a day's digits shared, two of them dated and under
+ * the ratio (the second review's probes, every one of which a first arm had dropped; none of
+ * them shared a recurrence word, which the rows of 2026-10-12 below are the first to guard); one
+ * forget on a mixed summary taking one line; four pins of the arm's known limits;
  * nine date shapes `isDated` must and must not read; a standing line the owner forgot dropped
  * beside the dated line about the same person; the bound's oldest-first cut reaching the standing
  * block last; and the cut reported with whether the closed day lost a line. 5 and 37 is 42; 4431
  * and 42 is 4473.
+ *
+ * RAISED 2026-10-12 FOR THE FORGETTING FLOOR'S FOLLOW-UP, `server` from 4473 to 4487: fourteen in
+ * `memory-forgetting.test.ts`. Four notebook lines in weekday shorthand (화·목만, 화, 목만, 월/수/금에)
+ * meeting a summary line, written out or not — each red with the fact's tokens taken as said,
+ * one red with the list's last weekday left unread before its 만. Five unrelated lines that stay,
+ * one for each clause of the standing-line arm the third review of pull request 196 reverted with
+ * the suite green: 지은's wage line (the body must say something the fact says), her Saturday
+ * line and a marketplace's 25th and a supplier's Friday product (a recurrence word never counts;
+ * a digit-led word counts only whole), the wage line with her name in its body (a subject word
+ * in the body is not the predicate word, and the subject split tells them apart). Four pins of
+ * the number clause's known over-forgetting shape, asserting what the arm does today. One close
+ * over the bound logging `day_summary_cut`, counts only, read from the log by event, and a close
+ * under it logging nothing — the line that was not under any test. 4 and 5 is 9, and 4 is 13,
+ * and 1 is 14; 4473 and 14 is 4487.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -2965,7 +2980,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4473, roots: ["server"] },
+  { name: "server", floor: 4487, roots: ["server"] },
   { name: "app", floor: 2421, roots: ["app"] },
   {
     name: "agent-computer",
