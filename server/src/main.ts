@@ -1163,6 +1163,8 @@ const app = createApp({
     config,
     database,
     sharedClient: sharedOAuthClients,
+    // The same reading of the sign-in list every other unattended path asks.
+    admission,
   }),
   // Whether the "do not ask me about" control is drawn at all. Measured against this deployment's
   // own review model; see the probe above.
