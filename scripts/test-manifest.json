@@ -376,6 +376,7 @@
   "server/tests/conversation-epochs.test.ts",
   "server/tests/conversation-kind-migration.integration.test.ts",
   "server/tests/conversation-search.integration.test.ts",
+  "server/tests/conversations-of.integration.test.ts",
   "server/tests/converter.test.ts",
   "server/tests/copilot-guard.test.ts",
   "server/tests/copilot.test.ts",

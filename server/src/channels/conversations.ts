@@ -6,7 +6,7 @@ import {
   type AgentProfileStore,
 } from "../agents/profile-store";
 import type { AgentActor, AgentProfile } from "../agents/profile-types";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
   channelAgents,
@@ -15,6 +15,7 @@ import {
   channelThreads,
 } from "../db/schema";
 import type { Executor } from "../runner/thread-store";
+import { conversationsOf } from "./conversations-of";
 import { soloConversationOf } from "./solo-channel";
 import type { ThreadIdentity } from "./thread-identity";
 import type { AgentChannel } from "./types";
@@ -91,13 +92,20 @@ export function createConversation(
         }
       }
 
-      return insertConversation(
-        transaction,
-        threadIdentity,
-        actor,
+      return writeConversation(transaction, threadIdentity, actor, {
+        // Named from the caller's ordering, which is the order the channel presents its agents in.
+        name: channelName(
+          agentIds.map((agentId) => {
+            const profile = profilesById.get(agentId);
+            if (!profile) throw new AgentNotFoundError(agentId);
+            return profile.name;
+          }),
+        ),
+        // Said, not left to the column's default: this path makes a Bot's main conversation and
+        // no other, having found none above. A project is made by a path of its own (piece 4-2).
+        kind: "main",
         agentIds,
-        profilesById,
-      );
+      });
     },
     { isolationLevel: "read committed" },
   );
@@ -150,54 +158,19 @@ export function createProject(
         sql`select pg_advisory_xact_lock(hashtext(${`laf_projects:${actor.id}:${agentId}`}))`,
       );
       await lockProfiles(transaction, profileStore, actor, [agentId]);
-      const [{ count } = { count: 0 }] = await transaction
-        .select({ count: sql<number>`count(*)::int` })
-        .from(channels)
-        .innerJoin(
-          channelMemberships,
-          and(
-            eq(channelMemberships.channelId, channels.id),
-            eq(channelMemberships.userId, actor.id),
-          ),
-        )
-        .innerJoin(
-          channelAgents,
-          and(
-            eq(channelAgents.channelId, channels.id),
-            eq(channelAgents.agentId, agentId),
-          ),
-        )
-        .where(eq(channels.kind, "project"));
+      const [{ count } = { count: 0 }] = await conversationsOf(
+        transaction,
+        { count: sql<number>`count(*)::int` },
+        // One being deleted holds its rows, and its place, until it is gone (`deleting.ts`).
+        { userId: actor.id, agentId, includingDeleting: true },
+      ).where(eq(channels.kind, "project"));
       if (count >= PROJECTS_PER_BOT) throw new ProjectLimitError();
 
-      const id = `channel_${crypto.randomUUID()}`;
-      const threadId = threadIdentity.mint();
-      await transaction.insert(channels).values({
-        id,
+      return writeConversation(transaction, threadIdentity, actor, {
         name,
-        description: PRIVATE_AGENT_CHANNEL_DESCRIPTION,
         kind: "project",
-      });
-      await transaction.insert(channelMemberships).values({
-        channelId: id,
-        userId: actor.id,
-      });
-      await transaction
-        .insert(channelAgents)
-        .values({ channelId: id, agentId });
-      await transaction.insert(channelThreads).values({
-        userId: actor.id,
-        channelId: id,
-        threadId,
-      });
-      return {
-        id,
-        name,
         agentIds: [agentId],
-        threadId,
-        active: true,
-        kind: "project",
-      };
+      });
     },
     { isolationLevel: "read committed" },
   );
@@ -228,34 +201,28 @@ async function lockProfiles(
   return profilesById;
 }
 
-/** The channel, its one member, its Bots and the member's thread, written together. */
-async function insertConversation(
+/**
+ * THE CHANNEL, ITS ONE MEMBER, ITS BOTS AND THE MEMBER'S THREAD, WRITTEN TOGETHER. A conversation
+ * is these four rows and never fewer — every reader joins on them (`conversations-of.ts`) — and
+ * the main conversation and a project are made by the one write, so neither path can be short a
+ * row the other has.
+ */
+async function writeConversation(
   transaction: Executor,
   threadIdentity: ThreadIdentity,
   actor: AgentActor,
-  agentIds: string[],
-  profilesById: ReadonlyMap<string, AgentProfile>,
+  { name, kind, agentIds }: Pick<AgentChannel, "name" | "kind" | "agentIds">,
 ): Promise<AgentChannel> {
   const id = `channel_${crypto.randomUUID()}`;
   // Minted rather than a bare random id, so the thread says which deployment it belongs to
   // in a project that may hold more than one. See thread-identity.ts.
   const threadId = threadIdentity.mint();
-  // Named from the caller's ordering, which is the order the channel presents its agents in.
-  const name = channelName(
-    agentIds.map((agentId) => {
-      const profile = profilesById.get(agentId);
-      if (!profile) throw new AgentNotFoundError(agentId);
-      return profile.name;
-    }),
-  );
 
   await transaction.insert(channels).values({
     id,
     name,
     description: PRIVATE_AGENT_CHANNEL_DESCRIPTION,
-    // Said, not left to the column's default: this path makes a Bot's main conversation and no
-    // other, having found none above. A project is made by a path of its own (piece 4-2).
-    kind: "main",
+    kind,
   });
   await transaction.insert(channelMemberships).values({
     channelId: id,
@@ -270,5 +237,5 @@ async function insertConversation(
     threadId,
   });
 
-  return { id, name, agentIds, threadId, active: true, kind: "main" };
+  return { id, name, agentIds, threadId, active: true, kind };
 }

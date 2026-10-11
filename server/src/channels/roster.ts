@@ -1,7 +1,7 @@
 /**
  * The channels a person can see, what their roster says about each, and where they stopped reading.
  */
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import type { AgentActor } from "../agents/profile-types";
 import type { Database } from "../db/client";
 import {
@@ -11,6 +11,7 @@ import {
   channels,
   channelThreads,
 } from "../db/schema";
+import { conversationsOf } from "./conversations-of";
 import { ChannelNotFoundError } from "./errors";
 import type { AgentChannel, ChannelStore, ChannelSummary } from "./types";
 
@@ -37,34 +38,20 @@ export async function readChannel(
   actor: AgentActor,
   channelId: string,
 ): Promise<AgentChannel | null> {
-  const rows = await database
-    .select({
+  const rows = await conversationsOf(
+    database,
+    {
       id: channels.id,
       name: channels.name,
       agentId: channelAgents.agentId,
       threadId: channelThreads.threadId,
       kind: channels.kind,
       deletedAt: agentProfiles.deletedAt,
-    })
-    .from(channels)
-    .innerJoin(
-      channelMemberships,
-      and(
-        eq(channelMemberships.channelId, channels.id),
-        eq(channelMemberships.userId, actor.id),
-      ),
-    )
-    .innerJoin(
-      channelThreads,
-      and(
-        eq(channelThreads.channelId, channels.id),
-        eq(channelThreads.userId, actor.id),
-      ),
-    )
-    .innerJoin(channelAgents, eq(channelAgents.channelId, channels.id))
+    },
+    { userId: actor.id },
+  )
     .innerJoin(agentProfiles, eq(agentProfiles.agentId, channelAgents.agentId))
-    // One being deleted is not there any more, for every reader at once (`deleting.ts`).
-    .where(and(eq(channels.id, channelId), isNull(channels.deletingAt)))
+    .where(eq(channels.id, channelId))
     .orderBy(asc(channelAgents.agentId));
 
   const first = rows[0];
@@ -84,8 +71,9 @@ export async function listChannels(
   database: Database,
   actor: AgentActor,
 ): Promise<ChannelSummary[]> {
-  const rows = await database
-    .select({
+  const rows = await conversationsOf(
+    database,
+    {
       id: channels.id,
       name: channels.name,
       agentId: channelAgents.agentId,
@@ -94,32 +82,16 @@ export async function listChannels(
       deletedAt: agentProfiles.deletedAt,
       // THIS PERSON'S last message, from the row that is their conversation. The columns sat
       // on `channels` until migration 0038, which put the owner's last sentence on a member
-      // of staff's roster — the join on `channelThreads` above is the scope.
+      // of staff's roster — the join on `channelThreads` (`conversationsOf`) is the scope.
       lastMessage: channelThreads.lastMessage,
       lastMessageAt: channelThreads.lastMessageAt,
       lastMessageAgentId: channelThreads.lastMessageAgentId,
       lastReadAt: channelMemberships.lastReadAt,
       createdAt: channels.createdAt,
-    })
-    .from(channels)
-    .innerJoin(
-      channelMemberships,
-      and(
-        eq(channelMemberships.channelId, channels.id),
-        eq(channelMemberships.userId, actor.id),
-      ),
-    )
-    .innerJoin(
-      channelThreads,
-      and(
-        eq(channelThreads.channelId, channels.id),
-        eq(channelThreads.userId, actor.id),
-      ),
-    )
-    .innerJoin(channelAgents, eq(channelAgents.channelId, channels.id))
+    },
+    { userId: actor.id },
+  )
     .innerJoin(agentProfiles, eq(agentProfiles.agentId, channelAgents.agentId))
-    // A project being deleted has left the list already: it is not offered while it goes.
-    .where(isNull(channels.deletingAt))
     // Most recent first, where starting a conversation counts as activity. A channel somebody
     // just created has nothing said in it yet, and is also the one they are about to type in;
     // ordering on the message alone would bury it under every channel that has one.
