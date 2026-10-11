@@ -80,6 +80,16 @@ describe("the lists the pack hands out", () => {
     },
   );
 
+  // And the run handed thinking holds nothing (piece 6-3): a scenario that gave it a tool would
+  // measure a run the product never makes.
+  test.each(
+    SCENARIOS.filter((scenario) => scenario.mode === "think").map(
+      (scenario) => [scenario.id, scenario] as const,
+    ),
+  )("%s: a run handed thinking is handed no tool at all", (_id, scenario) => {
+    expect(names(scenario.tools)).toEqual([]);
+  });
+
   test("some scenario is the delegated run's own, and some conversation hands over", () => {
     expect(
       SCENARIOS.filter((scenario) => scenario.mode === "browse").length,
@@ -114,7 +124,8 @@ const handed = (
   calls: ObservedCall[] = [],
   said = "",
   answer = "다 했습니다.",
-): Delegated => ({ task, calls, said, answer, waited: false, events: [] });
+  to: Delegated["to"] = "browser",
+): Delegated => ({ to, task, calls, said, answer, waited: false, events: [] });
 const turn = (
   text: string,
   calls: ObservedCall[] = [],
@@ -280,7 +291,7 @@ describe("delegated-task-stands-alone", () => {
 describe("handed-back-figure-is-relayed", () => {
   const entry = scenario("handed-back-figure-is-relayed");
   const task = "네이버 쇼핑에서 '스테인리스 텀블러 500ml' 최저가를 찾아 줘.";
-  const back = entry.handsBack?.(task) ?? "";
+  const back = entry.handsBack?.(task, "browser") ?? "";
   const judged = (text: string) =>
     entry.check(turn(text, [delegate(task)], [handed(task, [], "", back)]));
 
@@ -323,7 +334,7 @@ describe("handed-back-could-not-is-said-so", () => {
       turn(
         text,
         [delegate(task)],
-        [handed(task, [], "", entry.handsBack?.(task) ?? "")],
+        [handed(task, [], "", entry.handsBack?.(task, "browser") ?? "")],
       ),
     );
 
@@ -415,5 +426,189 @@ describe("browse-run-asks-through-the-masked-box", () => {
     expect(entry.check(turn("아이디와 비밀번호를 알려 주세요.")).pass).toBe(
       false,
     );
+  });
+});
+
+/*
+ * THINKING, HANDED OVER (piece 6-3). The judges of the five scenarios, on what they must pass and
+ * what they must not.
+ */
+describe("the thinking hand-over", () => {
+  const think = (task: string) => call("delegate", { to: "think", task });
+  const thought = (task: string, answer: string, calls: ObservedCall[] = []) =>
+    handed(task, calls, "", answer, "think");
+
+  describe("quick-sum-is-not-handed-to-think", () => {
+    const check = scenario("quick-sum-is-not-handed-to-think").check;
+
+    test("answered outright passes", () => {
+      expect(check(turn("세 잔이면 13,500원이에요.")).pass).toBe(true);
+      expect(check(turn("13500원입니다.")).pass).toBe(true);
+    });
+
+    test("handed over fails, though the sum that came back is right", () => {
+      const task = "4,500원짜리 세 잔의 값";
+      const judged = check(
+        turn("13,500원이에요.", [think(task)], [thought(task, "13,500원")]),
+      );
+      expect(judged.pass).toBe(false);
+    });
+
+    test("the wrong sum fails", () => {
+      expect(check(turn("세 잔이면 12,500원이에요.")).pass).toBe(false);
+    });
+  });
+
+  describe("tangled-stock-is-handed-to-think-whole", () => {
+    const check = scenario("tangled-stock-is-handed-to-think-whole").check;
+    const WHOLE =
+      "월요일 아침 원두 18.4kg, 우유 42팩, 시럽 9병. 원두는 평일 2.35kg, 주말 3.8kg. 우유는 평일 11팩, 주말 17팩. 시럽은 이틀에 한 병, 월요일에 첫 병. 수요일 원두 10kg, 목요일 우유 48팩, 토요일 원두 5kg과 우유 24팩 입고. 금요일 저녁 우유 6팩 폐기. 일요일 마감 때 남는 양은?";
+    const RIGHT = "일요일 마감에는 원두 14.05kg, 우유 19팩, 시럽 5병이 남아요.";
+
+    test("handed to think with every condition, and what came back said, passes", () => {
+      expect(
+        check(turn(RIGHT, [think(WHOLE)], [thought(WHOLE, RIGHT)])).pass,
+      ).toBe(true);
+    });
+
+    test("worked out without handing it over fails: the scenario is the hand-over", () => {
+      expect(check(turn(RIGHT)).pass).toBe(false);
+    });
+
+    test("handed to the browser fails", () => {
+      const judged = check(
+        turn(RIGHT, [delegate(WHOLE)], [handed(WHOLE, [], "", RIGHT)]),
+      );
+      expect(judged.pass).toBe(false);
+    });
+
+    test.each([
+      [
+        "the milk thrown away",
+        WHOLE.replace("금요일 저녁 우유 6팩 폐기. ", ""),
+      ],
+      ["what a weekend uses", WHOLE.replace(", 주말 3.8kg", "")],
+      ["what was there on Monday", WHOLE.replace("원두 18.4kg, ", "")],
+    ])("a task that leaves out %s fails", (_, task) => {
+      expect(
+        check(turn(RIGHT, [think(task)], [thought(task, RIGHT)])).pass,
+      ).toBe(false);
+    });
+
+    test("a wrong figure said fails", () => {
+      const wrong = "원두 14.05kg, 우유 25팩, 시럽 5병이 남아요.";
+      expect(
+        check(turn(wrong, [think(WHOLE)], [thought(WHOLE, wrong)])).pass,
+      ).toBe(false);
+    });
+  });
+
+  describe("what-think-hands-back-is-what-is-said", () => {
+    const entry = scenario("what-think-hands-back-is-what-is-said");
+    const task = "A와 B 대출의 36개월 이자와 수수료 합계 비교";
+    const back = entry.handsBack?.(task, "think") ?? "";
+    const judged = (text: string) =>
+      entry.check(turn(text, [think(task)], [thought(task, back)]));
+
+    test("the scenario scripts what thinking hands back, and nothing for the browser", () => {
+      expect(back).toContain("2,947,500");
+      expect(entry.handsBack?.(task, "browser")).toBeUndefined();
+    });
+
+    test.each([
+      "A가 덜 들어요. 36개월 동안 A는 이자 2,855,692원, B는 수수료까지 2,947,500원이라 약 92,000원 차이예요.",
+      "따져 보니 A 쪽이 유리해요. 차이는 91,808원쯤이에요.",
+      "A 대출이 9만 2천 원 정도 덜 나가요.",
+      // The deployment's model, word for word (2026-10-11): the figure it was handed, rounded to
+      // the hundred. A judge that took only "92,000" failed it.
+      "따져보니 A가 약 9만 원 정도 덜 듭니다. 차이: A가 약 91,800원 적습니다.",
+      "A가 9만 1천 8백 원쯤 덜 들어요.",
+      // And twice more the same day, the way a Korean sentence writes ninety-one thousand.
+      "따져보니 A가 약 9만 원 덜 듭니다. 차이: A가 약 9만 1,800원 적습니다.",
+      "36개월 동안 나가는 돈은 A가 더 적어요. 차이: A가 약 9만 1,808원 적어요.",
+      "A가 9만 2,000원쯤 덜 나가요.",
+    ])("what came back, said, passes: %s", (text) => {
+      expect(judged(text).pass).toBe(true);
+    });
+
+    test.each([
+      "A가 약 9만 원 덜 들어요.",
+      "A가 약 85,000원 덜 들어요.",
+      "A가 약 9만 5,000원 덜 들어요.",
+      "A가 9만 원쯤, B는 매달 91만 2,660원이에요.",
+      "A가 덜 들어요. A의 이자는 2,855,692원, B는 2,947,500원이에요.",
+    ])("the figure dropped or changed fails: %s", (text) => {
+      expect(judged(text).pass).toBe(false);
+    });
+
+    // The deployment's model, word for word (2026-10-11): which suits whom is not what costs less.
+    test("advice about whom each suits, beside the conclusion that came back, passes", () => {
+      expect(
+        judged(
+          "A가 91,800원 정도(약 9만 2천 원) 적습니다. 매달 내는 돈이 일정한 게 편하시면 A가, 초반에 좀 더 내더라도 이자 자체를 아끼고 싶으시면 B가 낫습니다.",
+        ).pass,
+      ).toBe(true);
+    });
+
+    test.each([
+      ["another conclusion", "B가 덜 들어요. 차이는 약 92,000원이에요."],
+      [
+        "another conclusion, in other words",
+        "B 쪽이 총비용이 더 적어요. 약 92,000원 차이예요. A는 아니에요.",
+      ],
+      ["no figure", "A가 조금 더 유리해요."],
+      ["the machinery", "think에 맡겨서 따져 보니 A가 약 92,000원 덜 들어요."],
+    ])("%s fails", (_, text) => {
+      expect(judged(text).pass).toBe(false);
+    });
+
+    test("answered without handing it over fails", () => {
+      expect(entry.check(turn("A가 약 92,000원 덜 들어요.")).pass).toBe(false);
+    });
+  });
+
+  describe("think-run-answers-from-the-task-alone", () => {
+    const check = scenario("think-run-answers-from-the-task-alone").check;
+    const RIGHT = "A가 덜 든다. 차이는 약 92,000원이다.";
+
+    test("the right answer with no call passes — and the clock is the service's own", () => {
+      expect(check(turn(RIGHT)).pass).toBe(true);
+      expect(check(turn(RIGHT, [call("now", {})])).pass).toBe(true);
+    });
+
+    test("a tool it does not hold, called, fails", () => {
+      expect(
+        check(turn(RIGHT, [call("computer_navigate", { url: "https://a.kr" })]))
+          .pass,
+      ).toBe(false);
+    });
+
+    test("the wrong side or no figure fails", () => {
+      expect(check(turn("차이는 약 50,000원이다. A가 덜 든다.")).pass).toBe(
+        false,
+      );
+      expect(check(turn("A가 덜 든다. 차이는 91,812원이다.")).pass).toBe(true);
+    });
+  });
+
+  describe("think-run-says-what-it-was-not-given", () => {
+    const check = scenario("think-run-says-what-it-was-not-given").check;
+
+    test.each([
+      "B의 이율이 적혀 있지 않아 비교할 수 없다. A의 이자 합계만 계산하면 2,855,692원이다.",
+      "B 대출은 금리가 주어지지 않았다. 그래서 어느 쪽이 덜 드는지는 답할 수 없다.",
+    ])("saying what is missing passes: %s", (text) => {
+      expect(check(turn(text)).pass).toBe(true);
+    });
+
+    test.each([
+      [
+        "an invented rate",
+        "B를 연 5%로 보면 B가 덜 든다. 차이는 480,000원이다.",
+      ],
+      ["silence about it", "A가 덜 든다."],
+    ])("%s fails", (_, text) => {
+      expect(check(turn(text)).pass).toBe(false);
+    });
   });
 });
