@@ -1,6 +1,6 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { UnofficialStatusCode } from "hono/utils/http-status";
@@ -773,6 +773,114 @@ describe("a project, against the real tables", () => {
         (one) => one.kind === "project",
       ),
     ).toHaveLength(PROJECTS_PER_BOT);
+  }, 30_000);
+
+  test("two presses at once for the last project make one project, not two: the count is fenced", async () => {
+    const owner = await createPersistentUser();
+    const agentId = await createPersistentAgent({ name: "새벽", owner });
+    // One short of the limit, as rows: what the count reads, without forty-nine round trips.
+    const ids = Array.from(
+      { length: PROJECTS_PER_BOT - 1 },
+      () => `${testPrefix}-full-${randomUUID()}`,
+    );
+    createdChannelIds.push(...ids);
+    await database.insert(channels).values(
+      ids.map((id) => ({
+        id,
+        name: "",
+        description: "",
+        kind: "project" as const,
+      })),
+    );
+    await database
+      .insert(channelMemberships)
+      .values(ids.map((channelId) => ({ channelId, userId: owner.id })));
+    await database
+      .insert(channelAgents)
+      .values(ids.map((channelId) => ({ channelId, agentId })));
+
+    /*
+     * Two transactions at once need two transaction connections, and this file's pool has one
+     * (`TEST_POOL`): the presses go through a database handle of their own. And so that both are
+     * at the same line in the same instant, this file's own transaction holds the Bot's profile
+     * row first — both presses queue behind it, and letting it go releases them together.
+     */
+    const racing = createDatabase(databaseUrl, { max: 4 });
+    const racingStore = createChannelStore(
+      racing,
+      createAgentProfileStore(
+        racing,
+        new URL("https://managed.example.test/ag-ui"),
+      ),
+      createThreadIdentity("test-deployment"),
+    );
+    try {
+      let held: () => void = () => {};
+      const isHeld = new Promise<void>((resolve) => {
+        held = resolve;
+      });
+      let release: () => void = () => {};
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const holding = database.transaction(async (transaction) => {
+        await transaction
+          .select({ agentId: agentProfiles.agentId })
+          .from(agentProfiles)
+          .where(eq(agentProfiles.agentId, agentId))
+          .for("update");
+        held();
+        await released;
+      });
+      await isHeld;
+      const presses = Promise.allSettled([
+        racingStore.createProject(owner, agentId, "마지막 하나"),
+        racingStore.createProject(owner, agentId, "마지막 하나"),
+      ]);
+      // Both are waiting on a lock before the row is let go: the race is set up, not hoped for.
+      const waiting = async () =>
+        Number(
+          (
+            (await database.execute(
+              sql`select count(*)::int as waiting from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`,
+            )) as unknown as Array<{ waiting: number }>
+          )[0]?.waiting ?? 0,
+        );
+      const until = Date.now() + 10_000;
+      while ((await waiting()) < 2 && Date.now() < until) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(await waiting()).toBe(2);
+      release();
+      await holding;
+
+      const outcomes = await presses;
+      for (const outcome of outcomes) {
+        if (outcome.status === "fulfilled") {
+          createdChannelIds.push(outcome.value.id);
+        }
+      }
+      expect(outcomes.map((outcome) => outcome.status).sort()).toEqual([
+        "fulfilled",
+        "rejected",
+      ]);
+      const refused = outcomes.find((one) => one.status === "rejected");
+      expect(refused?.reason).toBeInstanceOf(ProjectLimitError);
+      const [{ count } = { count: 0 }] = await database
+        .select({ count: sql<number>`count(*)::int` })
+        .from(channels)
+        .innerJoin(
+          channelMemberships,
+          and(
+            eq(channelMemberships.channelId, channels.id),
+            eq(channelMemberships.userId, owner.id),
+          ),
+        )
+        .where(eq(channels.kind, "project"));
+      expect(count).toBe(PROJECTS_PER_BOT);
+    } finally {
+      await racing.$client.close();
+    }
   }, 30_000);
 });
 
