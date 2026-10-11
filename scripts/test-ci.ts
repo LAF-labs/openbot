@@ -2784,6 +2784,17 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * By hand: 18 and 4 is 22, and 7 is 29, and 7 is 36, and 2 is 38; 4345 and 38 is 4383.
  * 1282 and 13 is 1295.
  *
+ * RAISED 2026-10-11 FOR A CALL BY NAME THAT ARRIVED EMPTY, `root` from 1295 to 1318, all in files
+ * that were there. Fifteen in agent-bot's `deferral.test.ts`: six on the call itself (not sent on
+ * and answered in the run, only what is missing named, the call that has what it needs, the tool
+ * that needs nothing, the schema still first, `tool_call` left to the server) and nine on what a
+ * Bot is handed of its own past (a call that crossed the bridge shown as the `tool_call` it was,
+ * no bridge and no change, the same bytes twice, three kinds of arguments that are not an object,
+ * two answers that mean the call never crossed, the reasoning kept). Eight in
+ * `tool-bridge.test.ts`: what counts as missing, five schemas that require nothing, the answer's
+ * words, and telling this service's two answers from a tool's own. 15 and 8 is 23; 1295 and 23 is
+ * 1318.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2841,7 +2852,7 @@ const GROUPS: readonly {
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 1295, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 1318, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
