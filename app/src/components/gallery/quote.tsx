@@ -36,9 +36,9 @@ export function QuoteCard({ quote, attribution, context }: Partial<QuoteArgs>) {
   return (
     <GalleryFrame caption={context} title={t("Quotation")}>
       <blockquote className="border-l-2 border-border pl-4">
-        <p className="text-sm leading-relaxed">{quote}</p>
+        <p className="break-words text-sm leading-relaxed">{quote}</p>
         {attribution ? (
-          <footer className="mt-2 text-xs text-muted-foreground">
+          <footer className="mt-2 break-words text-xs text-muted-foreground">
             , {attribution}
           </footer>
         ) : null}

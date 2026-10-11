@@ -23,7 +23,10 @@ export function GalleryFrame({
               <p className="truncate text-sm font-medium">{title}</p>
             ) : null}
             {caption ? (
-              <p className="mt-0.5 text-xs text-muted-foreground">{caption}</p>
+              // A caption a model wrote may hold a link or a code with no break in it.
+              <p className="mt-0.5 break-words text-xs text-muted-foreground">
+                {caption}
+              </p>
             ) : null}
           </div>
           {action ? <div className="shrink-0">{action}</div> : null}

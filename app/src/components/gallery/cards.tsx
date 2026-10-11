@@ -87,13 +87,20 @@ export function MetricsCard({
   const metrics = given ?? [];
   return (
     <GalleryFrame caption={caption} title={title}>
-      <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
+      {/*
+       * AS MANY COLUMNS AS THE CARD HAS ROOM FOR, NOT AS THE WINDOW HAS. `sm:grid-cols-3` counted
+       * the window, so in 홈's 255px card (2026-10-11) four won figures stood in three 58px columns:
+       * "₩12,345,678" ran into "1,234건" and the third was cut at the card's edge. A column is a
+       * figure's width (10rem holds ₩12,345,678 at this size, measured); a figure wider still wraps
+       * rather than being cut, since a cut figure is a wrong figure.
+       */}
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-x-6 gap-y-4">
         {metrics.map((metric) => (
           <div key={metric.label}>
             <p className="truncate text-xs text-muted-foreground">
               {metric.label}
             </p>
-            <p className="mt-0.5 text-xl font-semibold tabular-nums">
+            <p className="mt-0.5 break-words text-xl font-semibold tabular-nums">
               {metric.value}
             </p>
             {metric.change ? (
@@ -164,15 +171,18 @@ export function ChecklistCard({
               {item.done ? "✓" : ""}
             </span>
             <span className="min-w-0">
+              {/* A link or a code in an item has no break in it: broken at the edge, not run past it. */}
               <span
                 className={
-                  item.done ? "text-muted-foreground line-through" : ""
+                  item.done
+                    ? "break-words text-muted-foreground line-through"
+                    : "break-words"
                 }
               >
                 {item.text}
               </span>
               {item.note ? (
-                <span className="block text-xs text-muted-foreground">
+                <span className="block break-words text-xs text-muted-foreground">
                   {item.note}
                 </span>
               ) : null}
@@ -225,13 +235,13 @@ export function NoticeCard({
       }
       title={title}
     >
-      <p className="text-sm">{body}</p>
+      <p className="break-words text-sm">{body}</p>
       {points?.length ? (
         <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
           {points.map((entry) => (
             <li className="flex gap-2" key={entry}>
               <span aria-hidden="true">·</span>
-              <span className="min-w-0">{entry}</span>
+              <span className="min-w-0 break-words">{entry}</span>
             </li>
           ))}
         </ul>

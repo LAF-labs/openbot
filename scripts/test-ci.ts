@@ -2813,6 +2813,14 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * doubled slash, and six spellings with no place. By hand: 28 and 28 is 56, and 28 is 84, and 8
  * is 92, and 8 is 100, and 2 is 102, and 7 is 109; 12 and 109 is 121; 1295 and 121 is 1416.
  *
+ * RAISED 2026-10-11 WITH THE REVIEW OF 홈'S CARDS, `app` by one hundred and twenty-four (to 2391),
+ * all in `home-cards.test.ts`: for each of the ten kinds a card can be drawn as in 홈, what a
+ * model may have stored that is not the card's shape (refused before anything is drawn — seventy-
+ * four cases, one test each) and what is its shape however nasty (drawn with nothing thrown and no
+ * NaN — thirty-six; six more that nothing to chart is a sentence), and that a card at 홈's 255px
+ * stays readable (a label with no room gives way rather than overlap, by its own width; a legend
+ * that wraps; columns the card counts; words with no break that wrap — eight). 2267 and 124 is 2391.
+ *
  * RAISED 2026-10-11 FOR A CALL BY NAME THAT ARRIVED EMPTY, `root` from 1416 to 1439, all in files
  * that were there. Fifteen in agent-bot's `deferral.test.ts`: six on the call itself (not sent on
  * and answered in the run, only what is missing named, the call that has what it needs, the tool
@@ -2853,7 +2861,7 @@ const GROUPS: readonly {
   processes?: number;
 }[] = [
   { name: "server", floor: 4402, roots: ["server"] },
-  { name: "app", floor: 2267, roots: ["app"] },
+  { name: "app", floor: 2391, roots: ["app"] },
   {
     name: "agent-computer",
     /*
