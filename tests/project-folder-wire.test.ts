@@ -508,7 +508,8 @@ describe("where a project's own write goes, spelled otherwise", () => {
       expect(await readdir(join(root, "projects", "channel_b"))).toEqual([
         "b.md",
       ]);
-      expect(await readdir(join(root, "projects"))).toEqual([
+      // Sorted: a disk lists in its own order — CI's ext4 answered channel_b before channel_a.
+      expect((await readdir(join(root, "projects"))).sort()).toEqual([
         "channel_a",
         "channel_b",
       ]);
