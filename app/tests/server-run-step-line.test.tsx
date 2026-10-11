@@ -768,20 +768,44 @@ describe("the Bot's own calls, as the conversation keeps them", () => {
  * through the route; what a call is drawn as is decided by `CardCall`, which is drawn here.
  */
 describe("a gallery card's call", () => {
-  async function drawnAs(result: string | undefined, isHeld = true) {
+  const ON_SCREEN_RECORD = "The record is now on screen for the person.";
+
+  /** The real card by its name — its renderer and its schema, as `GrantedTool` hands them on. */
+  async function specOf(name: string) {
+    const { GALLERY: CARDS } = await import("../src/components/gallery/cards");
+    const { GALLERY: CHARTS } = await import(
+      "../src/components/gallery/charts"
+    );
+    const spec = [...CARDS, ...CHARTS].find((card) => card.name === name);
+    if (!spec) throw new Error(`no gallery card is called ${name}`);
+    return spec;
+  }
+
+  async function drawnAs(
+    result: string | undefined,
+    {
+      name = "showRecord",
+      isHeld = true,
+      args = { title: "매출", fields: [] },
+    }: { name?: string; isHeld?: boolean; args?: unknown } = {},
+  ) {
     const { createElement } = await import("react");
     const { CardCall } = await import("../src/lib/copilot/gallery-tools");
+    const spec = await specOf(name);
     const view = await mount(
       createElement(CardCall, {
-        Component: () => createElement("p", { "data-card": "" }, "매출 카드"),
-        args: {},
+        Component: spec.Component,
+        // What the runtime parsed from the call's arguments: an object, or anything else.
+        args: args as Record<string, unknown> | undefined,
         isHeld,
+        parameters: spec.parameters,
         result,
         title: "Record",
       }),
     );
     return {
-      card: view.host.querySelector("[data-card]") !== null,
+      /** Every gallery card is drawn in its frame. */
+      card: view.host.querySelector("figure") !== null,
       refusal:
         view.host.querySelector('[data-testid="component-refused"]')
           ?.textContent ?? null,
@@ -792,17 +816,125 @@ describe("a gallery card's call", () => {
 
   test("is the card while it is out and once it is on screen", async () => {
     expect((await drawnAs(undefined)).card).toBe(true);
-    expect(
-      (await drawnAs("The record is now on screen for the person.")).card,
-    ).toBe(true);
+    expect((await drawnAs(ON_SCREEN_RECORD)).card).toBe(true);
     // As a window's runtime stored a sentence, in a conversation from before 2026-10-05.
-    expect(
-      (
-        await drawnAs(
-          JSON.stringify("The record is now on screen for the person."),
-        )
-      ).card,
-    ).toBe(true);
+    expect((await drawnAs(JSON.stringify(ON_SCREEN_RECORD))).card).toBe(true);
+  });
+
+  /*
+   * ONCE THE CALL IS COMPLETE, A CARD WITH SOMETHING IN IT STAYS A CARD, whatever the schema's
+   * bounds say (`holdsSomethingToDraw`). The first cut of this gate (review of #189) asked the
+   * schema, and a card the person had watched grow on screen vanished when the result landed
+   * because the Bot wrote seven figures. The schema is what the Bot is told to write; the
+   * renderers draw more than it allows, and did before this gate existed.
+   */
+  test.each([
+    [
+      "showMetrics",
+      "seven figures, one more than the schema allows",
+      {
+        title: "이번 달 주요 수치",
+        metrics: Array.from({ length: 7 }, (_, i) => ({
+          label: `지표 ${i + 1}`,
+          value: `${i + 1}건`,
+        })),
+      },
+      "지표 7",
+    ],
+    [
+      "showMetrics",
+      "a tone the schema does not know",
+      {
+        title: "이번 달 주요 수치",
+        metrics: [
+          {
+            label: "매출",
+            value: "12,450,000원",
+            change: "+8%",
+            changeTone: "loud",
+          },
+        ],
+      },
+      "12,450,000원",
+    ],
+    [
+      "showRecord",
+      "a title and a status and no fields",
+      { title: "주문 1042", status: "승인" },
+      "승인",
+    ],
+    [
+      "showChecklist",
+      "an item with no done",
+      { title: "이사 준비", items: [{ text: "박스 사기" }] },
+      "박스 사기",
+    ],
+    [
+      "showBarChart",
+      "a point whose value is written as a word",
+      { title: "월별 매출", points: [{ label: "1월", value: "12" }] },
+      "1월",
+    ],
+  ])(
+    "once complete, %s with %s is still the card",
+    async (name, _, args, shown) => {
+      const drawn = await drawnAs(ON_SCREEN_RECORD, { name, args });
+      expect(drawn.card).toBe(true);
+      expect(drawn.text).toContain(shown);
+    },
+  );
+
+  /*
+   * AND A CALL WITH NOTHING IN IT DRAWS NOTHING AT ALL (2026-10-11). The Bot's first call of a
+   * key-figures card arrived as `{}`, the runtime answered "on screen", and the conversation kept
+   * an empty rounded frame above the Bot's retry for the rest of its life — and a progress card's
+   * "nothing to chart" over a card that was never written. The two `{}` rows are the dev
+   * database's, as the thread store wrote them.
+   */
+  test.each([
+    ["showMetrics", "{} — the stored call of 2026-10-11", {}],
+    ["showProgress", "{} — the stored call of 2026-10-11", {}],
+    ["showRecord", "{}", {}],
+    ["showChecklist", "a blank title and no items", { title: "  ", items: [] }],
+    ["showMetrics", "a list where the arguments belong", []],
+    ["showMetrics", "a word where the arguments belong", "x"],
+    // `null`: `undefined` would be this helper's own default (the runtime hands `{}` for an empty
+    // string, and anything parsed but an object is the same to the gate).
+    ["showMetrics", "no arguments at all", null],
+    ["showMetrics", "a field the card does not show", { extra: "x" }],
+    // A frame around nothing, one level down: the list is there and nothing is in its row.
+    ["showMetrics", "one figure with nothing in it", { metrics: [{}] }],
+    [
+      "showRecord",
+      "a blank title and one field that is blank twice",
+      { title: " ", fields: [{ label: "", value: "" }] },
+    ],
+  ])("once complete, %s with %s draws nothing", async (name, _, args) => {
+    const ended = await drawnAs(ON_SCREEN_RECORD, { name, args });
+    expect([ended.card, ended.text]).toEqual([false, ""]);
+  });
+
+  test("while the call is still streaming in, whatever has arrived is drawn — the card being written", async () => {
+    for (const args of [{}, { title: "이번 달 주요 수치" }]) {
+      const out = await drawnAs(undefined, { name: "showMetrics", args });
+      expect([args, out.card]).toEqual([args, true]);
+    }
+  });
+
+  /*
+   * A POINT ARRIVES BEFORE ITS LABEL. The runtime's partial parse hands a bar chart `points: [{}]`
+   * for every cut between `[{` and the label's closing quote, and the chart read the missing
+   * label's length and threw — which the conversation's boundary keeps as "could not be drawn"
+   * from then on (review of #189). Drawn here with no boundary: a throw fails the mount.
+   */
+  test("a bar chart is drawn while its point has no label yet", async () => {
+    for (const points of [[{}], [{ label: "1월", value: 12 }, {}]]) {
+      const out = await drawnAs(undefined, {
+        name: "showBarChart",
+        args: { title: "월별 매출", points },
+      });
+      expect([points, out.card]).toEqual([points, true]);
+    }
   });
 
   test("is not the card when the Bot was told it was not shown", async () => {
@@ -840,10 +972,7 @@ describe("a gallery card's call", () => {
   });
 
   test("a card this Bot no longer holds is refused whatever its call said", async () => {
-    const taken = await drawnAs(
-      "The record is now on screen for the person.",
-      false,
-    );
+    const taken = await drawnAs(ON_SCREEN_RECORD, { isHeld: false });
     expect(taken.card).toBe(false);
     expect(taken.refusal).toContain("is not switched on for this Bot");
   });

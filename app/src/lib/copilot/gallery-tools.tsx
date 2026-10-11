@@ -1,6 +1,7 @@
 import { useFrontendTool, useHumanInTheLoop } from "@copilotkit/react-core/v2";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
+import { holdsSomethingToDraw } from "@/components/gallery/gallery-card";
 import {
   CardNotShown,
   cardEndingOf,
@@ -73,12 +74,15 @@ export function GalleryTools() {
  */
 export function CardCall({
   Component,
+  parameters,
   args,
   isHeld,
   result,
   title,
 }: {
   Component: GalleryComponent["Component"];
+  /** The card's own schema: which fields a card shows, for the gate once the call is complete. */
+  parameters: GalleryComponent["parameters"];
   args: Record<string, unknown> | undefined;
   /** Whether this Bot holds the card now, by the grants this window polls. */
   isHeld: boolean;
@@ -105,7 +109,26 @@ export function CardCall({
       />
     );
   }
-  return <Component {...(args ?? {})} />;
+  /*
+   * STILL OUT: drawn from what has arrived so far. The runtime parses the arguments as they stream
+   * (`partialJSONParse`), so a card grows as the Bot writes it — a title, then a figure, then the
+   * next — and the renderers take any partial shape (#179). That is the card being written, and it
+   * is left as it was.
+   */
+  if (result === undefined) return <Component {...(args ?? {})} />;
+  /*
+   * COMPLETE: DRAWN AS IT WAS WHILE IT STREAMED, UNLESS THERE IS NOTHING IN IT TO DRAW
+   * (`holdsSomethingToDraw`). A call that arrived with `{}` and was answered "on screen"
+   * (2026-10-11, a key-figures card and a progress card in one sitting) drew an empty frame here
+   * for as long as the conversation was open, above the Bot's own words that it was trying again
+   * and the real card under them. The Bot's words say what happened; an empty frame says nothing,
+   * and a chart with no data says "nothing to chart" about a card that was never written.
+   *
+   * Not the schema: a card the person watched grow is not taken away because its seventh figure
+   * is one more than the schema allows (why, at the gate itself).
+   */
+  if (!holdsSomethingToDraw({ parameters }, args)) return null;
+  return <Component {...args} />;
 }
 
 function GrantedTool({
@@ -126,11 +149,12 @@ function GrantedTool({
         Component={Component}
         args={props.args}
         isHeld={isHeld}
+        parameters={spec.parameters}
         result={props.result}
         title={t(spec.title)}
       />
     ),
-    [Component, isHeld, spec.title],
+    [Component, isHeld, spec.parameters, spec.title],
   );
 
   useFrontendTool({
