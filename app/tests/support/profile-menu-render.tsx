@@ -79,6 +79,7 @@ const conversation = (id: string, agentId: string, unread: boolean) => ({
   agentIds: [agentId],
   threadId: `thread-${id}`,
   active: true,
+  kind: "main",
   lastMessage: "…",
   lastMessageAt: "2026-10-10T00:00:00Z",
   lastMessageAgentId: agentId,

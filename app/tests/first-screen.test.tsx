@@ -78,6 +78,7 @@ const conversation = (id: string, agentId: string, at: string) => ({
   agentIds: [agentId],
   threadId: `thread-${id}`,
   active: true,
+  kind: "main",
   lastMessage: "…",
   lastMessageAt: at,
   lastMessageAgentId: agentId,

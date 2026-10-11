@@ -114,21 +114,23 @@ export function primaryBot(
 /**
  * A Bot's conversation: its MAIN one, as the server's `create` resolves to
  * (`channels/conversations.ts`, `channels/solo-channel.ts`). Undefined before its first message.
+ *
+ * WHAT A CONVERSATION IS, IS WHAT THE SERVER SAYS (2026-10-10, `channels.kind`). The oldest one
+ * was the rule; a project is another conversation with the same Bot and may one day be the older
+ * of the two. Where none says `main`, the Bot has no main conversation — the oldest project is not
+ * offered in its place, and neither is one that says nothing: the app is served by the release
+ * that answers it (`images.yml` publishes both under one tag), so there is no server from before
+ * the column for this code to meet, and a guess for one was twenty lines nothing could reach.
  */
 export function conversationOf(
   agentId: string,
   channels: readonly ChannelSummary[] | undefined,
 ): ChannelSummary | undefined {
-  let oldest: ChannelSummary | undefined;
   let main: ChannelSummary | undefined;
-  let isSaid = false;
   for (const channel of channels ?? []) {
     if (channel.agentIds.length !== 1 || channel.agentIds[0] !== agentId) {
       continue;
     }
-    if (!oldest || channel.createdAt < oldest.createdAt) oldest = channel;
-    if (channel.kind === undefined) continue;
-    isSaid = true;
     if (
       channel.kind === "main" &&
       (!main || channel.createdAt < main.createdAt)
@@ -136,12 +138,5 @@ export function conversationOf(
       main = channel;
     }
   }
-  /*
-   * WHAT A CONVERSATION SAYS IT IS, WHERE THE SERVER SAYS (2026-10-10, `channels.kind`). The
-   * oldest one was the rule; a project is another conversation with the same Bot and may one
-   * day be the older of the two. Where the server says and none is `main`, the Bot has no main
-   * conversation — the oldest project is not offered in its place. Only a server from before
-   * the column, which says nothing of any of them, is answered by the rule.
-   */
-  return isSaid ? main : oldest;
+  return main;
 }

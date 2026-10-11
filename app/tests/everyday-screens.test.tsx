@@ -52,6 +52,7 @@ const CONVERSATION = {
   agentIds: ["bot-1"],
   threadId: "t1",
   active: true,
+  kind: "main",
   lastMessage: "다 했어요",
   lastMessageAt: "2026-10-03T09:00:00.000Z",
   lastMessageAgentId: "bot-1",
