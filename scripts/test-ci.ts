@@ -2769,6 +2769,21 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * scenario, that it is handed no tool of the browser's — and every judge that reads a hand-over
  * fed a turn that should pass and one that should not.
  *
+ * RAISED 2026-10-11 FOR A QUESTION PUT TO A PROJECT (record §3, piece 4-4's second part): `server`
+ * from 4345 to 4383, `root` from 1282 to 1295, all in files that were there. Server, thirty-eight:
+ * eighteen in `project-tool.integration.test.ts` (where a question goes and what comes back, what
+ * is refused before anybody is asked, the project that is busy, gone or empty, a bare call's
+ * line), four in `project-tool.test.ts` (a call that carries a question is one), seven in
+ * `turn-engine.integration.test.ts` (asked over the project's own conversation with every call
+ * refused and nothing left there, the wait for its turn, busy, a stop, a failed model, no second
+ * take of the lane, not from inside itself), seven in `conversation-epochs.test.ts` (a run that
+ * only reads a conversation: its head and history, the day's reminder not spent, no epoch, no
+ * dollars counted, a thread held nowhere, the word read as `true` alone — and `peek` writing
+ * nothing) and two in `chat-tools.test.ts` (the list a project is asked with). Root, thirteen in
+ * `project-read-tool.test.ts` (the question's words, its bounds, the word a reading run says).
+ * By hand: 18 and 4 is 22, and 7 is 29, and 7 is 36, and 2 is 38; 4345 and 38 is 4383.
+ * 1282 and 13 is 1295.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2797,7 +2812,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4345, roots: ["server"] },
+  { name: "server", floor: 4383, roots: ["server"] },
   { name: "app", floor: 2261, roots: ["app"] },
   {
     name: "agent-computer",
@@ -2826,7 +2841,7 @@ const GROUPS: readonly {
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 1282, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 1295, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
