@@ -2997,6 +2997,15 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * row of its own in the section it names; and feedback past the export's cap is left out and said
  * so. 4522 and 4 is 4526.
  *
+ * RAISED 2026-10-11 WITH THE SMALL CLEANUPS, `app` by seven (to 2446) and `server` by two (to 4528).
+ * Five in the new `when.test.ts`: four instants pinned to the date-and-minute form 만든 것 and 소식
+ * spelled before they shared it, and nothing for a time that is not one; one in
+ * `attachments.test.ts`, a file into a project being deleted told the conversation is gone; one in
+ * `my-bots.test.ts`, a conversation that says nothing beside ones that do is not the main one. One
+ * in `day-epochs.test.ts`: a delegated run's context is a thread of its own, dropped by its own id;
+ * one in `conversation-deleting.integration.test.ts`: a deletion forgets the browsing and the
+ * thinking context with the conversation's.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
