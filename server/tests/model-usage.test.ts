@@ -121,4 +121,70 @@ describe("what a run's stream says a turn cost", () => {
       },
     ]);
   });
+
+  /*
+   * A ROW WITH TOKENS AND NO TOTAL IS NOT A FREE CALL. The day's judge (`usage/daily-budget.ts`)
+   * sums `totalTokens`, and a row with no price is priced by that count — so a total read as zero
+   * beside a prompt of hundreds was a call the day never saw, on either unit.
+   */
+  test("a total the endpoint did not say is the prompt and the completion, summed", () => {
+    expect(
+      modelUsageOf([
+        event({ model: "m", promptTokens: 812, completionTokens: 44 }),
+      ]),
+    ).toEqual([
+      { model: "m", promptTokens: 812, completionTokens: 44, totalTokens: 856 },
+    ]);
+  });
+
+  test.each([
+    ["zero beside a prompt that was not", 0],
+    ["below nothing", -856],
+    ["not finite", Number.POSITIVE_INFINITY],
+    ["not a number at all", "856"],
+  ])("a total that is %s is read as the parts summed", (_what, totalTokens) => {
+    expect(
+      modelUsageOf([
+        event({
+          model: "m",
+          promptTokens: 812,
+          completionTokens: 44,
+          totalTokens,
+        }),
+      ]),
+    ).toEqual([
+      { model: "m", promptTokens: 812, completionTokens: 44, totalTokens: 856 },
+    ]);
+  });
+
+  test("a part below nothing or not finite is no count, and the total says so too", () => {
+    expect(
+      modelUsageOf([
+        event({
+          model: "m",
+          promptTokens: -812,
+          completionTokens: Number.NaN,
+          totalTokens: -1,
+        }),
+      ]),
+    ).toEqual([
+      { model: "m", promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+    ]);
+  });
+
+  test("a total the endpoint said stands, whatever the parts add up to", () => {
+    // Reported is reported: nothing here second-guesses a provider that counts differently.
+    expect(
+      modelUsageOf([
+        event({
+          model: "m",
+          promptTokens: 812,
+          completionTokens: 44,
+          totalTokens: 900,
+        }),
+      ]),
+    ).toEqual([
+      { model: "m", promptTokens: 812, completionTokens: 44, totalTokens: 900 },
+    ]);
+  });
 });
