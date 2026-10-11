@@ -1157,7 +1157,80 @@ export function undescribedToolText(
   const tool = resolveDeferred(deferred, name);
   if (!tool) return unknownToolText(deferred, name);
   return [
-    `'${tool.name}'의 스키마를 이 대화에서 아직 받지 않아서 부르지 않았다. 인자 이름을 짐작하지 말고, 아래 스키마의 이름과 타입 그대로 다시 부른다.`,
+    `${undescribedHead(tool.name)} 인자 이름을 짐작하지 말고, 아래 스키마의 이름과 타입 그대로 다시 부른다.`,
+    schemaLine(tool),
+  ].join("\n");
+}
+
+/** 두 답의 머리. 쓰는 쪽과 알아보는 쪽(`answeredWithoutCalling`)이 같은 글자를 읽는다. */
+const undescribedHead = (name: string) =>
+  `'${name}'의 스키마를 이 대화에서 아직 받지 않아서 부르지 않았다.`;
+const notCarriedHead = (name: string) =>
+  `'${name}'을 이름으로 바로 불러서 인자가 실려 오지 않았다(`;
+
+/**
+ * 이 툴 이름으로 온 호출의 답이, 부르지 않고 이 서비스가 한 답인가 — 스키마를 아직 받지 않았다는
+ * 답이거나 인자가 실려 오지 않았다는 답.
+ *
+ * 누가 묻는가. 지난 호출을 모델에게 다시 건네는 쪽(`agent-bot/src/transcript.ts`): 다리를 건너간
+ * 호출은 `tool_call`의 모양으로 보여 주고, 건너가지 못한 호출은 봇이 부른 그대로 둔다. 그 답이
+ * "이름으로 바로 불러서"라고 말하는데 기록이 `tool_call`로 불렀다고 하면 둘 중 하나는 거짓이다.
+ */
+export function answeredWithoutCalling(name: string, result: string): boolean {
+  return (
+    result.startsWith(undescribedHead(name)) ||
+    result.startsWith(notCarriedHead(name))
+  );
+}
+
+/**
+ * 스키마가 꼭 있어야 한다고 한 최상위 인자 가운데 오지 않은 것들의 이름.
+ *
+ * 값이 무엇인지는 보지 않는다 — 그것은 서버의 검사가 답한다. 여기서 묻는 것은 하나다: 이 호출에
+ * 인자가 실려 오기는 했는가.
+ */
+export function missingRequiredArguments(
+  parameters: unknown,
+  args: Record<string, unknown>,
+): string[] {
+  const required =
+    parameters && typeof parameters === "object"
+      ? (parameters as { required?: unknown }).required
+      : undefined;
+  if (!Array.isArray(required)) return [];
+  return required.filter(
+    (key): key is string => typeof key === "string" && args[key] === undefined,
+  );
+}
+
+/**
+ * 다리 뒤의 툴을 제 이름으로 바로 불렀는데 꼭 있어야 하는 인자가 오지 않았을 때의 답: 무엇이
+ * 없는지, 그리고 `tool_call`로 다시 부르라는 말과 그 툴의 스키마.
+ *
+ * 왜 전달하지 않는가. 다리 뒤의 툴은 요청의 스키마에 없다. 봇이 그 이름으로 바로 부르면 공급자는
+ * 선언되지 않은 함수의 인자를 실어 주지 않는다 — 이름과 `{}`만 온다. 실측(2026-10-11, Muse Spark,
+ * 공급자 Meta): 프로젝트 도구가 제 이름으로 네 번 불린 기록이 있는 대화에서 여덟 번 가운데 두 번,
+ * 봇은 `tool_call` 대신 그 이름으로 바로 불렀고 두 번 다 공급자가 흘려보낸 인자는 `{}`였다
+ * ("권리금"을 찾으려던 호출이었다). 이 서비스는 그것을 그대로 넘겼다: 대부분의 툴에서는 서버의
+ * 인자 검사에 걸려 한 번 더 돌고, 빈 호출을 견디는 툴에서는 봇이 청하지 않은 일을 한다(프로젝트
+ * 도구는 빈 호출을 목록으로 읽었다 — 찾으라는 말에 목록이 왔다).
+ *
+ * 왜 봇은 이름으로 바로 불렀는가 — 그리고 그것은 여기서 고친 것이 아니다. 다리는 지나가는 것을
+ * 숨기지 않는다: `tool_call`이 넘긴 호출은 대화에 진짜 이름으로 남고, 그 기록을 그대로 건네받은
+ * 봇은 자기가 그 이름으로 바로 불러 왔다고 읽었다. 같은 대화의 지난 호출을 `tool_call`의 모양으로
+ * 건네자 열두 번 가운데 한 번도 이름으로 부르지 않았다. 그래서 고친 곳은 기록을 건네는 쪽이고
+ * (`toProviderMessages`, `agent-bot/src/transcript.ts`), 이 답은 그 뒤에 남는 그물이다: 맥락 층에
+ * 이름이 있고 `tool_search`가 스키마 줄을 건넨 툴을, 봇은 기록이 없어도 이름으로 부를 수 있다
+ * (위 `undescribedToolText`의 MiMo 실측이 그 길이다).
+ *
+ * 꼭 있어야 하는 인자가 없는 툴은 여기서 가를 수 없다 — 빈 호출이 그 툴의 옳은 호출이다.
+ */
+export function argumentsNotCarriedText(
+  tool: WireTool,
+  missing: readonly string[],
+): string {
+  return [
+    `${notCarriedHead(tool.name)}${missing.join(", ")} 없음). 부르지 않았다. 목록에 없는 도구는 ${TOOL_CALL}로 부른다: name에 이 이름을, args에 아래 스키마대로 채운 인자를 넣어 다시 부른다.`,
     schemaLine(tool),
   ].join("\n");
 }

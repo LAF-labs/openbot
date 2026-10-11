@@ -280,6 +280,8 @@ async function runRounds(context: RunContext): Promise<void> {
    */
   const exposed = exposeTools(input.tools, toolDeferralOf(input));
   const known = knownToolNames(input.tools, exposed);
+  /** Whose past calls go back to the model as the `tool_call` that carried them (`toProviderMessages`). */
+  const behindTheBridge = new Set(exposed.deferred.map((tool) => tool.name));
   /*
    * What the server counted and could not list: tools this Bot holds that wait for review and are
    * offered under no name. The server has already said it in the prompt's context layer; here it
@@ -358,7 +360,7 @@ async function runRounds(context: RunContext): Promise<void> {
         ? answerNowText("lookups")
         : null;
     const messages = [
-      ...toProviderMessages(transcript, MODEL),
+      ...toProviderMessages(transcript, MODEL, behindTheBridge),
       ...(nudge ? [{ role: "user" as const, content: nudge }] : []),
     ];
     const tools = toProviderTools(exposed.provider);
