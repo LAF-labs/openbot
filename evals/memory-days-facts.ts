@@ -474,11 +474,22 @@ export function busyTurn(
   day: number,
   turn: number,
 ): { owner: string; bot: string } {
-  const pick = <T>(list: readonly T[], shift = 0) =>
-    list[(day + shift) % list.length] as T;
+  /*
+   * EVERY WEEK PAIRS THEM DIFFERENTLY. Each list is seven long, so read by the day alone the eighth
+   * day named the first day's buyer, customer, town and remedy together again, and a walk of sixty
+   * nights was eight and a half copies of one week with other numbers — which a summary folds into
+   * "매주 …" and never has to choose between. Each list now also steps by the week at its own pace
+   * (`pace`), so the first week is what it always was and a pairing does not come round again for
+   * seven weeks (the eighth week pairs them as the first did, with other numbers).
+   */
+  const week = Math.floor(day / 7);
+  const pick = <T>(list: readonly T[], pace: number, shift = 0) =>
+    list[(day + shift + week * pace) % list.length] as T;
   const won = (amount: number) => `${amount.toLocaleString("en-US")}원`;
   const quantity = 24 + day * 6;
-  const quote = won(7_100 + day * 300);
+  // Past the first week the quotes end in 50: on the round ones day 9 was the table's old
+  // strawberry price (9,500원) and day 14 its new one (11,000원).
+  const quote = won(7_100 + day * 300 + (week > 0 ? 50 : 0));
   const deposit = won(212_000 + day * 31_000);
   const order = 20260200 + day * 7;
   const returned = 20260300 + day * 9;
@@ -486,20 +497,20 @@ export function busyTurn(
   const count = 150 + day * 50;
   const said = [
     {
-      owner: `좋은 아침. 어제 ${pick(BUYERS)}한테서 ${pick(GOODS)} ${quantity}병 단체 주문 문의가 왔어. 병당 ${quote}으로 견적 보냈어. 그리고 ${pick(PAYERS)}에서 지난달 납품 대금 ${deposit} 입금했어. 오늘 들어온 주문도 정리해줘.`,
-      bot: `${pick(BUYERS)} 단체 문의(${pick(GOODS)} ${quantity}병, 병당 ${quote} 견적)는 답을 기다리는 중이고, ${pick(PAYERS)} 납품 대금 ${deposit}은 입금된 것으로 알고 있을게요. 오늘 들어온 주문은 ${12 + day}건이고 그중 ${3 + (day % 3)}건이 아직 발송 전입니다.`,
+      owner: `좋은 아침. 어제 ${pick(BUYERS, 0)}한테서 ${pick(GOODS, 1)} ${quantity}병 단체 주문 문의가 왔어. 병당 ${quote}으로 견적 보냈어. 그리고 ${pick(PAYERS, 2)}에서 지난달 납품 대금 ${deposit} 입금했어. 오늘 들어온 주문도 정리해줘.`,
+      bot: `${pick(BUYERS, 0)} 단체 문의(${pick(GOODS, 1)} ${quantity}병, 병당 ${quote} 견적)는 답을 기다리는 중이고, ${pick(PAYERS, 2)} 납품 대금 ${deposit}은 입금된 것으로 알고 있을게요. 오늘 들어온 주문은 ${12 + day}건이고 그중 ${3 + (day % 3)}건이 아직 발송 전입니다.`,
     },
     {
-      owner: `주문 관리 들어가서 아직 발송 안 된 주문 확인해줘. 참고로 ${order}번 주문은 고객이 받는 곳을 ${pick(TOWNS)}으로 바꿔 달라고 연락했어. ${pick(GOODS, 3)} 재고는 세어 보니 ${left}병 남았어.`,
-      bot: `미발송 주문을 확인했습니다. ${order}번 주문은 받는 곳을 ${pick(TOWNS)}으로 바꿔서 송장을 다시 뽑으면 됩니다. ${pick(GOODS, 3)} 재고 ${left}병도 알고 있을게요.`,
+      owner: `주문 관리 들어가서 아직 발송 안 된 주문 확인해줘. 참고로 ${order}번 주문은 고객이 받는 곳을 ${pick(TOWNS, 3)}으로 바꿔 달라고 연락했어. ${pick(GOODS, 1, 3)} 재고는 세어 보니 ${left}병 남았어.`,
+      bot: `미발송 주문을 확인했습니다. ${order}번 주문은 받는 곳을 ${pick(TOWNS, 3)}으로 바꿔서 송장을 다시 뽑으면 됩니다. ${pick(GOODS, 1, 3)} 재고 ${left}병도 알고 있을게요.`,
     },
     {
-      owner: `${pick(CUSTOMERS)} 고객이 ${pick(GOODS)} 뚜껑이 헐겁다고 문의했어. ${pick(REMEDIES)}(으)로 처리하기로 했으니 답장 초안 짧게 써줘. 그리고 ${returned}번 주문은 반품 접수됐어, 사유는 ${pick(RETURNS)}.`,
-      bot: `답장 초안입니다: '${pick(CUSTOMERS)} 고객님, 불편을 드려 죄송합니다. 말씀하신 ${pick(GOODS)} 건은 ${pick(REMEDIES)}(으)로 처리해 드리겠습니다. — 미소상회' ${returned}번 주문 반품(사유: ${pick(RETURNS)})도 접수된 것으로 알고 있을게요.`,
+      owner: `${pick(CUSTOMERS, 4)} 고객이 ${pick(GOODS, 1)} 뚜껑이 헐겁다고 문의했어. ${pick(REMEDIES, 5)}(으)로 처리하기로 했으니 답장 초안 짧게 써줘. 그리고 ${returned}번 주문은 반품 접수됐어, 사유는 ${pick(RETURNS, 6)}.`,
+      bot: `답장 초안입니다: '${pick(CUSTOMERS, 4)} 고객님, 불편을 드려 죄송합니다. 말씀하신 ${pick(GOODS, 1)} 건은 ${pick(REMEDIES, 5)}(으)로 처리해 드리겠습니다. — 미소상회' ${returned}번 주문 반품(사유: ${pick(RETURNS, 6)})도 접수된 것으로 알고 있을게요.`,
     },
     {
-      owner: `오늘 마감 전에 할 일 세 가지만 정리해줘. 내일은 ${pick(DELIVERIES)} ${count}개가 들어올 예정이고, 모레는 ${pick(VISITORS)} 방문이 잡혀 있어.`,
-      bot: `마감 전 할 일입니다. 첫째, 미발송 ${3 + (day % 3)}건 송장 출력. 둘째, ${pick(CUSTOMERS)} 고객 답장 보내기. 셋째, 내일 들어올 ${pick(DELIVERIES)} ${count}개 놓을 자리 비워 두기. 모레 ${pick(VISITORS)} 방문도 잊지 않게 챙기겠습니다.`,
+      owner: `오늘 마감 전에 할 일 세 가지만 정리해줘. 내일은 ${pick(DELIVERIES, 2)} ${count}개가 들어올 예정이고, 모레는 ${pick(VISITORS, 3)} 방문이 잡혀 있어.`,
+      bot: `마감 전 할 일입니다. 첫째, 미발송 ${3 + (day % 3)}건 송장 출력. 둘째, ${pick(CUSTOMERS, 4)} 고객 답장 보내기. 셋째, 내일 들어올 ${pick(DELIVERIES, 2)} ${count}개 놓을 자리 비워 두기. 모레 ${pick(VISITORS, 3)} 방문도 잊지 않게 챙기겠습니다.`,
     },
   ][turn % 4] as { owner: string; bot: string };
   return { owner: said.owner, bot: `${said.bot} ${ROUTINE} ${ROUTINE}` };

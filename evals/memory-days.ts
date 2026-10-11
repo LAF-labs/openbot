@@ -78,6 +78,7 @@ import { createCompactor } from "../server/src/context/compaction";
 import { createConversationStore } from "../server/src/context/conversations";
 import {
   createDaySummarizer,
+  DAY_SUMMARY_SYSTEM,
   type StampedMessage,
   SUMMARY_MAX_CHARS,
 } from "../server/src/context/day-close";
@@ -717,12 +718,29 @@ type Morning = {
   problem: string | null;
 };
 
+type Night = {
+  day: number;
+  made: boolean;
+  usd: number;
+  seconds: number;
+  /**
+   * What the close wrote, from the long walks on (absent in a report saved before them): the
+   * summary the conversation carries after this night, in characters; what the summariser sent
+   * back before the bound was applied; whether that was over the bound, so that the oldest-first
+   * cut ran (`boundedSummary`); and whether the summary still holds the fact.
+   */
+  summaryChars?: number;
+  rawChars?: number;
+  cut?: boolean;
+  kept?: Survival;
+};
+
 type Walk = {
   id: string;
   arm: Arm;
   run: number;
   /** One per night: whether the store's tick made a close, and what the server side paid. */
-  nights: Array<{ day: number; made: boolean; usd: number; seconds: number }>;
+  nights: Night[];
   mornings: Morning[];
   problem: string | null;
 };
@@ -735,12 +753,47 @@ async function walkOnce(fact: Fact, arm: Arm, run: number): Promise<Walk> {
     spentUsd += usd;
   };
   const apiKey = async () => KEY;
+  /*
+   * WHAT THE SUMMARISER SENT BACK, BEFORE THE BOUND. `createDaySummarizer` hands on its answer
+   * already cut to 3,000 characters, so whether the cut ran cannot be read off what it returns. The
+   * answer is read where it arrives: a reply to a request whose instructions are the summariser's.
+   */
+  let rawChars = 0;
+  const priced = pricedFetch(paid);
+  const watched = (async (
+    url: Parameters<typeof fetch>[0],
+    init?: RequestInit,
+  ) => {
+    const response = await priced(url, init);
+    try {
+      const sent =
+        typeof init?.body === "string"
+          ? (JSON.parse(init.body) as {
+              messages?: Array<{ content?: unknown }>;
+            })
+          : null;
+      const instructions = sent?.messages?.[0]?.content;
+      if (
+        typeof instructions === "string" &&
+        instructions.startsWith(DAY_SUMMARY_SYSTEM.slice(0, 80))
+      ) {
+        const read = (await response.clone().json()) as {
+          choices?: Array<{ message?: { content?: unknown } }>;
+        };
+        const text = read.choices?.[0]?.message?.content;
+        if (typeof text === "string") rawChars = text.trim().length;
+      }
+    } catch {
+      // Not JSON: nothing to read.
+    }
+    return response;
+  }) as typeof fetch;
   const serverCall = {
     baseUrl: BASE_URL,
     model: SERVER_MODEL,
     apiKey,
     supportsEffort: process.env.SERVER_MODEL_EFFORT !== "false",
-    fetch: pricedFetch(paid),
+    fetch: watched,
   };
   // The production compactor, as the `days` case builds it: Jev, the server model behind it.
   const standIn = modelAsker(serverCall, { timeoutMs: 120_000 });
@@ -869,13 +922,19 @@ async function walkOnce(fact: Fact, arm: Arm, run: number): Promise<Walk> {
       // The night: the store's own tick, at 03:00.
       clock = at(day, 3).getTime();
       nightUsd = 0;
+      rawChars = 0;
       const started = performance.now();
       const made = (await store.tick()) > 0;
+      const carried = written.at(-1) ?? "";
       walk.nights.push({
         day,
         made,
         usd: nightUsd,
         seconds: (performance.now() - started) / 1000,
+        summaryChars: carried.length,
+        rawChars: made ? rawChars : 0,
+        cut: made && rawChars > SUMMARY_MAX_CHARS,
+        kept: survivalIn(fact, carried),
       });
       for (let turn = 0; turn < DAY_TURNS.length; turn += 1) {
         clock = at(day, HOURS[turn] ?? 9).getTime();
@@ -1052,6 +1111,49 @@ const onlyTheOldValue = (fact: Fact, text: string) =>
 const inNotebook = (fact: Fact, morning: Morning) =>
   morning.given.includes(fact.note);
 
+/**
+ * Night by night, where a report holds it: how long the carried summary was, how often the
+ * summariser wrote past the bound (and the oldest-first cut ran), and through which night each
+ * walk's summary still held the fact whole.
+ */
+function printNights(walks: readonly Walk[]) {
+  const nights = walks.flatMap((walk) => walk.nights);
+  const measured = nights.filter((night) => night.summaryChars !== undefined);
+  if (measured.length === 0) return;
+  const closes = measured.filter((night) => night.made);
+  const over = closes.filter((night) => night.cut);
+  const raws = closes.map((night) => night.rawChars ?? 0);
+  console.log(
+    `\n  the bound: of ${closes.length} closes the summariser wrote past ${SUMMARY_MAX_CHARS} characters on ${over.length} (the oldest-first cut ran) · longest written ${Math.max(0, ...raws)} · written at 2,700 or more ${raws.filter((chars) => chars >= 2_700).length}`,
+  );
+  const last = Math.max(0, ...measured.map((night) => night.day));
+  const marks = [1, 3, 7, 14, 21, 30, 45, 60].filter((day) => day <= last);
+  const at = (day: number) =>
+    measured
+      .filter((night) => night.day === day)
+      .map((night) => night.summaryChars ?? 0);
+  console.log(
+    `  the summary carried after night: ${marks.map((day) => `${day} mean ${(meanOf(at(day)) ?? 0).toFixed(0)} max ${Math.max(0, ...at(day))}`).join(" · ")}`,
+  );
+  console.log(
+    `  walks whose summary holds the fact whole after night: ${marks.map((day) => `${day}: ${outOf(measured.filter((night) => night.day === day && night.kept === "whole").length, at(day).length)}`).join(" · ")}`,
+  );
+  console.log(
+    "\n  the last night each walk's summary held the fact whole (— never; ✓ through the last night)\n",
+  );
+  for (const fact of FACTS) {
+    const mine = walks.filter((walk) => walk.id === fact.id);
+    if (mine.length === 0) continue;
+    const through = mine.map((walk) => {
+      const held = walk.nights.filter((night) => night.kept === "whole");
+      const lastHeld = Math.max(0, ...held.map((night) => night.day));
+      const end = Math.max(0, ...walk.nights.map((night) => night.day));
+      return lastHeld === 0 ? "—" : lastHeld === end ? "✓" : String(lastHeld);
+    });
+    console.log(`  ${pad(fact.id, 30)} ${through.join(" · ")}`);
+  }
+}
+
 function printWalks(report: Report) {
   for (const arm of ARMS) {
     const walks = report.walks.filter((walk) => walk.arm === arm);
@@ -1096,6 +1198,7 @@ function printWalks(report: Report) {
     console.log(
       `\n  summary characters (bound ${SUMMARY_MAX_CHARS}): ${CLOSES.map((closes) => `after ${closes} mean ${(meanOf(sizes(closes)) ?? 0).toFixed(0)} max ${Math.max(0, ...sizes(closes))}`).join(" · ")}`,
     );
+    printNights(walks);
     console.log(
       `\nrecall — ${arm}${arm === "notebook" ? " (written down)" : " (NOT written down)"}: the answer the morning after N nights (${RECALLS.join(" · ")}), lookups, mean cost of the turn\n`,
     );
