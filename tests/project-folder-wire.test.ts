@@ -19,7 +19,10 @@ import { createWorkspace } from "../agent-computer/src/workspace";
 import type { AuditEventInput } from "../server/src/audit";
 import { createApprovalRegistry } from "../server/src/computer/approvals";
 import { createComputerClient } from "../server/src/computer/client";
-import { createComputerGateway } from "../server/src/computer/gateway";
+import {
+  type ActionActor,
+  createComputerGateway,
+} from "../server/src/computer/gateway";
 import { createResultSpill } from "../server/src/computer/spillover";
 import {
   FILE_SCOPE_HEADER,
@@ -307,6 +310,214 @@ describe("what a project's run wrote, asked for by somebody else", () => {
     const listed = await gateway.personFiles(BOT);
     expect(JSON.stringify(listed)).toContain("projects/channel_a");
   });
+});
+
+/**
+ * EVERY SPELLING OF ANOTHER PROJECT'S FILE, OVER THE REAL WIRE (the review of 2026-10-11).
+ *
+ * The computer trims and resolves a path, so `./projects//channel_a/…`, `Projects/…` and
+ * `projects/channel_b/../channel_a/…` are one file there; the rule is asked by name. Here each
+ * spelling a model or a page could write goes from the gateway to the disk, as another project and
+ * as the main conversation, and is held out — and the one that reads a name the computer does not
+ * decode is shown to be a name, not a way in. One test per spelling, so no case waits on another.
+ */
+describe("every spelling of another project's file", () => {
+  const FILE = "projects/channel_a/보고서/9월.md";
+  const CONTENTS = "A의 매출, 고침";
+  const onDisk = () =>
+    readFile(join(root, "projects", "channel_a", "보고서", "9월.md"), "utf8");
+  /** What the root held when this began: no spelling may add to it. */
+  let rootBefore: string[] = [];
+  beforeAll(async () => {
+    rootBefore = (await readdir(root)).sort();
+  });
+
+  /** A spelling, and what the gateway answers whoever is not channel_a's for a read of it. */
+  const REFUSED: readonly [string, string][] = [
+    ["a dot and a doubled slash", "./projects//channel_a/보고서/9월.md"],
+    ["a trailing slash", `${FILE}/`],
+    ["a dot in the middle", "projects/./channel_a/보고서/9월.md"],
+    ["other letters", "Projects/channel_a/보고서/9월.md"],
+    ["every letter upper", "PROJECTS/channel_a/보고서/9월.md"],
+    ["an absolute path", `/${FILE}`],
+    ["a climb from the root", `../${FILE}`],
+    ["a climb through a folder of the Bot's", `notes/../${FILE}`],
+    [
+      "a climb through its own folder",
+      `projects/channel_b/../${FILE.slice(9)}`,
+    ],
+    ["backslashes", "projects\\channel_a\\보고서\\9월.md"],
+    ["a backslash at the end", `${FILE}\\`],
+    ["white space at the ends", `  ${FILE}  `],
+    ["a NUL at the end", `${FILE}\u0000`],
+    ["the folder's name in decomposed Korean", FILE.normalize("NFD")],
+  ];
+  /**
+   * Spellings the computer reads as names it has no file for: it decodes nothing, so `%2e%2e` is a
+   * folder called that, and a division slash (U+2215) or a full-width letter is a letter. Not a way
+   * in — there is nothing there — and said here so that a reader of this table knows the answer
+   * is "no such file" and not "refused".
+   */
+  const NAMES_OF_NOTHING: readonly [string, string][] = [
+    ["percent-encoded dots", `%2e%2e/${FILE}`],
+    ["percent-encoded slashes", FILE.replaceAll("/", "%2F")],
+    ["a division slash", FILE.replace("projects/", "projects∕")],
+    ["a full-width first letter", `ｐ${FILE.slice(1)}`],
+  ];
+  const WHOEVER: readonly [string, ActionActor][] = [
+    ["another project", IN_B],
+    ["the main conversation", IN_MAIN],
+  ];
+  const over = (
+    table: readonly [string, string][],
+    fact: string,
+  ): [string, string, ActionActor, string, string][] =>
+    table.flatMap(([name, path]) =>
+      WHOEVER.map(
+        ([who, actor]): [string, string, ActionActor, string, string] => [
+          name,
+          who,
+          actor,
+          path,
+          fact,
+        ],
+      ),
+    );
+
+  test.each([
+    ...over(REFUSED, "laf:file_path_refused"),
+    ...over(NAMES_OF_NOTHING, "laf:file_not_found"),
+  ])("is not read through %s by %s", async (_name, _who, actor, path, fact) => {
+    const came = await cameOf(() =>
+      gateway.readFile("default", BOT, actor, { path }),
+    );
+    expect(came).toBe(fact);
+    expect(came).not.toContain("매출");
+  });
+
+  test.each(over(REFUSED, "laf:file_path_refused"))(
+    "is not written over through %s by %s",
+    async (_name, _who, actor, path, fact) => {
+      expect(
+        await cameOf(() =>
+          gateway.writeFile("default", BOT, actor, {
+            path,
+            contents: "somebody else's",
+          }),
+        ),
+      ).toBe(fact);
+      expect(await onDisk()).toBe(CONTENTS);
+      expect((await readdir(root)).sort()).toEqual(rootBefore);
+    },
+  );
+
+  test.each(over(REFUSED, "laf:file_path_refused"))(
+    "is not a card's file through %s for %s",
+    async (_name, _who, actor, path, fact) => {
+      expect(await cameOf(() => gateway.fileFacts(BOT, path, actor))).toBe(
+        fact,
+      );
+    },
+  );
+
+  test.each([
+    ["a trailing slash", "projects/channel_a/"],
+    ["a dot", "./projects/channel_a"],
+    ["other letters", "Projects/channel_a"],
+    ["a climb", "projects/channel_b/../channel_a"],
+  ])(
+    "its folder is not listed through %s by another project",
+    async (_name, path) => {
+      expect(
+        await cameOf(() => gateway.listFiles("default", BOT, IN_B, { path })),
+      ).toBe("laf:file_path_refused");
+    },
+  );
+
+  test.each([
+    ["a trailing slash", "projects/"],
+    ["a dot", "./projects"],
+    ["other letters", "Projects"],
+    ["a doubled slash", "projects//channel_a"],
+  ])(
+    "the projects' folder is not listed through %s by the main conversation",
+    async (_name, path) => {
+      expect(
+        await cameOf(() =>
+          gateway.listFiles("default", BOT, IN_MAIN, { path }),
+        ),
+      ).toBe("laf:file_path_refused");
+    },
+  );
+
+  test("the way down to its own, spelled otherwise, still shows another project nothing", async () => {
+    const shown = JSON.stringify(
+      await gateway.listFiles("default", BOT, IN_B, { path: "./projects/" }),
+    );
+    expect(shown).toContain("projects/channel_b/b.md");
+    expect(shown).not.toContain("channel_a");
+  });
+
+  test("a refused spelling is on the trail, under the one spelling, as an act that did not happen", async () => {
+    rows.length = 0;
+    await cameOf(() =>
+      gateway.readFile("default", BOT, IN_MAIN, {
+        path: "./projects//channel_a/보고서/9월.md",
+      }),
+    );
+    const failed = rows.find(
+      (row) => row.eventType === "computer.action_failed",
+    );
+    expect(JSON.stringify(failed)).toContain(FILE);
+    expect(JSON.stringify(failed)).toContain("laf:file_path_refused");
+  });
+});
+
+describe("where a project's own write goes, spelled otherwise", () => {
+  test("a dot and a doubled slash are placed in its folder, and the Bot is told the one spelling", async () => {
+    const written = await gateway.writeFile("default", BOT, IN_A, {
+      path: "./메모//10월.md",
+      contents: "A의 메모",
+    });
+    expect(written).toMatchObject({ path: "projects/channel_a/메모/10월.md" });
+    expect(
+      await readFile(
+        join(root, "projects", "channel_a", "메모", "10월.md"),
+        "utf8",
+      ),
+    ).toBe("A의 메모");
+  });
+
+  test.each([
+    ["a climb out of its folder", "../escape.md"],
+    ["a climb from inside its folder", "projects/channel_a/../escape.md"],
+    ["a climb into another's", "projects/channel_a/../channel_b/escape.md"],
+    ["another's folder in other letters", "Projects/channel_a/escape.md"],
+    ["its own folder in other letters", "projects/Channel_a/escape.md"],
+    ["an absolute path", "/projects/channel_a/escape.md"],
+  ])(
+    "has no place through %s, and nothing lands anywhere",
+    async (_name, path) => {
+      const before = (await readdir(root)).sort();
+      expect(
+        await cameOf(() =>
+          gateway.writeFile("default", BOT, IN_A, { path, contents: "x" }),
+        ),
+      ).toBe("laf:file_path_refused");
+      expect((await readdir(root)).sort()).toEqual(before);
+      expect(await readdir(join(root, "projects", "channel_b"))).toEqual([
+        "b.md",
+      ]);
+      // Sorted: a disk lists in its own order — CI's ext4 answered channel_b before channel_a.
+      expect((await readdir(join(root, "projects"))).sort()).toEqual([
+        "channel_a",
+        "channel_b",
+      ]);
+      expect(await readdir(join(root, "projects", "channel_a"))).not.toContain(
+        "escape.md",
+      );
+    },
+  );
 });
 
 describe("a call that does not say whose files it touches", () => {
