@@ -10,7 +10,7 @@ import {
   IconUsers,
 } from "@tabler/icons-react";
 import { Badge, type Tone } from "@/components/gallery/frame";
-import { focusRing } from "@/components/ui/focus";
+import { focusRing, selectedWhenPressed } from "@/components/ui/focus";
 import { activeLocale, t } from "@/lib/i18n";
 import {
   categoryName,
@@ -93,7 +93,10 @@ export function GoalRow({
     <button
       aria-pressed={isSelected}
       className={cn(
-        "flex w-full items-center gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:bg-accent aria-pressed:border-primary/50 aria-pressed:bg-primary/8",
+        "flex w-full items-center gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:bg-accent",
+        // The chosen goal is drawn in the same words as every other chosen thing: it had a half-
+        // strength border and no ink of its own, which the record does not describe.
+        selectedWhenPressed,
         focusRing,
       )}
       data-goal={goal.id}
