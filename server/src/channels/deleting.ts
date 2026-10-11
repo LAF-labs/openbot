@@ -71,6 +71,7 @@ import { olderCopyNameOf } from "../../../shared/file-scope";
 import { REMOVED_PROJECT_RESULT } from "../../../shared/tools/projects";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
+import { conversationsOf } from "./conversations-of";
 
 /** What a write door answers while its conversation is being deleted. A fact; the surface says it. */
 export const PROJECT_DELETING = "laf:project_deleting";
@@ -600,16 +601,12 @@ export function createProjectDeletion(dependencies: {
     gate: refuseWhileDeleting(database, writes),
 
     async delete({ userId, channelId }) {
-      const [found] = await database
-        .select({ id: channels.id, kind: channels.kind })
-        .from(channels)
-        .innerJoin(
-          channelMemberships,
-          and(
-            eq(channelMemberships.channelId, channels.id),
-            eq(channelMemberships.userId, userId),
-          ),
-        )
+      // Including one already marked: asked again, this door finishes it (the head of this file).
+      const [found] = await conversationsOf(
+        database,
+        { id: channels.id, kind: channels.kind },
+        { userId, includingDeleting: true },
+      )
         .where(eq(channels.id, channelId))
         .limit(1);
       if (!found) return { ok: false, code: "laf:channel_not_found" };

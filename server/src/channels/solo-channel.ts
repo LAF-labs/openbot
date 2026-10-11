@@ -14,12 +14,8 @@
  */
 import { and, asc, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
-import {
-  channelAgents,
-  channelMemberships,
-  channels,
-  channelThreads,
-} from "../db/schema";
+import { channelAgents, channels, channelThreads } from "../db/schema";
+import { conversationsOf } from "./conversations-of";
 
 export type SoloConversation = {
   channelId: string;
@@ -37,34 +33,15 @@ export async function soloConversationOf(
   userId: string,
   agentId: string,
 ): Promise<SoloConversation | null> {
-  const [solo] = await database
-    .select({
+  const [solo] = await conversationsOf(
+    database,
+    {
       channelId: channels.id,
       threadId: channelThreads.threadId,
       name: channels.name,
-    })
-    .from(channels)
-    .innerJoin(
-      channelMemberships,
-      and(
-        eq(channelMemberships.channelId, channels.id),
-        eq(channelMemberships.userId, userId),
-      ),
-    )
-    .innerJoin(
-      channelThreads,
-      and(
-        eq(channelThreads.channelId, channels.id),
-        eq(channelThreads.userId, userId),
-      ),
-    )
-    .innerJoin(
-      channelAgents,
-      and(
-        eq(channelAgents.channelId, channels.id),
-        eq(channelAgents.agentId, agentId),
-      ),
-    )
+    },
+    { userId, agentId },
+  )
     /*
      * THE MAIN ONE, BY WHAT IT SAYS IT IS (`channels.kind`, migration 0064). This was "the oldest
      * channel holding only this Bot"; the migration wrote that answer down, channel by channel, so
