@@ -601,8 +601,8 @@ describe("a day's close, prepared at night and taken in the morning", () => {
    * A BROWSING RUN'S CONTEXT IS A THREAD OF ITS OWN. The delegated run is made on
    * `<thread>.browse` (`turns/engine.ts`), and the store keeps a context under that id as under
    * any other — so dropping the conversation leaves it, holding a deleted project's pages until
-   * the unkept sweep six hours on. `main.ts` drops the two together; this is the premise and the
-   * call it makes.
+   * the unkept sweep six hours on. The deletion drops them together, one per kind of delegated
+   * work (`channels/deleting.ts` `contextsOf`); this is the premise and the call it makes.
    */
   test("a delegated run's context is dropped by its own id, not with the conversation's", async () => {
     const { store, thread, run } = harness();

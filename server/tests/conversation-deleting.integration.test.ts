@@ -15,6 +15,7 @@ import { createAgentProfileStore } from "../src/agents/profile-store";
 import type { AppVariables } from "../src/auth/guards";
 import {
   anyBeingDeleted,
+  contextsOf,
   conversationsNamed,
   createConversationWrites,
   createProjectDeletion,
@@ -562,7 +563,41 @@ describe("deleting a project", () => {
       "the write finishes",
       "stop its thread: rows 1",
       "forget its thread: rows 1",
+      `forget ${project.thread}.browse: rows 1`,
+      `forget ${project.thread}.think: rows 1`,
       "deleted: rows 0",
+    ]);
+  });
+
+  /*
+   * A DELEGATED RUN'S CONTEXT IS A THREAD OF ITS OWN, one per kind of work the conversation hands
+   * off (`turns/engine.ts` `delegatedThreadOf`: `<thread>.browse`, and `<thread>.think` since the
+   * deep-reasoning side landed). The store keeps each as it keeps any other, so a deletion that
+   * forgot only the conversation's own left a deleted project's pages in memory until the unkept
+   * sweep six hours on — and one that forgot only `.browse` left its thinking. The kinds are read
+   * from where `delegate` declares them, so this is the literal list, not that declaration read
+   * back: a kind added there without a suffix in the engine fails here.
+   */
+  test("its context is forgotten with its delegated runs' — the browsing one and the thinking one", async () => {
+    const project = await conversation("project");
+    const forgotten: string[] = [];
+    const deletion = createProjectDeletion({
+      database,
+      stopThread: async () => {},
+      dropContext: async (threadId) => {
+        forgotten.push(threadId);
+      },
+    });
+    await deletion.delete({ channelId: project.channel, userId: ME });
+    expect(forgotten).toEqual([
+      project.thread,
+      `${project.thread}.browse`,
+      `${project.thread}.think`,
+    ]);
+    expect(contextsOf("thread_x")).toEqual([
+      "thread_x",
+      "thread_x.browse",
+      "thread_x.think",
     ]);
   });
 
@@ -697,8 +732,10 @@ describe("deleting a project", () => {
       stopThread: async () => {
         order.push(`stop: rows ${await rows()}`);
       },
-      dropContext: async () => {
-        order.push(`forget its context: rows ${await rows()}`);
+      dropContext: async (threadId) => {
+        order.push(
+          `forget ${threadId === project.thread ? "its context" : "a delegated context"}: rows ${await rows()}`,
+        );
       },
       removeFolder: async (channelId, bots) => {
         order.push(
@@ -718,6 +755,8 @@ describe("deleting a project", () => {
     expect(order).toEqual([
       "stop: rows 1",
       "forget its context: rows 1",
+      "forget a delegated context: rows 1",
+      "forget a delegated context: rows 1",
       `remove the folder of the project for ${BOT}: rows 1`,
       "forgotten the project",
       "deleted: rows 0",
