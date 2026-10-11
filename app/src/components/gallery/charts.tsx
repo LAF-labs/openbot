@@ -71,10 +71,19 @@ function valueRoom(text: string): string {
   return VALUE_ROOM.longer;
 }
 
-function labelRoom(text: string, under: keyof typeof LABEL_ROOM): string {
+/**
+ * `text` may not be there yet: a chart is drawn while the Bot is still writing it, and a point
+ * arrives as `{}` before its label does. Reading its length threw, and a card that throws once in
+ * the conversation is the "could not be drawn" line from then on (review of #189, 2026-10-11).
+ */
+function labelRoom(
+  text: string | undefined,
+  under: keyof typeof LABEL_ROOM,
+): string {
   const room = LABEL_ROOM[under];
-  if (text.length <= 1) return room.one;
-  if (text.length <= 2) return room.two;
+  const length = text?.length ?? 0;
+  if (length <= 1) return room.one;
+  if (length <= 2) return room.two;
   return room.more;
 }
 
@@ -388,7 +397,9 @@ export function LineChartCard(args: Partial<LineArgs>) {
   );
 }
 
-export const AreaChartProps = LineChartProps;
+// Not exported: it is `LineChartProps` under a second name, which the import graph's check
+// (`tests/knip.test.ts`) reports as a duplicate export the moment a test imports this file.
+const AreaChartProps = LineChartProps;
 
 export function AreaChartCard(args: Partial<LineArgs>) {
   const labels = args.labels ?? [];

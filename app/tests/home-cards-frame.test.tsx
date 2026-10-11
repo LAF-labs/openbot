@@ -5,6 +5,7 @@ import {
   describe,
   expect,
   setDefaultTimeout,
+  spyOn,
   test,
 } from "bun:test";
 import { ko } from "../src/lib/i18n-ko";
@@ -511,5 +512,84 @@ describe("홈's first cards", () => {
     });
     await view.settle(150);
     expect(paths.map(asked)).toEqual(quiet);
+  });
+  /*
+   * A BOUNDARY THAT HAS CAUGHT STAYS CAUGHT — so the one under 만든 것, which stands for whichever
+   * card is the newest made thing, is keyed to the message that handed the thing over
+   * (`home-cards.tsx`). Without that key, one card that threw left every card the Bot made after
+   * it as the line, until the window was reloaded (2026-10-11). None of the gallery's renderers
+   * throws on arguments the schema passes (#179), so the gallery's gate is stood in for here — a
+   * spy on its export, which `home-cards.tsx` reads through its import: the first made thing's
+   * card throws, the next draws — and the next is drawn.
+   */
+  test("the card after one that threw is drawn: 만든 것's boundary is a new one for a new made thing", async () => {
+    const gallery = await import("../src/components/gallery/gallery-card");
+    const real = gallery.cardToDraw;
+    const Throws = (): never => {
+      throw new RangeError("the first card");
+    };
+    const consoleError = spyOn(console, "error").mockImplementation(() => {});
+    // The module's own export, so `home-cards.tsx` reads the stand-in through its import.
+    const gate = spyOn(gallery, "cardToDraw").mockImplementation(
+      (name: unknown, args: unknown) =>
+        (args as { title?: unknown } | null)?.title === "그릴 수 없는 카드"
+          ? { Component: Throws, props: {} }
+          : real(name, args),
+    );
+    try {
+      let item: Record<string, unknown> = {
+        ...MADE,
+        messageId: "m-1",
+        title: "그릴 수 없는 카드",
+        args: { title: "그릴 수 없는 카드", items: [] },
+      };
+      const view = await mounted(
+        account(({ pathname }) =>
+          pathname === "/api/agents/bot-1/made"
+            ? json({ items: [item], next: null })
+            : undefined,
+        ),
+      );
+      await view.waitFor(
+        () => line(view, "made") === "그릴 수 없는 카드",
+        "the line standing in for the card that threw",
+      );
+      expect(failedHome(view)).toBe(0);
+
+      // The Bot made the next thing: its card is drawn, whatever became of the one before.
+      item = {
+        ...MADE,
+        messageId: "m-2",
+        args: {
+          title: "이사 준비",
+          items: [{ text: "주소 변경", done: false }],
+        },
+      };
+      const socket = sockets.at(-1);
+      await acted(() => {
+        socket?.onmessage?.({
+          data: JSON.stringify({
+            channelId: "c-1",
+            lastMessage: "체크리스트로 만들었어요.",
+            lastMessageAt: "2026-10-10T06:51:30.000Z",
+            lastMessageAgentId: "bot-1",
+          }),
+        });
+      });
+      await view.waitFor(
+        () =>
+          card(view, "made")
+            ?.querySelector("[data-home-card-drawn]")
+            ?.textContent?.includes("주소 변경") === true,
+        "the next card, drawn",
+      );
+      expect(
+        card(view, "made")?.querySelectorAll("[data-home-card-line]").length,
+      ).toBe(0);
+    } finally {
+      // The gallery as it is, for every test and every file that runs in this process after this.
+      gate.mockRestore();
+      consoleError.mockRestore();
+    }
   });
 });
