@@ -106,13 +106,8 @@ import { toolResultText } from "../shared/prompt/tool-results.ko";
 import { openAccountsIn } from "../shared/tools/bridge";
 import { PROJECT_TOOLS, READ_PROJECTS } from "../shared/tools/projects";
 import { REMEMBER, UPDATE_PROFILE } from "../shared/tools/self";
-import {
-  answerText,
-  at,
-  TURNS as DAY_TURNS,
-  orderPage,
-  pricedFetch,
-} from "./cache-days";
+import { at, orderPage, pricedFetch } from "./cache-days";
+import { answerText, TURNS as DAY_TURNS } from "./days-talk";
 import { REALISTIC_TOOLSET } from "./deferral";
 import {
   answerAfterTheLastCall,
