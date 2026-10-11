@@ -164,6 +164,18 @@ describe("a written line, read against the fact", () => {
     expect(writtenOf(terms, line)).toBe(kind);
   });
 
+  test("every value without what it is about is not the fact whole", () => {
+    expect(writtenOf(terms, "월말 결제이고 10만 원 넘으면 무료배송이다.")).toBe(
+      "part",
+    );
+    expect(
+      writtenOf(
+        fact("recurring-deadline/correction"),
+        "매주 금요일까지 넣어야 한다.",
+      ),
+    ).toBe("part");
+  });
+
   test("a correction's old value, written without the new one, is the old value", () => {
     expect(writtenOf(price, "논산 딸기는 1kg에 9,500원이다.")).toBe("stale");
     expect(writtenOf(price, "딸기는 1kg에 11,000원(전에는 9,500원)이다.")).toBe(
@@ -222,6 +234,15 @@ describe("a summary's own shorthand is still the fact", () => {
     ],
   ] as const)("%s: %s", (id, line) => {
     expect(survivalIn(fact(id), line)).toBe("whole");
+  });
+
+  test("the hour written as a clock is the hour", () => {
+    expect(
+      survivalIn(
+        fact("business-hours/correction"),
+        "- 9/14: 채팅 문의 마감 20:00 → 18:00로 변경.",
+      ),
+    ).toBe("whole");
   });
 
   test("an arrow that ends on the old day is not the new one", () => {
@@ -300,6 +321,16 @@ describe("an answer days later, read by rule", () => {
     [hours, "전화 상담은 평일 오전 10시부터 오후 4시까지예요.", "correct"],
     [hours, "전화 상담은 10시부터 16시까지입니다.", "correct"],
     [hours, "전화 상담은 오전 9시부터 오후 6시까지예요.", "wrong"],
+    // A clock written with a colon: the value, a value that is not the fact's, the old value.
+    [hours, "전화 상담은 10:00부터 16:00까지예요.", "correct"],
+    [hours, "전화 상담은 09:00부터 18:00까지예요.", "wrong"],
+    [
+      fact("business-hours/correction"),
+      "채팅 상담은 18:00에 닫아요.",
+      "correct",
+    ],
+    [fact("business-hours/correction"), "채팅 상담은 20:00에 닫아요.", "wrong"],
+    [fact("business-hours/correction"), "채팅 상담은 21:30에 닫아요.", "wrong"],
     [
       hours,
       "전화 상담은 오전 10시에 시작해요. 끝나는 시간은 모르겠어요.",
@@ -323,6 +354,13 @@ describe("an answer days later, read by rule", () => {
     [deadline, "9월 14일에 말씀하신 대로 매달 5일까지예요.", "correct"],
   ] as const)("%#: %s → %s", (one, answer, kind) => {
     expect(recallOf(one as Fact, answer)).toBe(kind);
+  });
+
+  test("a clock's minutes are not an hour of their own, and a length of time is no clock", () => {
+    const chat = fact("business-hours/correction");
+    expect(strangersIn(chat, "18:00에 닫아요.")).toEqual([]);
+    expect(strangersIn(chat, "18:30에 닫아요.")).toEqual(["18:30"]);
+    expect(strangersIn(chat, "답변까지 3시간쯤 걸려요.")).toEqual([]);
   });
 
   test("a date in the answer is not a value of the fact's kind", () => {
