@@ -14,6 +14,7 @@ import {
 import {
   boundedSummary,
   createDaySummarizer,
+  cutOf,
   DAY_SUMMARY_SYSTEM,
   dialogueOf,
   FORGOTTEN_RULE,
@@ -24,6 +25,7 @@ import {
 } from "../src/context/day-close";
 import {
   createSummaryScrubber,
+  isDated,
   lineCarries,
   scrubByRule,
 } from "../src/context/forget-scrub";
@@ -401,8 +403,8 @@ describe("what the summariser is told", () => {
     expect(DAY_SUMMARY_SYSTEM).toContain("A date passing does not settle it");
     // Ended, not merely changed; a page's claim never standing; a dated fact moved, not doubled.
     expect(DAY_SUMMARY_SYSTEM).toContain("drop the line");
-    expect(DAY_SUMMARY_SYSTEM).toContain("make a standing fact");
-    expect(DAY_SUMMARY_SYSTEM).toContain("not written twice");
+    expect(DAY_SUMMARY_SYSTEM).toContain("makes a standing fact");
+    expect(DAY_SUMMARY_SYSTEM).toContain("write it in the block, once");
   });
 
   /*
@@ -509,10 +511,15 @@ describe("a standing line among the dated ones", () => {
   /*
    * A standing line is terse — a head and a value — so it holds few of a notebook line's words,
    * and the rule's 60% of distinctive words left a forgotten standing fact in what the Bot is
-   * given: `- 지은(포장 알바): 매주 화·목 출근` has 3 of the 6 words of "포장 알바 지은이는 화요일과
+   * given: `- 지은(포장 알바): 매주 화·목 출근` has 2 of the 6 words of "포장 알바 지은이는 화요일과
    * 목요일에만 출근한다." (review of pull request 196). The rule arm alone is what is tested here —
    * the floor that stands when the judge model is unavailable.
    */
+  const JIEUN = "포장 알바 지은이는 화요일과 목요일에만 출근한다.";
+  const YUJA = "유자는 청운농원에서 1kg에 18,000원에 들여온다.";
+  const DAESUNG =
+    "대성유리는 월말 결제이고, 10만 원 넘게 주문하면 무료배송이다.";
+  const REGULAR = "단골 한정숙 님은 택배를 꼭 경비실에 맡겨 달라고 한다.";
   const TERSE: ReadonlyArray<[fact: string, line: string]> = [
     [
       "포장 알바 지은이는 화요일과 목요일에만 출근한다.",
@@ -542,15 +549,113 @@ describe("a standing line among the dated ones", () => {
     },
   );
 
-  test("a line that shares one word with the forgotten fact stays, dated or standing", () => {
-    const fact = "포장 알바 지은이는 화요일과 목요일에만 출근한다.";
-    for (const line of [
-      "- 9/14: 이 사람이 지은이에게 줄 안내문 세 줄을 부탁함.",
-      "- 재고: 유자청 40병, 포장 상자 120개",
-      "- 민수: 주말 포장 담당, 일요일에 나옴",
-    ]) {
-      expect(lineCarries(line, fact)).toBe(false);
-    }
+  /*
+   * A standing line of the SAME KIND shares words that name nothing — a role (포장 알바), a
+   * recurrence (매달), the digits of a price or a day (18,000원 → "18"; 5일 inside 25일) — and a
+   * first arm that took any two words erased unrelated facts: every line here was dropped by it
+   * (second review of pull request 196). Each must stay.
+   */
+  const STAYS: ReadonlyArray<[fact: string, line: string]> = [
+    [YUJA, "- 딸기: 논산 김 사장님네서 1kg에 11,000원"],
+    [YUJA, "- 블루베리: 1kg에 25,000원"],
+    [DEADLINE, "- 부가세 신고: 세무사가 매달 25일에 처리"],
+    [DEADLINE, "- 부가세 신고: 매달 25일"],
+    [DEADLINE, "- 카드 대금: 매달 15일 자동이체"],
+    [DAESUNG, "- 한일포장 결제: 다음 달 10일"],
+    [DAESUNG, "- 청운농원 결제: 매달 10일 계좌이체"],
+    [JIEUN, "- 민수(포장 알바): 매주 토요일 출근"],
+    [JIEUN, "- 포장 상자 발주: 알바 통해 매주 주문"],
+    [REGULAR, "- 단골 오 사장님: 택배 문 앞에 두기"],
+    [JIEUN, "- 9/14: 이 사람이 지은이에게 줄 안내문 세 줄을 부탁함."],
+    [JIEUN, "- 재고: 유자청 40병, 포장 상자 120개"],
+    [JIEUN, "- 민수: 주말 포장 담당, 일요일에 나옴"],
+    // A dated line sharing words under the ratio stays on the dated arm — and would go on the
+    // standing arm, so this row fails if `isDated` ever stops telling them apart.
+    [DEADLINE, "- 9/14 세무사: 매달 5일 자료 넘김 완료"],
+    [DEADLINE, "- 9/14: 부가세 신고: 세무사가 매달 25일에 처리"],
+  ];
+  test.each(STAYS)("an unrelated line stays %#", (fact, line) => {
+    expect(lineCarries(line, fact)).toBe(false);
+  });
+
+  test("one forget on a mixed summary takes one line", () => {
+    const mixed = [
+      "- 9/14: 이 사람이 세무사에게 보낼 안부 문자를 부탁해 초안을 써 줌.",
+      "- 9/15: 20260207번 주문 받는 곳을 춘천 효자동으로 바꿈.",
+      "- 매출 정산 자료: 매달 5일까지 세무사님께 넘기기",
+      "- 부가세 신고: 세무사가 매달 25일에 처리",
+      "- 카드 대금: 매달 15일 자동이체",
+      "- 지은(포장 알바): 매주 화·목 출근",
+      "- 민수(포장 알바): 매주 토요일 출근",
+      "- 한일포장 결제: 다음 달 10일",
+      "- 단골 오 사장님: 택배 문 앞에 두기",
+    ].join("\n");
+    const { summary, removed } = scrubByRule(mixed, [DEADLINE]);
+    expect(removed).toBe(1);
+    expect(summary).not.toContain("매달 5일까지");
+    expect(summary).toContain("부가세 신고");
+    expect(summary).toContain("카드 대금");
+  });
+
+  /*
+   * Known limits of the rule arm, left to the judge model in production: a line that names the
+   * subject and nothing of what the fact says in words the fact used. Pinned so a change that
+   * closes one is seen, not to assert the limit is right.
+   */
+  const LIMITS: ReadonlyArray<[fact: string, line: string, carried: boolean]> =
+    [
+      [JIEUN, "- 지은이: 화·목 출근", true],
+      [JIEUN, "- 지은이 출근: 화, 목", true],
+      ["채팅 문의는 저녁 6시까지만 받는다.", "- 채팅 상담 마감: 18시", false],
+      ["채팅 문의는 저녁 6시까지만 받는다.", "- 채팅: 18:00까지", false],
+    ];
+  test.each(LIMITS)(
+    "the rule arm on %# reads %s as %p",
+    (fact, line, carried) => {
+      expect(lineCarries(line, fact)).toBe(carried);
+    },
+  );
+
+  test.each([
+    ["- 9/21: …", true],
+    ["- 9/14~9/16: …", true],
+    ["- 2026-09-21: …", true],
+    ["- 9.21: …", true],
+    ["- (9/21) …", true],
+    ["1. 9/21: …", true],
+    ["- 3/4분기 정산: …", false],
+    ["- 3.5kg 설탕: …", false],
+    ["- 세무사: 매달 5일", false],
+  ])("isDated(%s) is %p", (line, dated) => {
+    expect(isDated(line)).toBe(dated);
+  });
+
+  test("the hard cut is reported, with whether the day being closed lost a line", () => {
+    const standing = Array.from(
+      { length: 160 },
+      (_, i) => `- 거래처 ${i}: 매달 ${(i % 28) + 1}일 계좌이체로 결제`,
+    );
+    const whole = [
+      ...standing,
+      "- 9/25: 어제의 열린 일",
+      "- 9/26: 오늘의 열린 일",
+    ].join("\n");
+    const kept = boundedSummary(whole);
+    const cut = cutOf(whole, kept, "2026-09-26 (토)");
+    expect(cut).not.toBeNull();
+    expect(cut?.lines).toBeGreaterThan(0);
+    expect(cut?.chars).toBe(whole.trim().length - kept.length);
+    // The oldest standing lines went, the tail with the dated lines stayed: no last-day line cut.
+    expect(cut?.lastDay).toBe(false);
+    expect(kept).toContain("- 9/26: 오늘의 열린 일");
+    const tailFirst = [
+      ...standing.slice(0, 2),
+      "- 9/26: 오늘의 열린 일",
+      ...standing,
+    ].join("\n");
+    const keptTail = boundedSummary(tailFirst);
+    expect(cutOf(tailFirst, keptTail, "2026-09-26 (토)")?.lastDay).toBe(true);
+    expect(cutOf("- 9/26: 짧다", "- 9/26: 짧다", "2026-09-26 (토)")).toBeNull();
   });
 
   test("the bound cuts the oldest dated lines and reaches the standing block last", () => {
