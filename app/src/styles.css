@@ -171,20 +171,25 @@ html {
    * ---- the app's accent: one place ----
    *
    * #2079E7 (the owner, 2026-10-11). THE COLOUR OF WHAT A PERSON PRESSES OR HAS CHOSEN — the
-   * filled control, the send button, the focus ring, the chosen tab, row or menu item, selection —
-   * and of the one thing a card is about: the figure, the fill of a progress bar, a chart's first
-   * series (`--chart-1`). As `-ink` it is the colour of a link and of every word written in it.
+   * focus ring, the chosen tab, row or menu item, a switch that is on, selection — and of the one
+   * thing a card is about: the fill of a progress bar, a chart's first series (`--chart-1`). A
+   * card of key figures has none: its figures are the ink (the owner, the same day, on seeing
+   * them). As `-fill` it is the filled control, and as `-ink` the colour of a link and of every
+   * word written in it.
    *
    * IT WAS THE BOT'S, from 2026-09-24 to 2026-10-09 (the colour of its face, ten palettes mapped
    * from `data-accent` on <html>), and a near-black neutral from then until 2026-10-11, while the
    * brand colour was undecided (docs/laf/redesign-2026-10.md, §1 "색과 깊이").
    *
-   * FOUR LINES, light here and dark in `.dark`, and `app/tests/accent-contrast.test.ts` measures
+   * FIVE LINES, light here and dark in `.dark`, and `app/tests/accent-contrast.test.ts` measures
    * whatever they say. What was measured for these:
    *
-   *  - The fill is the owner's value, as given. White on it is 4.24:1 — under the 4.5 a 13px label
-   *    wants, and the decision was made knowing it — so the label is pure white rather than the
-   *    page's #fcfcfc (4.13), and the hover is a step darker (5.00), never lighter.
+   *  - THE FILLED CONTROL IS A STEP DARKER THAN THE ACCENT, AND HAS A LINE OF ITS OWN (`-fill`).
+   *    White on #2079e7 is 4.24:1, under the 4.5 a 13px label wants; the first build shipped it
+   *    with the test floored at 4.2, and the owner chose a darker fill over the exception. White
+   *    on #1a6dd6 is 5.00, and on its hover #1761c0, a step darker again, 5.99. Until then the
+   *    fill and the marks were one token (`--primary`); `bg-primary` is still the mark and the
+   *    tint, and the button alone reads `bg-primary-fill`.
    *  - As a mark (a ring, a bar, a line) it is 4.13:1 on the page and 4.24 on a card: over the 3:1 a
    *    mark needs.
    *  - AS TEXT IT IS SHORT: 4.13 on the page, 3.96 on the sidebar's grey. So words are written in
@@ -193,7 +198,8 @@ html {
    *    chosen row of 설정's rail, the pair that set the value (#1669d0 was 4.48 there).
    */
   --app-accent: #2079e7;
-  --app-accent-hover: #1a6dd6;
+  --app-accent-fill: #1a6dd6;
+  --app-accent-hover: #1761c0;
   --app-accent-foreground: #ffffff;
   --app-accent-ink: #1567cc;
 
@@ -204,7 +210,7 @@ html {
   --card-foreground: var(--sand-text-primary);
   --popover: var(--sand-bg-elevated);
   --popover-foreground: var(--sand-text-primary);
-  /* The filled control is the app's accent — see `--app-accent` above. */
+  /* The accent as a mark and a tint. The filled control is `--app-accent-fill`, see above. */
   --primary: var(--app-accent);
   --primary-foreground: var(--app-accent-foreground);
   --secondary: var(--sand-fill-secondary);
@@ -299,9 +305,12 @@ html {
    * and 3.29 on the composer's fill — a mark, barely, and no colour for a word. #5b9df2 is 6.84 on
    * the page, 6.12 on a card and 5.02 on the composer's fill, so it is the ink too. It is too light
    * to carry white (2.78), so the label on it is the page's near-black (6.84), as the label on the
-   * neutral control was. The hover is a step darker, as in the light.
+   * neutral control was. The hover is a step darker, as in the light. THE FILL IS THE ACCENT
+   * ITSELF HERE: the light theme split them because its accent could not carry its label, and
+   * this one carries its own at 6.84.
    */
   --app-accent: #5b9df2;
+  --app-accent-fill: #5b9df2;
   --app-accent-hover: #4a92ef;
   --app-accent-foreground: #0f1012;
   --app-accent-ink: #5b9df2;
@@ -439,6 +448,7 @@ body {
   --color-bubble-user: var(--sand-fill-bubble-user);
   /* Deliberately does NOT invert with the theme; see the note on --sand-text-on-color. */
   --color-on-color: var(--sand-text-on-color);
+  --color-primary-fill: var(--app-accent-fill);
   --color-primary-hover: var(--app-accent-hover);
   /*
    * The blue spent only on the dot that says something new is waiting. It stays blue whatever the

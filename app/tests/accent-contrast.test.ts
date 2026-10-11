@@ -12,8 +12,8 @@ import { join } from "node:path";
  * the values the browser will actually use, not a copy of them — and measure every pair a screen
  * puts together:
  *
- *  - the label on a filled control, and on its hover (4.5:1, it is text — but see the one
- *    exception the decision made, at that test);
+ *  - the label on a filled control (`--app-accent-fill`, a step darker than the accent in the
+ *    light), and on its hover (4.5:1, it is text);
  *  - the same value as text — a link, the name of what the Bot is waiting on — on the page, the
  *    sidebar and a card, and on the accent's own 8% tint (4.5:1);
  *  - the value as a focus ring or a border against the page (3:1, WCAG 1.4.11).
@@ -119,6 +119,7 @@ function accent(theme: Theme) {
   const values = palette(theme);
   return {
     fill: rgb(resolved(values, "--app-accent")),
+    button: rgb(resolved(values, "--app-accent-fill")),
     hover: rgb(resolved(values, "--app-accent-hover")),
     foreground: rgb(resolved(values, "--app-accent-foreground")),
     ink: rgb(resolved(values, "--app-accent-ink")),
@@ -128,16 +129,14 @@ function accent(theme: Theme) {
 describe("the accent, the same for everybody", () => {
   for (const theme of ["light", "dark"] as const) {
     /*
-     * THE LIGHT FILL IS THE ONE PAIR UNDER 4.5, AND IT WAS CHOSEN KNOWING IT (the owner,
-     * 2026-10-11): white on #2079e7 is 4.24:1. The floor here is what that value measures, so a
-     * fill any lighter fails, and the label must be the whitest there is — the page's #fcfcfc on it
-     * is 4.13. Everything the choice left free still clears 4.5: the hover, and the dark fill.
+     * THE FILLED CONTROL HAS A VALUE OF ITS OWN (`--app-accent-fill`), a step darker than the
+     * accent in the light: white on #2079e7 is 4.24:1, and for a few hours of 2026-10-11 this
+     * floor was 4.2 for that one pair. The owner chose a darker fill over the exception, so there
+     * is none: 4.5 for the label, hovered or not, in both themes.
      */
-    test(`${theme}: the label on a filled control reads at 4.5:1, hovered or not — 4.2 on the light fill the owner chose`, () => {
-      const { fill, hover, foreground } = accent(theme);
-      expect(contrast(fill, foreground)).toBeGreaterThanOrEqual(
-        theme === "light" ? 4.2 : 4.5,
-      );
+    test(`${theme}: the label on a filled control reads at 4.5:1, hovered or not`, () => {
+      const { button, hover, foreground } = accent(theme);
+      expect(contrast(button, foreground)).toBeGreaterThanOrEqual(4.5);
       expect(contrast(hover, foreground)).toBeGreaterThanOrEqual(4.5);
     });
 

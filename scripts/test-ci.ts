@@ -2836,8 +2836,8 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * RAISED 2026-10-11 WITH THE ACCENT AND THE SHADOWS (색과 깊이), `app` by eleven (to 2402). Five in
  * `accent-contrast.test.ts`: per theme, the accent as a mark against a card and the composer's
  * fill, and that a chart's first series is the accent; and once, that a card casts no shadow. Six
- * in the new `card-lead-colour.test.ts`: every bar the first colour, every progress fill, only the
- * first of a card's figures in the accent's ink, several series in the palette's order (line and
+ * in the new `card-lead-colour.test.ts`: every bar the first colour, every progress fill, no
+ * figure of a key-figures card in the accent, several series in the palette's order (line and
  * area, legend and all), a donut the same, and no mark with a colour written on the element. 5 and
  * 6 is 11; 2391 and 11 is 2402.
  *

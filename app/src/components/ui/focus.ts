@@ -46,7 +46,9 @@ export const focusRing =
  * border has nothing to change to, and the halo alone is what is left: measured 2026-10-11, 1.6:1
  * against the page in the light (it was 2.3 while the accent was near-black, and was short then
  * too). So the ring here is solid, and stands off the fill by 2px of the page's own colour: the
- * accent against the page is 4.13:1 in the light and 6.84 in the dark.
+ * accent against the page is 4.13:1 in the light and 6.84 in the dark. (The fill is a step darker
+ * than the ring in the light since the same day, 1.18:1 between them: the gap is still what tells
+ * them apart.)
  */
 export const focusRingOnFill =
   "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";

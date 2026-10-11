@@ -141,9 +141,9 @@ function read(card: Element) {
     detail: card.querySelector("p.text-sm:not(.font-medium)")?.textContent,
     buttons: buttons.map((button) => (button.textContent ?? "").trim()),
     filled: buttons
-      // The class itself: every button also names the accent's tint for when it is chosen
-      // (`aria-pressed:bg-primary/8`), which is not a fill.
-      .filter((button) => button.classList.contains("bg-primary"))
+      // The filled control's own class (`bg-primary-fill`, a step darker than the accent). Every
+      // button also names the accent's tint for when it is chosen (`aria-pressed:bg-primary/8`).
+      .filter((button) => button.classList.contains("bg-primary-fill"))
       .map((button) => (button.textContent ?? "").trim()),
     hasPictureBox: card.querySelector('[class*="aspect-[16/10]"]') !== null,
     text: card.textContent ?? "",
