@@ -298,8 +298,9 @@ export const PLACE_LINES = (["chat", "routine"] as const).flatMap((mode) => [
 export const PROMPT_HASH = sha256(
   [
     // `browse` since piece 6-2: the run a conversation hands its browsing to reads words of its
-    // own, and a verdict about delegation turns on them as much as on the chat mode's.
-    ...(["chat", "routine", "browse"] as const).map((mode) =>
+    // own, and a verdict about delegation turns on them as much as on the chat mode's. `think`
+    // since 6-3, for the same reason.
+    ...(["chat", "routine", "browse", "think"] as const).map((mode) =>
       promptSkeleton(mode),
     ),
     ...PLACE_LINES,

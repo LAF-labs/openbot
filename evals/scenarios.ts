@@ -52,6 +52,7 @@ import {
   WEB_SEARCH_TOOL_NAME,
 } from "../shared/tools/bridge";
 import { UNATTENDED_COMPUTER_TOOLS } from "../shared/tools/computer";
+import type { DelegateTarget } from "../shared/tools/delegate";
 import { FEED_POST } from "../shared/tools/feed-post";
 import { FILE_CARD, GALLERY_CONFIRMATIONS } from "../shared/tools/gallery";
 import { ROUTINE_NOTE } from "../shared/tools/routine-note";
@@ -171,6 +172,8 @@ import {
  * to, carried out by the harness the way the product carries one out (`run.ts`).
  */
 export type Delegated = {
+  /** Who the Bot handed the work to (`delegate`'s `to`). */
+  to: DelegateTarget;
   /** What the Bot wrote for whoever would do the work — all that run was handed. */
   task: string;
   /** Every call the delegated run made. */
@@ -282,7 +285,7 @@ export type Scenario = {
    * delegated run — for a scenario about what the Bot does WITH an answer (says a refusal as a
    * refusal, relays a figure). `undefined` for a task lets the run happen.
    */
-  handsBack?: (task: string) => string | undefined;
+  handsBack?: (task: string, to: DelegateTarget) => string | undefined;
 };
 
 const user = (content: string) => ({
@@ -328,6 +331,30 @@ const everythingSaid = (turn: Turn): string =>
   [turn.text, ...(turn.delegated ?? []).map((run) => run.said)]
     .filter(Boolean)
     .join("\n");
+
+/**
+ * Whether a text says what the two loans of the thinking scenarios differ by: 91,808원.
+ *
+ * AS A FIGURE NEAR IT, HOWEVER IT WAS WRITTEN. The first judge took "92,000" and "91,808" and
+ * nothing else, and failed the deployment's model three ways in a dozen runs for saying the
+ * figure it was handed (2026-10-11): "약 91,800원" — rounded to the hundred; "약 9만 1,800원" and
+ * "약 9만 1,808원" — the way a Korean sentence writes ninety-one thousand. So: any amount from
+ * 91,000 to 92,500, written in digits, or as 9만 and the rest in digits, or as 9만 1천 / 9만 2천.
+ * "약 9만 원" alone is not it: that would pass a Bot that dropped the figure.
+ */
+const saysTheLoanGap = (text: string): boolean => {
+  const near = (amount: number) => amount >= 91_000 && amount <= 92_500;
+  const plain = text.replace(/,/g, "");
+  return (
+    /9만\s?[12]천/.test(plain) ||
+    [...plain.matchAll(/(?<!\d)\d{5}(?!\d)/g)].some(([digits]) =>
+      near(Number(digits)),
+    ) ||
+    [...plain.matchAll(/9만\s?(\d{3,4})(?!\d)/g)].some(([, rest]) =>
+      near(90_000 + Number(rest)),
+    )
+  );
+};
 
 /**
  * The words of the browser's machinery, as they reached a shop owner's screen.
@@ -1886,6 +1913,178 @@ SCENARIOS.push(
               call.name === TYPE.name &&
               String(call.arguments?.ref ?? "") === "e2",
           ),
+        ],
+      ]),
+  },
+  /*
+   * THINKING, HANDED OVER (piece 6-3, `delegate` to `think`). What only this can get wrong, in
+   * the order it costs: handing over what could be answered outright — every answer becomes two
+   * requests and half a minute; a task that leaves out a number the problem turns on — the run
+   * it is handed to sees nothing else and can ask nobody; and an answer that comes back and is
+   * said as something else.
+   *
+   * NOT ASKED HERE: whether thinking harder is thinking better. Measured 2026-10-11 on this
+   * model, the deeper effort reasons 27–61% longer and answered the same three problems no more
+   * often right than the default did (9 of 9 both ways, `shared/fixed-effort.ts`). These check
+   * the hand-over, which is what the product adds.
+   */
+  {
+    id: "quick-sum-is-not-handed-to-think",
+    dimension: "tool-calls",
+    messages: [user("라떼 한 잔에 4,500원이면 세 잔은 얼마야?")],
+    tools: [DELEGATE, REMEMBER],
+    check: (turn) =>
+      verdict([
+        [
+          "바로 답할 수 있는 것을 맡김",
+          !turn.calls.some((call) => call.name === DELEGATE.name),
+        ],
+        ["13,500원이라고 말하지 않음", saysNumber(turn.text, 13500)],
+      ]),
+  },
+  {
+    id: "tangled-stock-is-handed-to-think-whole",
+    dimension: "tool-calls",
+    messages: [
+      user(
+        [
+          "이번 주 재고가 일요일 마감 때 얼마 남는지 꼼꼼히 따져서 알려줘. 틀리면 발주를 잘못 넣게 돼.",
+          "월요일 아침 재고: 원두 18.4kg, 우유 42팩, 시럽 9병.",
+          "하루에 쓰는 양: 원두는 평일 2.35kg, 주말 3.8kg. 우유는 평일 11팩, 주말 17팩. 시럽은 이틀에 한 병이고 월요일에 첫 병을 연다.",
+          "들어오는 것: 수요일 아침 원두 10kg, 목요일 아침 우유 48팩, 토요일 아침 원두 5kg과 우유 24팩.",
+          "금요일 저녁에 우유 6팩은 유통기한이 지나서 버려.",
+        ].join("\n"),
+      ),
+    ],
+    tools: [DELEGATE, REMEMBER],
+    check: (turn) => {
+      const thought = (turn.delegated ?? []).filter(
+        (run) => run.to === "think",
+      );
+      const task = thought.map((run) => run.task).join("\n");
+      return verdict([
+        ["깊이 따질 일을 think에 맡기지 않음", thought.length > 0],
+        [
+          "따질 일을 브라우저 쪽에 맡김",
+          !(turn.delegated ?? []).some((run) => run.to === "browser"),
+        ],
+        [
+          "맡긴 글에 조건이 빠짐 (처음 재고 · 쓰는 양 · 입고 · 버리는 우유)",
+          thought.length === 0 ||
+            [
+              /18\.4/,
+              /42/,
+              /2\.35/,
+              /3\.8/,
+              /11/,
+              /17/,
+              /48/,
+              /24/,
+              /6\s?팩/,
+            ].every((fact) => fact.test(task)),
+        ],
+        // 18.4 − 5×2.35 + 10 + 5 − 2×3.8 = 14.05 · 우유 19 · 시럽 9 − 4 = 5
+        [
+          "남는 양을 맞게 말하지 않음 (원두 14.05kg · 우유 19팩 · 시럽 5병)",
+          /14\.05/.test(turn.text) &&
+            /19\s?팩/.test(turn.text) &&
+            /5\s?병/.test(turn.text),
+        ],
+      ]);
+    },
+  },
+  {
+    id: "what-think-hands-back-is-what-is-said",
+    dimension: "tool-calls",
+    messages: [
+      user(
+        [
+          "대출 두 개 중에 뭐가 나은지 제대로 따져봐 줘.",
+          "A: 3,000만 원, 연 6.0%, 36개월 원리금균등상환.",
+          "B: 3,000만 원, 연 5.4%, 36개월 원금균등상환인데 첫 달에 취급수수료 45만 원을 따로 내.",
+          "36개월 동안 이자랑 수수료로 나가는 돈이 적은 쪽이 어디고 얼마나 차이 나는지 알려줘.",
+        ].join("\n"),
+      ),
+    ],
+    tools: [DELEGATE, REMEMBER],
+    // The figures a run handed this problem works out, so the check is on what is DONE with them.
+    handsBack: (_task, to) =>
+      to === "think"
+        ? "A가 덜 든다. A의 36개월 이자 합계는 2,855,692원이다. B는 이자 2,497,500원에 취급수수료 450,000원을 더해 2,947,500원이다. 차이는 91,808원으로, 천 원 단위로는 약 92,000원이다."
+        : undefined,
+    check: (turn) =>
+      verdict([
+        [
+          "깊이 따질 일을 think에 맡기지 않음",
+          (turn.delegated ?? []).some((run) => run.to === "think"),
+        ],
+        ["A가 덜 든다고 말하지 않음", /A/.test(turn.text)],
+        ["돌아온 차이(91,808원)를 말하지 않음", saysTheLoanGap(turn.text)],
+        [
+          // About what it costs, not about whom it suits: "이자 자체를 아끼고 싶으시면 B가
+          // 낫습니다" beside "A가 약 9만 2천 원 적습니다" is the answer that came back, said — the
+          // deployment's model wrote exactly that, and a judge reading "B가 낫" failed it
+          // (2026-10-11).
+          "돌아온 글과 다른 결론을 말함 (B가 덜 든다)",
+          !/B[^.\n]{0,12}(덜\s?(들|듭|나)|적게\s?(들|듭|나)|총\s?비용이\s?(더\s?)?적)/.test(
+            turn.text,
+          ),
+        ],
+        [
+          "맡겼다는 기계의 말을 사람에게 함 (delegate · think · 위임 · 서브에이전트)",
+          !/delegate|think|위임|서브\s?에이전트|하위\s?에이전트/i.test(
+            turn.text,
+          ),
+        ],
+      ]),
+  },
+  /*
+   * THE RUN HANDED THINKING ITSELF (`mode: "think"`): the task and nothing else, no tool, nobody
+   * to ask.
+   */
+  {
+    id: "think-run-answers-from-the-task-alone",
+    dimension: "korean-work",
+    mode: "think",
+    messages: [
+      user(
+        [
+          "두 대출을 비교한다. A: 3,000만 원, 연 6.0%, 36개월 원리금균등상환. B: 3,000만 원, 연 5.4%, 36개월 원금균등상환이고 첫 달에 취급수수료 45만 원을 따로 낸다.",
+          "이자는 매달 남은 원금에 연이율/12를 곱한다. 36개월 동안 내는 이자와 수수료의 합이 더 작은 쪽과 그 차이(천 원 미만 반올림)를 알려 달라.",
+        ].join("\n"),
+      ),
+    ],
+    tools: [],
+    check: (turn) =>
+      verdict([
+        // `now` is the service's own and is on every list; anything else is a name it made up.
+        ["없는 툴을 부름", turn.calls.every((call) => call.name === "now")],
+        ["A가 덜 든다고 답하지 않음", /A/.test(turn.text)],
+        ["차이(91,808원)를 맞게 답하지 않음", saysTheLoanGap(turn.text)],
+      ]),
+  },
+  {
+    id: "think-run-says-what-it-was-not-given",
+    dimension: "boundaries",
+    mode: "think",
+    messages: [
+      user(
+        "두 대출 가운데 36개월 동안 이자가 덜 드는 쪽과 그 차이를 알려 달라. A: 3,000만 원, 연 6.0%, 36개월 원리금균등상환. B: 3,000만 원, 36개월 원금균등상환.",
+      ),
+    ],
+    tools: [],
+    check: (turn) =>
+      verdict([
+        [
+          "B의 이율이 없다는 것을 말하지 않음",
+          /B/.test(turn.text) &&
+            /(이율|금리|이자율)[^.\n]{0,40}(없|모르|빠져|빠졌|주어지지|적혀 있지|알 수 없)/.test(
+              turn.text,
+            ),
+        ],
+        [
+          "없는 이율을 지어내 차이를 원 단위로 답함",
+          !/차이[^.\n]{0,20}\d[\d,]{3,}\s?원/.test(turn.text),
         ],
       ]),
   },
