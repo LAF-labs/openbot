@@ -2864,8 +2864,19 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * a turn that looked in two places, and six on where the decisions model may be asked. 1612 and
  * 35 is 1647.
  *
+ * RAISED 2026-10-11 FOR THE CONSENT CALLBACK ASKING THE DOOR, `server` by two (to 4404), both in
+ * `connect-config.test.ts`: the address matched as the sign-in door matches it however the line
+ * spells it, and a closed door that names the owner on the administrator line alone admitting
+ * nobody else. 4402 and 2 is 4404.
+ *
+ * RAISED 2026-10-11 FOR THE PROVIDER'S WORD ON AN ADDRESS, `server` by four (to 4408), all in the
+ * new `sign-in-verified.integration.test.ts`: an address the provider does not vouch for makes no
+ * account on its first arrival; a verified arrival afterwards takes the seat and keeps it; a row
+ * from before the rule gets no session while unproved; and is let in once the address is vouched
+ * for. 4404 and 4 is 4408.
+ *
  * RAISED 2026-10-11 FOR THINKING, HANDED OVER (record §4, piece 6-3's second part): `server` from
- * 4402 to 4412, `app` from 2402 to 2403, `root` from 1647 to 1705, all in files that were there.
+ * 4408 to 4418, `app` from 2402 to 2403, `root` from 1647 to 1705, all in files that were there.
  * Server, ten: six in `effort-on-the-wire.integration.test.ts` (the run handed thinking sent the
  * deep effort whatever the deployment and the caller say — three — and no other mode sent it —
  * three), two in `result-spillover.test.ts` (a delegated thread of either kind read as its
@@ -2880,7 +2891,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * forty-two in `tests/eval-delegation.test.ts` — thirty-seven on the judges of the five new
  * scenarios, and five that walk the pack (the three new conversations held to no tool of the
  * browser's, the two runs handed thinking held to no tool at all). By hand: 6 and 2 is 8, and 1
- * is 9, and 1 is 10; 4402 and 10 is 4412. 8 and 8 is 16, and 42 is 58; 1647 and 58 is 1705.
+ * is 9, and 1 is 10; 4408 and 10 is 4418. 8 and 8 is 16, and 42 is 58; 1647 and 58 is 1705.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -2910,7 +2921,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4412, roots: ["server"] },
+  { name: "server", floor: 4418, roots: ["server"] },
   { name: "app", floor: 2403, roots: ["app"] },
   {
     name: "agent-computer",

@@ -1,7 +1,9 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { inArray } from "drizzle-orm";
-import { loadConfig } from "../src/config";
+import { createDeploymentAdmission } from "../src/auth/admission";
+import { createSignInAllowlist } from "../src/auth/allowlist";
+import { loadConfig, type DeploymentConfig } from "../src/config";
 import { createDatabase } from "../src/db/client";
 import { users } from "../src/db/schema";
 import { connectConfigFor } from "../src/plugins/connect-config";
@@ -40,6 +42,25 @@ async function person() {
 
 const sharedClient = lookupOver({});
 
+/** The deployment's one reading of its sign-in list, built as `main.ts` builds it. */
+function admissionOf(config: DeploymentConfig) {
+  return createDeploymentAdmission({
+    database,
+    ...(config.auth ? { allowlist: createSignInAllowlist(config.auth) } : {}),
+  });
+}
+
+/** The connect flow's view of a deployment loaded from this environment. */
+function connectFor(environment: Record<string, string | undefined>) {
+  const config = loadConfig(environment);
+  return connectConfigFor({
+    config,
+    database,
+    sharedClient,
+    admission: admissionOf(config),
+  });
+}
+
 describe("the connect flow's view of this deployment", () => {
   test("is absent without a public URL, so no consent is started that could never come back", () => {
     const config = loadConfig({
@@ -48,7 +69,12 @@ describe("the connect flow's view of this deployment", () => {
       MANAGED_AGENT_AG_UI_URL: "http://localhost:4200/ag-ui",
     });
     expect(
-      connectConfigFor({ config, database, sharedClient }),
+      connectConfigFor({
+        config,
+        database,
+        sharedClient,
+        admission: admissionOf(config),
+      }),
     ).toBeUndefined();
   });
 
@@ -61,7 +87,12 @@ describe("the connect flow's view of this deployment", () => {
         LAF_OAUTH_RELAY_URL: "https://auth.agent.laf-co.com/oauth/relay",
       }),
     );
-    const connect = connectConfigFor({ config, database, sharedClient });
+    const connect = connectConfigFor({
+      config,
+      database,
+      sharedClient,
+      admission: admissionOf(config),
+    });
     expect(connect?.publicUrl).toBe("https://shop1.agent.laf-co.com");
     expect(connect?.appUrl).toBe("https://shop1.agent.laf-co.com");
     expect(connect?.encryptionKey).toBe(config.keyEncryptionKey);
@@ -76,24 +107,59 @@ describe("the connect flow's view of this deployment", () => {
     const owner = await person();
     const staff = await person();
 
-    const open = connectConfigFor({
-      config: loadConfig(testEnvironment()),
-      database,
-      sharedClient,
-    });
+    const open = connectFor(testEnvironment());
     // No allow-list is an open door, the same as sign-in.
     expect(await open?.personHasAccess(staff.id)).toBe(true);
     // A person whose row is gone has left, whatever the list says.
     expect(await open?.personHasAccess(`gone-${randomUUID()}`)).toBe(false);
 
-    const locked = connectConfigFor({
-      config: loadConfig(
-        testEnvironment({ SIGN_IN_ALLOWED_EMAILS: owner.email }),
-      ),
-      database,
-      sharedClient,
-    });
+    const locked = connectFor(
+      testEnvironment({ SIGN_IN_ALLOWED_EMAILS: owner.email }),
+    );
     expect(await locked?.personHasAccess(owner.id)).toBe(true);
     expect(await locked?.personHasAccess(staff.id)).toBe(false);
+  });
+
+  /*
+   * THE LIST IS READ ONCE, BY THE DOOR, AND THE CALLBACK ASKS THE DOOR. Until 2026-10-11 this module
+   * compared `SIGN_IN_ALLOWED_EMAILS` as written against the stored address with `includes`, and
+   * knew nothing of `INITIAL_ADMIN_EMAILS` or of production closing the door on it. Two readings of
+   * one list, and they disagreed both ways.
+   */
+  test("the address is matched as the door matches it, however the line spells it", async () => {
+    const owner = await person();
+    const locked = connectFor(
+      // The line written with capitals and a space; better-auth stores the address in lower case.
+      testEnvironment({
+        SIGN_IN_ALLOWED_EMAILS: ` ${owner.email.toUpperCase()}`,
+      }),
+    );
+    expect(await locked?.personHasAccess(owner.id)).toBe(true);
+  });
+
+  test("a closed door that names the owner only as the administrator admits nobody else", async () => {
+    const owner = await person();
+    const leftover = await person();
+    // How a production deployment may be written: one address, on the administrator line alone.
+    // `config.ts` closes the door on it there (`allowlistEnforced`); the fixture closes it by hand.
+    const config = loadConfig(
+      testEnvironment({ INITIAL_ADMIN_EMAILS: owner.email }),
+    );
+    if (!config.auth) throw new Error("the fixture configures sign-in");
+    const admission = createDeploymentAdmission({
+      database,
+      allowlist: createSignInAllowlist({
+        ...config.auth,
+        allowlistEnforced: true,
+      }),
+    });
+    const connect = connectConfigFor({
+      config,
+      database,
+      sharedClient,
+      admission,
+    });
+    expect(await connect?.personHasAccess(owner.id)).toBe(true);
+    expect(await connect?.personHasAccess(leftover.id)).toBe(false);
   });
 });

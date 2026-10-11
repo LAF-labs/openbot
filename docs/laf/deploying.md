@@ -504,6 +504,16 @@ console with the redirect URI `{PUBLIC_ORIGIN}/api/auth/callback/<provider>`:
 https://<name>.agent.laf-co.com/api/auth/callback/google
 ```
 
+Sign-in admits an address only when the provider says it is verified
+(`laf:sign_in_email_unverified` otherwise, before any account is made): the
+deployment belongs to the one address its list names, and a provider vouching
+for it is the only proof there is. That rule falls differently on the direct
+apps, through better-auth's own providers — Google and Kakao pass the provider's
+own flag, so a Kakao account whose email is not verified at Kakao cannot sign in
+here; Naver is never marked verified by better-auth, so direct `naver` sign-in
+does not work at all. The broker below vouches for Google and Naver addresses
+itself and carries Kakao's flag, so through it all three keep working.
+
 **The fleet's broker** — `laf`, one generic OIDC provider that fronts all three,
 so the consoles are registered once for the fleet instead of once per
 deployment:
