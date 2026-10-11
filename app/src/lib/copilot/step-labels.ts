@@ -64,6 +64,33 @@ export const STEP_DONE_LABELS: Readonly<Record<string, string>> = {
 };
 
 /**
+ * `delegate`, by who the work was handed to (`to`, `shared/tools/delegate.ts`).
+ *
+ * The line is the work, not the hand-over. With one target the tool's name was enough; with two,
+ * a Bot thinking a problem through for half a minute under "브라우저로 알아보는 중" would be a line
+ * that says something that is not happening. The browser has no entry here and reads as the
+ * tables above have it.
+ *
+ * UNTIL `to` HAS ARRIVED THE LINE DOES NOT SAY WHICH (`DELEGATING`). Seen on the real stack
+ * (2026-10-11): the model writes `task` first and `to` last, so for the five seconds the task
+ * took to stream, a problem being handed to thinking read "브라우저로 알아보는 중". A line that
+ * guesses is right for one kind of work and wrong for the other.
+ */
+export const DELEGATED_STEP_LABELS: Readonly<
+  Record<string, { doing: string; done: string }>
+> = {
+  think: { doing: "Thinking it through", done: "Thought it through" },
+};
+
+/** What a `delegate` call's line says while who it is handed to has not arrived. */
+export const DELEGATING = "Getting ready";
+
+/** Who a `delegate` call hands its work to, read from arguments that may still be arriving. */
+function delegatedTo(rawArguments: string | undefined): string | undefined {
+  return /"to"\s*:\s*"([a-z]+)"/.exec(rawArguments ?? "")?.[1];
+}
+
+/**
  * A connected service's tools, by `<service>/<tool>`. The six a person is asked about are named in
  * `plugins/tool-labels.ts` already, for the approval card, and are read from there.
  */
@@ -118,7 +145,19 @@ export function stepLineOf(
   name: string,
   /** The step has its result: say what was done, not what is being done. */
   isDone = false,
+  /** The call's arguments as they stand, for the one line that depends on them (`delegate`). */
+  rawArguments?: string,
 ): { label: string; detail?: string } {
+  if (name === "delegate") {
+    const to = delegatedTo(rawArguments);
+    const handed = own(DELEGATED_STEP_LABELS, to ?? "");
+    if (handed) return { label: t(isDone ? handed.done : handed.doing) };
+    // Arguments are arriving and `to` is not among them yet. A caller with no arguments at all
+    // (a line drawn from the name alone) reads as the tables have it, as it always did.
+    if (to === undefined && rawArguments !== undefined && !isDone) {
+      return { label: t(DELEGATING) };
+    }
+  }
   const said =
     (isDone ? own(STEP_DONE_LABELS, name) : undefined) ??
     own(STEP_LABELS, name);

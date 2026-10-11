@@ -1449,7 +1449,7 @@ const TranscriptToolCall = memo(function TranscriptToolCall({
          */}
         {drawn ?? (
           <ToolLine
-            {...stepLineOf(name, result !== undefined)}
+            {...stepLineOf(name, result !== undefined, args)}
             failed={ended !== null && ended.kind !== "refused"}
             kind={toolKindOf(name)}
             refused={ended?.kind === "refused"}
