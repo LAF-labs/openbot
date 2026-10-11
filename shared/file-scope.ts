@@ -93,6 +93,23 @@ function namesOf(path: string): string[] {
 }
 
 /**
+ * Whether a path has a `..` in it, which is no name in the folder.
+ *
+ * THE RULE IS ASKED ABOUT A STRING, AND A `..` MAKES THE STRING NAME ONE PLACE AND THE DISK
+ * ANOTHER: by name `projects/channel_a/../channel_b/pay.csv` is channel_a's own, and on a disk
+ * it is channel_b's; placed under its project's folder, `../pay.csv` is `projects/pay.csv`.
+ * Both doors refuse such a string before they ask this rule — the gateway leaves it unplaced
+ * (`addresses.ts`, `workspacePathOf`) and the computer refuses it as a path (`workspace.ts`,
+ * `resolvePath`) — and until 2026-10-11 the rule itself answered "its own" and "placed", so a
+ * caller that asked it alone, as the spillover and an attachment's copy do with names they
+ * made, would have been told a project may reach another's. The rule says what the computer
+ * says of such a path, `laf:file_path_refused`, so that every reader hears one answer.
+ */
+function climbsOut(names: readonly string[]): boolean {
+  return names.includes("..");
+}
+
+/**
  * Whether a path is in the projects' folder, or is it.
  *
  * WHATEVER THE LETTERS' CASE. This decides what is REFUSED, so reading more paths as "under
@@ -117,9 +134,15 @@ export function scopeRefusal(
   scope: FileScope,
   path: string,
   touch: "read" | "write",
-): "laf:file_other_project" | "laf:file_outside_project" | null {
-  if (scope.kind === "person") return null;
+):
+  | "laf:file_other_project"
+  | "laf:file_outside_project"
+  | "laf:file_path_refused"
+  | null {
   const names = namesOf(path);
+  // Nobody's, the person included: the folder has no name for what is above it.
+  if (climbsOut(names)) return "laf:file_path_refused";
+  if (scope.kind === "person") return null;
   if (scope.kind === "main") {
     return isUnderProjects(names) ? "laf:file_other_project" : null;
   }
@@ -157,6 +180,7 @@ export function placedForWrite(scope: FileScope, path: string): string | null {
     return scopeRefusal(scope, path, "write") === null ? path : null;
   }
   const names = namesOf(path);
+  if (climbsOut(names)) return null;
   if (isOwn(names, scope.id)) return path;
   if (isUnderProjects(names)) return null;
   return [projectFolder(scope.id), ...names].join("/");

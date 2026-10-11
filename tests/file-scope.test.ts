@@ -132,6 +132,53 @@ const REACH: readonly [
     null,
   ],
   ["the person writes anywhere", PERSON_SCOPE, `${OTHER}/n.md`, "write", null],
+  // A `..` is no name in the folder: by name `projects/channel_a/../channel_b` is channel_a's, and
+  // on a disk it is channel_b's. The rule refuses the string, as the computer refuses the path.
+  [
+    "a project does not reach another's through its own folder and a dot-dot",
+    A,
+    `${OWN}/../channel_b/n.md`,
+    "read",
+    "laf:file_path_refused",
+  ],
+  [
+    "nor write there that way",
+    A,
+    `${OWN}/../channel_b/n.md`,
+    "write",
+    "laf:file_path_refused",
+  ],
+  [
+    "nor the Bot's own folder through two of them",
+    A,
+    `${OWN}/../../notes.md`,
+    "write",
+    "laf:file_path_refused",
+  ],
+  [
+    "main does not reach a project's file through a dot-dot",
+    MAIN_SCOPE,
+    "notes/../projects/channel_a/n.md",
+    "read",
+    "laf:file_path_refused",
+  ],
+  [
+    "main does not climb out of the folder",
+    MAIN_SCOPE,
+    "../notes.md",
+    "read",
+    "laf:file_path_refused",
+  ],
+  [
+    "nor does the person",
+    PERSON_SCOPE,
+    "../notes.md",
+    "read",
+    "laf:file_path_refused",
+  ],
+  // Dots inside a name are the name's.
+  ["dots inside a name are a name", MAIN_SCOPE, "a..b/notes..md", "read", null],
+  ["a name of three dots is a name", A, `${OWN}/.../n.md`, "write", null],
 ];
 
 describe("what a scope may reach", () => {
@@ -163,6 +210,16 @@ const PLACED: readonly [string, FileScope, string, string | null][] = [
     `${OTHER}/n.md`,
     `${OTHER}/n.md`,
   ],
+  // Placed under the project's folder, `../n.md` would be `projects/n.md`: no place at all.
+  ["a dot-dot has no place", A, "../n.md", null],
+  [
+    "nor one that leaves the folder it was told",
+    A,
+    `${OWN}/../channel_b/n.md`,
+    null,
+  ],
+  ["nor main's", MAIN_SCOPE, "../n.md", null],
+  ["nor the person's", PERSON_SCOPE, "../n.md", null],
 ];
 
 describe("where a write goes", () => {
