@@ -71,8 +71,6 @@ export function modelUsageOf(events: ReadonlyArray<BaseEvent>): ModelUsage[] {
     if (String(event.type) !== "CUSTOM" || event.name !== "laf.model.usage")
       continue;
     const value = (event.value ?? {}) as Record<string, unknown>;
-    const count = (key: string) =>
-      typeof value[key] === "number" ? (value[key] as number) : 0;
     /** A count that was reported, read as what it is; one that was not, absent. */
     const said = (key: string) => {
       const number = value[key];
@@ -82,7 +80,19 @@ export function modelUsageOf(events: ReadonlyArray<BaseEvent>): ModelUsage[] {
         ? number
         : undefined;
     };
+    // A count below nothing, or not finite, is no count: `typeof` alone let `-812` through, and a
+    // minus sign on a row would be taken off the day where the rows are summed.
+    const count = (key: string) => said(key) ?? 0;
     const promptTokens = count("promptTokens");
+    const completionTokens = count("completionTokens");
+    /*
+     * THE TOTAL IS WHAT THE DAY IS JUDGED ON (`daily-budget.ts` sums `totalTokens`, and a row
+     * with no price is priced by it), so a total the endpoint did not say — absent, a zero beside
+     * a prompt that was not, a figure that is not a count — is the parts summed, never zero: a
+     * zero made a call of hundreds of tokens one the day never saw, on either unit. A total the
+     * endpoint did say stands as said.
+     */
+    const totalTokens = said("totalTokens") || promptTokens + completionTokens;
     const cached = said("cachedPromptTokens");
     const written = said("cacheWriteTokens");
     const reasoning = said("reasoningTokens");
@@ -94,8 +104,8 @@ export function modelUsageOf(events: ReadonlyArray<BaseEvent>): ModelUsage[] {
     found.push({
       model: typeof value.model === "string" ? value.model : "unknown",
       promptTokens,
-      completionTokens: count("completionTokens"),
-      totalTokens: count("totalTokens"),
+      completionTokens,
+      totalTokens,
       ...(cached === undefined
         ? {}
         : {
