@@ -163,7 +163,13 @@ beforeAll(async () => {
   for (const one of PEOPLE) {
     await database
       .insert(users)
-      .values({ id: one.id, email: one.email, name: one.id });
+      // Verified, as a provider-made account is: a row nobody has proved gets no session.
+      .values({
+        id: one.id,
+        email: one.email,
+        name: one.id,
+        emailVerified: true,
+      });
     await database.insert(userRoles).values({ userId: one.id, role: one.role });
   }
 });

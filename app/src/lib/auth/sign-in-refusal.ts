@@ -30,6 +30,7 @@ export type SignInRefusal =
   | "expired"
   | "not_admitted"
   | "deployment_has_account"
+  | "email_unverified"
   | "revoked"
   | "other_sign_in"
   | "email_missing"
@@ -158,6 +159,13 @@ const REFUSAL_BY_KEY: Readonly<
   laf_deployment_has_account: "deployment_has_account",
 
   /*
+   * The provider did not say the address is verified (2026-10-11). The seat belongs to whoever
+   * proves the address, and a provider vouching for it is the only proof; the same hook refuses the
+   * arrival before any account is made, and a session for a row nobody has proved.
+   */
+  laf_sign_in_email_unverified: "email_unverified",
+
+  /*
    * NOT A SIGN-IN THAT FAILED: A SESSION THAT WAS TAKEN AWAY. The server's guard answers
    * `laf:session_revoked` to a person struck off the list or removed by an administrator
    * (`server/src/auth/session-revocation.ts`), and the app brings them here with it
@@ -246,6 +254,10 @@ export function refusalSentence(refusal: SignInRefusal): string {
     case "deployment_has_account":
       return t(
         "This place is already used by another account, and one place takes one account. Sign in with the account you first signed up with.",
+      );
+    case "email_unverified":
+      return t(
+        "The account you chose has not verified its email address yet. Verify it at that service, or sign in with a different button.",
       );
     case "revoked":
       return t(
