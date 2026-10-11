@@ -3011,6 +3011,13 @@ run ($0.056 capture, $0.097 the questions, $0.351 the 737 closes), $0.27 for the
   decisions compactor (Jev, the server model behind it), `createDaySummarizer`, the merge with the previous
   summary, `boundedSummary`. The question is asked on a copy (`ConversationStore.peek`), so it never puts the
   fact back into the thread for later nights.
+- **The busy arm's first day was lighter in these runs than the arm says.** In both saved runs day 1 of
+  `passing-busy` was the quiet morning with one busy evening: two other things beside the fact, where every
+  later day carried eight. So the first close — whose summary every later one is merged into — had it easier
+  than a busy day, and the busy rows above are an easier week than the one described. The code is corrected
+  (`beforeTheFact`: a busy arm's first day is a busy day, eight other things beside the fact) and the saved
+  walks were not run again; a run made after 2026-10-11's review is the arm as described. With the corrected
+  day a correction's first night closes too (checked on one walk).
 - **N is nights, and a night is a close only above the 8,000-character floor**, as in production. The quiet week
   and the notebook arm closed every night. In `passing-busy` a correction's first day is under the floor, so its
   "1" is the raw day still carried and its 3 and 7 are 2 and 6 closes. Two more nights made no close, one in
@@ -3032,12 +3039,18 @@ run ($0.056 capture, $0.097 the questions, $0.351 the 737 closes), $0.27 for the
   reads a cold cache: its dollars are the upper end. The tools are the pack's whole schema (`REALISTIC_TOOLSET`)
   and the projects' reader, each the catalogue's own object.
 - **Read by rule, no judge model.** The rules were corrected against the first run's own text where they read a
-  kept fact as lost (`10~16시`, `토→일`, `10/10`), each now a test. Three more were tightened in review (pull
-  request 183) — an hour written `18:00` is an hour, a remembered line is the fact only when it names what the
-  fact is about, and a project read that is not a search counts as looking elsewhere — and the tables above,
-  reprinted from the saved reports, did not move: no line the Bot wrote lacked its subject, no answer used a
-  colon, and no turn read a project. One reading the rule cannot make: an answer that gives the right weekday
-  from a date ("9/18 금요일이었어요") counts as `correct`.
+  kept fact as lost (`10~16시`, `토→일`, `10/10`), each now a test. More were tightened in two rounds of review
+  (pull request 183). An hour written `18:00` is an hour; a remembered line is the fact only when it names what
+  the fact is about; a project read that is not a search counts as looking elsewhere. A fact is held to all of
+  it: a unit price to its per-kilogram basis (of a written line and a summary line — an answer to "킬로당
+  얼마였지?" need not say it again), phone hours to 평일 (the same hours on 주말 or 매일 are `wrong`), the changed
+  order to its three jars (another count is `wrong`). "5일 전에 말씀하셨어요" is not the fifth, `월·수` is a wrong
+  list of days and not `other`, and `asks-again` is a request to be told or a question about the fact — not
+  "다른 것도 도와드릴까요?". **The tables above, reprinted from the saved reports by each round's rules, did not
+  move by one count**: every line the Bot wrote named its subject and held the basis, every hours answer said
+  평일, every answer about the jars said three, no answer used a colon or a shorthand list, and no turn read a
+  project. One reading the rule cannot make: an answer that gives the right weekday from a date ("9/18
+  금요일이었어요") counts as `correct`.
 - **One model, one phrasing of each question, three runs.** A cell of 3/3 is three turns.
 
 ## 이 다음
