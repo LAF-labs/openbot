@@ -44,6 +44,11 @@
  * the audit trail (append-only), and what a project older than its folder downloaded or wrote
  * into the Bot's own folder — nothing says whose those are (`shared/file-scope.ts`,
  * `PROJECT_FOLDERS_SINCE`). Its attachments' readable copies are removed by name, with the folder.
+ *
+ * WHAT THE MAIN CONVERSATION READ OF IT is covered, not removed: a result its project tool filed
+ * there keeps its place and loses its content (`mainCopies`, below). What the Bot then said about
+ * it in its own words, and what a day's summary of the main conversation kept of that, stay — they
+ * are the main conversation's record, and the record says so.
  */
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
@@ -63,6 +68,7 @@ import {
   lafThreadRuns,
 } from "../db/schema";
 import { olderCopyNameOf } from "../../../shared/file-scope";
+import { REMOVED_PROJECT_RESULT } from "../../../shared/tools/projects";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
 
@@ -467,6 +473,75 @@ export function createProjectDeletion(dependencies: {
             })
             .where(inArray(agentMemories.evidenceThreadId, threadIds))
             .returning({ id: agentMemories.id })
+        ).length;
+      }
+      /*
+       * WHAT A MAIN CONVERSATION WAS HANDED OF THIS PROJECT (`shared/tools/projects.ts`): each
+       * result its project tool filed there says which projects it read. Its content becomes the
+       * fixed sentence and nothing else of the row changes — the call and its answer stay a pair.
+       *
+       * BY A LIST OF THREADS HERE TOO: the main conversations of this project's people with its
+       * Bots, which are the only ones the tool could have read it from (it is offered in a
+       * conversation that is not a project, and reads the projects of that person with that Bot).
+       *
+       * AFTER THE ROW LOCK ABOVE, which is what an append reading the project `FOR SHARE` waits
+       * behind (`runner/thread-store.ts`): every copy written before this is committed and found
+       * here, and every copy written after reads the mark and is stored already covered.
+       */
+      const people = await transaction
+        .select({ userId: channelMemberships.userId })
+        .from(channelMemberships)
+        .where(eq(channelMemberships.channelId, channelId));
+      const bots = await transaction
+        .select({ agentId: channelAgents.agentId })
+        .from(channelAgents)
+        .where(eq(channelAgents.channelId, channelId));
+      const mains =
+        people.length > 0 && bots.length > 0
+          ? await transaction
+              .selectDistinct({ threadId: channelThreads.threadId })
+              .from(channelThreads)
+              .innerJoin(
+                channels,
+                and(
+                  eq(channels.id, channelThreads.channelId),
+                  eq(channels.kind, "main"),
+                ),
+              )
+              .innerJoin(
+                channelAgents,
+                and(
+                  eq(channelAgents.channelId, channels.id),
+                  inArray(
+                    channelAgents.agentId,
+                    bots.map((row) => row.agentId),
+                  ),
+                ),
+              )
+              .where(
+                inArray(
+                  channelThreads.userId,
+                  people.map((row) => row.userId),
+                ),
+              )
+          : [];
+      if (mains.length > 0) {
+        counts.mainCopies = (
+          await transaction
+            .update(lafThreadMessages)
+            .set({
+              message: sql`jsonb_set(${lafThreadMessages.message}, '{content}', to_jsonb(${REMOVED_PROJECT_RESULT}::text))`,
+            })
+            .where(
+              and(
+                inArray(
+                  lafThreadMessages.threadId,
+                  mains.map((row) => row.threadId),
+                ),
+                sql`${lafThreadMessages.message} -> 'lafProjects' @> ${JSON.stringify([channelId])}::text::jsonb`,
+              ),
+            )
+            .returning({ seq: lafThreadMessages.seq })
         ).length;
       }
       counts.notifications = (

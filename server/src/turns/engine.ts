@@ -195,6 +195,7 @@ function forTheBot(message: Message): Message {
     lafRedacted: _redacted,
     lafFirstMove: _moved,
     lafDelegated: _delegated,
+    lafProjects: _read,
     ...rest
   } = message as StoredMessage;
   return rest as Message;
@@ -683,15 +684,26 @@ export function createTurnEngine(options: TurnEngineOptions) {
     const stepsSoFar = (): Message[] =>
       transcript().filter((message) => message.role === "assistant");
 
+    /**
+     * Which projects a call's result read, from the turn's toolkit once it has one
+     * (`ChatToolkit.projectsRead`). Written on the result's stored message, where the store
+     * covers it if one of them is gone (`runner/thread-store.ts`).
+     */
+    let projectsRead: ChatToolkit["projectsRead"];
     /** The turn's messages with the store's own fields, as the thread keeps them. */
     const turnMessages = (): Message[] =>
       transcript().map((message) => {
         const at =
           startedAt.get(message.id) ?? filedAt.get(message.id) ?? undefined;
+        const read =
+          message.role === "tool"
+            ? projectsRead?.(message.toolCallId)
+            : undefined;
         return {
           ...message,
           ...(at ? { lafAt: at } : {}),
           ...(message.role === "assistant" ? { lafAgentId: botId } : {}),
+          ...(read && read.length > 0 ? { lafProjects: [...read] } : {}),
         } as Message;
       });
 
@@ -879,6 +891,7 @@ export function createTurnEngine(options: TurnEngineOptions) {
         },
         input.tools,
       );
+      projectsRead = toolkit.projectsRead;
 
       /*
        * THE FIRST MOVE (`first-move.ts`): a call the server makes for the Bot before its model is

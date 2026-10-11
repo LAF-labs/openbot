@@ -95,6 +95,8 @@ export const SERVICE_STEP_LABELS: Readonly<Record<string, string>> = {
   "goals/update_goal": "Changing a goal",
   "goals/log_progress": "Logging progress",
   "goals/list_goals": "Reading the goals",
+  // The main conversation's way into the projects (`shared/tools/projects.ts`), this deployment's too.
+  "projects/read": "Looking in the projects",
 };
 
 /**

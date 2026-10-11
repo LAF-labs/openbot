@@ -760,6 +760,30 @@ export const TOOL_RESULT_KO: Record<string, string> = {
   "laf:goal_logged": "목표에 진행을 적었다. 목표 화면의 기록에 보인다.",
 
   /*
+   * 메인 대화가 프로젝트를 읽는 도구(`mcp__projects__read`, `server/src/channels/project-tool.ts`).
+   * 읽기만 한다. 요약은 읽을 때 만들므로 못 만든 까닭을 다시 부를 만한 것과 아닌 것으로 가른다.
+   */
+  "laf:project_read_invalid":
+    "프로젝트 도구에 넘긴 값이 모양에 맞지 않아 읽지 않았다. field에 적힌 칸을 고쳐 다시 불러라: kind는 list·search·summary 가운데 하나, search에는 찾을 말(terms)이, summary에는 프로젝트(project)가 있어야 한다.",
+  "laf:project_not_found":
+    "그런 프로젝트가 없다. projects에 적힌 id나 이름을 그대로 써라. 목록에 없으면 이 사람이 지웠거나 만든 적이 없는 것이다 — 지어내지 말고 어느 프로젝트인지 물어라.",
+  "laf:project_ambiguous":
+    "그 이름의 프로젝트가 둘 이상이다. projects에 적힌 것 가운데 어느 것인지 물어라. 이미 알면 그 id로 다시 불러라.",
+  "laf:project_empty": "그 프로젝트에서는 아직 나눈 대화가 없다.",
+  "laf:project_summary_partial":
+    "대화가 길어 가장 최근 부분만 읽고 줄였다. 더 오래된 일은 search로 찾아라.",
+  "laf:project_summary_unavailable":
+    "지금은 그 프로젝트를 줄여 읽지 못했다. 같은 호출을 바로 되풀이하지 마라. search로 필요한 말을 찾거나, 잠시 뒤에 다시 물어 달라고 말해라.",
+  /*
+   * 지운 프로젝트에서 읽어 온 결과가 있던 자리에 서는 문장. 실패한 호출처럼 읽히면 안 된다 — 실제
+   * 모델로 눌러 보니(2026-10-11) "지워졌다"만 읽은 봇은 그 결과로 했던 제 답까지 "확인된 내용이
+   * 아니었어요, 정정할게요"라고 거두었다. 그때의 답은 그때의 기록대로였다. 그래서 순서를 말한다:
+   * 읽었고, 그 뒤에 지워졌다.
+   */
+  "laf:project_content_removed":
+    "이 자리에는 프로젝트에서 읽어 온 내용이 있었고, 그 뒤에 이 사람이 그 프로젝트를 지워서 함께 지워졌다. 읽었을 때 네가 한 답은 그때의 기록대로였으니 틀렸다고 고치지 않는다. 지금은 그 내용을 다시 확인할 수 없다고만 말한다.",
+
+  /*
    * 연결이 낸 거절들. 여기 없는 코드는 `toolResultText`가 코드를 그대로 돌려주고, 봇은
    * "laf:alimtalk_template_pending"을 답으로 읽는다 — 2026-09까지 이 표에는 커넥터 코드가 하나도
    * 없었고, 그것이 실제로 일어난 일이다.

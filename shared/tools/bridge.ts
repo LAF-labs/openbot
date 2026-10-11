@@ -225,6 +225,8 @@ export const FAMILY_LABELS_KO: Readonly<Record<string, string>> = Object.freeze(
     "kma-weather": "날씨",
     // 연결된 서비스가 아니라 이 배포의 서버가 실행하는 목표 툴(`shared/tools/goals.ts`).
     goals: "목표",
+    // 메인 대화가 프로젝트를 읽는 도구(`shared/tools/projects.ts`) — 이것도 이 배포의 서버가 실행한다.
+    projects: "프로젝트",
   },
 );
 
@@ -274,6 +276,7 @@ export function familiesOf(names: readonly string[]): string[] {
  */
 export const DEPLOYMENT_FAMILIES: ReadonlySet<string> = new Set([
   "goals",
+  "projects",
   "public-data",
   "web-search",
   "kma-weather",

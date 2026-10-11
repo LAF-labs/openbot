@@ -3388,6 +3388,7 @@ export const ko: Record<string, string> = {
   "Changing a goal": "목표 고치는 중",
   "Logging progress": "진행 적는 중",
   "Reading the goals": "목표 보는 중",
+  "Looking in the projects": "프로젝트 살펴보는 중",
   // The markdown renderer's own controls (`lib/markdown-words.ts`), read through a variable.
   "Copy code": "코드 복사",
   "Copy link": "링크 복사",

@@ -55,6 +55,7 @@ import {
   withAccountStates,
 } from "../../../shared/tools/gallery";
 import { isGoalToolName } from "../../../shared/tools/goals";
+import { isProjectToolName } from "../../../shared/tools/projects";
 import {
   PAUSED_TOOL_DESCRIPTION,
   type WithheldTools,
@@ -94,6 +95,7 @@ import { codeFor, isBadRequest, statusFor } from "../computer/routes";
 import { BOTS_OWN_LOOK, readFileInputOf } from "../computer/schema";
 import { snapshotForModel } from "../computer/snapshot-lines";
 import { describeFailure } from "../failure-text";
+import type { ProjectToolkit } from "../channels/project-tool";
 import type { GoalStore } from "../goals/store";
 import { goalApprovals, goalTools } from "../goals/tools";
 import { log } from "../log";
@@ -169,6 +171,18 @@ export type ChatToolsDeps = {
     GoalStore,
     "active" | "find" | "create" | "update" | "log" | "linkRoutine"
   >;
+  /**
+   * The main conversation's way into the projects (`channels/project-tool.ts`): one tool behind
+   * the bridge, for a turn whose conversation is not a project — null for one that is. Asked per
+   * turn, and the answer is the same for every turn of a conversation: a conversation's kind never
+   * changes, so the tool neither appears nor disappears in the middle of one.
+   */
+  projects?: (turn: {
+    userId: string;
+    botId: string;
+    threadId: string;
+    runId: string;
+  }) => Promise<ProjectToolkit | null>;
   auditStore?: AuditStore;
   /**
    * What 연결 can switch for a person, and whether each is on (`plugins/overview-routes.ts`). A
@@ -249,6 +263,12 @@ export type ChatToolkit = {
    * message on.
    */
   withheld?: WithheldTools;
+  /**
+   * Which projects a call's result read (`channels/project-tool.ts`): the turn writes it on the
+   * result's stored message (`engine.ts`), so that a project deleted later takes its copy in this
+   * conversation with it. Absent where the turn holds no project tool.
+   */
+  projectsRead?: (toolCallId: string) => readonly string[] | undefined;
 };
 
 const CONTROL_POLL_MS = 1_000;
@@ -535,6 +555,23 @@ export function createChatTools(deps: ChatToolsDeps) {
       : null;
     for (const tool of goals?.tools ?? []) names.add(tool.name);
     /*
+     * The project tool, the same way: this server's own, behind the bridge, offered whatever a
+     * window declared. Not in a project's conversation, and not where it could not be asked whose
+     * the conversation is — a project reading its neighbours is the worse of the two mistakes.
+     */
+    const projects = deps.projects
+      ? await deps
+          .projects({ userId: owner.id, botId, threadId, runId })
+          .catch((error: unknown) => {
+            log.warn("project_tool_not_offered", {
+              bot: botId,
+              reason: describeFailure(error),
+            });
+            return null;
+          })
+      : null;
+    for (const tool of projects?.tools ?? []) names.add(tool.name);
+    /*
      * A CONNECTED TOOL ON THE CORE LIST IS OFFERED AS THIS SERVER KNOWS IT, whatever the window
      * declared — today that is the web search and the weather (`WEB_SEARCH_TOOL_NAME`,
      * `WEATHER_TOOL_NAME`). A core tool is in the head
@@ -609,6 +646,7 @@ export function createChatTools(deps: ChatToolsDeps) {
     const own = [
       ...(delegates(deps) ? [described(DELEGATE)] : []),
       ...(goals ? goals.tools : []),
+      ...(projects ? projects.tools : []),
     ];
     const offered = listed.filter((tool) => tool.name !== DELEGATE.name);
     const tools = [
@@ -1663,6 +1701,9 @@ export function createChatTools(deps: ChatToolsDeps) {
         if (goals && isGoalToolName(name)) {
           return await goals.execute(name, args);
         }
+        if (projects && isProjectToolName(name)) {
+          return await projects.execute(name, args, call);
+        }
         return await component(name, args, call);
       } catch (error) {
         /*
@@ -1688,7 +1729,12 @@ export function createChatTools(deps: ChatToolsDeps) {
       }
     };
 
-    return { tools, execute, ...(withheld.length > 0 ? { withheld } : {}) };
+    return {
+      tools,
+      execute,
+      ...(withheld.length > 0 ? { withheld } : {}),
+      ...(projects ? { projectsRead: projects.read } : {}),
+    };
   };
 }
 

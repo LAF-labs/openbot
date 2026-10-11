@@ -15,7 +15,13 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, inArray, sql } from "drizzle-orm";
 import { createDatabase } from "../src/db/client";
-import { agents, lafThreadMessages, lafThreadRuns } from "../src/db/schema";
+import {
+  agents,
+  channels,
+  lafThreadMessages,
+  lafThreadRuns,
+} from "../src/db/schema";
+import { REMOVED_PROJECT_RESULT } from "../../shared/tools/projects";
 import { LafPostgresRunner } from "../src/runner/laf-runner";
 import { createRunLedger } from "../src/runner/run-ledger";
 import {
@@ -226,6 +232,193 @@ describe("appending to a thread", () => {
     );
     const stored = await messagesFor(database, threadId);
     expect(stored.map((message) => message.id)).toEqual(["d1"]);
+  });
+});
+
+describe("a tool result that read a project", () => {
+  const made: string[] = [];
+  const project = async (deleting = false) => {
+    const id = `thread-store-project-${randomUUID()}`;
+    made.push(id);
+    await database.insert(channels).values({
+      id,
+      name: "여행 계획",
+      description: "",
+      kind: "project",
+      ...(deleting ? { deletingAt: new Date() } : {}),
+    });
+    return id;
+  };
+  const result = (id: string, read: string[] | undefined, content: string) =>
+    ({
+      id,
+      role: "tool",
+      toolCallId: `call-${id}`,
+      content,
+      ...(read ? { lafProjects: read } : {}),
+    }) as unknown as StoredMessage;
+  const stored = async (threadId: string, id: string) =>
+    (await messagesFor(database, threadId)).find(
+      (message) => message.id === id,
+    );
+
+  afterEach(async () => {
+    const mine = made.splice(0);
+    if (mine.length > 0) {
+      await database.delete(channels).where(inArray(channels.id, mine));
+    }
+  });
+
+  test("is kept as it arrived while every project it read is there", async () => {
+    const threadId = thread();
+    const live = await project();
+    await appendMessages(database, threadId, [
+      result("read-live", [live], "제주 3박 4일, 숙소는 애월"),
+    ]);
+    expect(await stored(threadId, "read-live")).toMatchObject({
+      content: "제주 3박 4일, 숙소는 애월",
+      lafProjects: [live],
+    });
+  });
+
+  test("is stored as the fixed sentence when a project it read is gone, being deleted, or one of several is", async () => {
+    const threadId = thread();
+    const live = await project();
+    const leaving = await project(true);
+    const gone = `thread-store-project-${randomUUID()}`;
+    await appendMessages(database, threadId, [
+      result("read-gone", [gone], "지운 프로젝트의 말"),
+      result("read-leaving", [leaving], "지우는 중인 프로젝트의 말"),
+      result("read-both", [live, gone], "둘을 읽은 검색 결과"),
+      result("read-live", [live], "남아 있는 프로젝트의 말"),
+    ]);
+    for (const id of ["read-gone", "read-leaving", "read-both"]) {
+      const kept = await stored(threadId, id);
+      expect(kept?.content).toBe(REMOVED_PROJECT_RESULT);
+      // The call and its answer stay a pair, and the row still says what it had read.
+      expect(kept).toMatchObject({ role: "tool", toolCallId: `call-${id}` });
+    }
+    expect((await stored(threadId, "read-both"))?.lafProjects).toEqual([
+      live,
+      gone,
+    ]);
+    expect((await stored(threadId, "read-live"))?.content).toBe(
+      "남아 있는 프로젝트의 말",
+    );
+    // Nothing of the project is in the thread's rows, in any column.
+    const rows = await database
+      .select()
+      .from(lafThreadMessages)
+      .where(eq(lafThreadMessages.threadId, threadId));
+    expect(JSON.stringify(rows)).not.toContain("지운 프로젝트의 말");
+    expect(JSON.stringify(rows)).not.toContain("지우는 중인");
+    expect(JSON.stringify(rows)).not.toContain("둘을 읽은");
+  });
+
+  test("a covered row is not uncovered by the turn's own copy arriving again, with the mark or without it", async () => {
+    const threadId = thread();
+    const one = await project();
+    await appendMessages(database, threadId, [
+      result("read-one", [one], "프로젝트에서 읽은 말"),
+    ]);
+    // The deletion's work, as its transaction leaves it: the project gone, the row covered.
+    await database.delete(channels).where(eq(channels.id, one));
+    await database
+      .update(lafThreadMessages)
+      .set({
+        message: sql`jsonb_set(${lafThreadMessages.message}, '{content}', to_jsonb(${REMOVED_PROJECT_RESULT}::text))`,
+      })
+      .where(eq(lafThreadMessages.threadId, threadId));
+
+    // The turn that made the call is still running and writes its messages again.
+    await appendMessages(database, threadId, [
+      result("read-one", [one], "프로젝트에서 읽은 말"),
+    ]);
+    expect((await stored(threadId, "read-one"))?.content).toBe(
+      REMOVED_PROJECT_RESULT,
+    );
+    // And a copy that lost the mark on its way: the stored mark stands, so the cover does.
+    await appendMessages(database, threadId, [
+      result("read-one", undefined, "프로젝트에서 읽은 말"),
+    ]);
+    expect(await stored(threadId, "read-one")).toMatchObject({
+      content: REMOVED_PROJECT_RESULT,
+      lafProjects: [one],
+    });
+  });
+
+  test("a message that is not a tool's result is never rewritten, whatever it carries", async () => {
+    const threadId = thread();
+    const gone = `thread-store-project-${randomUUID()}`;
+    await appendMessages(database, threadId, [
+      {
+        id: "said",
+        role: "assistant",
+        content: "제가 본 바로는 숙소는 애월이에요.",
+        lafProjects: [gone],
+      } as unknown as StoredMessage,
+    ]);
+    expect((await stored(threadId, "said"))?.content).toBe(
+      "제가 본 바로는 숙소는 애월이에요.",
+    );
+  });
+
+  test("an append waits for a deletion holding the project's row, and then stores the result covered", async () => {
+    const threadId = thread();
+    const one = await project();
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let locked: () => void = () => {};
+    const isLocked = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    /*
+     * The deletion's transaction: the row lock, then the project goes. On a pool of its own — a
+     * test's pool has one connection for transactions (`support/database.ts`), and these two have
+     * to be open at once.
+     */
+    const elsewhere = createDatabase(databaseUrl, { max: 1 });
+    const deleting = elsewhere.transaction(async (transaction) => {
+      await transaction
+        .select({ id: channels.id })
+        .from(channels)
+        .where(eq(channels.id, one))
+        .for("update");
+      locked();
+      await held;
+      await transaction.delete(channels).where(eq(channels.id, one));
+    });
+    await isLocked;
+    let appended = false;
+    const appending = appendMessages(database, threadId, [
+      result("late", [one], "늦게 도착한 사본"),
+    ]).then(() => {
+      appended = true;
+    });
+    /*
+     * Until the database itself says a session here is waiting on a lock at a `for share` read:
+     * the append, at the project's row. Asked, not slept for — a wait that is over is an answer.
+     */
+    const isWaiting = async () => {
+      const rows = await database.execute<{ waiting: number }>(sql`
+        select count(*)::int as waiting from pg_stat_activity
+        where datname = current_database()
+          and wait_event_type = 'Lock'
+          and query like '%for share%'`);
+      return ([...rows][0]?.waiting ?? 0) > 0;
+    };
+    let asked = 0;
+    while (!(await isWaiting()) && asked < 500) asked += 1;
+    expect(await isWaiting()).toBe(true);
+    expect(appended).toBe(false);
+    release();
+    await Promise.all([deleting, appending]);
+    await elsewhere.$client.close();
+    expect((await stored(threadId, "late"))?.content).toBe(
+      REMOVED_PROJECT_RESULT,
+    );
   });
 });
 

@@ -54,6 +54,7 @@ import {
   withoutAccountStates,
 } from "../../shared/tools/gallery";
 import { LIST_GOALS } from "../../shared/tools/goals";
+import { READ_PROJECTS } from "../../shared/tools/projects";
 import {
   PAUSED_TOOL_DESCRIPTION,
   PAUSED_TOOL_PARAMETERS,
@@ -110,6 +111,66 @@ describe("which tools a turn offers", () => {
     );
     expect(toolkit.tools).toEqual([]);
   });
+
+  test("the project tool, in a conversation that is not a project: offered whatever the window declared, carried out as the call it is, and what it read is the turn's to write down", async () => {
+    const turns: unknown[] = [];
+    const carried: unknown[] = [];
+    const toolkit = await createChatTools({
+      people: createPersonAnswers(),
+      projects: async (turn) => {
+        turns.push(turn);
+        return {
+          tools: [tool(READ_PROJECTS)],
+          execute: async (name, args, one) => {
+            carried.push([name, args, one.id]);
+            return { ok: true, projects: [] };
+          },
+          read: (id) => (id === "call-1" ? ["channel-p"] : undefined),
+        };
+      },
+    })(context, []);
+    expect(turns).toEqual([
+      {
+        userId: "owner-1",
+        botId: "bot-1",
+        threadId: "thread-1",
+        // The turn's run: its search leaves out what the turn itself wrote.
+        runId: "run-1",
+      },
+    ]);
+    expect(toolkit.tools.map((offered) => offered.name)).toEqual([
+      READ_PROJECTS,
+    ]);
+    expect(
+      await toolkit.execute(READ_PROJECTS, { kind: "list" }, call()),
+    ).toEqual({ ok: true, projects: [] });
+    expect(carried).toEqual([[READ_PROJECTS, { kind: "list" }, "call-1"]]);
+    expect(toolkit.projectsRead?.("call-1")).toEqual(["channel-p"]);
+    expect(toolkit.projectsRead?.("call-2")).toBeUndefined();
+  });
+
+  test.each([
+    ["in a project's conversation", async (): Promise<null> => null],
+    [
+      "where whose conversation it is could not be asked",
+      async (): Promise<null> => {
+        throw new Error("Failed query: select … from channel_threads");
+      },
+    ],
+  ] as const)(
+    "%s the project tool is not offered, and its name is nobody's",
+    async (_where, projects) => {
+      const toolkit = await createChatTools({
+        people: createPersonAnswers(),
+        projects,
+      })(context, [tool(READ_PROJECTS)]);
+      expect(toolkit.tools).toEqual([]);
+      expect(
+        await toolkit.execute(READ_PROJECTS, { kind: "list" }, call()),
+      ).toMatchObject({ ok: false, code: "laf:tool_unknown" });
+      expect(toolkit.projectsRead).toBeUndefined();
+    },
+  );
 });
 
 describe("a computer call, answered as the window answered it", () => {

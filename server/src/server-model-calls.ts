@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { type AuditStore, auditRowLost, recordAuditEvent } from "./audit";
+import { createProjectSummarizer } from "./channels/project-tool";
 import {
   type AutoReviewer,
   createAutoReviewProbe,
@@ -73,6 +74,7 @@ export function createServerModelCalls(input: {
         | "auto-review"
         | "compaction"
         | "day-summary"
+        | "project-summary"
         | "memory"
         | "dream"
         | "high-risk"
@@ -208,6 +210,17 @@ export function createServerModelCalls(input: {
   });
 
   /*
+   * A PROJECT'S SUMMARY, FOR THE MAIN CONVERSATION (`channels/project-tool.ts`): made when the Bot
+   * asks for one, on the server model like the day's. A minute and not the day's two: this one is
+   * asked for inside a turn a person is waiting on, and its input is bounded to a fraction of a
+   * day's.
+   */
+  const summarizeProject = createProjectSummarizer(
+    serverModelCall("project-summary"),
+    { timeoutMs: 60_000 },
+  );
+
+  /*
    * THE MEMORY'S JUDGE — the hourly curation's keep-or-drop (`agents/memory-curation.ts`) and the
    * scrub that takes a forgotten fact out of the day summaries (`context/forget-scrub.ts`). The
    * compactor's arrangement: Jev when the switch is on, the server model in Jev's shape behind it or
@@ -294,6 +307,9 @@ export function createServerModelCalls(input: {
 
     /** The summary a day's close stands on. See `context/day-close.ts`. */
     summarizeDay,
+
+    /** The summary the main conversation reads of a project. See `channels/project-tool.ts`. */
+    summarizeProject,
 
     /** The memory's keep-or-drop judge: curation and the forgetting's scrub. */
     memoryAsker,
