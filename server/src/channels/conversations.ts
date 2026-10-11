@@ -127,8 +127,16 @@ export class ProjectLimitError extends Error {
  * NAMED BY THE PERSON, in their words, as given: the route has cut it to size
  * (`parseProjectInput`). An empty name is stored empty — "이름 없는 프로젝트" is the surface's to say.
  *
- * COUNTED UNDER THE BOT'S LOCK, so two presses from two windows cannot both be the fiftieth. The
- * count is of this person's channels with this Bot that say `project`.
+ * COUNTED BEHIND A FENCE OF ITS OWN, so two presses from two windows cannot both be the fiftieth.
+ * The count is of this person's channels with this Bot that say `project`.
+ *
+ * THE PROFILE LOCK IS NOT THAT FENCE. `lockProfiles` takes the Bot's row `FOR SHARE`, which holds
+ * the Bot against deletion and holds nothing against another share — two creates hold it at once,
+ * each reads forty-nine under its own snapshot, and each inserts: measured here with two presses
+ * released from behind one row lock, fifty-one projects (review, 2026-10-11). The fence is the one
+ * the seat count uses (`profile-store.ts` `reserveSeat`): an advisory lock keyed on this person
+ * and this Bot, taken before anything is read, released with the transaction whichever way it
+ * ends. The second press reads a table the first has already added to, and is refused.
  */
 export function createProject(
   { database, profileStore, threadIdentity }: ConversationDeps,
@@ -138,6 +146,9 @@ export function createProject(
 ): Promise<AgentChannel> {
   return database.transaction(
     async (transaction) => {
+      await transaction.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${`laf_projects:${actor.id}:${agentId}`}))`,
+      );
       await lockProfiles(transaction, profileStore, actor, [agentId]);
       const [{ count } = { count: 0 }] = await transaction
         .select({ count: sql<number>`count(*)::int` })
