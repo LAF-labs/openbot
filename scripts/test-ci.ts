@@ -2881,14 +2881,14 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * and never about the project; and the same with the project deleted while its close was held
  * mid-summary (the review of pull request 185). 4408 and 2 is 4410.
  *
- * RAISED 2026-10-11 WITH THE REVIEW OF ATTACHMENTS, `server` by eleven (to 4415). Nine in
+ * RAISED 2026-10-11 WITH THE REVIEW OF ATTACHMENTS, `server` by eleven (to 4421). Nine in
  * `attachments.test.ts`: seven hostile files through the type sniff, one each (HTML named .pdf, an
  * SVG with a script, HEIC, a CSV with a NUL, a Compound File named .docx, .xls and .xlsx — the last
  * being a password-protected workbook, a sheet now rather than a type nobody knows), a name that
  * cannot close the head line the model reads it in, and one that cannot break it with a Unicode
  * line separator. Two in `converter.test.ts`: the password-protected workbook refused as one that
  * could not be opened, and a PDF of two thousand pages read within the child's bound. 9 and 2 is
- * 11; 4404 and 11 is 4415.
+ * 11; 4410 and 11 is 4421.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -2918,7 +2918,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4410, roots: ["server"] },
+  { name: "server", floor: 4421, roots: ["server"] },
   { name: "app", floor: 2402, roots: ["app"] },
   {
     name: "agent-computer",
