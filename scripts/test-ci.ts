@@ -2920,6 +2920,23 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * one that threw is drawn — the real `HomeCards`, with the gallery's gate stood in for, and the test
  * fails with the key taken out. 2403 and 18 is 2421.
  *
+ * RAISED 2026-10-11 FOR A STANDING FACT IN THE DAY'S SUMMARY, `server` from 4431 to 4473:
+ * forty-two in `memory-forgetting.test.ts`. Five on what the summariser is told: a recurring
+ * fact kept undated with the words that say how often it holds, after the dated lines, ended when
+ * the owner says so, never from a page, moved out of an old dated line once; its sample line a
+ * bracketed placeholder; every backticked snippet on a short allowlist; nothing the memory
+ * evaluation's table says in the instruction (its first wording quoted the table's own rows,
+ * review of pull request 196); and a line that is still the placeholder dropped before the summary
+ * is stored. Thirty-seven on the scrub's standing-line arm and the bound: five terse standing
+ * shapes carrying a forgotten fact (a grouped line among them); fifteen unrelated lines of the
+ * same kind that stay — a role, a recurrence, a price's or a day's digits shared, two of them
+ * dated and under the ratio (the second review's probes, every one of which a first arm had
+ * dropped); one forget on a mixed summary taking one line; four pins of the arm's known limits;
+ * nine date shapes `isDated` must and must not read; a standing line the owner forgot dropped
+ * beside the dated line about the same person; the bound's oldest-first cut reaching the standing
+ * block last; and the cut reported with whether the closed day lost a line. 5 and 37 is 42; 4431
+ * and 42 is 4473.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2948,7 +2965,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4431, roots: ["server"] },
+  { name: "server", floor: 4473, roots: ["server"] },
   { name: "app", floor: 2421, roots: ["app"] },
   {
     name: "agent-computer",
