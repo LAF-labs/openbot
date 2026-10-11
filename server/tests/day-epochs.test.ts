@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { recentLines } from "../src/log";
 import {
   contextFactsFor,
   contextLayerText,
@@ -574,5 +575,126 @@ describe("a day's close, prepared at night and taken in the morning", () => {
     await store.settled();
     expect([...rows.keys()]).toEqual([]);
     expect(saved).toEqual(["thread_miso"]);
+  });
+});
+
+/**
+ * A close that keeps failing. Measured in `eval:memory-days`' sixty-night walk (pull request 200):
+ * two of twenty-four conversations stopped closing after one timed-out close and never started
+ * again, because every later night's attempt carried the same summary and one more day of
+ * transcript — larger each night, and nothing ever gave up — so the whole conversation was carried
+ * behind the last summary, 176K–246K prompt tokens a question instead of 8K.
+ */
+describe("a close that keeps failing", () => {
+  /** A summariser that answers the first `answers` times and then takes too long, forever. */
+  function flaky(answers: number) {
+    let calls = 0;
+    const summarize: DaySummarizer = async () => {
+      calls += 1;
+      if (calls <= answers) return `- 요약 ${calls}`;
+      throw new Error("summary: took too long");
+    };
+    return summarize;
+  }
+  const failedLines = (from: number) =>
+    recentLines
+      .lines()
+      .slice(from)
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((line) => line.event === "day_close_failed");
+
+  test("each failure is counted, and the count and the time spent are in the log line", async () => {
+    const { store, thread, run, setClock } = harness({ summarize: flaky(0) });
+    const before = recentLines.lines().length;
+    dayOfTalk(thread, 0);
+    run(at(0, 200));
+    setClock(at(1, -480));
+    expect(await store.tick()).toBe(0);
+    thread.push(user("d1u0", "좋은 아침", at(1)));
+    run(at(1));
+    setClock(at(2, -480));
+    expect(await store.tick()).toBe(0);
+    const failed = failedLines(before);
+    expect(failed.map((line) => line.failures)).toEqual([1, 2]);
+    expect(failed.every((line) => typeof line.ms === "number")).toBe(true);
+  });
+
+  test("a retry sends no more than the attempt that failed: the oldest unclosed day alone, on the same summary", async () => {
+    const { store, thread, asked, run, setClock } = harness({
+      summarize: flaky(0),
+    });
+    dayOfTalk(thread, 0);
+    run(at(0, 200));
+    setClock(at(1, -480));
+    await store.tick();
+    dayOfTalk(thread, 1);
+    run(at(1, 200));
+    setClock(at(2, -480));
+    await store.tick();
+    expect(asked).toHaveLength(2);
+    // Two days were unclosed; the retry was asked about the first of them, exactly as before.
+    expect(asked[1]?.transcript).toBe(asked[0]?.transcript ?? "");
+    expect(asked[1]?.previous).toBe(asked[0]?.previous ?? null);
+    expect(asked[1]?.transcript).not.toContain("1일차");
+  });
+
+  test("after three failed closes the day is closed without the model: the old summary carried, the days it does not cover named, and the morning carries today alone", async () => {
+    const { store, thread, asked, run, setClock } = harness({
+      summarize: flaky(1),
+    });
+    const before = recentLines.lines().length;
+    dayOfTalk(thread, 0);
+    run(at(0, 200));
+    setClock(at(1, -480));
+    expect(await store.tick()).toBe(1);
+    for (const day of [1, 2, 3, 4]) {
+      dayOfTalk(thread, day);
+      run(at(day, 200));
+      setClock(at(day + 1, -480));
+      await store.tick();
+    }
+    // One answer, three failures, and the fourth night asked nothing of the model.
+    expect(asked).toHaveLength(4);
+    thread.push(user("d5u0", "좋은 아침", at(5)));
+    const morning = run(at(5));
+    expect(morning.epoch.reason).toBe("day_boundary");
+    expect(morning.messages.map((message) => message.id)).toEqual(["d5u0"]);
+    // What the summariser wrote is carried as it was; what it never wrote is named, never invented.
+    expect(morning.system).toContain("- 요약 1");
+    expect(morning.system).toContain("9/25~9/28");
+    expect(morning.system).toContain("48건");
+    expect(morning.system).toContain("요약되지 않았다");
+    expect(morning.system).not.toContain("1일차");
+    const said = recentLines
+      .lines()
+      .slice(before)
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((line) => line.event === "day_close_unsummarised");
+    expect(said).toHaveLength(1);
+    expect(said[0]).toMatchObject({ messages: 48, days: 4, failures: 3 });
+  });
+
+  test("the night after, the summariser is asked again: on the carried summary, about today's day alone", async () => {
+    const { store, thread, asked, run, setClock } = harness({
+      summarize: flaky(0),
+    });
+    // Three failures, then the fourth night closes without the model.
+    for (const day of [0, 1, 2, 3]) {
+      dayOfTalk(thread, day);
+      run(at(day, 200));
+      setClock(at(day + 1, -480));
+      await store.tick();
+    }
+    expect(asked).toHaveLength(3);
+    thread.push(user("d4u0", "좋은 아침", at(4)));
+    expect(run(at(4)).epoch.reason).toBe("day_boundary");
+    dayOfTalk(thread, 4);
+    run(at(4, 200));
+    setClock(at(5, -480));
+    await store.tick();
+    expect(asked).toHaveLength(4);
+    expect(asked[3]?.previous).toContain("요약되지 않았다");
+    expect(asked[3]?.transcript).toContain("4일차");
+    expect(asked[3]?.transcript).not.toContain("3일차");
   });
 });
