@@ -73,12 +73,43 @@ export function distinctiveWords(fact: string): string[] {
   return [...new Set(words)];
 }
 
-/** Numbers of three digits or more — a price, a phone number, a count — commas ignored. */
+/**
+ * Numbers of three digits or more — a price, a phone number, a count — as the whole token they
+ * were said in, unit attached (300g, 9500원, 20260207번), commas inside the number and a particle
+ * after it removed. Tokens, not digit runs: the first rule took any 3+-digit run of the fact as a
+ * substring of the line's digits, so forgetting a jam sold in 300g jars dropped every line with
+ * order 20260300 or 300 lids in it, and forgetting a unit price dropped every line that price's
+ * digits ran through — 168 unrelated dated lines on a run's real summaries (third review of pull
+ * request 196). Muse documents "forget" as removing the named thing and what is related to it; a
+ * shared digit string is not relatedness.
+ */
 function numbersOf(text: string): string[] {
-  return (text.replace(/(\d),(?=\d{3})/g, "$1").match(/\d{3,}/g) ?? []).filter(
-    Boolean,
-  );
+  return tokensOf(text)
+    .map((token) => token.replace(PARTICLE, ""))
+    .filter((token) => /^\d{3}/.test(token));
 }
+
+/**
+ * Whether the line says one of the fact's numbers: the same whole token, or the same whole number
+ * with the unit unsaid on one side — a summary writes a run of amounts as `212,000→429,000→646,000원`
+ * and the owner writes `9,500 원` with a space. Never the same digits in a different unit (300g is
+ * not 300개) and never a longer number the digits run through (300g is not 20260300번).
+ */
+function saysNumber(lineTokens: ReadonlySet<string>, number: string): boolean {
+  if (lineTokens.has(number) || lineTokens.has(bareOf(number))) return true;
+  const [digits, unit] = splitNumber(number);
+  for (const token of lineTokens) {
+    const [tokenDigits, tokenUnit] = splitNumber(token);
+    if (tokenDigits !== digits) continue;
+    if (unit === "" || tokenUnit === "") return true;
+  }
+  return false;
+}
+
+const splitNumber = (token: string): [digits: string, unit: string] => {
+  const match = /^(\d+)(.*)$/.exec(token);
+  return match ? [match[1] ?? "", match[2] ?? ""] : ["", token];
+};
 
 /**
  * A dated summary line: `- 9/21: …`, `- 9/14~9/16: …`, `- 2026-09-21: …`, `- 9.21: …`,
@@ -211,16 +242,22 @@ function standingLineCarries(line: string, fact: string): boolean {
 
 /**
  * THE RULE: whether one summary line carries one forgotten fact. The fact word for word, any of
- * its numbers, or most of its distinctive words (two at least) in the line — a dated line's test,
- * unchanged; a standing line is also read as `head: body` (`standingLineCarries`).
+ * its numbers as a whole token (`saysNumber`), or most of its distinctive words (two at least) in
+ * the line — a dated line's test; a standing line is also read as `head: body`
+ * (`standingLineCarries`).
  */
 export function lineCarries(line: string, fact: string): boolean {
   const here = flat(line);
   const said = flat(fact);
   if (!here || !said) return false;
   if (here.includes(said)) return true;
-  const digits = here.replace(/(\d),(?=\d{3})/g, "$1");
-  if (numbersOf(fact).some((number) => digits.includes(number))) return true;
+  const numbers = numbersOf(fact);
+  if (numbers.length > 0) {
+    const tokens = new Set(
+      tokensOf(here).map((token) => token.replace(PARTICLE, "")),
+    );
+    if (numbers.some((number) => saysNumber(tokens, number))) return true;
+  }
   const words = distinctiveWords(fact);
   if (words.length === 0) return false;
   const found = words.filter((word) => here.includes(word)).length;

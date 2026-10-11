@@ -171,6 +171,89 @@ describe("the rule under the scrub", () => {
   });
 });
 
+describe("the number clause on a dated line", () => {
+  const JAM =
+    "단골 오 사장님네 카페는 딸기잼을 300g 병 세 개로 나눠 받는다(전에는 1kg 큰 병이었다).";
+  const STRAWBERRY =
+    "딸기는 논산 김 사장님네서 1kg에 11,000원에 들여온다(이번 달에 9,500원에서 올랐다).";
+  const YUJA = "유자는 청운농원에서 1kg에 18,000원에 들여온다.";
+
+  /*
+   * The clause took any 3+-digit run of the fact as a SUBSTRING of the line's digits, so the 300
+   * of 300g was found in order 20260300 and in 300 lids, and a unit price in every amount its
+   * digits ran through: 168 unrelated dated lines on a run's real summaries, 54 summaries × 12
+   * facts (third review of pull request 196). A number is read as the whole token it was said in,
+   * unit attached, the way the standing-line arm reads one. Each row here was dropped by the
+   * substring clause and fails with it restored.
+   */
+  const STAYS: ReadonlyArray<[fact: string, line: string]> = [
+    [JAM, "- 9/15: 20260300번 반품(단순 변심) 접수"],
+    [JAM, "- 9/16: 병뚜껑 300개 입고 확인"],
+    [STRAWBERRY, "- 9/14: 양평 카페 숲 대금 211,000원 입금"],
+    [YUJA, "- 9/14: 정산 118,000원 입금 확인"],
+  ];
+  test.each(STAYS)(
+    "a dated line sharing only a digit string stays %#",
+    (fact, line) => {
+      expect(lineCarries(line, fact)).toBe(false);
+    },
+  );
+
+  /*
+   * The same number whole still carries the line — on fewer of the fact's words than the ratio
+   * asks for, so the number clause alone decides, and each row fails with the clause deleted.
+   * With the unit unsaid on one side the number still counts: a summary writes a run of amounts
+   * as `212,000→429,000원`, a range as `11,000~12,000원`, and the owner writes `9,500 원` with a
+   * space — the whole number equal is the test, not the spelling of the unit.
+   */
+  const GOES: ReadonlyArray<[fact: string, line: string]> = [
+    [JAM, "- 9/15: 딸기잼 300g 병 발송"],
+    [STRAWBERRY, "- 9/14: 딸기 단가 11,000원으로 합의"],
+    [STRAWBERRY, "- 9/14: 딸기 단가 11,000~12,000원 사이로"],
+    [STRAWBERRY, "- 9/14: 딸기 9,500 원에서 올림"],
+    [
+      "양평 카페 숲 대금은 212,000원이다.",
+      "- 9/14: 입금 212,000→429,000원 확인",
+    ],
+    ["딸기잼은 300 g 병으로 받는다.", "- 9/15: 300g 병 3개 발송"],
+  ];
+  test.each(GOES)(
+    "a dated line saying the number whole goes %#",
+    (fact, line) => {
+      expect(lineCarries(line, fact)).toBe(true);
+    },
+  );
+
+  /*
+   * KNOWN LIMITS of the whole-token clause, pinned as what it does today, not as what it should:
+   * - the same whole price on another product's quote is lost — every one of the 51 unrelated
+   *   dated lines the clause still drops on the run's real summaries is this shape (11,000원 or
+   *   9,500원 on another jam's quote), the same limit the standing-line arm pins;
+   * - a bare number beside a spaced unit reads as the number with its unit unsaid, so 300 개 is
+   *   taken for 300g where 300개 is not;
+   * - 300만 원 loses its 만 to the particle strip, so its bare 300 meets 300개 and 300g;
+   * - the number in another writing — 1만8천원, 만팔천 원 — is not found: left to the judge model.
+   */
+  const LIMITS: ReadonlyArray<[fact: string, line: string, carried: boolean]> =
+    [
+      [
+        STRAWBERRY,
+        "- 9/16: 수원 이 선생님 사과잼 72병(병당 9,500원) 견적",
+        true,
+      ],
+      [JAM, "- 9/16: 병뚜껑 300 개 입고", true],
+      ["이번 달 매출은 300만 원이다.", "- 9/16: 병뚜껑 300개 입고", true],
+      [YUJA, "- 9/14: 유자 매입가 1만8천원/kg로 합의", false],
+      [YUJA, "- 9/14: 유자 단가 kg당 만팔천 원", false],
+    ];
+  test.each(LIMITS)(
+    "known limit: the number clause on %# reads %s as %p",
+    (fact, line, carried) => {
+      expect(lineCarries(line, fact)).toBe(carried);
+    },
+  );
+});
+
 describe("the scrubber", () => {
   test("drops what the judge says carries a forgotten fact, and names who judged", async () => {
     const asked: unknown[] = [];
