@@ -9,6 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { type ReactNode, useState, useSyncExternalStore } from "react";
 import { useControl } from "@/components/computer/use-control";
+import { memoryLineId } from "@/components/notebook/notebook";
 import { focusRing } from "@/components/ui/focus";
 import {
   type BotDayItem,
@@ -152,7 +153,11 @@ export function BotDay({
   };
 
   const handlePress = (item: BotDayItem) => {
-    if (item.kind === "learned" || item.kind === "tidied") {
+    if (item.kind === "learned") {
+      void handleShowOnPage("/notebook", memoryLineId(item.memoryId));
+      return;
+    }
+    if (item.kind === "tidied") {
       void handleShowOnPage("/notebook", undefined);
       return;
     }
@@ -249,6 +254,9 @@ export function BotDay({
                     : item.runId
               }
               onPress={() => handlePress(item)}
+              onPressLearned={(memoryId) =>
+                void handleShowOnPage("/notebook", memoryLineId(memoryId))
+              }
               zone={day.data?.zone ?? ""}
             />
           ))}
@@ -318,12 +326,15 @@ function DayItemRow({
   isAsking,
   item,
   onPress,
+  onPressLearned,
   zone,
 }: {
   /** A question is open for the owner: what a `waiting` row is waiting on. */
   isAsking: boolean;
   item: BotDayItem;
   onPress: () => void;
+  /** "기억함 N" on a turn's row pressed: 수첩, on the newest line of those. */
+  onPressLearned: (memoryId: string) => void;
   zone: string;
 }) {
   const time = dayClock(item.at, zone);
@@ -368,17 +379,25 @@ function DayItemRow({
   );
   /*
    * What it remembered while doing this, on this row: one message that taught the Bot three things
-   * was four rows before (UX review 0.5.4, item 12). The facts themselves are on its profile. Beside
-   * the time rather than after the words, which a long request cuts off at 375px.
+   * was four rows before (UX review 0.5.4, item 12). The facts themselves are on 수첩, and "기억함 N"
+   * is the press that lands there, on the newest of them (`aside`); the row itself still opens the
+   * conversation, which is what a turn's row is for. With no id to land on — a server from before
+   * 2026-10-11 — the count stays in the row, beside the time rather than after the words, which a
+   * long request cuts off at 375px.
    */
   const learned = item.learned ?? 0;
-  const detail =
-    learned > 0
-      ? `${time} · ${t("Remembered {count}", { count: learned })}`
-      : time;
+  const remembered =
+    learned > 0 ? t("Remembered {count}", { count: learned }) : null;
+  const memoryId = item.memoryId ?? null;
+  const detail = remembered && !memoryId ? `${time} · ${remembered}` : time;
+  const aside =
+    remembered && memoryId
+      ? { text: remembered, onPress: () => onPressLearned(memoryId) }
+      : undefined;
   if (item.kind === "routine") {
     return (
       <DayRow
+        aside={aside}
         detail={detail}
         icon={<IconClock aria-hidden="true" className="size-3.5 shrink-0" />}
         mark={mark}
@@ -390,6 +409,7 @@ function DayItemRow({
   }
   return (
     <DayRow
+      aside={aside}
       detail={detail}
       icon={
         <IconMessageCircle aria-hidden="true" className="size-3.5 shrink-0" />
@@ -407,6 +427,7 @@ function DayItemRow({
 }
 
 function DayRow({
+  aside,
   detail,
   icon,
   mark,
@@ -416,6 +437,11 @@ function DayRow({
   thumbnail,
   tone,
 }: {
+  /**
+   * A second, smaller press at the row's end — "기억함 3" — going somewhere other than the row does.
+   * Beside the row's button rather than inside it: a button holds no button.
+   */
+  aside?: { text: string; onPress: () => void } | undefined;
   detail?: string;
   icon: ReactNode;
   mark?: DayMark | null;
@@ -426,10 +452,10 @@ function DayRow({
   thumbnail?: string | undefined;
   tone?: "attention";
 }) {
-  return (
+  const row = (
     <button
       className={cn(
-        "flex min-h-8 w-full items-center gap-2 rounded-lg px-1.5 py-1 text-left text-sm transition-colors",
+        "flex min-h-8 w-full min-w-0 items-center gap-2 rounded-lg px-1.5 py-1 text-left text-sm transition-colors",
         tone === "attention"
           ? "bg-warning/12 text-warning hover:bg-warning/20"
           : "text-foreground hover:bg-accent",
@@ -487,6 +513,22 @@ function DayRow({
         />
       ) : null}
     </button>
+  );
+  if (!aside) return row;
+  return (
+    <div className="flex items-center gap-1">
+      {row}
+      <button
+        className={cn(
+          "shrink-0 whitespace-nowrap rounded-sm px-1 font-medium text-link text-xs underline-offset-4 hover:underline",
+          focusRing,
+        )}
+        onClick={aside.onPress}
+        type="button"
+      >
+        {aside.text}
+      </button>
+    </div>
   );
 }
 

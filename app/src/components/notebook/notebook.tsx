@@ -16,6 +16,7 @@ import { LiveRegion } from "@/components/layout/live-region";
 import { PageSection } from "@/components/layout/page-shell";
 import { ReadNotice } from "@/components/layout/read-states";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { focusRingInset } from "@/components/ui/focus";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -39,6 +40,7 @@ import { isImeKey } from "@/lib/ime";
 import { readLineOf } from "@/lib/read-line";
 import { settledOf, useReading } from "@/lib/reading";
 import { BUSINESS_KINDS, dailyPlaceById } from "@/lib/shop/catalogue";
+import { cn } from "@/lib/utils";
 
 /** The surface's name for each shop slot. The prompt's are in `shared/notebook.ts`. */
 export const SLOT_WORDS: Record<
@@ -64,6 +66,15 @@ export const SLOT_WORDS: Record<
 
 /** One press at a time on this page, named by what it is about. */
 type Busy = string | null;
+
+/**
+ * The element that holds one line the Bot remembers, by the id 오늘 goes to it by (`#memory-<id>`,
+ * `app-sidebar/bot-day.tsx` with `revealWhenDrawn`). A line forgotten since the day was read has
+ * no element: the reveal waits a few seconds and gives up, and the page stays as it opened.
+ */
+export function memoryLineId(memoryId: string): string {
+  return `memory-${memoryId}`;
+}
 
 /**
  * 수첩 — WHAT THE BOT KNOWS ABOUT THE SHOP AND ABOUT YOU, IN ONE PLACE.
@@ -732,7 +743,21 @@ function MemoryRow({
   const evidence = line.evidence;
 
   return (
-    <li className="flex flex-col gap-2 px-3 py-3" data-memory={line.source}>
+    /*
+     * REACHED FROM 오늘 BY ITS ID, and marked for a moment the way a routine's card is when it is
+     * (`routes/routines.tsx`), inset so the ring stays within this line of the list. Focusable by
+     * script only, so the keyboard arrives on the line it asked for and its next Tab is 맞아요, 수정
+     * or 잊기 — what somebody who came to check or fix it wants.
+     */
+    <li
+      className={cn(
+        "flex scroll-mt-4 flex-col gap-2 px-3 py-3 transition-shadow duration-700 first:rounded-t-lg last:rounded-b-lg data-[jumped=true]:ring-2 data-[jumped=true]:ring-primary/40 data-[jumped=true]:ring-inset",
+        focusRingInset,
+      )}
+      data-memory={line.source}
+      id={memoryLineId(line.id)}
+      tabIndex={-1}
+    >
       {isEditing ? (
         <LineEditor
           initial={line.content}
