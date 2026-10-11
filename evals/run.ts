@@ -377,8 +377,13 @@ async function runOnce(
       }
     }
     run.said = said.join("\n");
-    // Out of turns with nothing said last: what it did say, as the engine falls back.
-    if (!run.answer && !run.waited) run.answer = said.at(-1) ?? "";
+    /*
+     * OUT OF TURNS WITH NO ANSWER, IT HANDED NOTHING BACK — as the engine has it
+     * (`handedBack`, `server/src/turns/engine.ts`). This used to hand back the last thing the run
+     * had said between its steps, because the engine did: "확인 중이에요" came back as
+     * `{ ok: true }` and the Bot had nothing to tell the person. What it said on the way is still
+     * in `said`, for the judges that read what a person watched.
+     */
     return run;
   };
   /** A `delegate` call's answer, as `chat-tools.ts` words it. Sets `waiting` where the run waits. */
