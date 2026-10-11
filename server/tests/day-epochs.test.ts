@@ -697,4 +697,35 @@ describe("a close that keeps failing", () => {
     expect(asked[3]?.transcript).toContain("4일차");
     expect(asked[3]?.transcript).not.toContain("3일차");
   });
+
+  test("a gap line the summariser leaves out of its rewrite is put back: the Bot keeps knowing what its summary does not hold", async () => {
+    let calls = 0;
+    const { store, thread, run, setClock } = harness({
+      summarize: async () => {
+        calls += 1;
+        // Measured 2026-10-11 with the real summariser: told to carry `previous`, it rewrote the
+        // summary without the line saying which days it never covered.
+        if (calls <= 3) throw new Error("summary: took too long");
+        return "- 9/29: 이 사람이 유자 40박스를 주문했다";
+      },
+    });
+    for (const day of [0, 1, 2, 3]) {
+      dayOfTalk(thread, day);
+      run(at(day, 200));
+      setClock(at(day + 1, -480));
+      await store.tick();
+    }
+    thread.push(user("d4u0", "좋은 아침", at(4)));
+    run(at(4));
+    dayOfTalk(thread, 4);
+    run(at(4, 200));
+    setClock(at(5, -480));
+    expect(await store.tick()).toBe(1);
+    thread.push(user("d5u0", "좋은 아침", at(5)));
+    const morning = run(at(5));
+    expect(morning.epoch.reason).toBe("day_boundary");
+    expect(morning.system).toContain("유자 40박스");
+    expect(morning.system).toContain("9/24~9/27");
+    expect(morning.system).toContain("요약되지 않았다");
+  });
 });
