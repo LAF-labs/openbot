@@ -10,12 +10,14 @@ import {
   type PrepareInput,
 } from "../src/context/conversations";
 import {
+  boundedSummary,
   createDaySummarizer,
   DAY_SUMMARY_SYSTEM,
   dialogueOf,
   FORGOTTEN_RULE,
   type DaySummarizer,
   type StampedMessage,
+  SUMMARY_MAX_CHARS,
 } from "../src/context/day-close";
 import {
   createSummaryScrubber,
@@ -380,6 +382,54 @@ describe("what the summariser is told", () => {
     expect(request.system).toContain(FORGOTTEN_RULE);
     expect(request.system).toContain("things they said not to write down");
     expect(JSON.parse(request.user).forgotten).toEqual([PLAN]);
+  });
+
+  /*
+   * A fact with no date of its own — every month by the 5th, Tuesdays and Thursdays — was written
+   * as a dated event and lost its recurrence or was dropped as settled (eval:memory-days,
+   * 2026-10-11). The instruction now keeps such a fact as an undated line, after the dated ones.
+   */
+  test("a standing fact keeps its recurrence, undated, after the dated lines", () => {
+    expect(DAY_SUMMARY_SYSTEM).toContain("매달 5일까지, 매주 금요일까지");
+    expect(DAY_SUMMARY_SYSTEM).toContain(
+      "undated line with its recurrence words kept",
+    );
+    expect(DAY_SUMMARY_SYSTEM).toContain("after the dated lines");
+    expect(DAY_SUMMARY_SYSTEM).toContain("A date passing does not settle it");
+  });
+});
+
+describe("a standing line among the dated ones", () => {
+  const DEADLINE = "매출 정산 자료는 매달 5일까지 세무사에게 넘겨야 한다.";
+  const WITH_STANDING = [
+    "- 9/14: 이 사람이 세무사에게 보낼 안부 문자를 부탁해 초안을 써 줌.",
+    "- 9/15: 20260207번 주문 받는 곳을 춘천 효자동으로 바꿈.",
+    "- 세무사 정산 자료: 매달 5일까지",
+    "- 지은(포장 알바): 매주 화·목 출근",
+  ].join("\n");
+
+  test("the one the owner forgot goes, the dated line about the same person stays", () => {
+    const { summary, removed } = scrubByRule(WITH_STANDING, [DEADLINE]);
+    expect(removed).toBe(1);
+    expect(summary).not.toContain("매달 5일까지");
+    expect(summary).toContain("안부 문자");
+    expect(summary).toContain("매주 화·목 출근");
+  });
+
+  test("the bound cuts the oldest dated lines and reaches the standing block last", () => {
+    const dated = Array.from(
+      { length: 120 },
+      (_, day) =>
+        `- 9/${(day % 30) + 1}: ${20260200 + day}번 주문 받는 곳을 바꾸고 송장을 다시 뽑음.`,
+    );
+    const standing = [
+      "- 세무사 정산 자료: 매달 5일까지",
+      "- 지은(포장 알바): 매주 화·목 출근",
+    ];
+    const bounded = boundedSummary([...dated, ...standing].join("\n"));
+    expect(bounded.length).toBeLessThanOrEqual(SUMMARY_MAX_CHARS);
+    expect(bounded).not.toContain(dated[0] as string);
+    expect(bounded.endsWith(standing.join("\n"))).toBe(true);
   });
 });
 
