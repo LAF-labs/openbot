@@ -6,16 +6,35 @@
  * 봇이고 같은 컴퓨터를 쓰지만 자기 대화를 따로 가진다: 맡긴 쪽의 대화를 보지 못하고 `task`의
  * 글만 읽는다. 그래서 설명의 절반이 "무엇을 적어야 하는가"다.
  *
- * `to`는 지금 하나뿐이다. 깊은 추론과 백그라운드 일(6-3)이 여기에 값으로 더해진다 — 툴을 하나
- * 더 싣는 대신이다(§4 "위임 도구 하나가 남는다").
+ * `to`는 값으로 는다 — 툴을 하나 더 싣는 대신이다(§4 "위임 도구 하나가 남는다").
+ *
+ * `think`(조각 6-3): 깊이 따질 일을 맡는 쪽. 같은 봇이 새 대화에서 툴 없이 생각만 하고, 얼마나
+ * 깊게 생각하는지는 서버가 그 모드에만 정한다(`server/src/copilot.ts`, `shared/fixed-effort.ts`의
+ * `DEEP_EFFORT`) — 사람도 봇도 정하지 못한다. 봇이 고르는 것은 "이 일을 맡길까" 하나다. 그래서
+ * 설명의 나머지 절반이 "언제 맡기지 않는가"다: 바로 답할 수 있는 것까지 맡기면 대화의 모든 답이
+ * 요청 둘이 되고 수십 초가 는다. 백그라운드 일은 아직 값이 아니다(§4의 6-3 메모).
  */
 import { COMPUTER_TOOLS, drivesTheBrowser } from "./computer";
 import type { JsonSchema } from "./standard-schema";
 
-/** 맡을 수 있는 쪽. 지금은 브라우저 하나다. */
-export const DELEGATE_TARGETS = ["browser"] as const;
+/** 맡을 수 있는 쪽: 브라우저로 하는 일, 그리고 깊이 따지는 일. */
+export const DELEGATE_TARGETS = ["browser", "think"] as const;
 
-type DelegateTarget = (typeof DELEGATE_TARGETS)[number];
+export type DelegateTarget = (typeof DELEGATE_TARGETS)[number];
+
+/**
+ * 맡은 쪽이 도는 모드 — 그 실행이 자기 자리를 읽는 글의 이름(`shared/prompt/mode/`).
+ *
+ * 맡은 쪽의 대화도 모드마다 하나다(`server/src/turns/engine.ts`의 `delegatedThreadOf`): 머리(툴과
+ * 글)가 모드마다 다르고 공급자의 캐시는 대화 단위라서, 한 대화에 두 머리를 번갈아 실으면 둘 다
+ * 매번 정가를 낸다.
+ */
+export const DELEGATED_MODES = {
+  browser: "browse",
+  think: "think",
+} as const satisfies Record<DelegateTarget, string>;
+
+export type DelegatedMode = (typeof DELEGATED_MODES)[DelegateTarget];
 
 export const DELEGATE: {
   name: string;
@@ -24,19 +43,20 @@ export const DELEGATE: {
 } = {
   name: "delegate",
   description:
-    "네 컴퓨터의 브라우저로 해야 하는 일을 맡긴다. 웹 페이지를 열어 보고, 찾고, 누르고, 입력하고, 로그인하고, 파일을 올리는 일은 전부 이것으로 한다 — 보라·열어라·확인해라·들어가 봐라·찾아봐라는 말을 들으면 이것을 부른다. 맡은 쪽은 이 대화를 보지 못하고 task의 글만 읽는다. 그래서 task에는 무엇을 어디서 하는지, 무엇을 알아 와야 하는지, 어떤 모양의 답을 돌려받고 싶은지를 빠짐없이 적는다. 사람에게 물어야 하는 것 — 비밀번호 같은 값, 되돌릴 수 없는 일의 허락 — 은 맡은 쪽이 직접 묻는다. 끝나면 한 일과 알아낸 것이 글로 돌아오고, 사람에게는 네가 그 글로 답한다.",
+    "일 하나를 통째로 맡긴다. 맡을 쪽은 둘이다. browser: 네 컴퓨터의 브라우저로 해야 하는 일. 웹 페이지를 열어 보고, 찾고, 누르고, 입력하고, 로그인하고, 파일을 올리는 일은 전부 이것으로 한다 — 보라·열어라·확인해라·들어가 봐라·찾아봐라는 말을 들으면 이것을 부른다. 사람에게 물어야 하는 것 — 비밀번호 같은 값, 되돌릴 수 없는 일의 허락 — 은 맡은 쪽이 직접 묻는다. think: 깊이 따져야 답이 나오는 일. 조건이 여럿 얽힌 계산, 여러 안의 비교, 순서를 짜는 계획처럼 한 번에 답하면 틀리기 쉬운 것을 맡긴다. 맡은 쪽은 툴 없이 생각만 하므로, 알아봐야 하는 것이 있으면 먼저 알아본 뒤에 맡긴다. 바로 답할 수 있는 것은 맡기지 않는다. 어느 쪽이든 맡은 쪽은 이 대화를 보지 못하고 task의 글만 읽는다. 그래서 task에는 무엇을 어디서 하는지, 무엇을 알아 오거나 따져야 하는지, 어떤 모양의 답을 돌려받고 싶은지를 빠짐없이 적는다. 끝나면 한 일과 알아낸 것이 글로 돌아오고, 사람에게는 네가 그 글로 답한다.",
   parameters: {
     type: "object",
     properties: {
       to: {
         type: "string",
         enum: [...DELEGATE_TARGETS],
-        description: "맡을 쪽. browser는 네 컴퓨터의 브라우저로 하는 일이다.",
+        description:
+          "맡을 쪽. browser는 네 컴퓨터의 브라우저로 하는 일, think는 툴 없이 깊이 따져 보는 일이다.",
       },
       task: {
         type: "string",
         description:
-          "맡기는 일의 전부. 이 글만 읽고 해낼 수 있게 쓴다: 주소나 사이트, 찾을 것, 사람이 한 말 가운데 필요한 것, 돌려받을 답의 모양.",
+          "맡기는 일의 전부. 이 글만 읽고 해낼 수 있게 쓴다: 주소나 사이트, 찾을 것, 따져 볼 숫자와 조건 전부, 사람이 한 말 가운데 필요한 것, 돌려받을 답의 모양.",
       },
     },
     required: ["to", "task"],

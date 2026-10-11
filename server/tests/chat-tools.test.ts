@@ -3988,6 +3988,42 @@ describe("a conversation that hands its browsing over", () => {
     );
   });
 
+  /*
+   * HANDED THINKING, THE RUN HOLDS NOTHING (piece 6-3). It is given the problem whole and answers
+   * from that: no page to open, nobody to ask. So whatever it calls is a name it made up, refused
+   * as a turn's would be — and never carried out on the computer, which would also have taken the
+   * browser for a run that has no use for one.
+   */
+  test("`delegate` to think hands the task on with no tool at all, and carries nothing out for that run", async () => {
+    const { toolkit, handed, opened, lane } = await delegating(async (run) =>
+      JSON.stringify(
+        await run.execute(
+          "computer_navigate",
+          { url: "https://naver.com" },
+          call("call-open"),
+        ),
+      ),
+    );
+    const made = call("call-think");
+    const outcome = await toolkit.execute(
+      DELEGATE.name,
+      { to: "think", task: "  두 대출 가운데 덜 드는 쪽을 따져 줘.  " },
+      made,
+    );
+    expect(handed).toHaveLength(1);
+    const run = handed[0];
+    expect(run?.callId).toBe("call-think");
+    expect(run?.mode).toBe("think");
+    expect(run?.instruction).toBe("두 대출 가운데 덜 드는 쪽을 따져 줘.");
+    expect(run?.tools).toEqual([]);
+    expect(run?.signal).toBe(made.signal);
+    expect(
+      JSON.parse((outcome as unknown as { answer: string }).answer),
+    ).toMatchObject({ ok: false, code: "laf:tool_unknown" });
+    expect(opened).toEqual([]);
+    expect(lane.asked).toBe(0);
+  });
+
   test("what the delegated run calls is carried out on the computer, and nothing else is its to call", async () => {
     const { toolkit, opened, lane } = await delegating(async (run) => {
       const page = await run.execute(

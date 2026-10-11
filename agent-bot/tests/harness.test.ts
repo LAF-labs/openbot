@@ -267,4 +267,49 @@ describe("effort, in the model's own words", () => {
     expect(await effortFor("gpt-5.5", "balanced")).toBe("medium");
     expect(await effortFor("gpt-5.5", "nonsense")).toBeUndefined();
   });
+
+  /*
+   * THE RUN HANDED DEEP REASONING (piece 6-3, `mode: "think"`) is sent `thorough` by the server
+   * whatever the deployment says of its model — so nobody has vouched that the model takes an
+   * effort at all, and a model that does not reason answers the parameter with a 400 on some
+   * providers: the run fails, and the turn that handed it the work with it. So that run's effort
+   * goes only to a model this table names.
+   */
+  describe("for the run handed deep reasoning", () => {
+    const deepFor = async (model: string) => {
+      const { reasoningEffortOf } = await import("../src/transcript");
+      return reasoningEffortOf(
+        { forwardedProps: { effort: "thorough", mode: "think" } } as never,
+        model,
+      );
+    };
+
+    test.each([
+      ["meta/muse-spark-1.3-contributor", "high"],
+      ["z-ai/glm-5.3-flash", "max"],
+      ["deepseek/deepseek-v4.1-flash", "max"],
+    ])("%s is sent its own top word: %s", async (model, word) => {
+      expect(String(await deepFor(model))).toBe(word);
+    });
+
+    test.each(["gpt-5.5", "some-lab/a-model-nobody-measured", ""])(
+      "a model the table does not name is sent nothing: %p",
+      async (model) => {
+        expect(await deepFor(model)).toBeUndefined();
+        // The same word on any other run is still OpenAI's: there the deployment said so.
+        expect(await effortFor(model, "thorough")).toBe("high");
+      },
+    );
+
+    test("a model that defines no effort is sent none, as on every run", async () => {
+      expect(await deepFor("xiaomi/mimo-v2.6-pro")).toBeUndefined();
+    });
+
+    test("it is deeper than what the fleet's model thinks at by default", async () => {
+      // The fleet sends its model no effort, and that model's default is its `medium`.
+      expect(await deepFor("meta/muse-spark-1.3-contributor")).not.toBe(
+        await effortFor("meta/muse-spark-1.3-contributor", "balanced"),
+      );
+    });
+  });
 });

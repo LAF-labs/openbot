@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { modeText, promptModeOf, staticPrompt } from "../shared/prompt/index";
 import { BROWSE_KO } from "../shared/prompt/mode/browse.ko";
+import { THINK_KO } from "../shared/prompt/mode/think.ko";
 import { CORE_TOOL_NAMES } from "../shared/tools/bridge";
 import { COMPUTER_TOOLS, drivesTheBrowser } from "../shared/tools/computer";
 import {
   DELEGATE,
   DELEGATE_TARGETS,
+  DELEGATED_MODES,
   delegateTargetOf,
   isDelegated,
 } from "../shared/tools/delegate";
@@ -31,6 +33,9 @@ describe("the tool a conversation hands its browsing over with", () => {
 
   test.each([
     ["browser", "browser"],
+    ["think", "think"],
+    ["Think", undefined],
+    ["background", undefined],
     ["Browser", undefined],
     ["printer", undefined],
     ["", undefined],
@@ -132,5 +137,70 @@ describe("the chat mode, for a Bot that hands its browsing over", () => {
 
   test("a routine's mode is as it was: nobody to hand anything to", () => {
     expect(modeText("routine")).not.toContain(DELEGATE.name);
+  });
+});
+
+/*
+ * THINKING, HANDED OVER (piece 6-3). The second thing a conversation's Bot can hand to a run of
+ * its own: a problem to be worked through, by the same Bot in a conversation that holds no tool.
+ */
+describe("the one handed thinking", () => {
+  test("each kind of work is done in a mode of its own, which a run can name", () => {
+    expect(DELEGATED_MODES).toEqual({ browser: "browse", think: "think" });
+    expect(Object.keys(DELEGATED_MODES)).toEqual([...DELEGATE_TARGETS]);
+    for (const mode of Object.values(DELEGATED_MODES)) {
+      expect(promptModeOf({ mode })).toBe(mode);
+    }
+    expect(modeText("think")).toBe(THINK_KO);
+    expect(staticPrompt("think")).toContain(THINK_KO);
+    expect(modeText("think")).not.toBe(modeText("browse"));
+    expect(modeText("think")).not.toBe(modeText("chat"));
+  });
+
+  test("the tool says what each is for — and when thinking is not to be handed over", () => {
+    expect(DELEGATE.description).toContain("browser:");
+    expect(DELEGATE.description).toContain("think:");
+    // Handing over what could be answered outright makes every answer two requests.
+    expect(DELEGATE.description).toContain(
+      "바로 답할 수 있는 것은 맡기지 않는다",
+    );
+    // The run it is handed to can look nothing up: what is not in the task is not known.
+    expect(DELEGATE.description).toContain("먼저 알아본 뒤에 맡긴다");
+    expect(
+      (
+        DELEGATE.parameters as unknown as {
+          properties: { to: { description: string } };
+        }
+      ).properties.to.description,
+    ).toContain("think");
+  });
+
+  test("its mode names no tool at all: it holds none", () => {
+    for (const tool of COMPUTER_TOOLS) {
+      expect(THINK_KO).not.toContain(tool.name);
+    }
+    for (const name of [
+      DELEGATE.name,
+      "remember",
+      "tool_search",
+      "tool_call",
+    ]) {
+      expect(THINK_KO).not.toContain(name);
+    }
+  });
+
+  test("it is told the task is all there is, that it can ask nobody, and who reads its answer", () => {
+    expect(THINK_KO).toContain("아래 메시지가 그 일의 전부");
+    expect(THINK_KO).toContain("적혀 있지 않은 것을 지어내지 않는다");
+    expect(THINK_KO).toContain("사람에게 물을 수도 없다");
+    expect(THINK_KO).toContain(
+      "마지막 답은 사람이 아니라 일을 맡긴 쪽이 읽는다",
+    );
+  });
+
+  test("a routine's mode and a browsing run's are as they were: neither is told of thinking", () => {
+    expect(modeText("routine")).not.toContain("think");
+    expect(modeText("browse")).toBe(BROWSE_KO);
+    expect(BROWSE_KO).not.toContain("think");
   });
 });

@@ -1384,6 +1384,69 @@ describe("a run the turn delegated to", () => {
     expect(threadOf(worker)).not.toBe(conversation.threadId);
   });
 
+  /*
+   * WORK OF ANOTHER KIND, A CONVERSATION OF ANOTHER NAME (piece 6-3). What stands at the head of a
+   * delegated run is its mode's, and the provider keeps its cache by conversation: thinking and
+   * browsing made in one conversation would replace each other's head there and each be billed
+   * whole. The name `.browse` has is kept as it was — a conversation that has browsed is cached
+   * under it.
+   */
+  test("a run handed thinking is made in the conversation for thinking, in that mode", async () => {
+    const conversation = await aConversation();
+    const made: ReturnType<typeof scriptedBot>[] = [];
+    const main = scriptedBot("A가 덜 들어요.", {
+      id: "call-think",
+      name: "delegate",
+      args: JSON.stringify({ to: "think", task: TASK }),
+    });
+    const { engine } = engineWith(
+      main,
+      (context: ChatTurnContext): ChatToolkit["execute"] =>
+        async (name, args, call) => {
+          // Whatever the run handed thinking calls is a name it made up.
+          if (name !== "delegate")
+            return { ok: false, code: "laf:tool_unknown" };
+          const handed = await context.delegate?.({
+            callId: call.id,
+            mode: "think",
+            instruction: String(args.task),
+            tools: [],
+            execute: async () => ({ ok: false, code: "laf:tool_unknown" }),
+            signal: call.signal,
+          });
+          return { ok: true, answer: handed?.answer ?? "" };
+        },
+      {
+        resolveAgents: async () => {
+          const next = made.length === 0 ? main : scriptedBot(HANDED_BACK);
+          made.push(next);
+          return { [BOT]: next as unknown as LoopAgent };
+        },
+      },
+    );
+    const turnId = await send(engine, conversation, "두 대출을 비교해줘");
+    await until(async () => (await statusOf(turnId)) === "done");
+    const worker = made[1];
+    if (!worker) throw new Error("nothing was delegated to");
+    const threadOf = (bot: unknown) => (bot as { threadId?: string }).threadId;
+    expect(threadOf(worker)).toBe(`${conversation.threadId}.think`);
+    expect(threadOf(worker)).toBe(
+      delegatedThreadOf(conversation.threadId, "think"),
+    );
+    // Browsing's is where it was, and said nothing it is the one meant.
+    expect(delegatedThreadOf(conversation.threadId, "browse")).toBe(
+      `${conversation.threadId}.browse`,
+    );
+    expect(delegatedThreadOf(conversation.threadId)).toBe(
+      `${conversation.threadId}.browse`,
+    );
+    expect(worker.inputs[0]?.map((message) => message.content)).toEqual([TASK]);
+    const ridden = { mode: "think", toolDeferral: "off" };
+    expect(worker.forwarded).toEqual([ridden, ridden]);
+    // No tool is sent it: what the hand-over said it holds is what it holds.
+    expect(worker.offered).toEqual([[], []]);
+  });
+
   test("the Bot that delegated is never handed the steps: not in the turn, not on the next one", async () => {
     const conversation = await aConversation();
     const { engine, main, made } = engineHandingOver();

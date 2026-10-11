@@ -957,6 +957,13 @@ async function runRounds(context: RunContext): Promise<void> {
     tools: input.tools?.length ?? 0,
     exposed: exposed.provider.length,
     deferred: exposed.deferred.length,
+    /*
+     * What every request of this run was sent as `reasoning_effort`, or null for none. Said here
+     * because the one run sent another effort than the rest (`mode: "think"`, piece 6-3) answers
+     * like any other when the setting reaches nothing — and "it answered" is all there was to
+     * read (CLAUDE.md, "say what you measured").
+     */
+    effort: effort ?? null,
     ms: Date.now() - context.startedAt,
   });
   emit({

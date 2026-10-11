@@ -23,7 +23,11 @@ import { jsonObjectOf } from "../../../shared/json-object";
 import { streamCutResult } from "../../../shared/stream-cut";
 import { UNANSWERED_RESULT } from "../../../shared/task-ending";
 import { computerTool, drivesTheBrowser } from "../../../shared/tools/computer";
-import { isDelegated } from "../../../shared/tools/delegate";
+import {
+  DELEGATED_MODES,
+  type DelegatedMode,
+  isDelegated,
+} from "../../../shared/tools/delegate";
 import { withheldToolsForwarded } from "../../../shared/tools/paused";
 import {
   PROJECT_QUERY_READ_ONLY,
@@ -219,11 +223,28 @@ function forTheBot(message: Message): Message {
   return rest as Message;
 }
 
-const DELEGATED = ".browse";
+/**
+ * The end of the name of the conversation a delegated run is made in, by the mode it runs in.
+ *
+ * ONE CONVERSATION FOR EACH KIND OF WORK HANDED OVER. What stands at the head of a delegated run is
+ * its mode's — the browser's tools and words for one, no tool and other words for another — and
+ * the provider keeps its cache by conversation. Both kinds in one conversation would take turns
+ * replacing each other's head there, and each would be billed whole every time.
+ */
+const DELEGATED: Record<DelegatedMode, string> = {
+  browse: ".browse",
+  think: ".think",
+};
 
-/** The conversation a conversation's delegated runs are made in: one, named after it. */
-export const delegatedThreadOf = (threadId: string): string =>
-  `${threadId}${DELEGATED}`;
+const DELEGATED_ENDS = [...new Set(Object.values(DELEGATED_MODES))].map(
+  (mode) => DELEGATED[mode],
+);
+
+/** The conversation a conversation's delegated runs of one kind are made in, named after it. */
+export const delegatedThreadOf = (
+  threadId: string,
+  mode: DelegatedMode = "browse",
+): string => `${threadId}${DELEGATED[mode]}`;
 
 /**
  * Something read by conversation, asked for by the thread a run of the model was made on.
@@ -239,12 +260,10 @@ export const delegatedThreadOf = (threadId: string): string =>
 export function byConversation<T>(
   read: (threadId: string | undefined) => T,
 ): (threadId: string | undefined) => T {
-  return (threadId) =>
-    read(
-      threadId?.endsWith(DELEGATED)
-        ? threadId.slice(0, -DELEGATED.length)
-        : threadId,
-    );
+  return (threadId) => {
+    const end = DELEGATED_ENDS.find((one) => threadId?.endsWith(one));
+    return read(end && threadId ? threadId.slice(0, -end.length) : threadId);
+  };
 }
 
 /** Whether a call is one of the browser's own: a tool of the computer's that drives a page. */
@@ -828,7 +847,7 @@ export function createTurnEngine(options: TurnEngineOptions) {
          * conversation that is not a chat for six hours and freezes its words once
          * (`context/conversations.ts`), which is what makes the head the same bytes.
          */
-        worker.threadId = delegatedThreadOf(threadId);
+        worker.threadId = delegatedThreadOf(threadId, run.mode);
         worker.setMessages([
           { id: randomUUID(), role: "user", content: run.instruction },
         ]);
@@ -849,9 +868,10 @@ export function createTurnEngine(options: TurnEngineOptions) {
             mode: run.mode,
             /*
              * NO BRIDGE FOR THIS RUN. Every tool it holds is the computer's and is offered
-             * outright; the bridge's two tools would be at its head with nothing behind them,
-             * and it used them: asked to open a weather page, the run looked for a weather tool
-             * first — a request spent before the page was opened (model eval, 2026-10-11).
+             * outright — or it holds none (`think`); the bridge's two tools would be at its head
+             * with nothing behind them, and it used them: asked to open a weather page, the run
+             * looked for a weather tool first — a request spent before the page was opened
+             * (model eval, 2026-10-11).
              */
             toolDeferral: "off",
             ...(input.device === undefined ? {} : { device: input.device }),
