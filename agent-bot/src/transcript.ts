@@ -397,6 +397,15 @@ const OPENAI_EFFORTS: Record<ProductEffort, ProviderEffort> = {
  * Undefined for anything else, including nothing at all. A caller that says nothing gets exactly
  * the request this service made before the setting existed, which is the only safe reading of
  * silence — and a value this service does not recognise is silence.
+ *
+ * A RUN HANDED DEEP REASONING IS SENT ITS EFFORT ONLY WHERE THIS TABLE KNOWS THE MODEL (piece 6-3,
+ * `mode: "think"`). Every other run's effort arrives because the deployment said its model takes
+ * one (`supports_effort`, `tenant/laf/model.yaml`), so a model with no line here may be given
+ * OpenAI's words. That run's arrives whatever the deployment said — the fleet says "send nothing"
+ * and means "the default is the effort we want" — so nobody has vouched for the model, and a model
+ * that does not reason answers `reasoning_effort` with a 400 on some providers: the run would
+ * fail, and the turn that handed it the work with it. Unmeasured, it thinks at its default, as a
+ * model with no words does.
  */
 export function reasoningEffortOf(
   input: RunAgentInput,
@@ -404,12 +413,13 @@ export function reasoningEffortOf(
 ): ProviderEffort | undefined {
   const forwarded = input.forwardedProps;
   if (!forwarded || typeof forwarded !== "object") return undefined;
-  const effort = (forwarded as Record<string, unknown>).effort;
+  const { effort, mode } = forwarded as Record<string, unknown>;
   if (effort !== "quick" && effort !== "balanced" && effort !== "thorough") {
     return undefined;
   }
   const entry = MODEL_EFFORTS.find((known) => known.model.test(model));
   if (entry && entry.words === null) return undefined;
+  if (!entry && mode === "think") return undefined;
   return (entry?.words ?? OPENAI_EFFORTS)[effort];
 }
 

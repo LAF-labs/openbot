@@ -31,7 +31,6 @@ import {
   TOOL_RESULT_KO,
   toolResultText,
 } from "../../../shared/prompt/tool-results.ko";
-import type { PromptMode } from "../../../shared/prompt";
 import { CORE_TOOL_NAMES, serverKeyOf } from "../../../shared/tools/bridge";
 import {
   COMPUTER_TOOLS,
@@ -41,6 +40,8 @@ import {
 import {
   CONVERSATION_COMPUTER_TOOLS,
   DELEGATE,
+  DELEGATED_MODES,
+  type DelegatedMode,
   delegateTargetOf,
 } from "../../../shared/tools/delegate";
 import {
@@ -257,7 +258,8 @@ export type ChatTurnContext = {
   delegate?: (run: {
     /** The call this is carried out for: what its steps are filed under. */
     callId: string;
-    mode: Extract<PromptMode, "browse">;
+    /** What the run is, which decides the words at its head and the conversation it is made in. */
+    mode: DelegatedMode;
     instruction: string;
     tools: Tool[];
     execute: LoopExecutor;
@@ -1703,15 +1705,22 @@ export function createChatTools(deps: ChatToolsDeps) {
       const run = context.delegate;
       if (!run || !delegates(deps)) return refusal("laf:tool_unknown");
       const task = typeof args.task === "string" ? args.task.trim() : "";
-      if (!delegateTargetOf(args.to) || !task) {
-        return refusal("laf:tool_arguments_invalid");
-      }
+      const to = delegateTargetOf(args.to);
+      if (!to || !task) return refusal("laf:tool_arguments_invalid");
+      /*
+       * WHAT THE RUN HOLDS IS DECIDED BY WHO IT IS HANDED TO, HERE. The browser's run holds the
+       * computer's tools and nothing else. The one handed thinking (piece 6-3) holds none: it is
+       * given the problem whole and answers from that, so a call it makes is a name it made up,
+       * and is refused as one. How hard it thinks is not said here either — the server sends that
+       * by the run's mode (`copilot.ts`), to a run a person and a Bot can only start.
+       */
       const { answer } = await run({
         callId: call.id,
-        mode: "browse",
+        mode: DELEGATED_MODES[to],
         instruction: task,
-        tools: COMPUTER_TOOLS.map(described),
-        execute: forTheDelegated,
+        ...(to === "browser"
+          ? { tools: COMPUTER_TOOLS.map(described), execute: forTheDelegated }
+          : { tools: [], execute: async () => refusal("laf:tool_unknown") }),
         signal: call.signal,
       });
       if (call.signal.aborted) return refusal("laf:stopped", { stopped: true });

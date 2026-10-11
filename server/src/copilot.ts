@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { AbstractAgent, HttpAgent } from "@ag-ui/client";
 import { CopilotRuntime } from "@copilotkit/runtime/v2";
 import { createCopilotHonoHandler } from "@copilotkit/runtime/v2/hono";
-import { FIXED_EFFORT } from "../../shared/fixed-effort";
+import { DEEP_EFFORT, FIXED_EFFORT } from "../../shared/fixed-effort";
 import { textOf } from "../../shared/message-content";
 import {
   type ComposePromptInput,
@@ -657,10 +657,24 @@ function remoteAgentWithPrompt(
       typeof input.forwardedProps === "object" && input.forwardedProps !== null
         ? (input.forwardedProps as Record<string, unknown>)
         : {};
-    // Everything the caller forwarded but `effort`, which is `FIXED_EFFORT` or nothing (below).
+    // Everything the caller forwarded but `effort`, which is this deployment's to say (below).
     const { effort: _callerEffort, ...passedOn } = forwarded;
     // What the run says it is. Chat says nothing, and silence is a chat.
     const mode = promptModeOf(forwarded);
+    /*
+     * HOW HARD THIS RUN THINKS, DECIDED HERE AND BY WHAT THE RUN IS. Every run is sent the one
+     * effort of the deployment, or none — but for the run a turn hands deep reasoning to
+     * (`delegate` to `think`, piece 6-3), which is sent `DEEP_EFFORT` whatever the deployment
+     * says of the rest. Still nobody's setting: the caller's `effort` was dropped a line above,
+     * and what a Bot or a person can do is start such a run, not say how it thinks. And sent even
+     * where `supportsEffort` is false, because on the fleet false means "the model's default is
+     * the effort we want, send nothing", not "this model takes none". Whether the model has a
+     * word for `thorough` is the other service's to know: it sends this run's effort only to a
+     * model its table names, and nothing to one it does not (`agent-bot/src/transcript.ts`,
+     * `reasoningEffortOf`) — a model nobody measured may answer the parameter with a 400.
+     */
+    const effort =
+      mode === "think" ? DEEP_EFFORT : supportsEffort ? FIXED_EFFORT : null;
     // The store's clock, so the day a run is dated by is the day its close was made for.
     const now = conversations?.now() ?? new Date();
     const composing = composeInputOf(agent.profile, {
@@ -741,7 +755,7 @@ function remoteAgentWithPrompt(
           key: {
             harness: HARNESS_VERSION,
             model: options.model,
-            effort: supportsEffort ? FIXED_EFFORT : "none",
+            effort: effort ?? "none",
             tools: toolsFingerprint(input.tools),
           },
           facts,
@@ -787,7 +801,7 @@ function remoteAgentWithPrompt(
       forwardedProps: {
         ...passedOn,
         botId: agent.id,
-        ...(supportsEffort ? { effort: FIXED_EFFORT } : {}),
+        ...(effort ? { effort } : {}),
         timeZone: facts.timeZone,
         ...(prepared
           ? {
