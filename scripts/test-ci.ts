@@ -2952,6 +2952,20 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * under it logging nothing — the line that was not under any test. 4 and 5 is 9, and 4 is 13,
  * and 1 is 14; 4473 and 14 is 4487.
  *
+ * RAISED 2026-10-11 FOR THE CLOSE THAT KEEPS FAILING: `server` from 4487 to 4515, twenty-eight in
+ * `day-epochs.test.ts` (each failure counted in the log line with the time; a retry bounded to
+ * the oldest unclosed days on the same summary; a retry under the close floor widened a day at a
+ * time; the owner's messages through a morning counted as one failure; the database being down
+ * not counted; after three failures the day closed without the summariser, the old summary
+ * carried and the days it does not cover named; the night after, the summariser asked again on
+ * the carried summary about today's day alone; a gap line its rewrite left out put back; a gap
+ * line known by its dates; a new gap joining the one before it; the count surviving a restart;
+ * and from the second review: a put-back gap line surviving a rewrite at the bound; twelve date
+ * shapes of a rewritten gap line each read as the same gap; a line in the owner's words about
+ * something not summarised read as no gap; the gap line one sentence; the bounded close dated by
+ * the bounded day in the close taken and in what the summariser is told; a scrub that throws
+ * after the summariser answered not counted as its failure).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2980,7 +2994,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4487, roots: ["server"] },
+  { name: "server", floor: 4515, roots: ["server"] },
   { name: "app", floor: 2421, roots: ["app"] },
   {
     name: "agent-computer",
