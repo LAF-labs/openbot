@@ -4,6 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { answerText, TURNS } from "../evals/days-talk";
 import {
+  askedOf,
+  asksFor,
+  beforeTheFact,
   busyTurn,
   FACT_KINDS,
   FACTS,
@@ -84,8 +87,12 @@ describe("the table of what an owner says in passing", () => {
     "%s — the question is in other words and gives no value away",
     (_id, one) => {
       expect(recallOf(one, one.ask)).not.toBe("correct");
-      expect(one.values.some((value) => value.test(one.ask))).toBe(false);
       expect(strangersIn(one, one.ask)).toEqual([]);
+      // What a question does state — a price's "킬로당" — its answer is not held to.
+      const stated = one.values.filter((value) => value.test(one.ask));
+      expect(stated).toHaveLength(one.kind === "unit-price" ? 1 : 0);
+      expect(askedOf(one)).toHaveLength(one.values.length - stated.length);
+      expect(askedOf(one).length).toBeGreaterThan(0);
     },
   );
 
@@ -128,6 +135,45 @@ describe("the table of what an owner says in passing", () => {
         expect(one.values.every((value) => value.test(text))).toBe(false);
     },
   );
+
+  test("a busy arm's first day is a busy day: eight other things beside the fact", () => {
+    const aside = beforeTheFact(fact("unit-price/aside"), true);
+    const correction = beforeTheFact(fact("unit-price/correction"), true);
+    for (const turn of [0, 1, 2]) {
+      expect(aside.map((said) => said.owner)).toContain(
+        busyTurn(0, turn).owner,
+      );
+      expect(correction.map((said) => said.owner)).toContain(
+        busyTurn(0, turn).owner,
+      );
+    }
+    // A correction's first statement still opens its day, before anything else.
+    expect(correction[0]?.owner ?? "").toBe(
+      fact("unit-price/correction").before?.owner ?? "none",
+    );
+    expect(aside).toHaveLength(3);
+    expect(correction).toHaveLength(4);
+    // In the order they are said, and one page read, as on every other day.
+    for (const day of [aside, correction]) {
+      expect(day.map((said) => said.hour)).toEqual(
+        [...day.map((said) => said.hour)].sort((a, b) => a - b),
+      );
+      expect(day.filter((said) => said.page)).toHaveLength(1);
+      expect(new Set(day.map((said) => said.key)).size).toBe(day.length);
+    }
+  });
+
+  test("a quiet first day is the `days` case's morning, as it was", () => {
+    const quiet = beforeTheFact(fact("unit-price/aside"), false);
+    expect(quiet.map((said) => said.owner)).toEqual(TURNS.slice(0, 2));
+    expect(quiet[0]?.bot).toBe(answerText(0, 0));
+    expect(quiet.map((said) => said.page)).toEqual([false, true]);
+    const corrected = beforeTheFact(fact("unit-price/correction"), false);
+    expect(corrected.map((said) => said.owner)).toEqual([
+      fact("unit-price/correction").before?.owner ?? "none",
+      ...TURNS.slice(1, 2),
+    ]);
+  });
 
   test("a busy week says something else every day", () => {
     const said = Array.from({ length: 7 }, (_, day) => busyTurn(day, 0).owner);
@@ -177,6 +223,43 @@ describe("a written line, read against the fact", () => {
         "매주 금요일까지 넣어야 한다.",
       ),
     ).toBe("part");
+  });
+
+  test.each([
+    // A price with nothing it is the price of.
+    ["unit-price/aside", "청운농원 유자는 18,000원이다.", "part"],
+    ["unit-price/aside", "청운농원 유자는 1kg에 18,000원이다.", "whole"],
+    [
+      "unit-price/aside",
+      "유자는 청운농원에서 kg당 18,000원에 받는다.",
+      "whole",
+    ],
+    ["unit-price/correction", "논산 딸기는 11,000원으로 올랐다.", "part"],
+    // The same hours on other days are another schedule.
+    [
+      "business-hours/aside",
+      "고객 문의 전화는 주말 오전 10시부터 오후 4시까지다.",
+      "part",
+    ],
+    [
+      "business-hours/aside",
+      "고객 문의 전화는 평일 오전 10시부터 오후 4시까지다.",
+      "whole",
+    ],
+    // One jar of 300g is a third of what the café gets.
+    [
+      "regular-preference/correction",
+      "오 사장님네는 딸기잼 300g 한 병으로 보낸다.",
+      "part",
+    ],
+    [
+      "regular-preference/correction",
+      "오 사장님네는 딸기잼을 300g 병 3개로 나눠 보낸다.",
+      "whole",
+    ],
+  ] as const)("%s: %s → %s", (id, line, kind) => {
+    expect(writtenOf(fact(id), line)).toBe(kind);
+    expect(survivalIn(fact(id), line)).toBe(kind);
   });
 
   test("a correction's old value, written without the new one, is the old value", () => {
@@ -322,10 +405,19 @@ describe("an answer days later, read by rule", () => {
     [price, "딸기는 킬로당 12,000원이에요.", "wrong"],
     [price, "딸기 단가는 확인이 안 돼요. 9,500원이었나요?", "asks-again"],
     [hours, "전화 상담은 평일 오전 10시부터 오후 4시까지예요.", "correct"],
-    [hours, "전화 상담은 10시부터 16시까지입니다.", "correct"],
+    [hours, "전화 상담은 평일 10시부터 16시까지입니다.", "correct"],
     [hours, "전화 상담은 오전 9시부터 오후 6시까지예요.", "wrong"],
+    // Which days: the hours without them are part of it, on other days they are wrong.
+    [hours, "전화 상담은 오전 10시부터 오후 4시까지예요.", "partial"],
+    [hours, "전화 상담은 주말 오전 10시부터 오후 4시까지예요.", "wrong"],
+    [hours, "전화 상담은 매일 오전 10시부터 오후 4시까지예요.", "wrong"],
+    [
+      hours,
+      "전화 상담은 평일 오전 10시부터 오후 4시까지예요. 주말은 쉬어요.",
+      "correct",
+    ],
     // A clock written with a colon: the value, a value that is not the fact's, the old value.
-    [hours, "전화 상담은 10:00부터 16:00까지예요.", "correct"],
+    [hours, "전화 상담은 평일 10:00부터 16:00까지예요.", "correct"],
     [hours, "전화 상담은 09:00부터 18:00까지예요.", "wrong"],
     [
       fact("business-hours/correction"),
@@ -342,6 +434,10 @@ describe("an answer days later, read by rule", () => {
     [staff, "지은이는 화요일과 목요일에 나와요.", "correct"],
     [staff, "지은 씨는 화·목에 출근해요.", "correct"],
     [staff, "지은이는 월요일, 수요일에 나와요.", "wrong"],
+    // The shorthand a list of days is written in.
+    [staff, "지은 씨는 월·수에 나와요.", "wrong"],
+    [staff, "지은 씨는 월, 수, 금 나와요.", "wrong"],
+    [staff, "지은 씨는 화, 목요일에 나와요.", "correct"],
     [place, "한정숙 님은 경비실에 맡겨 달라고 하셨어요.", "correct"],
     [place, "한정숙 님은 문 앞에 두라고 하셨어요.", "wrong"],
     [place, "한정숙 님 배송 요청은 들은 적이 없어요.", "denies"],
@@ -354,6 +450,33 @@ describe("an answer days later, read by rule", () => {
     [deadline, "세무사님께는 매달 5일까지 보내셔야 해요.", "correct"],
     [deadline, "세무사님께는 매달 15일까지 보내셔야 해요.", "wrong"],
     [deadline, "매달 25일까지입니다.", "wrong"],
+    // When something was said is not the day it falls on.
+    [deadline, "그건 5일 전에 말씀하셨어요.", "other"],
+    [pay, "한일포장 건은 10일 전에 말씀하셨어요.", "other"],
+    // A price asked per kilo is answered by the amount.
+    [fact("unit-price/aside"), "18,000원이에요.", "correct"],
+    [fact("unit-price/aside"), "킬로당 15,000원이에요.", "wrong"],
+    // Three jars, not one.
+    [
+      fact("regular-preference/correction"),
+      "오 사장님네는 300g 병 세 개로 나눠서 보내시면 돼요.",
+      "correct",
+    ],
+    [
+      fact("regular-preference/correction"),
+      "오 사장님네는 300g 한 병으로 보내시면 돼요.",
+      "wrong",
+    ],
+    [
+      fact("regular-preference/correction"),
+      "오 사장님네는 300g 병으로 보내시면 돼요.",
+      "partial",
+    ],
+    // A question that asks the owner for nothing is not asking again.
+    [deadline, "다른 것도 도와드릴까요?", "other"],
+    [deadline, "네, 확인했습니다. 더 필요하신 게 있으신가요?", "other"],
+    [deadline, "세무사님 자료 마감이 며칠이었나요?", "asks-again"],
+    [deadline, "그 날짜를 다시 알려 주시면 적어 둘게요.", "asks-again"],
     [deadline, "9월 14일에 말씀하신 대로 매달 5일까지예요.", "correct"],
   ] as const)("%#: %s → %s", (one, answer, kind) => {
     expect(recallOf(one as Fact, answer)).toBe(kind);
@@ -364,6 +487,15 @@ describe("an answer days later, read by rule", () => {
     expect(strangersIn(chat, "18:00에 닫아요.")).toEqual([]);
     expect(strangersIn(chat, "18:30에 닫아요.")).toEqual(["18:30"]);
     expect(strangersIn(chat, "답변까지 3시간쯤 걸려요.")).toEqual([]);
+  });
+
+  test("asking for the fact is a request to be told, or a question about it", () => {
+    expect(asksFor(deadline, "다른 것도 도와드릴까요?")).toBe(false);
+    expect(asksFor(deadline, "어떤 걸 도와드릴까요?")).toBe(false);
+    expect(asksFor(deadline, "궁금한 게 있으면 알려 주세요.")).toBe(false);
+    expect(asksFor(deadline, "매달 며칠까지였나요?")).toBe(true);
+    expect(asksFor(deadline, "5일이었나요, 10일이었나요?")).toBe(true);
+    expect(asksFor(deadline, "다시 한 번 말씀해 주시겠어요?")).toBe(true);
   });
 
   test("a date in the answer is not a value of the fact's kind", () => {
