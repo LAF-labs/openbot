@@ -84,9 +84,73 @@ export function distinctiveWords(fact: string): string[] {
  * shared digit string is not relatedness.
  */
 function numbersOf(text: string): string[] {
-  return tokensOf(text)
-    .map((token) => token.replace(PARTICLE, ""))
-    .filter((token) => /^\d{3}/.test(token));
+  return numberTokensOf(text).filter((token) => /^\d{3}/.test(token));
+}
+
+/** The tokens of a text with every digit-led one read as a number (`numberToken`). */
+const numberTokensOf = (text: string) =>
+  tokensOf(numberText(text)).map(numberToken);
+
+/**
+ * The text as the number clause reads it, before it is split into tokens (first review of pull
+ * request 204): full-width digits and ㎏ as their plain forms; an identifier written in three or
+ * more digit groups joined by one separator — a phone (010-1234-5678, 010.1234.5678, 010 1234
+ * 5678), a business registration, an account — as one value, since the summariser writes it with
+ * or without its separators. Three groups, not two: `9/14 20260300번` is a day and an order
+ * number, 59 times on a run's real summaries, and `11,000-12,000원` is a range. A number glued to
+ * the word before it (잼300g) is its own token.
+ */
+const numberText = (text: string) =>
+  text
+    .normalize("NFKC")
+    .replace(/\d+(?:-\d+){2,}/g, (id) => id.replace(/-/g, ""))
+    .replace(/\d+(?:\.\d+){2,}/g, (id) => id.replace(/\./g, ""))
+    .replace(/\d+(?: \d+){2,}/g, (id) => id.replace(/ /g, ""))
+    .replace(/(\p{L})(?=\d)/gu, "$1 ");
+
+/**
+ * Spellings of one unit the owner and the summariser interchange, read as one — the pairs the
+ * memory evaluation already reads as the same fact (`evals/memory-days-facts.ts`: kg, ㎏, 킬로,
+ * 키로, 킬로그램; g, 그램). 퍼센트 and 프로 read as the bare number, as % does once the tokens are
+ * split. Small on purpose: 개 and EA are not here, EA being unseen in what the Bot writes.
+ */
+const UNIT_SPELLINGS: ReadonlyMap<string, string> = new Map([
+  ["그램", "g"],
+  ["킬로", "kg"],
+  ["키로", "kg"],
+  ["킬로그램", "kg"],
+  ["밀리리터", "ml"],
+  ["리터", "l"],
+  ["센티", "cm"],
+  ["센티미터", "cm"],
+  ["미터", "m"],
+  ["퍼센트", ""],
+  ["프로", ""],
+]);
+
+/** Said after a measure and not part of it: 300g짜리, 300g씩, 300g정도. */
+const MEASURE_SUFFIX = /(짜리|씩|정도|가량|쯤)$/;
+
+/**
+ * A digit-led token as the number it says: the unit in its one spelling, and whatever follows
+ * the number stripped until nothing more comes off — `11,000원에는` carries two particles, and one
+ * strip left `11000원에`, which met nothing (first review of pull request 204). Any other token is
+ * returned as it is.
+ */
+function numberToken(token: string): string {
+  if (!/^\d/.test(token)) return token;
+  let said = token;
+  for (;;) {
+    const unit = splitNumber(said)[1];
+    const spelled = UNIT_SPELLINGS.get(unit);
+    if (spelled !== undefined) {
+      said = said.slice(0, said.length - unit.length) + spelled;
+      continue;
+    }
+    const shorter = said.replace(MEASURE_SUFFIX, "").replace(PARTICLE, "");
+    if (shorter === said) return said;
+    said = shorter;
+  }
 }
 
 /**
@@ -96,7 +160,7 @@ function numbersOf(text: string): string[] {
  * not 300개) and never a longer number the digits run through (300g is not 20260300번).
  */
 function saysNumber(lineTokens: ReadonlySet<string>, number: string): boolean {
-  if (lineTokens.has(number) || lineTokens.has(bareOf(number))) return true;
+  if (lineTokens.has(number)) return true;
   const [digits, unit] = splitNumber(number);
   for (const token of lineTokens) {
     const [tokenDigits, tokenUnit] = splitNumber(token);
@@ -253,9 +317,7 @@ export function lineCarries(line: string, fact: string): boolean {
   if (here.includes(said)) return true;
   const numbers = numbersOf(fact);
   if (numbers.length > 0) {
-    const tokens = new Set(
-      tokensOf(here).map((token) => token.replace(PARTICLE, "")),
-    );
+    const tokens = new Set(numberTokensOf(here));
     if (numbers.some((number) => saysNumber(tokens, number))) return true;
   }
   const words = distinctiveWords(fact);
