@@ -2694,6 +2694,22 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * over the wire, and six shapes refused whole). 1066 and 28 is 1094, and 7 is 1101.
  * (agent-computer's seven are in its own note below.)
  *
+ * RAISED 2026-10-11 FOR THE MAIN CONVERSATION'S WAY INTO THE PROJECTS (record §3, piece 4-4's first
+ * part): `server` from 4249 to 4345, `root` from 1101 to 1134, `app` from 2260 to 2261. Server,
+ * ninety-six: thirty-five in `project-tool.integration.test.ts` (whose projects are read, what each
+ * reading hands over, which projects a result says it read, a summary's cost, a call that does not
+ * say which reading) and forty-six in `project-tool.test.ts` (what the summariser is sent, the two
+ * bounds, which projects a Bot means by a name, which reading a call asks for, the kept
+ * summaries); five in `thread-store.integration.test.ts` (a result that read a gone project is
+ * stored covered, and an append waits behind a deletion's row lock); four in
+ * `conversation-search.integration.test.ts` (one Bot's conversations, a shorter page, the asking
+ * run's own rows left out); three in `chat-tools.test.ts` and two in
+ * `turn-engine.integration.test.ts` (offered outside a project, the mark filed and never handed to
+ * the Bot); one in `conversation-deleting.integration.test.ts` (the main conversation's copies).
+ * Root, thirty-three in `project-read-tool.test.ts`. App, one in `step-labels.test.ts`.
+ * By hand: 35 and 46 is 81, and 5 is 86, and 4 is 90, and 3 is 93, and 2 is 95, and 1 is 96;
+ * 4249 and 96 is 4345. 1101 and 33 is 1134.
+ *
  * RAISED 2026-10-11 FOR A PROJECT'S FOLDER, `server` from 4187 to 4193 and `root` from 946 to 1034
  * (record §3, piece 4-2's second part), by exactly what it brought. Root: sixty-three in
  * `file-scope.test.ts`, the rule as a table — what a scope reaches, where a write goes, what a
@@ -2774,8 +2790,8 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4249, roots: ["server"] },
-  { name: "app", floor: 2260, roots: ["app"] },
+  { name: "server", floor: 4345, roots: ["server"] },
+  { name: "app", floor: 2261, roots: ["app"] },
   {
     name: "agent-computer",
     /*
@@ -2803,7 +2819,7 @@ const GROUPS: readonly {
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 1101, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 1134, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
