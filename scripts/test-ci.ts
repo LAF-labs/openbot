@@ -2799,6 +2799,20 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * six (to 2267), in `today-usage.test.ts` — four shares that are a whole hundredth and were read
  * one under, one in dollars, and the notice at the 80% the meter says.
  *
+ * RAISED 2026-10-11 FOR THE SPELLINGS OF ANOTHER PROJECT'S FILE (the review of the file-scope
+ * rule), `root` from 1295 to 1416, in files that were there. Twelve in `file-scope.test.ts`: a
+ * `..` in a path is no name of the folder's, so the rule refuses it and places nothing (ten) —
+ * `projects/channel_a/../channel_b` was channel_a's own by name — and dots inside a name are a
+ * name (two). One hundred and nine in `project-folder-wire.test.ts`, the server's gateway
+ * against the computer's real routes on a real folder: fourteen spellings of another project's
+ * file (a dot, a doubled slash, a trailing slash, other letters, an absolute path, three climbs,
+ * backslashes, white space, a NUL, decomposed Korean) held out of a read, a write and a card's
+ * question by another project and by the main conversation (twenty-eight each); four names the
+ * computer decodes nothing of, shown to be names of nothing (eight); eight listings; the way
+ * down spelled otherwise; the trail's row; a project's own write placed through a dot and a
+ * doubled slash, and six spellings with no place. By hand: 28 and 28 is 56, and 28 is 84, and 8
+ * is 92, and 8 is 100, and 2 is 102, and 7 is 109; 12 and 109 is 121; 1295 and 121 is 1416.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2856,7 +2870,7 @@ const GROUPS: readonly {
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 1295, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 1416, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
