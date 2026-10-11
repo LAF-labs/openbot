@@ -32,7 +32,13 @@ import { resolveTimeZone } from "../shared/prompt";
 import { toolResultText } from "../shared/prompt/tool-results.ko";
 import { openAccountsIn, WEATHER_TOOL_NAME } from "../shared/tools/bridge";
 import { COMPUTER_TOOLS } from "../shared/tools/computer";
-import { DELEGATE, delegateTargetOf } from "../shared/tools/delegate";
+import { DEEP_EFFORT } from "../shared/fixed-effort";
+import {
+  DELEGATE,
+  DELEGATED_MODES,
+  type DelegateTarget,
+  delegateTargetOf,
+} from "../shared/tools/delegate";
 import {
   measureSchema,
   REALISTIC_TOOLSET,
@@ -248,6 +254,23 @@ async function runOnce(
       promptTokens = (promptTokens ?? 0) + usage.promptTokens;
     }
   };
+  /** A call answered with a refusal, in the envelope the product hands a model. */
+  const refused = (code: string) =>
+    JSON.stringify({ ok: false, code, reason: toolResultText(code) });
+  /**
+   * What a delegated run is sent beside its conversation: no bridge (`turns/engine.ts`), and for
+   * the one handed thinking the effort the server sends that mode whatever the deployment sends
+   * the rest (`copilot.ts`, `DEEP_EFFORT`) — the eval sends what production sends.
+   */
+  const forwardedTo = (mode: "browse" | "think") => ({
+    ...forwarded,
+    // The mode rides on the run in production too: the server composes the prompt from it and
+    // passes it on, and the other service reads it for the one rule that turns on it
+    // (`reasoningEffortOf`).
+    mode,
+    toolDeferral: "off",
+    ...(mode === "think" ? { effort: DEEP_EFFORT } : {}),
+  });
   const within = <T>(work: Promise<T>): Promise<T> =>
     Promise.race([
       work,
@@ -268,13 +291,22 @@ async function runOnce(
    * handed only that, and whether what comes back is what gets said, are the two things
    * delegation can get wrong. So it is run, on the scenario's own pages (`stub`), and what it
    * said last is handed back the way `chat-tools.ts` hands it back.
+   *
+   * THE ONE HANDED THINKING (piece 6-3) IS RUN THE SAME WAY, AS THE PRODUCT RUNS IT: its own
+   * mode's words, no tool at all, a conversation of its own kind, and the effort the server sends
+   * that mode and no other (`DEEP_EFFORT`). A call it makes is a name it made up, and is refused
+   * as the product refuses one.
    */
   const delegated: Delegated[] = [];
-  const browseFor = async (task: string): Promise<Delegated> => {
+  const workFor = async (
+    to: DelegateTarget,
+    task: string,
+  ): Promise<Delegated> => {
     const ordinal = delegated.length + 1;
+    const mode = DELEGATED_MODES[to];
     const inner: unknown[] = [
       systemMessageFor(
-        "browse",
+        mode,
         scenario.person,
         scenario.frozenAt,
         scenario.skills,
@@ -287,6 +319,7 @@ async function runOnce(
       { id: `u_task_${scenario.id}_${ordinal}`, role: "user", content: task },
     ];
     const run: Delegated = {
+      to,
       task,
       calls: [],
       said: "",
@@ -298,15 +331,16 @@ async function runOnce(
     for (let turn = 1; turn <= (scenario.maxTurns ?? MAX_TURNS); turn++) {
       const response = await runAgent(
         {
-          // One conversation for a conversation's delegated runs, as the engine names it.
-          threadId: `thread_eval_${scenario.id}_${attempt}.browse`,
+          // One conversation for each kind of work a conversation hands over, as the engine
+          // names it.
+          threadId: `thread_eval_${scenario.id}_${attempt}.${mode}`,
           runId: `eval_${scenario.id}_${attempt}_d${ordinal}_t${turn}_${Date.now()}`,
           messages: inner,
-          tools: COMPUTER_TOOLS,
+          tools: to === "browser" ? COMPUTER_TOOLS : [],
           context: [],
           state: {},
           // Without the bridge, as the engine sends it: nothing of this run's stands behind one.
-          forwardedProps: { ...forwarded, toolDeferral: "off" },
+          forwardedProps: forwardedTo(mode),
         } as never,
         PINNED ?? liveProvider,
       );
@@ -335,7 +369,10 @@ async function runOnce(
           id: `t_${call.id}`,
           role: "tool",
           toolCallId: call.id,
-          content: (await scenario.stub?.(call)) ?? stubResult(call.name),
+          content:
+            to === "browser"
+              ? ((await scenario.stub?.(call)) ?? stubResult(call.name))
+              : refused("laf:tool_unknown"),
         });
       }
     }
@@ -349,21 +386,19 @@ async function runOnce(
   const handedBack = async (call: {
     arguments?: Record<string, unknown> | null;
   }): Promise<string> => {
-    const refused = (code: string) =>
-      JSON.stringify({ ok: false, code, reason: toolResultText(code) });
     const task =
       typeof call.arguments?.task === "string"
         ? call.arguments.task.trim()
         : "";
-    if (!delegateTargetOf(call.arguments?.to) || !task) {
-      return refused("laf:tool_arguments_invalid");
-    }
+    const to = delegateTargetOf(call.arguments?.to);
+    if (!to || !task) return refused("laf:tool_arguments_invalid");
     // A scenario that is about what the Bot does WITH an answer scripts the answer.
-    const scripted = scenario.handsBack?.(task);
+    const scripted = scenario.handsBack?.(task, to);
     const run: Delegated =
       scripted === undefined
-        ? await browseFor(task)
+        ? await workFor(to, task)
         : {
+            to,
             task,
             calls: [],
             said: "",
@@ -399,10 +434,10 @@ async function runOnce(
          * deployment has opted back in — then the same fixed word is (`evalEffort`, `lib.ts`).
          * EVAL_EFFORT overrides both, for comparing two.
          */
-        // A scenario that IS the delegated run rides what the engine sends one: no bridge.
+        // A scenario that IS a delegated run rides what the engine and the server send one.
         forwardedProps:
-          scenario.mode === "browse"
-            ? { ...forwarded, toolDeferral: "off" }
+          scenario.mode === "browse" || scenario.mode === "think"
+            ? forwardedTo(scenario.mode)
             : forwarded,
       } as never,
       PINNED ?? liveProvider,
