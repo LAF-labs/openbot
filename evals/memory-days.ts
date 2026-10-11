@@ -58,11 +58,7 @@
 
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
-import { runAgent } from "../agent-bot/src/index";
-import {
-  type CompletionProvider,
-  liveProvider,
-} from "../agent-bot/src/provider";
+import type { CompletionProvider } from "../agent-bot/src/provider";
 import {
   looksLikeAnInstruction,
   looksLikeASecret,
@@ -106,7 +102,6 @@ import { toolResultText } from "../shared/prompt/tool-results.ko";
 import { openAccountsIn } from "../shared/tools/bridge";
 import { PROJECT_TOOLS, READ_PROJECTS } from "../shared/tools/projects";
 import { REMEMBER, UPDATE_PROFILE } from "../shared/tools/self";
-import { at, orderPage, pricedFetch } from "./cache-days";
 import { answerText, TURNS as DAY_TURNS } from "./days-talk";
 import { REALISTIC_TOOLSET } from "./deferral";
 import {
@@ -461,22 +456,26 @@ function searchOver(
  * address that answers every request with an empty object: the "nothing found" a Bot reads is the
  * adapter's own sentence.
  */
-const emptyAccount = Bun.serve({ port: 0, fetch: () => Response.json({}) });
-const EMPTY_ACCOUNT = {
-  url: `http://127.0.0.1:${emptyAccount.port}`,
-  token: "eval",
-  timeZone: EVAL_TIME_ZONE,
+let listening: ReturnType<typeof Bun.serve> | null = null;
+/** Opened by the first call that reads it: a run that never goes there opens no port. */
+const emptyAccount = () => {
+  listening ??= Bun.serve({ port: 0, fetch: () => Response.json({}) });
+  return {
+    url: `http://127.0.0.1:${listening.port}`,
+    token: "eval",
+    timeZone: EVAL_TIME_ZONE,
+  };
 };
 type Reader = (args: Record<string, unknown>, now: Date) => Promise<string>;
 const EMPTY_READERS: Readonly<Record<string, Reader>> = {
   [toolNameFor("gmail/search_messages")]: async (args) =>
-    (await gmailCall(EMPTY_ACCOUNT, "search_messages", args)).text,
+    (await gmailCall(emptyAccount(), "search_messages", args)).text,
   [toolNameFor("google-drive/search_files")]: async (args) =>
-    (await driveCall(EMPTY_ACCOUNT, "search_files", args)).text,
+    (await driveCall(emptyAccount(), "search_files", args)).text,
   [toolNameFor("google-drive/list_recent_files")]: async (args) =>
-    (await driveCall(EMPTY_ACCOUNT, "list_recent_files", args)).text,
+    (await driveCall(emptyAccount(), "list_recent_files", args)).text,
   [toolNameFor("google-calendar/list_events")]: async (args, now) =>
-    (await calendarCall(EMPTY_ACCOUNT, "list_events", args, () => now)).text,
+    (await calendarCall(emptyAccount(), "list_events", args, () => now)).text,
 };
 
 /**
@@ -1262,6 +1261,17 @@ if (saved) {
   print((await Bun.file(saved).json()) as Report);
   process.exit(0);
 }
+
+/*
+ * THE MODEL'S CLIENT, ONLY FOR A RUN THAT ASKS A MODEL. `agent-bot/src/provider.ts` builds its
+ * client when it is imported and throws without `OPENAI_API_KEY`, and `./cache-days.ts` imports
+ * it. Imported at the head of this file like the rest, they made the branch above — which reads a
+ * saved report and asks nobody — fail on a machine with no key, before it ran (review of pull
+ * request 183). Everything that uses them is called below this line.
+ */
+const { runAgent } = await import("../agent-bot/src/index");
+const { liveProvider } = await import("../agent-bot/src/provider");
+const { at, orderPage, pricedFetch } = await import("./cache-days");
 
 if (!KEY) {
   console.error(
