@@ -2984,6 +2984,12 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * floor is read to its patch, the config's plugin list carries the check, and its hook refuses
  * `serve` and lets a build through. 2424 and 6 is 2430.
  *
+ * RAISED 2026-10-11 WITH THE BARE RING AND THE RED FILL, `app` by nine (to 2439), all in
+ * `accent-contrast.test.ts`: three once (the bare ring is solid, the house ring recolours the
+ * border under `dark:` too, the filled destructive declares its dark fill) and three per theme
+ * (the bare ring 3:1 on every ground a row sits on, the label on a filled destructive at 4.5, the
+ * red as words on its resting wash at 4.5). 3 and 6 is 9; 2430 and 9 is 2439.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -3013,7 +3019,7 @@ const GROUPS: readonly {
   processes?: number;
 }[] = [
   { name: "server", floor: 4522, roots: ["server"] },
-  { name: "app", floor: 2430, roots: ["app"] },
+  { name: "app", floor: 2439, roots: ["app"] },
   {
     name: "agent-computer",
     /*
