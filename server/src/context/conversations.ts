@@ -128,6 +128,17 @@ type Epoch = EpochKey & {
    * epoch (`laf_conversation_contexts.epoch`, jsonb), so no migration and a restart keeps the cut.
    */
   cut?: DayCut;
+  /**
+   * Failed closes on the cut as it stands, counted at most once a local day and only when the
+   * summariser itself was reached and failed; and the day the last one was counted on. From the
+   * first, an attempt is bounded to the oldest unclosed days; at `CLOSE_FALLBACK_AFTER` the day is
+   * closed without the summariser. Here, beside the cut, so a restart keeps the count (no
+   * migration: the epoch is jsonb) — a VM restarted every couple of days would otherwise never
+   * reach the fallback, and every first attempt after one would be the whole backlog again.
+   * Carried from epoch to epoch until a close succeeds; never read into the frozen text.
+   */
+  closeFailures?: number;
+  closeFailedDay?: string;
 };
 
 type Conversation = {
@@ -163,12 +174,6 @@ type Conversation = {
   closing: boolean;
   /** When the last close failed, ms: the next attempt waits `CLOSE_RETRY_MS`. */
   closeFailedAt: number | null;
-  /**
-   * Failed closes in a row on the cut as it stands. From the first, an attempt is bounded to the
-   * oldest unclosed day; at `CLOSE_FALLBACK_AFTER` the day is closed without the model. Memory
-   * only, like the clock beside it: a restart starts the count again, and costs one more attempt.
-   */
-  closeFailures: number;
   /** What the last look for a close was made against; nothing changed, nothing to look at again. */
   closeCheckedKey: string | null;
   /** Said once per cut: the thread the run carried did not hold the message the cut is after. */
@@ -369,7 +374,7 @@ const DEFAULT_CLOSE_IDLE_MS = 2 * 60_000;
 /** After a failed close (the summariser down), the next attempt waits this long. */
 const CLOSE_RETRY_MS = 30 * 60_000;
 /**
- * After this many failed closes in a row, the day is closed without the model (`unsummarised`).
+ * After this many counted failures, the day is closed without the summariser (`unsummarised`).
  *
  * A FAILED CLOSE MUST NOT BE A PERMANENT ONE. Measured in `eval:memory-days`' sixty-night walk
  * (pull request 200): two of twenty-four conversations stopped closing after one close ran to the
@@ -379,9 +384,14 @@ const CLOSE_RETRY_MS = 30 * 60_000;
  * whole conversation was then carried behind the last summary: a question of 176K–246K prompt
  * tokens instead of 8K. Three, not one: the other walk's night did not reproduce (its input,
  * rebuilt, came back in 3 s), so one failure is as likely a provider's bad minute as an input the
- * model cannot finish, and the retry is bounded to the oldest day so it is never larger than what
- * failed. The fallback the agent runtimes document is the same shape — compaction fails, the
- * context is cut deterministically and the conversation goes on (research in the pull request).
+ * model cannot finish, and the retry is bounded to the oldest days so it is never larger than what
+ * failed. COUNTED ONCE A LOCAL DAY, AND ONLY THE SUMMARISER'S: the close is looked at again half
+ * an hour after a failure on the owner's next message, so a chatty morning under a provider outage
+ * would otherwise be three attempts by 10:35 and yesterday replaced by a gap line the same morning
+ * (review of pull request 202); and the database being down three nights is not the summariser
+ * failing three times. The fallback the agent runtimes document is the same shape — compaction
+ * fails, the context is cut deterministically and the conversation goes on (research in the pull
+ * request).
  */
 const CLOSE_FALLBACK_AFTER = 3;
 
@@ -391,58 +401,138 @@ function dayOf(message: StampedMessage, zone: string): string | null {
   return typeof at === "string" ? dayLabel(new Date(at), zone) : null;
 }
 
-/** A day label as the summary writes one: `9/26`. */
-const shortDay = (label: string) =>
-  `${Number(label.slice(5, 7))}/${Number(label.slice(8, 10))}`;
+/** The words every gap line carries, by which one is known again whatever else the model wrote. */
+const GAP_WORDS = "요약되지 않았다";
+/** The dates a gap line opens with: `- 9/25~9/28: …` or `- 9/25: …`. */
+const GAP_DATES =
+  /^-\s*(\d{1,2})\/(\d{1,2})(?:\s*~\s*(\d{1,2})\/(\d{1,2}))?\s*:/;
+const DAY_MS = 86_400_000;
+
+/** A day key `2026-09-26` as a count of days. */
+const dayNumber = (key: string) =>
+  Math.floor(
+    Date.UTC(
+      Number(key.slice(0, 4)),
+      Number(key.slice(5, 7)) - 1,
+      Number(key.slice(8, 10)),
+    ) / DAY_MS,
+  );
+
+/** A `9/26` as the most recent such day on or before `until`: the summary carries no year. */
+function dayNumberOf(month: number, day: number, until: number): number {
+  const year = new Date(until * DAY_MS).getUTCFullYear();
+  const same = Math.floor(Date.UTC(year, month - 1, day) / DAY_MS);
+  return same > until
+    ? Math.floor(Date.UTC(year - 1, month - 1, day) / DAY_MS)
+    : same;
+}
+
+/** A day as the summary writes one: `9/26`. */
+function shortDay(n: number): string {
+  const date = new Date(n * DAY_MS);
+  return `${date.getUTCMonth() + 1}/${date.getUTCDate()}`;
+}
+
+/** The days a gap line covers. */
+type Gap = { first: number; last: number };
+
+/** The gap a line names, read by its dates and the gap words, or null for any other line. */
+function gapOf(line: string, until: number): Gap | null {
+  if (!line.includes(GAP_WORDS)) return null;
+  const found = GAP_DATES.exec(line.trim());
+  if (!found) return null;
+  const first = dayNumberOf(Number(found[1]), Number(found[2]), until);
+  const last =
+    found[3] && found[4]
+      ? dayNumberOf(Number(found[3]), Number(found[4]), until)
+      : first;
+  return { first, last: Math.max(first, last) };
+}
 
 /**
- * The summary a close makes without the model: what the last close said, carried as it was, and
- * one line that says which days the model never summarised — the dates and the count, nothing
- * about what was in them. The Bot is told what is not in the summary; it is never told something
- * the model did not write. Held to the bound the way every summary is, oldest lines first.
+ * The line that stands for days the summariser never summarised: the dates and the gap words,
+ * nothing about what was in them, and that the conversation of those days is still there to look
+ * up — no count, because a number the model may rewrite should not sit in a sentence the Bot
+ * reads as fact. The Bot is told what is not in its summary; it is never told something the model
+ * did not write.
+ */
+const gapLine = (gap: Gap) =>
+  `- ${gap.first === gap.last ? shortDay(gap.first) : `${shortDay(gap.first)}~${shortDay(gap.last)}`}: 이 기간의 대화는 ${GAP_WORDS}. 그때 나눈 대화는 그대로 남아 있어 찾아볼 수 있다.`;
+
+/**
+ * The summary a close makes without the summariser: what the last close said, carried as it was,
+ * and one gap line for the span — joined with the gap line before it when their days touch or
+ * overlap, so gaps never pile up as lines. Held to the bound the way every summary is, oldest
+ * lines first.
  */
 export function unsummarisedSummary(
   previous: string | null,
   span: readonly StampedMessage[],
   zone: string,
 ): { summary: string; days: number } {
-  const days = [
+  const keys = [
     ...new Set(
-      span.map((message) => dayOf(message, zone)).filter(Boolean) as string[],
+      span
+        .map((message) => dayOf(message, zone))
+        .filter((label): label is string => label !== null)
+        .map(dayKey),
     ),
   ].sort();
-  const first = days[0];
-  const last = days[days.length - 1];
-  const when =
-    first && last
-      ? first === last
-        ? shortDay(first)
-        : `${shortDay(first)}~${shortDay(last)}`
-      : "날짜 모름";
-  const line = `- ${when}: 이 기간의 대화 ${span.length}건은 ${GAP_WORDS} (요약이 ${CLOSE_FALLBACK_AFTER}번 실패). 그동안의 일은 이 요약에 없다.`;
+  const first = keys[0];
+  const last = keys[keys.length - 1];
+  const lines = (previous ?? "").split("\n").filter((line) => line.trim());
+  if (!first || !last) {
+    // Rows from before stamps: a gap with no dates, which nothing will join.
+    const line = `- 날짜 모름: 이 기간의 대화는 ${GAP_WORDS}. 그때 나눈 대화는 그대로 남아 있어 찾아볼 수 있다.`;
+    return { summary: boundedSummary([...lines, line].join("\n")), days: 0 };
+  }
+  let gap: Gap = { first: dayNumber(first), last: dayNumber(last) };
+  const kept = lines.filter((line) => {
+    const before = gapOf(line, gap.last);
+    if (!before) return true;
+    if (before.last + 1 < gap.first || before.first > gap.last + 1) return true;
+    gap = {
+      first: Math.min(before.first, gap.first),
+      last: Math.max(before.last, gap.last),
+    };
+    return false;
+  });
   return {
-    summary: boundedSummary([previous ?? "", line].filter(Boolean).join("\n")),
-    days: days.length,
+    summary: boundedSummary([...kept, gapLine(gap)].join("\n")),
+    days: keys.length,
   };
 }
 
-/** The words every gap line carries, by which one is known again. */
-const GAP_WORDS = "요약되지 않았다";
-
 /**
- * The summary with every gap line `previous` held that the summariser's rewrite left out, put
+ * The summary with every gap `previous` held that the summariser's rewrite no longer covers, put
  * back at its head. Measured 2026-10-11 with the real summariser: told to carry `previous` unless
  * the transcript settled it, it rewrote the summary the night after a fallback without the line
  * naming the days it never covered — so the Bot would have known about the gap for one day. A
- * gap is not settled by a day's talk; it goes at the head because the bound gives up the head
- * first, and that is the right order to forget it in.
+ * gap is not settled by a day's talk. Known by its days, not its wording: a line the model merged
+ * or reworded still covers the gap and is left as the model wrote it (review of pull request 202,
+ * where the exact words were matched and gaps multiplied). It goes at the head because the bound
+ * gives up the head first, and that is the right order to forget it in.
  */
-export function withGapsKept(summary: string, previous: string | null): string {
-  const gaps = (previous ?? "")
+export function withGapsKept(
+  summary: string,
+  previous: string | null,
+  today: string,
+): string {
+  const until = dayNumber(dayKey(today));
+  const covered = summary
     .split("\n")
-    .filter((line) => line.includes(GAP_WORDS) && !summary.includes(line));
-  return gaps.length > 0
-    ? boundedSummary([...gaps, summary].join("\n"))
+    .map((line) => gapOf(line, until))
+    .filter((gap): gap is Gap => gap !== null);
+  const missing = (previous ?? "").split("\n").filter((line) => {
+    if (!line.includes(GAP_WORDS)) return false;
+    const gap = gapOf(line, until);
+    if (!gap) return !summary.includes(line);
+    return !covered.some(
+      (held) => held.first <= gap.first && held.last >= gap.last,
+    );
+  });
+  return missing.length > 0
+    ? boundedSummary([...missing, summary].join("\n"))
     : summary;
 }
 
@@ -767,6 +857,8 @@ export function createConversationStore(
     input: PrepareInput,
     reason: EpochReason,
     cut?: DayCut,
+    /** The failure count the epoch before carried, when no close is being taken. */
+    failures?: Pick<Epoch, "closeFailures" | "closeFailedDay">,
   ): Pick<Conversation, "epoch" | "known"> => ({
     epoch: {
       ...input.key,
@@ -776,6 +868,7 @@ export function createConversationStore(
       startedAt: input.now.toISOString(),
       system: withSummary(input.system(input.facts), cut),
       ...(cut ? { cut } : {}),
+      ...(failures?.closeFailures ? failures : {}),
     },
     known: input.facts,
   });
@@ -789,7 +882,6 @@ export function createConversationStore(
     close: null,
     closing: false,
     closeFailedAt: null,
-    closeFailures: 0,
     closeCheckedKey: null,
     cutMissingLogged: false,
     requests: 0,
@@ -814,6 +906,8 @@ export function createConversationStore(
     if (!options.force && conversation.closeCheckedKey === key) return false;
     conversation.closing = true;
     const started = Date.now();
+    /** Whether the summariser was called: only its failure counts toward the fallback. */
+    let reached = false;
     try {
       /*
        * NEVER MID-TASK. A run going on, or a step waiting on the owner's answer, would have its own
@@ -825,43 +919,55 @@ export function createConversationStore(
       const after = conversation.epoch.cut?.through ?? null;
       const whole = closePoint(stored, { today, timeZone: zone, after });
       if (!whole) return conversation.close !== null;
-      const failures = conversation.closeFailures;
+      const failures = conversation.epoch.closeFailures ?? 0;
       const giveUp = failures >= CLOSE_FALLBACK_AFTER;
+      const floor = days.minChars ?? MIN_DAY_CLOSE_CHARS;
       /*
        * A RETRY IS NEVER LARGER THAN WHAT FAILED. The span grows by a day for every night the close
        * fails, and the attempt that failed was already too much for the model; so after a failure
-       * the attempt is the oldest unclosed day alone — the same input as the night before, or
-       * smaller — and the close it makes stands for that day only, the rest carried as it is. The
-       * next close, on the moved cut, takes what remains.
+       * the attempt is the oldest unclosed days — as few as clear the close floor, which is a
+       * subset of what the failed attempt sent, since that attempt cleared the floor over the same
+       * days — and the close it makes stands for those days only, the rest carried as it is. The
+       * next close, on the moved cut, takes what remains. As few as clear the floor, not the oldest
+       * day alone: a day of two words bounded to by itself was under the floor, never attempted,
+       * never counted, and the close was stuck for good (review of pull request 202).
        */
       let point = whole;
       let closeDay = today;
       if (failures > 0 && !giveUp) {
-        const firstDay = dayOf(whole.span[0] as StampedMessage, zone);
-        const second = whole.span
-          .map((message) => dayOf(message, zone))
-          .find((day) => day !== null && day !== firstDay);
-        const oldest = second
-          ? closePoint(stored, { today: second, timeZone: zone, after })
-          : null;
-        if (oldest) {
-          point = oldest;
-          closeDay = second as string;
+        const labels = [
+          ...new Set(
+            whole.span
+              .map((message) => dayOf(message, zone))
+              .filter((label): label is string => label !== null),
+          ),
+        ].sort();
+        for (const label of labels.slice(1)) {
+          const prefix = closePoint(stored, {
+            today: label,
+            timeZone: zone,
+            after,
+          });
+          if (prefix && JSON.stringify(prefix.span).length >= floor) {
+            point = prefix;
+            closeDay = label;
+            break;
+          }
         }
       }
       if (conversation.close?.through === point.through) return true;
       const chars = JSON.stringify(point.span).length;
-      if (chars < (days.minChars ?? MIN_DAY_CLOSE_CHARS)) return false;
+      if (chars < floor) return false;
       const previous = conversation.epoch.cut?.summary ?? null;
       let summary: string;
       let arm = "none";
       let transcriptChars = 0;
       if (giveUp) {
         /*
-         * WITHOUT THE MODEL. The last summary carried as it was, and the days it never covered
-         * named in it — never written for it. Said out loud with the counts, because this is the
-         * one close after which the Bot does not know what those days held; the owner's screen and
-         * the conversation's own search still do.
+         * WITHOUT THE SUMMARISER (the dream below still reads the span). The last summary carried
+         * as it was, and the days it never covered named in it — never written for it. Said out
+         * loud with the counts, because this is the one close after which the Bot does not know
+         * what those days held; the owner's screen and the conversation's own search still do.
          */
         const made = unsummarisedSummary(previous, point.span, zone);
         summary = made.summary;
@@ -894,12 +1000,14 @@ export function createConversationStore(
         const forgotten = days.forgotten
           ? await days.forgotten(conversation.botId)
           : [];
+        reached = true;
         const written = await days.summarize({
           previous,
           transcript,
           day: closeDay,
           forgotten,
         });
+        reached = false;
         /*
          * TOLD, AND CHECKED. The owner's message saying a fact they later forgot is in the
          * transcript the summariser read, and a model told not to write something sometimes writes
@@ -910,6 +1018,7 @@ export function createConversationStore(
             ? (await scrub({ summary: written, forgotten })).summary
             : written,
           previous,
+          closeDay,
         );
       }
       /*
@@ -939,7 +1048,15 @@ export function createConversationStore(
       }
       conversation.close = { through: point.through, summary, day: closeDay };
       conversation.closeFailedAt = null;
-      conversation.closeFailures = 0;
+      if (conversation.epoch.closeFailures) {
+        const {
+          closeFailures: _count,
+          closeFailedDay: _day,
+          ...epoch
+        } = conversation.epoch;
+        conversation.epoch = epoch;
+        keep(conversation);
+      }
       // Counts only. Never a message, never the summary.
       log.info("day_closed", {
         bot: conversation.botId,
@@ -953,12 +1070,19 @@ export function createConversationStore(
       return true;
     } catch (error) {
       conversation.closeFailedAt = now;
-      conversation.closeFailures += 1;
+      if (reached && conversation.epoch.closeFailedDay !== dayKey(today)) {
+        conversation.epoch = {
+          ...conversation.epoch,
+          closeFailures: (conversation.epoch.closeFailures ?? 0) + 1,
+          closeFailedDay: dayKey(today),
+        };
+        keep(conversation);
+      }
       // The count and the time: a close that ran to its bound reads apart from one refused at once.
       log.warn("day_close_failed", {
         bot: conversation.botId,
         reason: describeFailure(error),
-        failures: conversation.closeFailures,
+        failures: conversation.epoch.closeFailures ?? 0,
         ms: Date.now() - started,
       });
       return false;
@@ -1043,7 +1167,14 @@ export function createConversationStore(
           (takeClose ? "day_boundary" : null);
         if (moved) {
           const cut = takeClose && close ? close : conversation.epoch.cut;
-          Object.assign(conversation, freeze(input, moved, cut), {
+          // A close taken is a close that succeeded: the count went with it.
+          const failures = takeClose
+            ? undefined
+            : {
+                closeFailures: conversation.epoch.closeFailures,
+                closeFailedDay: conversation.epoch.closeFailedDay,
+              };
+          Object.assign(conversation, freeze(input, moved, cut, failures), {
             pending: null,
             requests: 0,
           });
