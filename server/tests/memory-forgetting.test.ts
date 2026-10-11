@@ -225,6 +225,66 @@ describe("the number clause on a dated line", () => {
   );
 
   /*
+   * What the substring clause caught and the first whole-token cut missed (Codex, first review of
+   * pull request 204) — every row a line that DOES carry the forgotten fact, so a miss is a
+   * privacy failure on the rule arm. Each is on fewer of the fact's words than the ratio asks
+   * for, so the number clause alone decides; each is red with the piece it names reverted:
+   * - stacked particles: 11,000원에는 strips to 11000원에 with one strip, so a digit-led token is
+   *   stripped until nothing comes off (`numberToken`);
+   * - an identifier written with separators — a phone, a business registration, an account —
+   *   is one value whether or not its hyphens are written (`numberText`); 010.1234.5678 too;
+   * - the same unit in another spelling: 300그램 is 300g, 500킬로 is 500kg (`UNIT_SPELLINGS`,
+   *   the pairs `evals/memory-days-facts.ts` already reads as one);
+   * - and the rest of the class: a measure's suffix (300g짜리, 300g씩, 300g정도), a number glued
+   *   to the word before it (잼300g), full-width digits (３００g, ㎏).
+   */
+  const PHONE = "논산 카페의 딸기 공급 문의 전화번호는 010-1234-5678이다.";
+  const CAUGHT: ReadonlyArray<[fact: string, line: string]> = [
+    ["유자 가격은 11,000원이다.", "- 9/14: 단가 11,000원에는 부가세 포함"],
+    [PHONE, "- 9/14: 연락처 01012345678 저장"],
+    ["문의 전화번호는 01012345678이다.", "- 9/14: 연락처 010-1234-5678 저장"],
+    [PHONE, "- 9/14: 연락처 010.1234.5678 저장"],
+    [PHONE, "- 9/14: 연락처 010 1234 5678 저장"],
+    [
+      "논산 카페 사업자번호는 123-45-67890이다(세금계산서용).",
+      "- 9/14: 세금계산서에 1234567890 적음",
+    ],
+    ["유자 가격은 11,000원이다.", "- 9/14: 단가 11,000-12,000원 사이"],
+    ["딸기잼은 300g 병으로 받는다.", "- 9/15: 잼 300그램 병 발송"],
+    ["딸기잼은 300그램 병으로 받는다.", "- 9/15: 잼 300g 병 발송"],
+    ["설탕은 500kg 단위로 들여온다.", "- 9/15: 설탕 500킬로 입고"],
+    ["설탕은 500kg 단위로 들여온다.", "- 9/15: 설탕 500㎏ 입고"],
+    ["딸기잼은 300g 병으로 받는다.", "- 9/15: 잼 300g짜리 병 발송"],
+    ["딸기잼은 300g 병으로 받는다.", "- 9/15: 잼 300g씩 담아 발송"],
+    ["딸기잼은 300g 병으로 받는다.", "- 9/15: 잼 300g정도 담아 발송"],
+    ["딸기잼은 300g 병으로 받는다.", "- 9/15: 잼300g 발송"],
+    ["딸기잼은 300g 병으로 받는다.", "- 9/15: 잼 ３００g 발송"],
+  ];
+  test.each(CAUGHT)(
+    "a dated line saying the number in another writing goes %#",
+    (fact, line) => {
+      expect(lineCarries(line, fact)).toBe(true);
+    },
+  );
+
+  /*
+   * The identifier reading must not reopen what the clause closed: a canonical identifier is
+   * one whole token, so it is never a substring of a longer one, and a date or an amount range
+   * is not an identifier. Red with the substring clause restored.
+   */
+  const IDENTIFIER_STAYS: ReadonlyArray<[fact: string, line: string]> = [
+    [PHONE, "- 9/14: 계좌 1234-5678-9012 입금"],
+    [PHONE, "- 9/14: 주문 20260300번 반품"],
+    ["딸기잼은 300g 병으로 받는다.", "- 2026-03-00: 병뚜껑 입고"],
+  ];
+  test.each(IDENTIFIER_STAYS)(
+    "an identifier is one whole value, never a digit string shared %#",
+    (fact, line) => {
+      expect(lineCarries(line, fact)).toBe(false);
+    },
+  );
+
+  /*
    * KNOWN LIMITS of the whole-token clause, pinned as what it does today, not as what it should:
    * - the same whole price on another product's quote is lost — every one of the 51 unrelated
    *   dated lines the clause still drops on the run's real summaries is this shape (11,000원 or
@@ -245,6 +305,17 @@ describe("the number clause on a dated line", () => {
       ["이번 달 매출은 300만 원이다.", "- 9/16: 병뚜껑 300개 입고", true],
       [YUJA, "- 9/14: 유자 매입가 1만8천원/kg로 합의", false],
       [YUJA, "- 9/14: 유자 단가 kg당 만팔천 원", false],
+      // The class Codex probed, where the writing is not one token's: an amount in 만/천 words,
+      // an identifier of two groups only (`02 1234` is not read as one — three groups make an
+      // identifier, since `9/14 20260300번` is a day and an order), and 개/EA (not equated).
+      ["유자 가격은 11,000원이다.", "- 9/14: 단가 1만1천원 합의", false],
+      ["유자 가격은 11,000원이다.", "- 9/14: 단가 11천원 합의", false],
+      [
+        "논산 카페 사무실 전화는 02-1234이다(내선 없음).",
+        "- 9/14: 사무실 021234 저장",
+        false,
+      ],
+      ["병뚜껑은 300개씩 들여온다.", "- 9/16: 병뚜껑 300EA 입고", false],
     ];
   test.each(LIMITS)(
     "known limit: the number clause on %# reads %s as %p",
