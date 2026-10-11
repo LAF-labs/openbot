@@ -131,7 +131,6 @@ export function createFeedStore(options: {
           rows.length > FEED_PAGE_SIZE && last
             ? `${last.createdAt.toISOString()}|${last.id}`
             : null,
-        unseen: await unseen(userId),
         routines: routines.map((routine) => ({
           ...routine,
           nextRunAt: routine.nextRunAt.toISOString(),

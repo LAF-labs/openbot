@@ -148,7 +148,7 @@ const account =
     if (pathname === "/api/routines") return json({ routines: [] });
     if (pathname === "/api/feed/unseen") return json({ count: 2 });
     if (pathname === "/api/feed") {
-      return json({ posts: [POST], next: null, unseen: 2, routines: [] });
+      return json({ posts: [POST], next: null, routines: [] });
     }
     if (pathname === "/api/goals") return json({ goals: [GOAL], active: 1 });
     if (pathname === "/api/agents/bot-1/made") {
@@ -161,7 +161,7 @@ const account =
 const firstDay = account(({ pathname }) => {
   if (pathname === "/api/feed/unseen") return json({ count: 0 });
   if (pathname === "/api/feed") {
-    return json({ posts: [], next: null, unseen: 0, routines: [] });
+    return json({ posts: [], next: null, routines: [] });
   }
   if (pathname === "/api/goals") return json({ goals: [], active: 0 });
   if (pathname === "/api/agents/bot-1/made") {
