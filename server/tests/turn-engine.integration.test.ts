@@ -32,6 +32,7 @@ import type { ChatToolkit, ChatTurnContext } from "../src/turns/chat-tools";
 import {
   createTurnEngine,
   delegatedThreadOf,
+  handedBack,
   repairUnanswered,
   withoutBrowserSteps,
 } from "../src/turns/engine";
@@ -1445,6 +1446,94 @@ describe("a run the turn delegated to", () => {
     expect(worker.forwarded).toEqual([ridden, ridden]);
     // No tool is sent it: what the hand-over said it holds is what it holds.
     expect(worker.offered).toEqual([[], []]);
+  });
+
+  /*
+   * WHAT COMES BACK IS THE RUN'S LAST REPLY, AND ONLY IF THAT REPLY ASKS FOR NOTHING. A run says
+   * things between its steps, and the last of those used to be handed back as the answer when
+   * the run ended without one — "찾아볼게요." as `{ ok: true }`.
+   */
+  test("a run that ends without an answer hands nothing back — not what it said on the way", async () => {
+    const conversation = await aConversation();
+    const made: ReturnType<typeof scriptedBot>[] = [];
+    const main = delegating();
+    const handed: string[] = [];
+    const { engine } = engineWith(
+      main,
+      (context: ChatTurnContext): ChatToolkit["execute"] =>
+        async (name, args, call) => {
+          if (name !== "delegate") return { ok: true, title: "네이버" };
+          const back = await context.delegate?.({
+            callId: call.id,
+            mode: "browse",
+            instruction: String(args.task),
+            tools: [
+              { name: "computer_navigate", description: "go", parameters: {} },
+            ],
+            execute: async () => ({ ok: true, title: "네이버" }),
+            signal: call.signal,
+          });
+          handed.push(back?.answer ?? "(nothing ran)");
+          return { ok: false, code: "laf:tool_failed" };
+        },
+      {
+        resolveAgents: async () => {
+          // The run it is handed to says "찾아볼게요." with its one call, and then nothing.
+          const next = made.length === 0 ? main : scriptedBot("");
+          made.push(next);
+          return { [BOT]: next as unknown as LoopAgent };
+        },
+      },
+    );
+    const turnId = await send(engine, conversation, "서울 날씨 찾아줘");
+    await until(async () => (await statusOf(turnId)) === "done");
+    expect(made[1]?.messages.map((message) => message.content)).toContain(
+      "찾아볼게요.",
+    );
+    expect(handed).toEqual([""]);
+  });
+
+  /** A reply of a run's: its words, and the one call it asks for where a call id is given. */
+  const said = (content: string, callId?: string): Message =>
+    ({
+      id: `a-${content}-${callId ?? "answer"}`,
+      role: "assistant",
+      content,
+      ...(callId
+        ? {
+            toolCalls: [
+              {
+                id: callId,
+                type: "function",
+                function: { name: "computer_navigate", arguments: "{}" },
+              },
+            ],
+          }
+        : {}),
+    }) as Message;
+
+  test.each([
+    [
+      "its last reply, where that asks for nothing",
+      [said("들어가 볼게요.", "c1"), said("21도였어요.")],
+      "21도였어요.",
+    ],
+    [
+      "nothing where the last reply is empty",
+      [said("들어가 볼게요.", "c1"), said("")],
+      "",
+    ],
+    [
+      "nothing where the last reply is another call, whatever it says",
+      [said("21도였어요."), said("한 번 더 확인해 볼게요.", "c2")],
+      "",
+    ],
+    ["nothing where it never replied", [], ""],
+    ["its words trimmed", [said("  21도였어요.\n")], "21도였어요."],
+  ] as const)("what a delegated run hands back is %s", (_, replies, answer) => {
+    expect(handedBack([asked("서울 날씨"), ...replies] as Message[])).toBe(
+      answer,
+    );
   });
 
   test("the Bot that delegated is never handed the steps: not in the turn, not on the next one", async () => {
