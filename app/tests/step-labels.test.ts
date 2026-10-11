@@ -7,6 +7,8 @@ import { ROUTINE_NOTE } from "@shared/tools/routine-note";
 import { SELF_TOOLS } from "@shared/tools/self";
 import { SKILL_VIEW } from "@shared/tools/skills";
 import {
+  DELEGATED_STEP_LABELS,
+  DELEGATING,
   SERVICE_STEP_LABELS,
   STEP_DONE_LABELS,
   STEP_LABELS,
@@ -39,6 +41,11 @@ describe("the step labels", () => {
       ...Object.values(STEP_LABELS),
       ...Object.values(STEP_DONE_LABELS),
       ...Object.values(SERVICE_STEP_LABELS),
+      ...Object.values(DELEGATED_STEP_LABELS).flatMap((line) => [
+        line.doing,
+        line.done,
+      ]),
+      DELEGATING,
       "Used {service}",
       "Used a connected service",
       "Used a tool",
@@ -59,6 +66,62 @@ describe("the step labels", () => {
     // A connected service's line is a "…하기": true either way, and left as it is.
     expect(stepLineOf("mcp__web-search__search", true)).toEqual(
       stepLineOf("mcp__web-search__search"),
+    );
+  });
+
+  /*
+   * `delegate` IS NAMED BY THE WORK, NOT THE HAND-OVER (piece 6-3). With two kinds of work under
+   * one tool, a Bot thinking for half a minute under "브라우저로 알아보는 중" is a line that says
+   * something that is not happening.
+   */
+  test("a hand-over is named by who it was handed to, as soon as that has arrived", () => {
+    const think = '{"to":"think","task":"두 대출을 비교해 줘."}';
+    expect(stepLineOf("delegate", false, think).label).toBe(
+      "Thinking it through",
+    );
+    expect(stepLineOf("delegate", true, think).label).toBe(
+      "Thought it through",
+    );
+    expect(ko["Thinking it through"]).toMatch(/는 중$/);
+    expect(ko["Thought it through"]).not.toMatch(/는 중$/);
+    // While the arguments are still arriving: known from the moment `to` is whole.
+    expect(
+      stepLineOf("delegate", false, '{"to":"think","task":"두 대').label,
+    ).toBe("Thinking it through");
+    // The browser's, a line drawn from the name alone, and a word that is no target, read as
+    // they did.
+    for (const args of [
+      '{"to":"browser","task":"날씨"}',
+      '{"task":"날씨","to":"browser"}',
+      undefined,
+      '{"to":"constructor","task":"x"}',
+    ]) {
+      expect(stepLineOf("delegate", false, args).label).toBe(
+        "Handing the browsing over",
+      );
+      expect(stepLineOf("delegate", true, args).label).toBe("Used the browser");
+    }
+    /*
+     * WHILE `to` HAS NOT ARRIVED, THE LINE DOES NOT SAY WHICH. The model writes `task` first and
+     * `to` last (seen on the real stack): for as long as the task streams, nothing says which
+     * kind of work this is, and a guess is a line that is wrong half the time.
+     */
+    for (const args of [
+      "",
+      "{",
+      '{"task":"think 말고 브라우저로',
+      '{"to":"thi',
+    ]) {
+      expect(stepLineOf("delegate", false, args).label).toBe(DELEGATING);
+    }
+    expect(ko[DELEGATING]).toMatch(/는 중$/);
+    // Over, it is not "getting ready": a call that ended without a target reads as the table's.
+    expect(stepLineOf("delegate", true, '{"task":"x"}').label).toBe(
+      "Used the browser",
+    );
+    // And no other tool's line reads its arguments.
+    expect(stepLineOf("tool_call", false, think)).toEqual(
+      stepLineOf("tool_call"),
     );
   });
 
