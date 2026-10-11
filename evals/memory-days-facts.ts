@@ -55,6 +55,12 @@ export type Fact = {
 const n = (digits: string, unit: string) =>
   new RegExp(`(?<![\\d,])${digits}\\s?${unit}`);
 
+/**
+ * An hour as it is said or written: `6시`, `18시`, `18:00`. Not `3시간`, and not the minutes of a
+ * clock read as an hour of their own.
+ */
+const CLOCK = /(?<![\d:])\d{1,2}(\s?시(?!간)|:\d{2})/g;
+
 export const FACTS: readonly Fact[] = [
   {
     id: "supplier-terms/aside",
@@ -137,12 +143,12 @@ export const FACTS: readonly Fact[] = [
     note: "고객 문의 전화는 평일 오전 10시부터 오후 4시까지만 받는다.",
     ask: "우리 전화 상담은 몇 시에 시작해서 몇 시에 끝나지?",
     entity: /전화/,
-    // A summary writes the hours as a range: `10~16시`, `10:00~16:00`.
+    // A summary writes the hours as a range, an answer as a clock: `10~16시`, `10:00~16:00`.
     values: [
       /(?<![\d:])10\s?(시|:00|\s?[~\-–]\s?\d)/,
       /(?<![\d:])(4|16)\s?(시|:00)/,
     ],
-    shape: /(?<!\d)\d{1,2}\s?시(?!간)/g,
+    shape: CLOCK,
   },
   {
     id: "business-hours/correction",
@@ -158,9 +164,9 @@ export const FACTS: readonly Fact[] = [
     note: "채팅 문의는 저녁 6시까지만 받는다(전에는 8시까지였다).",
     ask: "채팅 상담은 몇 시에 닫는다고 했지?",
     entity: /채팅/,
-    values: [/(?<!\d)(6|18)\s?시/],
-    shape: /(?<!\d)\d{1,2}\s?시(?!간)/g,
-    stale: /(?<!\d)(8|20)\s?시/,
+    values: [/(?<![\d:])(6|18)(\s?시|:00)/],
+    shape: CLOCK,
+    stale: /(?<![\d:])(8|20)(\s?시|:00)/,
   },
   {
     id: "staff-days/aside",
@@ -443,12 +449,16 @@ export function strangersIn(fact: Fact, text: string): string[] {
 export type Written = "whole" | "part" | "stale" | "other";
 
 /**
- * A written line against the fact: `whole` holds every value; `part` some of them; `stale` a
- * correction's old value and not its new one; `other` is a line about something else.
+ * A written line against the fact: `whole` names what the fact is about and holds every value;
+ * `part` holds some of them, or all of them and not what they are about — "매주 금요일까지" on
+ * 수첩 is a Friday with no task; `stale` a correction's old value and not its new one; `other` is
+ * a line about something else.
  */
 export function writtenOf(fact: Fact, line: string): Written {
   const held = present(line, fact.values);
-  if (held === fact.values.length) return "whole";
+  if (held === fact.values.length) {
+    return fact.entity.test(line) ? "whole" : "part";
+  }
   if (held > 0) return "part";
   if (fact.stale?.test(line) && fact.entity.test(line)) return "stale";
   return "other";
