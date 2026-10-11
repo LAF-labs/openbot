@@ -8,16 +8,19 @@ import {
   asksFor,
   beforeTheFact,
   busyTurn,
+  decisionEndpointFor,
+  type Fact,
   FACT_KINDS,
   FACTS,
-  type Fact,
-  MUST_NOTS,
+  lookupsOf,
   meanOf,
+  MUST_NOTS,
   outOf,
   PHRASINGS,
   recallOf,
   strangersIn,
   survivalIn,
+  undoes,
   writtenOf,
 } from "../evals/memory-days-facts";
 import {
@@ -88,9 +91,12 @@ describe("the table of what an owner says in passing", () => {
     (_id, one) => {
       expect(recallOf(one, one.ask)).not.toBe("correct");
       expect(strangersIn(one, one.ask)).toEqual([]);
-      // What a question does state — a price's "킬로당" — its answer is not held to.
+      // What a question does state — a price's "킬로당", a deadline's "다달이" — its answer is
+      // not held to.
       const stated = one.values.filter((value) => value.test(one.ask));
-      expect(stated).toHaveLength(one.kind === "unit-price" ? 1 : 0);
+      expect(stated).toHaveLength(
+        one.kind === "unit-price" || one.kind === "recurring-deadline" ? 1 : 0,
+      );
       expect(askedOf(one)).toHaveLength(one.values.length - stated.length);
       expect(askedOf(one).length).toBeGreaterThan(0);
     },
@@ -246,6 +252,21 @@ describe("a written line, read against the fact", () => {
       "고객 문의 전화는 평일 오전 10시부터 오후 4시까지다.",
       "whole",
     ],
+    // Every month, every week: without it the line is one date.
+    ["recurring-deadline/aside", "세무사 자료는 5일까지 넘긴다.", "part"],
+    ["recurring-deadline/aside", "세무사 자료는 매달 5일까지 넘긴다.", "whole"],
+    ["recurring-deadline/correction", "기획전 신청은 금요일까지.", "part"],
+    [
+      "recurring-deadline/correction",
+      "기획전 신청은 매주 금요일까지.",
+      "whole",
+    ],
+    // The numerals with the halves of the day swapped are other hours.
+    [
+      "business-hours/aside",
+      "고객 문의 전화는 평일 오후 10시부터 오전 4시까지다.",
+      "part",
+    ],
     // One jar of 300g is a third of what the café gets.
     [
       "regular-preference/correction",
@@ -386,6 +407,10 @@ describe("an answer days later, read by rule", () => {
       "correct",
     ],
     [pay, "한일포장은 주문할 때 바로 결제하는 곳이에요.", "wrong"],
+    // The right day in a month that is not the next one.
+    [pay, "한일포장은 11월 10일 결제예요.", "wrong"],
+    [pay, "한일포장은 11월 15일 결제예요.", "wrong"],
+    [pay, "한일포장은 10월 10일 결제예요.", "correct"],
     [
       pay,
       "한일포장 3호 박스 200장 대금은 10/10(토)에 주기로 하셨어요.",
@@ -407,6 +432,24 @@ describe("an answer days later, read by rule", () => {
     [hours, "전화 상담은 평일 오전 10시부터 오후 4시까지예요.", "correct"],
     [hours, "전화 상담은 평일 10시부터 16시까지입니다.", "correct"],
     [hours, "전화 상담은 오전 9시부터 오후 6시까지예요.", "wrong"],
+    // The halves of the day swapped: other hours, and wrong.
+    [hours, "전화 상담은 평일 오후 10시부터 오전 4시까지예요.", "wrong"],
+    [hours, "전화 상담은 평일 오전 10시부터 16시까지예요.", "correct"],
+    [
+      fact("business-hours/correction"),
+      "채팅 상담은 오전 6시에 닫아요.",
+      "wrong",
+    ],
+    [
+      fact("business-hours/correction"),
+      "채팅 상담은 저녁 6시에 닫아요.",
+      "correct",
+    ],
+    [
+      fact("business-hours/correction"),
+      "채팅 상담은 오전 8시에 닫아요.",
+      "wrong",
+    ],
     // Which days: the hours without them are part of it, on other days they are wrong.
     [hours, "전화 상담은 오전 10시부터 오후 4시까지예요.", "partial"],
     [hours, "전화 상담은 주말 오전 10시부터 오후 4시까지예요.", "wrong"],
@@ -450,6 +493,22 @@ describe("an answer days later, read by rule", () => {
     [deadline, "세무사님께는 매달 5일까지 보내셔야 해요.", "correct"],
     [deadline, "세무사님께는 매달 15일까지 보내셔야 해요.", "wrong"],
     [deadline, "매달 25일까지입니다.", "wrong"],
+    // A deadline asked "다달이" / "주마다" is answered by the day.
+    [deadline, "5일까지예요.", "correct"],
+    [fact("recurring-deadline/correction"), "금요일까지예요.", "correct"],
+    // A correction told backwards gives the old value as the one that stands.
+    [price, "논산 딸기는 1kg에 11,000원에서 9,500원으로 내렸어요.", "wrong"],
+    [price, "논산 딸기는 1kg에 9,500원에서 11,000원으로 올랐어요.", "correct"],
+    [
+      fact("staff-days/correction"),
+      "민수는 일요일이 아니라 토요일에 나와요.",
+      "wrong",
+    ],
+    [
+      fact("staff-days/correction"),
+      "민수는 토요일이 아니라 일요일에 나와요.",
+      "correct",
+    ],
     // When something was said is not the day it falls on.
     [deadline, "그건 5일 전에 말씀하셨어요.", "other"],
     [pay, "한일포장 건은 10일 전에 말씀하셨어요.", "other"],
@@ -503,6 +562,80 @@ describe("an answer days later, read by rule", () => {
       [],
     );
     expect(strangersIn(deadline, "매달 15일까지예요.")).toEqual(["15일"]);
+  });
+});
+
+describe("a correction told backwards", () => {
+  const price = fact("unit-price/correction");
+  const backwards = "논산 딸기는 1kg에 11,000원에서 9,500원으로 내렸다.";
+  const forwards = "논산 딸기는 1kg에 9,500원에서 11,000원으로 올랐다.";
+
+  test("is not the fact written down: it writes the old value as the one that stands", () => {
+    expect(undoes(price, backwards)).toBe(true);
+    expect(writtenOf(price, backwards)).toBe("stale");
+    expect(survivalIn(price, `- 9/14: ${backwards}`)).toBe("gone");
+  });
+
+  test("the correction itself, with both values in it, is still the fact", () => {
+    expect(undoes(price, forwards)).toBe(false);
+    expect(writtenOf(price, forwards)).toBe("whole");
+    expect(survivalIn(price, `- 9/14: ${forwards}`)).toBe("whole");
+  });
+
+  test.each(
+    FACTS.filter((one) => one.phrasing === "correction").map(
+      (one) => [one.id, one] as const,
+    ),
+  )(
+    "%s — what the owner said and what the notebook holds are not backwards",
+    (_id, one) => {
+      expect(undoes(one, one.said)).toBe(false);
+      expect(undoes(one, one.note)).toBe(false);
+    },
+  );
+
+  test("an aside has nothing to undo", () => {
+    expect(undoes(fact("unit-price/aside"), "18,000원에서 15,000원으로")).toBe(
+      false,
+    );
+  });
+});
+
+describe("where a turn looked", () => {
+  test("a turn that searched its own past and went elsewhere is one of each", () => {
+    expect(
+      lookupsOf([
+        { ownPast: true, elsewhere: true },
+        { ownPast: true, elsewhere: false },
+        { ownPast: false, elsewhere: true },
+        { ownPast: false, elsewhere: false },
+      ]),
+    ).toEqual({ ownPast: 2, elsewhere: 2, either: 3 });
+  });
+});
+
+describe("where the decisions model may be asked", () => {
+  test.each([
+    [
+      { OPENAI_BASE_URL: "https://openrouter.ai/api/v1" },
+      "https://openrouter.ai/api",
+    ],
+    // Another provider's endpoint: its key is not OpenRouter's, and goes nowhere else.
+    [{ OPENAI_BASE_URL: "https://api.example-llm.kr/v1" }, null],
+    [{ OPENAI_BASE_URL: "https://openrouter.ai.example.com/v1" }, null],
+    // Unset is OpenAI's own endpoint.
+    [{}, null],
+    // The deployment's switch.
+    [
+      { OPENAI_BASE_URL: "https://openrouter.ai/api/v1", JEV_ENABLED: "off" },
+      null,
+    ],
+    [
+      { OPENAI_BASE_URL: "https://openrouter.ai/api/v1", JEV_ENABLED: "on" },
+      "https://openrouter.ai/api",
+    ],
+  ] as const)("%j → %s", (env, endpoint) => {
+    expect(decisionEndpointFor(env)).toBe(endpoint);
   });
 });
 

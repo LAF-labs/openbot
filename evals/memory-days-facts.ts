@@ -14,6 +14,7 @@
  * None of them is in the pack's two memories, and no question below is answered by another fact.
  */
 
+import { decisionBaseUrlOf } from "../server/src/computer/decision-call";
 import { answerText, TURNS } from "./days-talk";
 
 export const FACT_KINDS = [
@@ -81,10 +82,26 @@ const WEEKDAY =
   /[월화수목금토일]요일|(?<![가-힣])[월화수목금토일](?:\s?[·,/]\s?[월화수목금토일])+(?=요일|[에은는이가만도로과와]|[\s.,!?)]|$)/g;
 
 /**
- * An hour as it is said or written: `6시`, `18시`, `18:00`. Not `3시간`, and not the minutes of a
- * clock read as an hour of their own.
+ * An hour as it is said or written, with the half of the day it is said in: `6시`, `저녁 6시`,
+ * `18시`, `18:00`. Not `3시간`, and not the minutes of a clock read as an hour of their own. The
+ * half of the day is part of the hour so that `오후 10시` is not the 10 a shop opens at.
  */
-const CLOCK = /(?<![\d:])\d{1,2}(\s?시(?!간)|:\d{2})/g;
+const CLOCK =
+  /(?:(?:오전|오후|아침|낮|저녁|밤|새벽)\s?)?(?<![\d:])\d{1,2}(\s?시(?!간)|:\d{2})/g;
+
+/** Said before an hour, it is not the morning's. */
+const NOT_MORNING = "(?<!(?:오후|저녁|밤)\\s?)";
+/** Said before an hour, it is not the afternoon's or the evening's. */
+const NOT_EVENING = "(?<!(?:오전|아침|새벽)\\s?)";
+
+/**
+ * A month named: `11월`. Not the 월 of 월요일 or of 월말, and not `3개월`.
+ */
+const MONTH = "(?<![\\d개])\\d{1,2}\\s?월(?![요말초])";
+
+/** Every month, every week: what makes a deadline a standing one and not a date. */
+const MONTHLY = /매달|매월|매\s달|다달이|달마다|월마다/;
+const WEEKLY = /매주|매\s주|주마다|일주일마다/;
 
 /** Which days a schedule holds on, said as something other than weekdays. Not "주말은 쉬어요". */
 const OTHER_DAYS =
@@ -128,8 +145,11 @@ export const FACTS: readonly Fact[] = [
       /다음\s?달|익월|다음\s?월|(?<!\d)10\s?월|(?<![\d/])10\/10(?!\d)/,
       new RegExp(`${day("10").source}|(?<![\\d/])10\\/10(?!\\d)`),
     ],
-    shape:
-      /선결제|바로\s?결제|즉시\s?결제|월\s?말|말일|(?<![\d월]\s?)\d{1,2}\s?일(?!\s?(이내|안|전|후))/g,
+    // A month named is a value of the kind too: `11월 10일` is the right day in the wrong month.
+    shape: new RegExp(
+      `선결제|바로\\s?결제|즉시\\s?결제|월\\s?말|말일|${MONTH}|(?<![\\d월]\\s?)\\d{1,2}\\s?일(?!\\s?(이내|안|전|후))`,
+      "g",
+    ),
     stale: /바로\s?결제|선결제|즉시\s?결제|주문(할|하실)\s?때/,
   },
   {
@@ -177,8 +197,11 @@ export const FACTS: readonly Fact[] = [
     entity: /전화/,
     // A summary writes the hours as a range, an answer as a clock: `10~16시`, `10:00~16:00`.
     values: [
-      /(?<![\d:])10\s?(시|:00|\s?[~\-–]\s?\d)/,
-      /(?<![\d:])(4|16)\s?(시|:00)/,
+      // Ten in the morning and four in the afternoon: 오후 10시 and 오전 4시 are other hours.
+      new RegExp(`${NOT_MORNING}(?<![\\d:])10\\s?(시|:00|\\s?[~\\-–]\\s?\\d)`),
+      new RegExp(
+        `${NOT_EVENING}(?<![\\d:])4\\s?(시|:00)|(?<![\\d:])16\\s?(시|:00)`,
+      ),
       // Weekdays only: the same hours on a weekend, or every day, are another schedule.
       /평일|주중|월\s?[~\-–]\s?금|월요일부터\s?금요일/,
     ],
@@ -198,9 +221,16 @@ export const FACTS: readonly Fact[] = [
     note: "채팅 문의는 저녁 6시까지만 받는다(전에는 8시까지였다).",
     ask: "채팅 상담은 몇 시에 닫는다고 했지?",
     entity: /채팅/,
-    values: [/(?<![\d:])(6|18)(\s?시|:00)/],
+    // Six in the evening, where it was eight in the evening: 오전 6시 is neither.
+    values: [
+      new RegExp(
+        `${NOT_EVENING}(?<![\\d:])6(\\s?시|:00)|(?<![\\d:])18(\\s?시|:00)`,
+      ),
+    ],
     shape: CLOCK,
-    stale: /(?<![\d:])(8|20)(\s?시|:00)/,
+    stale: new RegExp(
+      `${NOT_EVENING}(?<![\\d:])8(\\s?시|:00)|(?<![\\d:])20(\\s?시|:00)`,
+    ),
   },
   {
     id: "staff-days/aside",
@@ -286,7 +316,8 @@ export const FACTS: readonly Fact[] = [
     note: "매출 정산 자료는 매달 5일까지 세무사에게 넘겨야 한다.",
     ask: "세무사님께 자료 보내는 마감이 다달이 며칠이었지?",
     entity: /세무사/,
-    values: [day("5")],
+    // Every month: "5일까지" alone is one date.
+    values: [day("5"), MONTHLY],
     shape: /(?<![\d월]\s?)\d{1,2}\s?일(?!\s?(이내|안|전|후))|월\s?말|말일/g,
   },
   {
@@ -304,7 +335,8 @@ export const FACTS: readonly Fact[] = [
     note: "스토어 기획전 신청은 매주 금요일까지 넣어야 한다(전에는 수요일까지였다).",
     ask: "기획전 신청은 주마다 무슨 요일이 마감이었지?",
     entity: /기획전/,
-    values: [/금요일|→\s?금(?![가-힣\d])/],
+    // Every week: "금요일까지" alone is one Friday.
+    values: [/금요일|→\s?금(?![가-힣\d])/, WEEKLY],
     shape: WEEKDAY,
     stale: /수요일|수\s?→/,
   },
@@ -536,6 +568,32 @@ export function beforeTheFact(item: Fact | MustNot, busy: boolean): Exchange[] {
 const present = (text: string, patterns: readonly RegExp[]) =>
   patterns.filter((pattern) => pattern.test(text)).length;
 
+/**
+ * What a correction changed: the values its first statement did not already hold. A price's
+ * "1kg에" and a deadline's "매주" were said that morning too.
+ */
+function corrected(fact: Fact): RegExp[] {
+  const said = fact.before?.owner ?? "";
+  return fact.values.filter((value) => !value.test(said));
+}
+
+/**
+ * A CORRECTION TOLD BACKWARDS: the new value given up for the old one — "11,000원에서 9,500원으로
+ * 내렸어요", "일요일이 아니라 토요일", "금요일 → 수요일". Both values are in it, so by its values
+ * alone it read as the fact whole; it is the fact undone (review of pull request 183). The other
+ * order is the correction itself and stays: "9,500원에서 11,000원으로 올랐어요", "토→일".
+ */
+export function undoes(fact: Fact, text: string): boolean {
+  if (!fact.stale) return false;
+  const stale = fact.stale.source;
+  return corrected(fact).some((value) =>
+    new RegExp(
+      `(?:${value.source})[^.\\n]{0,12}?(?:에서|→|->|아니라|말고)[^.\\n]{0,20}?(?:${stale})`,
+      "i",
+    ).test(text),
+  );
+}
+
 /** Every value-shaped thing a text says that is not one of the fact's own. */
 export function strangersIn(fact: Fact, text: string): string[] {
   const found = text.match(fact.shape) ?? [];
@@ -551,26 +609,27 @@ export type Written = "whole" | "part" | "stale" | "other";
 
 /**
  * A written line against the fact: `whole` names what the fact is about and holds every value;
- * `part` holds some of them, or all of them and not what they are about — "매주 금요일까지" on
+ * `part` holds some of what the owner would ask for (`askedOf`), or all of it and not what it is
+ * about — "매주 금요일까지" on
  * 수첩 is a Friday with no task; `stale` a correction's old value and nothing of what replaced it;
  * `other` is a line about something else.
  */
 export function writtenOf(fact: Fact, line: string): Written {
   const held = present(line, fact.values);
+  // Told backwards, it writes the old value down as the one that stands.
+  if (fact.entity.test(line) && undoes(fact, line)) return "stale";
   if (held === fact.values.length) {
     return fact.entity.test(line) ? "whole" : "part";
   }
   // What the morning's first statement already held — a price's "1kg에" — is not the correction.
-  const said = fact.before?.owner ?? "";
-  const corrected = fact.values.filter((value) => !value.test(said));
   if (
     fact.stale?.test(line) &&
     fact.entity.test(line) &&
-    present(line, corrected) === 0
+    present(line, corrected(fact)) === 0
   ) {
     return "stale";
   }
-  return held > 0 ? "part" : "other";
+  return present(line, askedOf(fact)) > 0 ? "part" : "other";
 }
 
 /** Whether a text a Bot is given still holds the fact: on one line, on lines about it, or not. */
@@ -586,9 +645,12 @@ export function survivalIn(fact: Fact, text: string): Survival {
     .split("\n")
     .filter((line) => fact.entity.test(line))
     .join("\n");
-  const held = present(about, fact.values);
-  if (held === fact.values.length) return "whole";
-  return held > 0 ? "part" : "gone";
+  // A correction told backwards holds every value and is not the fact.
+  if (undoes(fact, about)) return "gone";
+  if (present(about, fact.values) === fact.values.length) return "whole";
+  // Part of the fact is part of what the owner would ask for: "매달" beside another day, or
+  // "1kg에" beside another price, is the frame of the fact around something else.
+  return present(about, askedOf(fact)) > 0 ? "part" : "gone";
 }
 
 export const RECALLS = [
@@ -648,7 +710,7 @@ export function asksFor(fact: Fact, answer: string): boolean {
  * An answer to "what was it again", by rule, in this order:
  *   correct     every value of the fact is in it, and it does not say it is unsure
  *   wrong       it states a value of the fact's kind that is not the fact's — a correction's old
- *               value among them — without the right ones
+ *               value among them — without the right ones, or tells a correction backwards
  *   partial     some of the fact's values and nothing wrong — or all of them, hedged: "9/18
  *               금요일이었어요. 매주 같은 요일인지는 기록에 없어요" (measured, 2026-10-11: a summary
  *               had turned "every Friday" into one date)
@@ -670,6 +732,8 @@ export function recallOf(fact: Fact, answer: string): Recall {
   if (!text) return "other";
   const asked = askedOf(fact);
   const held = present(text, asked);
+  // The old value given as the one that stands now, whatever else is in the sentence.
+  if (undoes(fact, text)) return "wrong";
   // Every value, beside a sentence that it does not know: the fact was not given whole.
   if (held === asked.length) {
     return UNSURE.test(text) ? "partial" : "correct";
@@ -690,6 +754,38 @@ export function recallOf(fact: Fact, answer: string): Recall {
 /** The values an answer has to give: the fact's, less what its question states. */
 export function askedOf(fact: Fact): RegExp[] {
   return fact.values.filter((value) => !value.test(fact.ask));
+}
+
+/**
+ * How many turns looked the fact up, and where. A turn that searched its own past AND went
+ * elsewhere is one of each: taken as a difference of the two, it was in neither count of
+ * "elsewhere" while the list of places beside the count still named where it went (review of
+ * pull request 183).
+ */
+export function lookupsOf(
+  turns: ReadonlyArray<{ ownPast: boolean; elsewhere: boolean }>,
+): { ownPast: number; elsewhere: number; either: number } {
+  return {
+    ownPast: turns.filter((turn) => turn.ownPast).length,
+    elsewhere: turns.filter((turn) => turn.elsewhere).length,
+    either: turns.filter((turn) => turn.ownPast || turn.elsewhere).length,
+  };
+}
+
+/**
+ * WHERE THE DECISIONS MODEL (JEV) MAY BE ASKED, AS PRODUCTION DECIDES IT
+ * (`server/src/server-model-calls.ts`): only with the switch on (`JEV_ENABLED`, on unless it says
+ * `off`) and only where the deployment's own endpoint is OpenRouter — the key it holds is an
+ * OpenRouter key. Null everywhere else, and the server model stands in. The harness used to build
+ * the Jev client against `https://openrouter.ai/api` whatever the endpoint was, which hands a key
+ * meant for another provider, and the conversation, to a host nobody configured.
+ */
+export function decisionEndpointFor(
+  env: Record<string, string | undefined>,
+): string | null {
+  if (env.JEV_ENABLED?.trim().toLowerCase() === "off") return null;
+  const base = env.OPENAI_BASE_URL?.trim();
+  return base ? decisionBaseUrlOf(base) : null;
 }
 
 /** `2/3` — a count, never a percentage of three. */

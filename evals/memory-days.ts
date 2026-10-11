@@ -118,8 +118,10 @@ import {
 import {
   beforeTheFact,
   busyTurn,
+  decisionEndpointFor,
   FACTS,
   type Fact,
+  lookupsOf,
   MUST_NOTS,
   type MustNot,
   meanOf,
@@ -167,7 +169,14 @@ const SAID_TURN = 2;
 
 const MODEL = process.env.BOT_MODEL?.trim() ?? "";
 const KEY = process.env.OPENAI_API_KEY ?? "";
-const BASE_URL = process.env.OPENAI_BASE_URL ?? "https://openrouter.ai/api/v1";
+/*
+ * THE KEY GOES WHERE THE BOT'S OWN REQUESTS GO, AND NOWHERE ELSE. Unset, agent-bot's client talks
+ * to OpenAI, so the closes' calls do too — never to a default of this file's choosing. And Jev is
+ * asked only where production would ask it (`decisionEndpointFor`).
+ */
+const BASE_URL =
+  process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1";
+const JEV_BASE_URL = decisionEndpointFor(process.env);
 const SERVER_MODEL = process.env.SERVER_MODEL?.trim() || "z-ai/glm-5.3-flash";
 const JEV_MODEL = process.env.EVAL_JEV_MODEL ?? "typesafe/jev-1.13-20260917";
 const PROVIDER = process.env.EVAL_PROVIDER?.trim() || null;
@@ -734,20 +743,25 @@ async function walkOnce(fact: Fact, arm: Arm, run: number): Promise<Walk> {
     fetch: pricedFetch(paid),
   };
   // The production compactor, as the `days` case builds it: Jev, the server model behind it.
+  const standIn = modelAsker(serverCall, { timeoutMs: 120_000 });
   const compactor = createCompactor({
     mode: "decisions",
-    asker: withFallback(
-      jevAsker(
-        {
-          baseUrl: "https://openrouter.ai/api",
-          model: JEV_MODEL,
-          apiKey,
-          onUsage: (usage) => paid(usage.costUsd ?? 0),
-        },
-        { timeoutMs: 20_000, purpose: "eval-memory-days" },
-      ),
-      modelAsker(serverCall, { timeoutMs: 120_000 }),
-    ),
+    // Jev where production would ask it, the server model behind it; the server model alone
+    // where it would not (an endpoint that is not OpenRouter, or `JEV_ENABLED=off`).
+    asker: JEV_BASE_URL
+      ? withFallback(
+          jevAsker(
+            {
+              baseUrl: JEV_BASE_URL,
+              model: JEV_MODEL,
+              apiKey,
+              onUsage: (usage) => paid(usage.costUsd ?? 0),
+            },
+            { timeoutMs: 20_000, purpose: "eval-memory-days" },
+          ),
+          standIn,
+        )
+      : standIn,
     excerpts: true,
   });
   const summarize = createDaySummarizer(serverCall, { timeoutMs: 120_000 });
@@ -1144,12 +1158,16 @@ function printWalks(report: Report) {
         `  ${pad(arm, 12)} after ${closes}: ${RECALLS.map((name) => `${name} ${at.filter(({ kind }) => kind === name).length}`).join(" · ")}  of ${at.length}`,
       );
     }
-    const searched = mornings.filter(
-      ({ morning }) => morning.lookups.length > 0,
-    );
     const looked = mornings.filter(
       ({ morning }) =>
         morning.lookups.length > 0 || morning.others.some(looksElsewhere),
+    );
+    // Each count on its own: a turn that did both is one of each (`lookupsOf`).
+    const counts = lookupsOf(
+      mornings.map(({ morning }) => ({
+        ownPast: morning.lookups.length > 0,
+        elsewhere: morning.others.some(looksElsewhere),
+      })),
     );
     const where = new Map<string, number>();
     for (const { morning } of mornings) {
@@ -1165,7 +1183,7 @@ function printWalks(report: Report) {
         ? "—"
         : `${(meanOf(rows.map(({ morning }) => morning.spent.requests)) ?? 0).toFixed(1)} req · ${(meanOf(rows.map(({ morning }) => morning.spent.promptTokens)) ?? 0).toFixed(0)} prompt tok · $${(meanOf(rows.map(({ morning }) => morning.spent.costUsd)) ?? 0).toFixed(5)} · ${(meanOf(rows.map(({ morning }) => morning.spent.seconds)) ?? 0).toFixed(1)}s`;
     console.log(
-      `  ${pad(arm, 12)} searched its own past ${outOf(searched.length, mornings.length)} · looked elsewhere ${outOf(looked.length - searched.length, mornings.length)}${where.size ? ` (${[...where].map(([name, count]) => `${name} ${count}`).join(", ")})` : ""} · wrote it down when asked ${outOf(wrote.length, mornings.length)}`,
+      `  ${pad(arm, 12)} searched its own past ${outOf(counts.ownPast, mornings.length)} · looked elsewhere ${outOf(counts.elsewhere, mornings.length)}${where.size ? ` (${[...where].map(([name, count]) => `${name} ${count}`).join(", ")})` : ""} · wrote it down when asked ${outOf(wrote.length, mornings.length)}`,
     );
     console.log(
       `  ${pad(arm, 12)} a turn that looked something up (${looked.length}): ${cost(looked)}`,
@@ -1300,7 +1318,7 @@ const report: Report = {
   walks: [],
 };
 console.log(
-  `\nmemory after days · model ${MODEL} · provider ${PROVIDER ?? "routed"} · server model ${SERVER_MODEL}` +
+  `\nmemory after days · model ${MODEL} · provider ${PROVIDER ?? "routed"} · server model ${SERVER_MODEL} · decisions ${JEV_BASE_URL ? JEV_MODEL : "the server model alone (no Jev here)"}` +
     `\n${TOOLS.length} tools · ${RUNS} run(s) a cell · parts ${PARTS.join(", ")} · arms ${CHOSEN_ARMS.join(", ")}\n`,
 );
 
