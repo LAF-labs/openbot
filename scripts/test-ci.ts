@@ -2875,6 +2875,12 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * from before the rule gets no session while unproved; and is let in once the address is vouched
  * for. 4404 and 4 is 4408.
  *
+ * RAISED 2026-10-11 WITH THE DREAM REFUSING A PROJECT'S DAY, `server` by two (to 4410), both in
+ * `memory-evidence.integration.test.ts`: a main conversation whose day showed a habit closes, then
+ * a project's day about an errand closes after it, and the habit stands — the model was asked once
+ * and never about the project; and the same with the project deleted while its close was held
+ * mid-summary (the review of pull request 185). 4408 and 2 is 4410.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2903,7 +2909,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4408, roots: ["server"] },
+  { name: "server", floor: 4410, roots: ["server"] },
   { name: "app", floor: 2402, roots: ["app"] },
   {
     name: "agent-computer",
