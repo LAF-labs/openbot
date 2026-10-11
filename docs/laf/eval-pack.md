@@ -3154,6 +3154,121 @@ run ($0.056 capture, $0.097 the questions, $0.351 the 737 closes), $0.27 for the
   make: an answer that gives the right weekday from a date ("9/18 금요일이었어요") counts as `correct`.
 - **One model, one phrasing of each question, three runs.** A cell of 3/3 is three turns.
 
+### Further out — 60 busy nights, and the bound (2026-10-11)
+
+After 21 nights the summary stood at mean 1,869 / max 2,821 of its 3,000 characters and the oldest-first cut had
+never run. This walk goes on until it does: the `passing-busy` arm with its first day corrected (eight other
+things beside the fact, as on every later day), **60 nights, two walks a fact, asked on the mornings after
+1 · 3 · 7 · 14 · 21 · 30 · 45 · 60**. Same model and server model as above, same day. 24 walks, 1,440 nights,
+192 questions; **$1.38** ($1.333 the run — $1.174 its closes, $0.159 its questions — the rest trying it out and
+replaying the stalled close below).
+
+```bash
+EVAL_RUNS=2 EVAL_MEMORY_PARTS=days EVAL_MEMORY_ARMS=passing-busy EVAL_MEMORY_CLOSES=1,3,7,14,21,30,45,60 bun run eval:memory-days
+```
+
+Two things the harness gained for it. Each night now records what the summariser sent back **before** the bound
+was applied (read where the reply arrives — `createDaySummarizer` hands it on already cut), so "the cut ran" is
+counted and not inferred, and the night's summary itself. And a busy day past the first week no longer names the
+first week's people in the first week's pairings: each of `busyTurn`'s lists also steps by the week at its own
+pace, so a pairing comes round again only after seven weeks, and the quotes past the first week end in 50 (on the
+round ones day 9 was the table's old strawberry price and day 14 its new one).
+
+● the fact whole in what the Bot is given · ◐ part of it (a value without its subject, or without its "every
+week") · ○ gone. In the answers: ✓ correct, `asks` asks again, `looking` still calling tools when the turn's four
+rounds ran out, `*` searched its own past.
+
+| fact | run | closes made | the fact in what the Bot is given, morning after 1 · 3 · 7 · 14 · 21 · 30 · 45 · 60 | the answer, same mornings |
+|---|---|---|---|---|
+| `supplier-terms/aside` | 1 | 59/60 | ● ● ● ○ ○ ○ ○ ○ | ✓ · ✓ · ✓ · ✓* · looking* · looking · ✓* · ✓* |
+| `supplier-terms/aside` | 2 | 60/60 | ● ● ● ● ● ● ○ ○ | ✓ · ✓ · ✓ · ✓ · ✓ · ✓ · ✓* · looking |
+| `supplier-terms/correction` | 1 | 56/60 | ● ● ● ● ● ◐ ○ ○ | ✓ · ✓ · ✓ · ✓ · ✓ · asks · looking · asks |
+| `supplier-terms/correction` | 2 | 59/60 | ● ● ● ● ● ● ● ● | ✓ · ✓ · ✓ · ✓ · ✓ · ✓ · ✓ · ✓ |
+| `unit-price/aside` | 1 | 3/60 (stopped) | ● ● ● ● ● ● ● ● | ✓ · ✓ · ✓ · ✓ · ✓ · ✓ · ✓ · ✓ |
+| `unit-price/aside` | 2 | 60/60 | ● ● ● ● ● ○ ○ ○ | ✓ · ✓ · ✓ · ✓ · ✓ · ✓* · looking* · looking |
+| `unit-price/correction` | 1 | 60/60 | ● ● ● ● ● ● ○ ○ | ✓ · ✓ · ✓ · ✓ · ✓ · ✓ · asks · asks |
+| `unit-price/correction` | 2 | 56/60 | ● ● ● ● ○ ○ ○ ○ | ✓ · ✓ · ✓ · ✓ · asks · looking · ✓* · asks |
+| `business-hours/aside` | 1 | 60/60 | ● ● ● ● ● ● ● ○ | ✓ · ✓ · ✓ · ✓ · ✓ · ✓ · ✓ · asks |
+| `business-hours/aside` | 2 | 60/60 | ● ● ● ○ ○ ○ ○ ○ | ✓ · ✓ · ✓ · asks · asks · asks · asks · asks |
+| `business-hours/correction` | 1 | 60/60 | ● ● ● ● ● ○ ○ ○ | ✓ · ✓ · ✓ · ✓ · ✓ · asks · asks · asks |
+| `business-hours/correction` | 2 | 55/60 | ● ● ● ● ● ● ● ○ | ✓ · ✓ · ✓ · ✓ · ✓ · ✓ · ✓ · asks |
+| `staff-days/aside` | 1 | 60/60 | ● ● ● ○ ○ ○ ○ ○ | ✓ · ✓ · ✓ · asks · asks · asks · asks · asks |
+| `staff-days/aside` | 2 | 60/60 | ● ● ● ○ ○ ○ ○ ○ | ✓ · ✓ · ✓ · looking · looking · asks · looking · asks |
+| `staff-days/correction` | 1 | 60/60 | ● ● ● ● ○ ○ ○ ○ | ✓ · ✓ · ✓ · ✓ · looking · asks · ✓* · looking |
+| `staff-days/correction` | 2 | 60/60 | ● ● ● ○ ○ ○ ○ ○ | ✓ · ✓ · ✓ · looking · asks · looking · looking · looking |
+| `regular-preference/aside` | 1 | 60/60 | ◐ ◐ ◐ ◐ ◐ ◐ ◐ ○ | ✓ · ✓ · ✓ · ✓ · ✓ · ✓ · ✓ · asks |
+| `regular-preference/aside` | 2 | 60/60 | ● ● ◐ ○ ○ ○ ○ ○ | ✓ · ✓ · part · asks · looking · ✓* · asks · other |
+| `regular-preference/correction` | 1 | 20/60 (stopped) | ● ● ● ● ● ● ● ● | ✓ · ✓ · ✓ · ✓ · ✓ · ✓ · ✓ · ✓ |
+| `regular-preference/correction` | 2 | 58/60 | ● ● ● ○ ○ ○ ○ ○ | ✓ · ✓ · ✓ · looking* · looking · WRONG* · asks · looking |
+| `recurring-deadline/aside` | 1 | 60/60 | ● ● ● ● ● ○ ○ ○ | ✓ · ✓ · ✓ · ✓ · ✓ · asks · looking · asks |
+| `recurring-deadline/aside` | 2 | 59/60 | ● ● ● ● ● ● ○ ○ | ✓ · ✓ · ✓ · ✓ · ✓ · ✓ · asks · asks |
+| `recurring-deadline/correction` | 1 | 59/60 | ◐ ○ ○ ○ ○ ○ ○ ○ | ✓ · asks · looking* · asks · asks · asks · asks · asks |
+| `recurring-deadline/correction` | 2 | 60/60 | ◐ ◐ ◐ ○ ○ ○ ○ ○ | ✓ · ✓ · ✓ · asks · looking · asks · asks · ✓* |
+
+| | |
+|---|---|
+| The fact in the summary, the 22 walks whose closes went on (whole · part · gone) | night 1: 21 · 3 · 0 of 24 · 3: 21 · 2 · 1 of 24 · 7: 19 · 3 · 1 of 23 · 14: 13 · 1 · 9 of 23 · 21: 10 · 1 · 11 · 30: 6 · 2 · 14 · 45: 3 · 1 · 18 · **60: 1 · 0 · 21** of 22 |
+| The summary carried, characters (bound 3,000) | night 1: mean 562 · 7: 1,384 · 14: 1,554 · 21: 1,904 · 30: 2,088 · 45: 2,261 (max 2,992) · 60: 1,955 (max 2,859) |
+| Closes on which the summariser wrote past the bound, so the oldest-first cut ran | **32 of 1,324** (2.4%), in 18 of the 22 walks; the first on night 20; longest written 3,234. By stretch of nights: 1–14: 0 of 323 · 15–21: 1 of 157 · 22–30: 6 of 196 · 31–45: 8 of 327 · 46–60: 17 of 321. Written at 2,700 or more: 126 |
+| Closes after which the summary was shorter than the night before | 375 of 1,300 — the summariser folds days into ranges on its own ("9/14~10/11: 뚜껑 헐거움 답장 초안 완료 — …"); the largest drop 1,630 characters |
+| How the fact left the summary, the 16 walks read night by night | kept to the end: 1 · lost on a night the cut ran: 7 (nights 20–51) · lost on a night the summariser rewrote a summary well under the bound: 7 (nights 8–19, summaries of 800–1,950 characters) · lost just under it: 1 (night 48, 2,993 written). Median night of loss: 20 |
+| A cut on a summary that still held the fact | the fact gone that night: **7 of 7**. (The other 19 cuts in those walks came after it was already gone) |
+| What the Bot was given → what it did, 192 mornings | whole 104 → correct 104 · part 13 → correct 11, asks-again 1, partial 1 · **gone 75 → asks-again 41, still looking after four rounds 23, correct 9, wrong 1, other 1**. Denies 0 |
+| Gone, and where it looked (75) | somewhere on 74: its own past on 14 (each time with somewhere else too), elsewhere only on 60. Over all 192 mornings: its folder on 73 turns, mail 40, drive 30, the calendar 16, the shop's order list 7 |
+| A search of its own past (14) | found the owner's words on 12 → correct 9, still looking 3 · did not find them on 2 → wrong 1, still looking 1 |
+| The turn, on the walks whose closes went on | answered without looking (99): 1.0 request, 6.7K prompt tokens, $0.0004, 6.5 s · looked elsewhere and answered (44): 3.0 requests, 24K, $0.0007, 14 s · searched its own past and answered (10): 4.7 requests, 40K, $0.0010, 21 s · still looking (23): 5.5 requests, 45K, $0.0009, 21 s |
+| The close | made on 1,324 of 1,440 nights; $0.0006 → $0.0009 and 8 s → 14 s as the summary grew. The 22 walks: 19 nights without one, never more than 5 in a walk. The other two: below |
+
+**What the numbers say.**
+
+- **A fact nobody wrote down leaves the summary well before the bound, and the bound finishes the job.** On the
+  mornings after 1, 3 and 7 nights 19–21 of 23–24 summaries held the fact whole; after 14, 13 of 23; after 30, 6
+  of 22; after 60, **1 of 22**. Half the losses read night by night came between nights 8 and 19, on a close
+  where the summariser rewrote a summary of 800–1,950 characters by itself — nowhere near 3,000. The cut first
+  ran on night 20. From there every cut that met a summary still holding the fact took it: 7 of 7, day 1's
+  line being the oldest. The cut was never the common case — 32 closes in 1,324 — because the summariser keeps
+  itself under the bound by folding: 375 closes left the summary shorter than they found it.
+- **The summary did not only drop facts; it bent two.** A weekly deadline lost its "매주" on the first night in
+  both walks, as in the week above. And a regular's name was written wrong: 한정숙 became 한정숍 on the first
+  close of one walk and stayed so for 45 nights, 한숭니 in the other — "택배 경비실 맡김" beside it each time. The
+  Bot answered the owner's question about 한정숙 from the misspelt line seven mornings running, and once asked
+  whether 한숭니 was the same person.
+- **With the fact gone the Bot did not guess: 41 of 75 asked again, and 23 were still looking when the turn's
+  four rounds ran out.** It looked somewhere on 74 of the 75 — its folder first, then mail, drive, the calendar,
+  the shop's orders. No answer denied that the owner had said it.
+- **It searched its own past on 14 of those 75 mornings, never first, and that is where every correct answer to a
+  lost fact came from**: found 12 times, 9 answered correctly (3 ran out of rounds with the answer in hand). The
+  one wrong value in 564 answers across both runs came the same way. Asked how the café's jam is packed, the Bot
+  searched "오 사장님" — two words, so every message holding 오 and 사장님, and the ten newest were the busy days'
+  — then "카페", which is in the owner's first statement and not in the correction of it, and answered "늘 1kg 큰
+  병으로 주문하세요": the value the owner had corrected away that afternoon. (The busy days are this harness's,
+  and they say 사장님 and 카페 a great deal.)
+- **Two of the 24 conversations stopped closing, and never started again.** One after night 3, one after night
+  20: every later night's attempt ran to the summariser's 120 seconds and failed (`day_close_failed`, logged as
+  `summary: refused`), 57 and 40 nights in a row. A failed close is tried again the next night with the same
+  summary and a longer transcript. The second reproduces outside the walk: that conversation's summary and the
+  next day's transcript, sent to the server model at `low` effort, did not come back in 200 seconds twice, and
+  with six days of transcript came back after 197 seconds having spent 21,312 reasoning tokens on a 2,403-
+  character summary. (The first did not reproduce: its night's input, rebuilt, came back in 3 seconds.) Nothing
+  was lost in those two conversations — the whole of it was carried behind the last summary, and the Bot
+  answered correctly every morning — and the question on the morning after 60 nights was a request of 246,375
+  and 175,754 prompt tokens, $0.007 and $0.018, where the others' was 8.4K and $0.0004.
+
+**What this walk does not show.**
+
+- **What the 23 turns that ran out of rounds would have said.** A turn is given four rounds here, as in
+  `eval:model`; the product's turn goes on. They are counted as `still looking`, not as answers.
+- **The shop's order list, the business profile and the web search were answered `laf:tool_failed`** — only mail,
+  drive and the calendar are the product's adapters over an empty account. Thirteen turns went to one of them;
+  the one `other` answer is a Bot saying the order list had an error and offering to try again.
+- **Night by night, 16 of the 22 walks.** This run kept a verdict for each night and not the night's summary, and
+  a review then changed two rules, so the weekly and monthly deadlines and the misspelt name are read at the
+  eight mornings only. A run made now keeps each night's summary.
+- **Two walks a cell.** A row of ● ● ● ○ is one conversation. The busy days repeat their pairings after seven
+  weeks, with other numbers; the last eleven days of a walk pair their people as its first eleven did.
+- Everything listed above under "What the harness models" holds here too: the scripted first-day answer, no
+  dream, no curation, a cold cache on the question.
+
 ## 이 다음
 
 pack 통과 후: 카나리(이 배포 하나)에 1주 → 이상 없으면 전체. 전환의 실체는
