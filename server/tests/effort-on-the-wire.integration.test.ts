@@ -68,6 +68,8 @@ const bot = {
 async function requestFor(
   supportsEffort = true,
   forwardedProps: Record<string, unknown> = {},
+  /** Filled with what the server handed the other service beside the conversation. */
+  handed: { forwardedProps?: Record<string, unknown> } = {},
 ): Promise<ProviderRequest> {
   /*
    * Set before the import, not after. `agent-bot` builds its OpenAI client at module scope, and
@@ -90,6 +92,7 @@ async function requestFor(
       watch: () =>
         (async (_url: unknown, init?: { body?: unknown }) => {
           const input = JSON.parse(String(init?.body ?? "{}"));
+          handed.forwardedProps = input.forwardedProps;
           return runAgent(input, (async (request: ProviderRequest) => {
             sent = request;
             return emptyCompletion();
@@ -187,6 +190,58 @@ describe("what reaches the model", () => {
     // and silence on others, so it must be absent — not defaulted, not null.
     expect(await requestFor(false)).not.toHaveProperty("reasoning_effort");
   });
+
+  /*
+   * THE ONE RUN SENT ANOTHER EFFORT (piece 6-3): the run a turn hands deep reasoning to. Decided
+   * by the server from what the run is, so it is sent where the deployment sends none, it is not
+   * what a caller asked for, and no other mode gets it.
+   */
+  test.each([
+    [false, {}],
+    [true, {}],
+    [false, { effort: "quick" }],
+  ] as const)(
+    "a run handed thinking is sent the deep effort — deployment sends one: %p, caller forwarded %p",
+    async (supportsEffort, asked) => {
+      const handed: { forwardedProps?: Record<string, unknown> } = {};
+      const sent = await requestFor(
+        supportsEffort,
+        { ...asked, mode: "think" },
+        handed,
+      );
+      expect(handed.forwardedProps?.effort).toBe("thorough");
+      // And the model's own word for it, where the other service's table knows the model.
+      const { MODEL } = await import("../../agent-bot/src/provider");
+      const { reasoningEffortOf } = await import(
+        "../../agent-bot/src/transcript"
+      );
+      const expected = reasoningEffortOf(
+        { forwardedProps: { effort: "thorough", mode: "think" } } as never,
+        MODEL,
+      );
+      if (expected === undefined) {
+        expect(sent).not.toHaveProperty("reasoning_effort");
+      } else {
+        expect(sent.reasoning_effort).toBe(expected);
+      }
+      // The words at its head are that mode's.
+      expect(
+        sent.messages?.find((message) => message.role === "system")?.content,
+      ).toContain("깊이 따져 볼 일 하나를 넘겨받은 실행");
+    },
+  );
+
+  test.each(["chat", "routine", "browse"])(
+    "no other mode is: %s is sent the deployment's one effort, or none",
+    async (mode) => {
+      const none: { forwardedProps?: Record<string, unknown> } = {};
+      await requestFor(false, { mode, effort: "thorough" }, none);
+      expect(none.forwardedProps).not.toHaveProperty("effort");
+      const one: { forwardedProps?: Record<string, unknown> } = {};
+      await requestFor(true, { mode, effort: "thorough" }, one);
+      expect(one.forwardedProps?.effort).toBe("balanced");
+    },
+  );
 
   test("the mode a caller forwarded, which is what selects the prompt", async () => {
     const routine =

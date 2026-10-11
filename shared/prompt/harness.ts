@@ -7,7 +7,7 @@
  * 그 자리에서 깨졌으므로 새로 그리는 값은 없다.
  *
  * 손으로 올리는 번호가 아니라 글에서 계산한다. 번호는 누군가 올리는 것을 잊는 날 거짓이 된다.
- * 정적 층 둘, 고정된 사실로 그린 맥락 층 둘, 알림의 모양, `now` 툴의 정의 — 봇이 읽는 글 중에
+ * 모드마다의 정적 층, 고정된 사실로 그린 맥락 층 둘, 알림의 모양, `now` 툴의 정의 — 봇이 읽는 글 중에
  * 배포가 정하는 것 전부다. 표면이 보내는 툴 목록은 여기 없다: 그것은 요청마다 해시되고
  * (`toolsHash`), 바뀌면 그 자체로 새 에포크다.
  *
@@ -78,6 +78,7 @@ export const HARNESS_VERSION = createHash("sha256")
       staticPrompt("chat"),
       staticPrompt("routine"),
       staticPrompt("browse"),
+      staticPrompt("think"),
       contextLayerText(FIXTURE),
       contextLayerText(FIXTURE, "메모장"),
       earlierSummaryText("- 9/24 택배 두 건을 보냈다.", FIXTURE.day),

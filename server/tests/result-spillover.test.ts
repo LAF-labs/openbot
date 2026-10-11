@@ -289,4 +289,19 @@ describe("a long result of a run a conversation delegated to", () => {
     expect(main.path).not.toContain(PROJECT);
     expect(read(undefined)).toEqual(known.scopeOfThread(undefined));
   });
+
+  // Every kind of delegated run is its conversation's (piece 6-3): the one handed thinking too.
+  test.each(["browse", "think"] as const)(
+    "a %s run's thread is read as the conversation that handed the work over",
+    (mode) => {
+      const known = projects();
+      const read = byConversation(known.scopeOfThread);
+      expect(read(delegatedThreadOf("thread-project", mode))).toEqual(
+        known.scopeOfThread("thread-project"),
+      );
+      expect(read(delegatedThreadOf("thread-main", mode))).toEqual(
+        known.scopeOfThread("thread-main"),
+      );
+    },
+  );
 });
