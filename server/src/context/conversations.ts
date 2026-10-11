@@ -345,6 +345,8 @@ export type DayEpochSetting = {
    */
   dream?: (input: {
     botId: string;
+    /** Which conversation closed: the dream refuses a project's (record §3). */
+    threadId: string;
     dialogue: string;
     day: string;
   }) => Promise<void>;
@@ -781,12 +783,15 @@ export function createConversationStore(
       /*
        * THE DREAM, BEFORE THE CLOSE CAN BE TAKEN, so the standing guidance it writes is in the frozen
        * layer of the epoch this close begins — never a change in the middle of one. The dialogue
-       * only: a page's words are no source of how the owner likes to work.
+       * only: a page's words are no source of how the owner likes to work. Told which conversation
+       * this is: the guidance is the Bot's, this close is one conversation's, and a project's day
+       * is never read for it (`agents/dream.ts`).
        */
       if (days.dream) {
         try {
           await days.dream({
             botId: conversation.botId,
+            threadId: conversation.threadId,
             dialogue: dialogueOf(transcriptOf(point.span, zone)),
             day: today,
           });

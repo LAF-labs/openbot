@@ -1,6 +1,11 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
+import {
+  contextFactsFor,
+  contextLayerText,
+  systemPromptText,
+} from "../../shared/prompt";
 import { createDayReader } from "../src/agents/day";
 import { createDream } from "../src/agents/dream";
 import { createMemoryCurator } from "../src/agents/memory-curation";
@@ -13,6 +18,7 @@ import {
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import type { AgentActor } from "../src/agents/profile-types";
 import { createRuntimeAgentLoader } from "../src/agents/runtime-agents";
+import { createConversationStore } from "../src/context/conversations";
 import type { StampedMessage } from "../src/context/day-close";
 import type { JevAsker } from "../src/context/vendor/fast-jev-compaction/index";
 import { createDatabase } from "../src/db/client";
@@ -444,7 +450,7 @@ describe("the nightly dream", () => {
   ].join("\n");
 
   test("writes standing guidance the next epoch draws, and refuses what is not a habit", async () => {
-    const { owner, bot } = await setup();
+    const { owner, bot, threadId } = await setup();
     const store = createAgentMemoryStore(database);
     const guidance = store.guidance;
     if (!guidance) throw new Error("the real store carries guidance");
@@ -460,7 +466,12 @@ describe("the nightly dream", () => {
         ],
       }),
     });
-    await dream({ botId: bot.id, dialogue: DIALOGUE, day: "2026-09-26 (토)" });
+    await dream({
+      botId: bot.id,
+      threadId,
+      dialogue: DIALOGUE,
+      day: "2026-09-26 (토)",
+    });
     const lines = await guidance.list(bot.id, owner.id);
     expect(lines.map((line) => line.content)).toEqual([
       "사장님은 짧은 답을 좋아한다(두세 문장).",
@@ -488,7 +499,7 @@ describe("the nightly dream", () => {
   });
 
   test("the owner's edit is theirs; a line they removed is not written again", async () => {
-    const { owner, bot } = await setup();
+    const { owner, bot, threadId } = await setup();
     const store = createAgentMemoryStore(database);
     const guidance = store.guidance;
     if (!guidance) throw new Error("the real store carries guidance");
@@ -523,9 +534,142 @@ describe("the nightly dream", () => {
         ],
       }),
     });
-    await dream({ botId: bot.id, dialogue: DIALOGUE, day: "2026-09-26 (토)" });
+    await dream({
+      botId: bot.id,
+      threadId,
+      dialogue: DIALOGUE,
+      day: "2026-09-26 (토)",
+    });
     expect(
       (await guidance.list(bot.id, owner.id)).map((line) => line.content),
     ).toEqual(["한 줄로 답해 줘", "사장님은 존댓말을 쓴다."]);
+  });
+
+  /*
+   * THE RECORD SAYS A PROJECT IS NEVER DREAMED ON (`docs/laf/redesign-2026-10.md` §3: "프로젝트에
+   * 매일 밤 드리밍을 돌리지 않는다"). The day's close runs once per kept conversation, the guidance
+   * is the Bot's, and the dream's new reading replaces its old one — so a project's close, reading
+   * only its own day about something else, would retire what the main conversation taught.
+   */
+  test("a project's close never dreams: the habit the main conversation taught survives it", async () => {
+    const { owner, bot, threadId: mainThread } = await setup();
+    const projectChannel = `${prefix}-project-${randomUUID()}`;
+    const projectThread = `${prefix}-project-thread-${randomUUID()}`;
+    await database.insert(channels).values({
+      id: projectChannel,
+      name: "제주 여행",
+      description: "",
+      kind: "project",
+    });
+    made.channels.push(projectChannel);
+    await database.insert(channelThreads).values({
+      userId: owner.id,
+      channelId: projectChannel,
+      threadId: projectThread,
+    });
+    const store = createAgentMemoryStore(database);
+    const guidance = store.guidance;
+    if (!guidance) throw new Error("the real store carries guidance");
+
+    // A model that reads the day it is handed and nothing else: a habit where one shows, else none.
+    const asked: string[] = [];
+    const dream = createDream({
+      database,
+      guidance,
+      call: {
+        baseUrl: "https://model.example.test/v1",
+        model: "z-ai/glm-5.3-flash",
+        apiKey: async () => "test-key",
+        fetch: (async (_url: unknown, init?: { body?: unknown }) => {
+          const body = JSON.parse(String(init?.body ?? "{}")) as {
+            messages?: Array<{ role: string; content: string }>;
+          };
+          const user = body.messages?.find((m) => m.role === "user");
+          const { dialogue } = JSON.parse(user?.content ?? "{}") as {
+            dialogue?: string;
+          };
+          asked.push(dialogue ?? "");
+          const guidance = dialogue?.includes("짧게")
+            ? ["이 사람은 짧은 답을 좋아한다."]
+            : [];
+          return new Response(
+            JSON.stringify({
+              choices: [{ message: { content: JSON.stringify({ guidance }) } }],
+              usage: { prompt_tokens: 1, completion_tokens: 1 },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }) as unknown as typeof fetch,
+      },
+    });
+
+    // Yesterday, in Seoul: the main conversation showed a habit; the project talked about Jeju.
+    const yesterday = new Date("2026-09-25T01:00:00Z");
+    const dayOf = (thread: string, said: string): StampedMessage[] =>
+      Array.from({ length: 6 }, (_, turn) => {
+        const when = new Date(yesterday.getTime() + turn * 600_000);
+        return [
+          stamped(`${thread}-u${turn}`, "user", said, when),
+          stamped(`${thread}-a${turn}`, "assistant", "네. ".repeat(600), when),
+        ];
+      }).flat();
+    const threads: Record<string, StampedMessage[]> = {
+      [mainThread]: dayOf(mainThread, "길게 말고 짧게 말해 줘. ".repeat(4)),
+      [projectThread]: dayOf(
+        projectThread,
+        "제주 숙소는 바다가 보이는 곳으로 찾아 줘. ".repeat(4),
+      ),
+    };
+    const now = new Date("2026-09-25T20:00:00Z");
+    const conversations = createConversationStore({
+      now: () => now.getTime(),
+      days: {
+        summarize: async () => "- 요약",
+        history: async (thread) => threads[thread] ?? [],
+        fallbackTimeZone: "Asia/Seoul",
+        dream,
+      },
+    });
+    for (const thread of [mainThread, projectThread]) {
+      const facts = contextFactsFor({
+        mode: "chat",
+        now,
+        timeZone: "Asia/Seoul",
+        bot: { id: bot.id, name: "미소" },
+        memories: [],
+        person: { timeZone: "Asia/Seoul", locale: "ko-KR" },
+      });
+      conversations.prepare({
+        threadId: thread,
+        botId: bot.id,
+        mode: "chat",
+        messages: threads[thread]?.map(
+          ({ lafAt: _stamp, ...message }) => message,
+        ) as never,
+        key: { harness: "h1", model: "m", effort: "balanced", tools: "t1" },
+        facts,
+        system: (told) => systemPromptText("chat", contextLayerText(told)),
+        now,
+      });
+    }
+
+    expect(await conversations.closeNow(mainThread)).toBe(true);
+    expect(
+      (await guidance.list(bot.id, owner.id)).map((line) => line.content),
+    ).toEqual(["이 사람은 짧은 답을 좋아한다."]);
+
+    // The project's close, afterwards, with more than enough of the owner's own words in it.
+    expect(await conversations.closeNow(projectThread)).toBe(true);
+    expect(
+      (await guidance.list(bot.id, owner.id)).map((line) => line.content),
+    ).toEqual(["이 사람은 짧은 답을 좋아한다."]);
+    // The model read the main conversation's day, once, and never the project's.
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain("짧게");
+    const receipts = await database
+      .select({ job: agentMemoryReceipts.job })
+      .from(agentMemoryReceipts)
+      .where(eq(agentMemoryReceipts.agentId, bot.id));
+    expect(receipts).toEqual([{ job: "dream" }]);
   });
 });
