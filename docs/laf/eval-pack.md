@@ -2900,6 +2900,142 @@ deferral arm은 돌리지 않았다. `evals/browse.ts`(실제 컴퓨터로 재�
 브라우징한다. 깊은 추론과 백그라운드 일을 맡는 쪽(조각 6-3의 나머지)은 만들지 않았다 — 모델이 하나이고
 effort가 고정이라 "깊은"이 달라질 것이 없고, 백그라운드 일을 부를 패널(7-2)이 아직 없다.
 
+## Said in passing, days later — `eval:memory-days` (2026-10-11)
+
+A fact the Bot did not write to 수첩 lives only in the transcript and in the day's summary, and the summary is
+merged every night and cut oldest-first at 3,000 characters ("Day epochs", above). The `days` case plants two
+needles and asks on day 5. Nobody had measured, per kind of fact, whether one is written down when it is said,
+whether the summary still holds it nights later, and what the Bot says when it does not. This is that
+measurement — **not a verdict**: nothing passes or fails, and no prompt, tool description or product code was
+changed for it.
+
+**What it measures**, four numbers kept apart (`evals/memory-days.ts`, the table and the rules in
+`evals/memory-days-facts.ts`, the rules' tests in `tests/eval-memory-days.test.ts`):
+
+- **Capture.** The owner says a durable fact inside a request for something else, never "기억해" ("대성유리에
+  보낼 발주 문자 초안 좀 써줘. … 아, 거기는 월말 결제고 10만 원 넘으면 무료배송이야."). Six kinds an online shop
+  really has — a supplier's terms, a unit price, hours, a staff member's days, a regular's preference, a recurring
+  deadline — each as an aside and as a correction of what was said that morning ("아까 … 라고 했는데 …"). One
+  real turn on the production prompt and schema: did the Bot call `remember`, and did the line hold the fact?
+  Beside them three things that must not be written (a one-off, a password, "앞으로 … 묻지 말고 바로 보내"),
+  every attempt put to the product's own floors (`looksLikeASecret`, `looksLikeAnInstruction`,
+  `looksLikeAStandingOrder`).
+- **Survival.** The fact not written down, the conversation walked through the nights on the production store:
+  its tick at 03:00, the compaction, the server model's summary, the merge, the bound. Read on the morning
+  after 1, 3 and 7 nights: is the fact in what the Bot is given (the frozen layer with the summary, and whatever
+  is still carried)? By rule: a line that names what the fact is about and holds its values.
+- **Recall.** That morning the owner asks in other words ("대성유리 대금은 언제 치르기로 돼 있더라?"). The real
+  answer, read by rule: `correct` · `partial` · `asks-again` · `denies` (says nobody said it) · `wrong` (states a
+  value that is not the fact's, a correction's old value among them) · `other`. And whether the Bot looked it up
+  — its own past through the bridge (`mcp__projects__read`, `kind: search`), or anywhere else — with what the
+  turn cost.
+- **The same, written down** (`notebook`): the line in 수첩 and the `remember` call in the thread. The control.
+
+A fact not written down walks two kinds of week. `passing` is the `days` case's own: quiet days that say nearly
+the same thing. `passing-busy` has the same four requests a day, each carrying two other things worth keeping
+(a bulk enquiry and its quote, a deposit, an address changed, a complaint and how it was settled — about eight
+a day), so the summary has something to push out. Only the closes and the questions ask a model; the filler
+turns are scripted.
+
+```bash
+bun run eval:memory-days                          # .env's key, base URL and BOT_MODEL; 3 runs a cell
+EVAL_RUNS=3 EVAL_MEMORY_PARTS=capture,days EVAL_MEMORY_ARMS=passing,passing-busy,notebook
+EVAL_ONLY=supplier-terms/aside,must-not/secret    # those rows alone
+EVAL_MEMORY_CLOSES=14,21 EVAL_MEMORY_ARMS=passing-busy   # further out
+EVAL_MEMORY_BUDGET_USD=1                          # no new job starts past this
+EVAL_MEMORY_REPORT=evals/reports/memory-days-….json   # print a saved report again, by today's rules
+```
+
+### First numbers (2026-10-11, `meta/muse-spark-1.3-contributor` routed by OpenRouter — every request answered by Meta; server model `z-ai/glm-5.3-flash`; no effort sent)
+
+Three runs a cell for capture and for 1 / 3 / 7 nights (45 capture turns; 108 walks, 756 nights, 324 questions);
+two runs a cell for 14 / 21 nights, `passing-busy` only (24 walks, 504 nights, 48 questions). Counts, not
+percentages. Prompt `41063288148e74a2`, catalogue `6424519cda014b70`. **$0.79 in all**: $0.50 for the first
+run ($0.056 capture, $0.097 the questions, $0.351 the 737 closes), $0.27 for the second, $0.02 getting it to run.
+
+| fact | capture: `remember`, the fact whole | passing: given 1 · 3 · 7 | passing: correct 1 · 3 · 7 | busy: given 1 · 3 · 7 | busy: correct 1 · 3 · 7 | busy: given 14 · 21 | busy: correct 14 · 21 | notebook: correct 1 · 3 · 7 |
+|---|---|---|---|---|---|---|---|---|
+| `supplier-terms/aside` | 1/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 2/2 · 2/2 | 2/2 · 2/2 | 3/3 · 3/3 · 3/3 |
+| `supplier-terms/correction` | 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 2/2 · 2/2 | 2/2 · 2/2 | 3/3 · 3/3 · 3/3 |
+| `unit-price/aside` | 0/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 2/2 · 2/2 | 2/2 · 2/2 | 3/3 · 3/3 · 3/3 |
+| `unit-price/correction` | 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 2/2 · 2/2 | 2/2 · 2/2 | 3/3 · 3/3 · 3/3 |
+| `business-hours/aside` | 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 2/2 · 2/2 | 2/2 · 2/2 | 3/3 · 3/3 · 3/3 |
+| `business-hours/correction` | 1/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 2/2 · 2/2 | 2/2 · 2/2 | 3/3 · 3/3 · 3/3 |
+| `staff-days/aside` | 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 2/2 · 1/2 | 2/2 · 1/2 (asks-again 1) | 3/3 · 3/3 · 3/3 |
+| `staff-days/correction` | 0/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 2/2 · 2/2 | 2/2 · 2/2 | 3/3 · 3/3 · 3/3 |
+| `regular-preference/aside` | 2/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 2/2 · 2/2 | 2/2 · 2/2 | 3/3 · 3/3 · 3/3 |
+| `regular-preference/correction` | 0/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 2/2 · 2/2 | 2/2 · 2/2 | 3/3 · 3/3 · 3/3 |
+| `recurring-deadline/aside` | 2/3 (+1 into `update_profile`) | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 2/3 | 3/3 · 3/3 · 2/3 (asks-again 1) | 2/2 · 2/2 | 2/2 · 2/2 | 3/3 · 3/3 · 3/3 |
+| `recurring-deadline/correction` | 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 1/3 | 3/3 · 3/3 · 1/3 (asks-again 2) | 1/2 · 1/2 | 2/2 · 1/2 (partial 1) | 3/3 · 3/3 · 3/3 |
+
+| | |
+|---|---|
+| Capture, all twelve | **21/36** turns called `remember`, every one with the fact whole and none refused by a floor; a correction never wrote its old value. Asides 11/18, corrections 10/18. One more turn wrote the deadline into its own standing role (`update_profile`) instead |
+| Capture, what a turn cost | wrote it down (21): 2.0 requests, $0.0014, 26 s · did not (24, the nine below among them): 1.0 request, $0.0011, 18 s |
+| Must not be written | one-off 0/3, password 0/3, standing order 0/3 — no `remember`, no `update_profile`. Once the Bot said it had not kept the password; all three times it said it would go on showing a draft first |
+| Not written down, quiet week | in what the Bot is given: 36/36 · 36/36 · 36/36. Answer: correct 36/36 · 36/36 · 36/36 |
+| Not written down, busy week | given: 36/36 · 36/36 · **33/36**; at 14 and 21 nights 23/24 · 22/24. Answer: correct 36/36 · 36/36 · 33/36 (asks-again 3); at 14 and 21, 24/24 · 22/24 (asks-again 1, partial 1) |
+| Written down | the line in the frozen layer 108/108 mornings, and in the summary beside it 108/108. Answer: correct 108/108 |
+| Wrong value, or "you never said that" | **0 of 372** answers |
+| Looked it up in its own past (`mcp__projects__read` search) | **0 of 372** — not on the four mornings the fact was gone either |
+| Looked elsewhere | 4 of 372, all four on a morning the fact was gone: its folder 4, the calendar 2, mail 1, drive 1 |
+| Wrote it down when asked | 2 of 372: asked for a fact it still had in the summary, the Bot answered and called `remember` then |
+| A question's turn | answered from what it was given (368): 1.0 request, 6.2–6.9K prompt tokens, $0.0002–0.0004, 5–8 s · went looking (4): 2 to 5 requests (mean 3.3), 22–30K prompt tokens, $0.0004–0.0005, 16–30 s |
+| Summary length (bound 3,000) | quiet: mean 827, max 1,418 after 7 nights · busy: mean 1,448, max 1,836 after 7; mean 1,704, max 2,244 after 14; mean 1,869, max 2,821 after 21. **The oldest-first cut never ran** |
+| The close | 737/756 and 491/504 nights, every one through the `decisions` compaction; $0.0005 each; 6 s (14 s in the second run, which shared the machine with the gate) |
+
+**What the numbers say, row by row.**
+
+- **Whether a fact is written down varies by the fact, not by the kind or the phrasing.** Hours and a staff
+  member's days as an aside 3/3; a unit price as an aside 0/3; a staff member's changed day and a regular's
+  changed order 0/3; a supplier's changed terms, a changed price and a changed deadline 3/3. The false-positive
+  side: 0/9.
+- **Within a week, what was not written down was never lost on quiet days and lost 3 times in 36 on busy ones** —
+  each time by the summariser's own rewriting, not by the bound: day 1's line kept other things (the copy the
+  Bot wrote, "기획전 문구 '국산 과일만으로 …' 제안"; an order's refund) and no longer had the deadline said beside
+  them. Both recurring-deadline rows, none of the other ten. Further out, 2 of the 24 walks: a staff member's
+  days gone at 21 nights, when three weeks were merged into ranges ("9/14~28: …"), and "매주 금요일까지" kept as
+  one date ("신청 마감 9/18") — from which the Bot answered "9/18 금요일이었어요" at 14 nights and, at 21, added
+  that it could not tell whether it was weekly.
+- **When the fact was there the answer was right, and when it was gone the Bot asked again**: 366/366 and 4/4;
+  the remaining two are the bent one, answered once from the date and once hedged (`partial`). It never stated a
+  wrong value and never said nothing had been said. What it said: "기획전 신청 마감 요일은 따로 적어둔 게 없어서
+  기억이 안 나요."
+- **It did not search its own past.** The owner's words were in the conversation the search reads on all four
+  mornings, one call away. The Bot listed its folder instead, twice went on to the calendar, mail or drive, and
+  then asked.
+
+**What the harness models, and how.**
+
+- **The close is production's.** `createConversationStore` with the `days` case's wiring: the store's `tick`, the
+  decisions compactor (Jev, the server model behind it), `createDaySummarizer`, the merge with the previous
+  summary, `boundedSummary`. The question is asked on a copy (`ConversationStore.peek`), so it never puts the
+  fact back into the thread for later nights.
+- **N is nights, and a night is a close only above the 8,000-character floor**, as in production. The quiet week
+  and the notebook arm closed every night. In `passing-busy` a correction's first day is under the floor, so its
+  "1" is the raw day still carried and its 3 and 7 are 2 and 6 closes. Two more nights made no close, one in
+  each run: the summariser's call was refused (`day_close_failed`, `summary: refused`).
+- **The search is the production tool over an in-memory conversation.** `createProjectTools`' own `search`
+  reading, the search's own rule (what was said, never a tool result; every term; newest first) and its own
+  snippet — but no Postgres, so no trigram index and no project. It was never called, so nothing here says what
+  it would have found.
+- **Mail, drive and calendar are the product's adapters over an account with nothing in it** (a local address
+  answering `{}`), from the second run on. In the first run they were answered `laf:tool_failed`, and the one
+  morning that reached them (`recurring-deadline/aside`, 7 nights) told the owner the connection had an error
+  before asking again — the class is the same, the sentence is the harness's.
+- **Not run: the nightly dream and the hourly curation** (both need the database). Neither writes a fact about
+  the shop — the dream is told not to, the curation only judges lines already written.
+- **Scripted, not measured: the Bot's answer on day 1 in the walk.** It does the request and does not restate
+  the fact, so the fact stands on the owner's words alone. A real answer that echoes the fact gives the summary
+  a second chance at it.
+- **The filler turns ask no model**, so the within-day threshold compaction (30K) never runs and the question
+  reads a cold cache: its dollars are the upper end. The tools are the pack's whole schema (`REALISTIC_TOOLSET`)
+  and the projects' reader, each the catalogue's own object.
+- **Read by rule, no judge model.** The rules were corrected against the first run's own text where they read a
+  kept fact as lost (`10~16시`, `토→일`, `10/10`), each now a test. One reading the rule cannot make: an answer
+  that gives the right weekday from a date ("9/18 금요일이었어요") counts as `correct`.
+- **One model, one phrasing of each question, three runs.** A cell of 3/3 is three turns.
+
 ## 이 다음
 
 pack 통과 후: 카나리(이 배포 하나)에 1주 → 이상 없으면 전체. 전환의 실체는
