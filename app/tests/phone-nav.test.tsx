@@ -108,7 +108,7 @@ function server(
     }
     if (url === "/api/routines") return json({ routines: [] });
     if (url === "/api/feed") {
-      return json({ posts: [], next: null, unseen: 0, routines: [] });
+      return json({ posts: [], next: null, routines: [] });
     }
     if (url.startsWith("/api/computers/")) return json({ requested: false });
     return json({}, 404);

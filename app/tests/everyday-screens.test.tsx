@@ -196,7 +196,6 @@ describe("소식", () => {
         return json({
           posts: page.posts ?? [],
           next: null,
-          unseen: 0,
           routines: page.routines ?? [],
         });
       }

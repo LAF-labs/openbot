@@ -236,7 +236,9 @@ describe("a run's posts land with its record", () => {
       "첫째 소식",
       "둘째 소식",
     ]);
-    expect(page.unseen).toBe(2);
+    // The count is its own door's, not the page's.
+    expect(page).not.toHaveProperty("unseen");
+    expect(await store.unseen(A.owner.id)).toBe(2);
     expect(page.routines.map((one) => one.id)).toEqual([created.id]);
   });
 

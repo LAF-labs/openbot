@@ -39,7 +39,6 @@ const post = (over: Partial<FeedPost> = {}): FeedPost => ({
 const feed = (posts: FeedPost[]): FeedPage => ({
   posts,
   next: null,
-  unseen: 0,
   routines: [],
 });
 
