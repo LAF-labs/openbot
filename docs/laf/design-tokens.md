@@ -102,24 +102,28 @@ Gothic Neo로 그려졌다. 네트워크 글꼴은 없다.
 나온다. `h-[var(--sand-row-height)]`은 이제 쓰지 않는다 — 이름이 있는 칸을 손으로 적는 것은
 드리프트고, 이 칸은 아무도 적지 않아서 더 나빴다.
 
-### 그림자는 셋
+### 그림자는 둘 — 뜨는 것만 (2026-10-11)
 
 | 클래스 | 토큰 | 라이트 | 다크 |
 |---|---|---|---|
-| `shadow-popover` | `--sand-shadow-popover` | 3겹 그림자 + 1px 헤어라인 | **헤어라인 링만** |
-| `shadow-composer` | `--sand-shadow-composer` | 얕은 2겹 + 헤어라인 | **헤어라인 링만** |
-| `shadow-card` | `--sand-shadow-card` | 1px + 6px 얕은 2겹 | **없음** (카드 테두리가 헤어라인) |
+| `shadow-popover` | `--sand-shadow-popover` | 3겹 그림자 + 1px 헤어라인 | 2겹 그림자 + 헤어라인 링 |
+| `shadow-composer` | `--sand-shadow-composer` | 얕은 2겹 + 헤어라인 | 얕은 그림자 + 헤어라인 링 |
+
+**뜨는 것만 그림자를 갖는다**(김기범, 2026-10-11, `redesign-2026-10.md` §1 "색과 깊이"): 메뉴 ·
+팝오버 · 다이얼로그는 `shadow-popover`, 입력창과 대화 위에 뜨는 "맨 아래로" 버튼은
+`shadow-composer`. 카드는 페이지의 일부라 헤어라인과 채움뿐이다.
 
 `shadow-md`, `shadow-lg`, `ring-1 ring-foreground/10`의 조합은 쓰지 않는다. 세 선언으로 토큰
-하나를 흉내 내는 것이고, 무엇보다 **테마 규칙을 깬다**: 다크에서 깊이는 헤어라인이지 그림자가
-아니다. `#070707` 위에 드리울 데가 없기 때문이다. 토큰은 그 전환을 이미 담고 있고 `shadow-md`는
-담고 있지 않다.
+하나를 흉내 내는 것이고, 다크의 헤어라인을 담고 있지 않다. 다크는 2026-10-11까지 헤어라인
+링뿐이었다(어두운 바탕에는 그림자가 드리울 데가 없다는 까닭). 지금은 그 아래에 그림자가 있고,
+가장자리를 그리는 것은 여전히 헤어라인이다.
 
 메뉴·팝오버·콤보박스·셀렉트·다이얼로그는 전부 `shadow-popover` 하나로 통일했다.
 
-`shadow-card`는 2026-09-24에 생겼다. 대화 안의 카드 넷(브라우저, 승인, 도움 요청, 루틴)은
-`components/ui/card-surface.ts`의 `chatCard` 하나로 그린다 — 모서리 16, 폭 `max-w-md`,
-`bg-card`, 헤어라인, 이 그림자. 사람을 기다리는 동안만 테두리가 호박색(`chatCardWaiting`)이 된다.
+셋째였던 `shadow-card`는 2026-09-24에 생겨 2026-10-11에 없앴다(토큰도 지웠고
+`app/tests/accent-contrast.test.ts`가 돌아오지 않게 지킨다). 대화 안의 카드 넷(브라우저, 승인,
+도움 요청, 루틴)은 `components/ui/card-surface.ts`의 `chatCard` 하나로 그린다 — 모서리 16, 폭
+`max-w-md`, `bg-card`, 헤어라인. 사람을 기다리는 동안만 테두리가 호박색(`chatCardWaiting`)이 된다.
 봇의 색이 아니라 호박색인 이유: "내 차례"는 신호라서, 빨간 봇의 보통 버튼처럼 보이거나 노란 봇
 위에서 사라지면 안 된다.
 
@@ -147,8 +151,8 @@ Gothic Neo로 그려졌다. 네트워크 글꼴은 없다.
 `ring` 두께는 **3(컨트롤)과 2(팝업 안의 행)** 둘뿐이다. `ring-1`은 헤어라인 테두리용이고
 포커스가 아니다.
 
-**링은 강조색이다** (`--ring` = `--app-accent`; 2026-09-24부터 2026-10-09까지는 봇의 색이었다). 그래서
-대비를 지는 쪽이 바뀌었다.
+**링은 강조색이다** (`--ring` = `--app-accent`; 2026-09-24부터 2026-10-09까지는 봇의 색, 그 뒤 이틀은
+중립색, 2026-10-11부터 `#2079E7`, 다크 `#5b9df2`). 그래서 대비를 지는 쪽이 바뀌었다.
 전의 링은 40% 회색의 50% 후광이라 바탕과 약 1.3:1 — 표시가 아니라 암시였다. 지금 3:1을 지는 것은
 **불투명한 부분**이다: 컨트롤은 색이 바뀐 테두리, 행은 안쪽 링 전체(`ring-ring`, 알파 없음).
 컨트롤 둘레의 후광은 같은 색의 35%이고, 선을 찾기 쉽게 할 뿐 대비를 지지 않는다.
@@ -167,7 +171,12 @@ Gothic Neo로 그려졌다. 네트워크 글꼴은 없다.
 
 | 상수 (`ui/focus.ts`) | 클래스 | 언제 |
 |---|---|---|
-| `selectedWhenPressed` | `border-foreground bg-accent text-foreground`를 `aria-pressed:`로 | 토글 버튼. **`Button`이 이미 달고 있다** |
+| `selectedWhenPressed` | `border-primary bg-primary/8 text-link`를 `aria-pressed:`로 (강조색 테두리, 강조색 8% 바탕, 강조색 글자) | 토글 버튼. **`Button`이 이미 달고 있다** |
+| `focusRingOnFill` | `ring-2 ring-ring ring-offset-2 ring-offset-background`를 `focus-visible:`로 | 강조색으로 채운 컨트롤. 채움과 같은 색의 후광은 1.6:1이라, 2px 띄운 불투명한 링으로 그린다. **기본 `Button`이 이미 달고 있다** |
+
+고른 것은 2026-10-11까지 글자색 테두리와 회색 바탕이었다. 고른 것이 강조색을 입으면서 설정 · 관리의
+지금 있는 메뉴(`data-[status=active]:bg-primary/8 … text-link`), 전환기의 고른 쪽(`text-link`), 고른
+목표 줄, 만든 것의 고른 칩도 같은 말로 그린다.
 
 `Button`에는 `aria-pressed={…}`만 넘기면 된다. 클래스는 필요 없다.
 
@@ -230,13 +239,15 @@ Gothic Neo로 그려졌다. 네트워크 글꼴은 없다.
 | `bg-accent` | `--sand-fill-ghost-hover` | 고스트 호버 |
 | `bg-sidebar-accent` | `--sand-fill-ghost-selected` | 선택된 행 |
 | `bg-muted` / `bg-secondary` | `--sand-fill-secondary` | 채운 보조면 |
-| `bg-primary` / `hover:bg-primary-hover` | `--sand-fill-primary` / `-hover` | 채운 컨트롤 |
+| `bg-primary` | `--app-accent` | 강조색의 표시(스위치, 진행 막대, 점)와 옅은 바탕(`bg-primary/8`) |
+| `bg-primary-fill` / `hover:bg-primary-hover` | `--app-accent-fill` / `-hover` | 채운 컨트롤 |
 | `text-muted-foreground` | `--sand-text-secondary` | 보조 문장 |
 | `border-border` / `border-input` / `border-ring` | `--sand-border-weak` / `-default` / `-focus` | 선 |
 | `bg-bubble-user` | `--sand-fill-bubble-user` | 사람의 말풍선. 봇에게는 말풍선이 없다 |
 | `text-on-color` | `--sand-text-on-color` | 사람 말풍선 위의 글자 — **테마를 따라 뒤집지 않는다** |
-| `bg-mark` | `--sand-fill-accent` | "봇이 기다린다"는 파란 점 |
-| `text-link` | `--sand-text-accent` | 링크 |
+| `bg-mark` | `--sand-fill-accent` | 새 것이 있다는 파란 점 |
+| `text-link` | `--app-accent-ink` | 링크, 그리고 강조색으로 쓰는 모든 글자 |
+| `bg-chart-1` … `bg-chart-6` (`stroke-`, `fill-`도) | `--chart-1` … `--chart-6` | 차트의 계열. 첫째가 강조색이다 (`components/gallery/palette.ts`) |
 
 `bg-mark`, `text-link`, `bg-bubble-*`, `text-on-color`, `bg-primary-hover`는 2026-09-06에
 새로 이름을 붙였다. 이름이 없어서 이스케이프로 쓰이던 것들이고, 이름이 없는 칸 하나가 열려
@@ -244,32 +255,39 @@ Gothic Neo로 그려졌다. 네트워크 글꼴은 없다.
 봇의 답과 인사가 말풍선 없이 페이지 위의 글이 되어(`components/ui/bubble.tsx`), 그 회색을 쓰는
 곳이 남지 않았다.
 
-**파란색은 광고가 아니다.** 채운 컨트롤은 near-black(`bg-primary`)이고, 파랑은 링크·포커스·
-알림 점에만 쓴다.
+**파란색은 강조색이다 (2026-10-11).** 그 전까지 채운 컨트롤은 near-black이었고 파랑은 링크·포커스·
+알림 점에만 썼다. 지금 파랑이 가는 곳과 가지 않는 곳은 `redesign-2026-10.md` §1 "색과 깊이"에 있다:
+채운 버튼, 링크, 고른 것, 포커스, 그리고 카드마다 하나(진행 막대의 채운 부분, 차트의 첫 계열 —
+주요 수치의 숫자는 아니다). 성공 · 주의 · 위험과 "확인 필요"의 호박색은 강조색이 아니다.
 
-### 강조색은 하나다 (2026-10-09)
+### 강조색은 하나다 (2026-10-09, 값은 2026-10-11)
 
-누를 수 있는 모든 것의 색 — 기본 버튼, 보내기, 포커스 링, 선택 영역 — 과 링크의 색은 `styles.css`
-`:root`의 네 값이 정한다. 지금은 모두에게 같은 중성 검정 컨트롤이다:
+누를 수 있는 것과 고른 것의 색 — 기본 버튼, 보내기, 포커스 링, 고른 줄, 선택 영역 — 과 링크의 색은
+`styles.css`의 다섯 값이 정한다(라이트는 `:root`, 다크는 `.dark`). 모두에게 같다:
 
-| 변수 | 무엇 | 약속 |
-|---|---|---|
-| `--app-accent` | 채움(`bg-primary`), 링(`ring-ring`) | 위의 글자와 4.5:1, 바탕과 3:1 |
-| `--app-accent-hover` | 누르기 전 채움(`bg-primary-hover`) | 위의 글자와 4.5:1 |
-| `--app-accent-foreground` | 채움 위의 글자 | 라이트는 흰색, 다크는 거의 검정 |
-| `--app-accent-ink` | 글자로서의 색(`text-link`) | 페이지·사이드바·카드·자기 8% 틴트 위에서 4.5:1 |
+| 변수 | 무엇 | 라이트 | 다크 | 약속 |
+|---|---|---|---|---|
+| `--app-accent` | 표시와 옅은 바탕(`bg-primary`), 링(`ring-ring`), 차트의 첫 계열 | `#2079e7` | `#5b9df2` | 페이지 · 카드 · 입력창과 3:1 (라이트 4.13 / 4.24, 다크 6.84 / 6.12 / 5.02) |
+| `--app-accent-fill` | 채운 컨트롤(`bg-primary-fill`) | `#1a6dd6` | `#5b9df2` | 위의 글자와 4.5:1 (5.00, 다크 6.84) |
+| `--app-accent-hover` | 올렸을 때의 채움(`bg-primary-hover`) | `#1761c0` | `#4a92ef` | 위의 글자와 4.5:1 (5.99, 다크 6.03) |
+| `--app-accent-foreground` | 채움 위의 글자 | `#ffffff` | `#0f1012` | — |
+| `--app-accent-ink` | 글자로서의 색(`text-link`) | `#1567cc` | `#5b9df2` | 페이지·사이드바·카드, 그리고 그 셋 위의 자기 8% 틴트에서 4.5:1 (라이트 5.33 / 5.09 / 5.46, 틴트 4.82 / 4.62 / 4.94) |
+
+채움이 강조색과 따로인 까닭: `#2079e7` 위의 흰 글자는 4.24:1이다. 글자가 강조색과 따로인 까닭:
+`#2079e7`은 페이지 위에서 4.13, 사이드바의 회색 위에서 3.96이다. 셋 다 색상(213°)은 같다.
 
 **2026-09-24부터 2026-10-09까지는 봇의 색이었다.** 얼굴의 팔레트를 `<html data-accent>`로 대고, 열 개
 팔레트마다 테마별 블록이 네 값을 주었고, `index.html`이 마지막 값(`localStorage["laf-accent"]`)을 첫
 페인트 전에 붙였다. 봇에게서 얼굴이 없어지면서 봇의 색도 없어졌다: 블록도, 그 스크립트도 지웠고, 남은
 저장값은 아무도 읽지 않는다.
 
-**브랜드 색은 미정이다**(`redesign-2026-10.md`, 미정 1). 정하면 바꿀 곳은 위의 네 줄(다크는 `.dark`)
-하나이고, `app/tests/accent-contrast.test.ts`가 `styles.css`를 다시 읽어 그 값의 모든 쌍을 잰다. 얼굴의
+**브랜드 색은 2026-10-11에 정해졌다**(`redesign-2026-10.md` §1 "색과 깊이"). 바꿀 곳은 위의 다섯
+줄(다크는 `.dark`) 하나이고, `app/tests/accent-contrast.test.ts`가 `styles.css`를 다시 읽어 그 값의 모든 쌍을 잰다. 얼굴의
 색을 그대로 쓰지 않았던 이유는 그대로다: #FF781C 위의 흰 글자는 2.9:1이었다. 같은 색상(hue)과 채도에서
 OKLCH 밝기만 옮겨 4.6:1을 넘기는 방법이 그때 썼던 것이다.
 
 - **알림의 파란 점(`bg-mark`)은 강조색을 따르지 않는다.** 주위와 같은 색으로 그린 신호는 신호가 아니다.
+  강조색이 파랑이 된 지금 그 점(`#1084fe`)은 강조색과 가까운 파랑이다. 보고 그대로 두었다(2026-10-11).
   "내 차례"의 호박색(`--warning`)도 같은 이유로 따로 있다.
 
 ## 8. 모션 — `prefers-reduced-motion`은 취향이 아니다
