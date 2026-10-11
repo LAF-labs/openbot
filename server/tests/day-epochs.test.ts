@@ -23,6 +23,7 @@ import {
   SUMMARY_MAX_CHARS,
   transcriptOf,
 } from "../src/context/day-close";
+import type { SummaryScrubber } from "../src/context/forget-scrub";
 
 /**
  * The day's close, measured where it matters: what the next request carries.
@@ -131,6 +132,9 @@ function harness(
     persistence?: ConversationPersistence;
     /** The Bot's id, when a test reads the log and must know its own lines from a neighbour's. */
     bot?: string;
+    /** What the owner forgot on 수첩, and the scrub that takes it out of what the summariser wrote. */
+    forgotten?: () => string[];
+    scrub?: SummaryScrubber;
   } = {},
 ) {
   const thread: Thread = [];
@@ -148,6 +152,7 @@ function harness(
     ...(options.compact
       ? { compaction: { thresholdTokens: 1_000_000, compact: options.compact } }
       : {}),
+    ...(options.scrub ? { scrub: options.scrub } : {}),
     days: {
       summarize: async (request) => {
         if (options.summarize) asked.push(request);
@@ -155,6 +160,9 @@ function harness(
       },
       history: async () => thread,
       busy: async () => options.busy?.() ?? false,
+      ...(options.forgotten
+        ? { forgotten: async () => options.forgotten?.() ?? [] }
+        : {}),
       fallbackTimeZone: ZONE,
     },
   });
@@ -944,5 +952,167 @@ describe("a close that keeps failing", () => {
       "- 9/20~9/21:",
       "- 9/27~9/28:",
     ]);
+  });
+
+  test("a gap line put back survives a rewrite near the bound: the summary's oldest line pays, never the line saying what is missing", () => {
+    const gap = "- 9/25~9/26: 이 기간의 대화는 요약되지 않았다.";
+    // A rewrite within a gap line's length of the bound: the shape of a long conversation (#200:
+    // 126 of 1,324 closes were at 2,700 or more).
+    const lines: string[] = [];
+    while (lines.join("\n").length < SUMMARY_MAX_CHARS - 10) {
+      lines.push(`- 9/${(lines.length % 20) + 1}: 오래된 일 ${lines.length}`);
+    }
+    lines.push("- 9/29: 한빛농산 유자 40박스");
+    const rewrite = boundedSummary(lines.join("\n"));
+    expect(rewrite.length).toBeGreaterThan(SUMMARY_MAX_CHARS - gap.length);
+    const kept = withGapsKept(rewrite, gap, "2026-09-30");
+    expect(kept.length).toBeLessThanOrEqual(SUMMARY_MAX_CHARS);
+    expect(kept.split("\n")[0]).toBe(gap);
+    expect(kept).toContain("한빛농산 유자 40박스");
+    // What paid for the line: the rewrite's oldest lines, whole, and no more than the line's length
+    // plus the one line cut in the middle.
+    const rest = kept.slice(gap.length + 1);
+    expect(rewrite.endsWith(rest)).toBe(true);
+    expect(rewrite.length - rest.length).toBeLessThan(gap.length + 1 + 20);
+  });
+
+  test.each([
+    ["an en dash", "- 9/25–9/28: 이 기간의 대화는 요약되지 않았다."],
+    ["a hyphen", "- 9/25-9/28: 이 기간의 대화는 요약되지 않았다."],
+    ["the last day alone", "- 9/25~28: 이 기간의 대화는 요약되지 않았다."],
+    ["a round bullet", "• 9/25~9/28: 이 기간의 대화는 요약되지 않았다."],
+    ["a star bullet", "* 9/25~9/28: 이 기간의 대화는 요약되지 않았다."],
+    ["a numbered line", "1. 9/25~9/28: 이 기간의 대화는 요약되지 않았다."],
+    ["월 and 일", "- 9월 25일~9월 28일: 이 기간의 대화는 요약되지 않았다."],
+    ["dots", "- 9.25~9.28: 이 기간의 대화는 요약되지 않았다."],
+    ["ISO dates", "- 2026-09-25~2026-09-28: 이 기간의 대화는 요약되지 않았다."],
+    ["no colon", "- 9/25~9/28 대화는 요약되지 않았다 (요약 없음)"],
+    [
+      "a word in between",
+      "- 9/25~9/28: 이 기간의 대화는 따로 요약되지 않았다.",
+    ],
+    [
+      "the earlier wording with a second sentence",
+      "- 9/25~9/28: 이 기간의 대화는 요약되지 않았다. 그때 나눈 대화는 그대로 남아 있어 찾아볼 수 있다.",
+    ],
+  ])(
+    "a gap line the summariser rewrote with %s is the same gap: not put back beside it",
+    (_shape, line) => {
+      const kept = withGapsKept(
+        `${line}\n- 9/29: 유자 40박스`,
+        "- 9/25~9/28: 이 기간의 대화는 요약되지 않았다.",
+        "2026-09-30",
+      );
+      expect(kept.split("\n")).toEqual([line, "- 9/29: 유자 40박스"]);
+    },
+  );
+
+  test("a line in the owner's words about something not summarised is no gap: kept as a line, and never widened over", () => {
+    const report =
+      "- 9/24: 이 사람이 상반기 보고서가 요약되지 않았다고 했다; 팀장이 다시 쓰라고 했다";
+    const span: Thread = [
+      user("u1", "첫째 날", at(1)),
+      answer("a1", "네.", at(1, 1)),
+      user("u4", "넷째 날", at(4)),
+    ];
+    const made = unsummarisedSummary(`- 요약 1\n${report}`, span, ZONE);
+    expect(made.summary.split("\n")).toEqual([
+      "- 요약 1",
+      report,
+      "- 9/25~9/28: 이 기간의 대화는 요약되지 않았다.",
+    ]);
+    // Nor put back when the rewrite leaves it out: that is the summariser's own call on a real line.
+    expect(withGapsKept("- 요약 2", report, "2026-09-30")).toBe("- 요약 2");
+    // Reported speech about the conversation itself is still the owner's line, not the server's.
+    expect(
+      withGapsKept(
+        "- 요약 2",
+        "- 9/24: 이 사람이 그날 대화가 요약되지 않았다고 했다",
+        "2026-09-30",
+      ),
+    ).toBe("- 요약 2");
+    // And something other than the conversation not being summarised is not the period's gap.
+    const paper =
+      "- 9/24: 상반기 보고서는 요약되지 않았다; 팀장이 다시 쓰라고 했다";
+    expect(withGapsKept("- 요약 2", paper, "2026-09-30")).toBe("- 요약 2");
+    expect(unsummarisedSummary(paper, span, ZONE).summary.split("\n")[0]).toBe(
+      paper,
+    );
+  });
+
+  test("the gap line is one sentence, the same for a span and for a day, with nothing after it", () => {
+    const span: Thread = [
+      user("u1", "첫째 날", at(1)),
+      answer("a1", "네.", at(1, 1)),
+      user("u4", "넷째 날", at(4)),
+    ];
+    expect(unsummarisedSummary(null, span, ZONE).summary).toBe(
+      "- 9/25~9/28: 이 기간의 대화는 요약되지 않았다.",
+    );
+    expect(
+      unsummarisedSummary("- 요약 1", span.slice(0, 2), ZONE).summary,
+    ).toBe("- 요약 1\n- 9/25: 이 기간의 대화는 요약되지 않았다.");
+  });
+
+  test("the day after a bounded success: the frozen layer names the bounded day, the summariser was told it, and the rest closes in the daytime for the owner's next message", async () => {
+    let calls = 0;
+    const { store, thread, asked, run, setClock } = harness({
+      summarize: async () => {
+        calls += 1;
+        if (calls === 1) throw new Error("summary: took too long");
+        return `- 요약 ${calls}`;
+      },
+    });
+    dayOfTalk(thread, 0);
+    run(at(0, 200));
+    setClock(at(1, -480));
+    expect(await store.tick()).toBe(0);
+    dayOfTalk(thread, 1);
+    run(at(1, 200));
+    setClock(at(2, -480));
+    // The retry is bounded to 9/24 alone, and the close it makes is 9/25's, not today's.
+    expect(await store.tick()).toBe(1);
+    expect(asked[1]?.day.slice(0, 10)).toBe("2026-09-25");
+    morning(thread, 2);
+    const first = run(at(2));
+    expect(first.epoch.reason).toBe("day_boundary");
+    expect(first.system).toContain("2026-09-25 전까지");
+    expect(first.messages.map((message) => message.id)).toEqual([
+      ...Array.from({ length: 6 }, (_, n) => [`d1u${n}`, `d1a${n}`]).flat(),
+      "d2u0",
+    ]);
+    // What remains, 9/25, is closed in the daytime — a close of today would wait for tomorrow.
+    setClock(at(2, 10));
+    expect(await store.tick()).toBe(1);
+    expect(asked[2]?.day.slice(0, 10)).toBe("2026-09-26");
+    expect(asked[2]?.previous).toBe("- 요약 2");
+    thread.push(user("d2u1", "두 번째", at(2, 30)));
+    const second = run(at(2, 30));
+    expect(second.epoch.reason).toBe("day_boundary");
+    expect(second.system).toContain("2026-09-26 전까지");
+    expect(second.system).toContain("- 요약 3");
+    expect(second.messages.map((message) => message.id)).toEqual([
+      "d2u0",
+      "d2u1",
+    ]);
+  });
+
+  test("a scrub that throws after the summariser answered is not the summariser's failure: nothing is counted", async () => {
+    const bot = "bot_scrub";
+    const { store, thread, asked, run, setClock } = harness({
+      bot,
+      forgotten: () => ["유자 40박스"],
+      scrub: async () => {
+        throw new Error("judge down");
+      },
+    });
+    dayOfTalk(thread, 0);
+    run(at(0, 200));
+    setClock(at(1, -480));
+    expect(await store.tick()).toBe(0);
+    expect(asked).toHaveLength(1);
+    expect(
+      logged(bot, "day_close_failed").map((line) => line.failures),
+    ).toEqual([0]);
   });
 });

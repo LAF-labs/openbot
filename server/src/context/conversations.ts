@@ -85,6 +85,7 @@ import {
   dialogueOf,
   MIN_DAY_CLOSE_CHARS,
   type StampedMessage,
+  SUMMARY_MAX_CHARS,
   transcriptOf,
 } from "./day-close";
 import { type SummaryScrubber, scrubByRule } from "./forget-scrub";
@@ -401,11 +402,41 @@ function dayOf(message: StampedMessage, zone: string): string | null {
   return typeof at === "string" ? dayLabel(new Date(at), zone) : null;
 }
 
-/** The words every gap line carries, by which one is known again whatever else the model wrote. */
-const GAP_WORDS = "요약되지 않았다";
-/** The dates a gap line opens with: `- 9/25~9/28: …` or `- 9/25: …`. */
-const GAP_DATES =
-  /^-\s*(\d{1,2})\/(\d{1,2})(?:\s*~\s*(\d{1,2})\/(\d{1,2}))?\s*:/;
+/**
+ * THE GAP SENTENCE, the one thing a gap line says after its dates. One sentence, the same in every
+ * kind of conversation. It had a second — that the conversation of those days was still there to
+ * look up — and that was measured to do nothing (nine real turns on 2026-10-12, with it, without
+ * it and with a sentence telling the Bot to search: 0 of 9 searched, 9 of 9 said the records did
+ * not hold it); in a project it was also false, since the Bot's search over its own past is offered
+ * in the main conversation only (`channels/project-tool.ts`). The whole wording lives here, once.
+ */
+const GAP_SENTENCE = "이 기간의 대화는 요약되지 않았다.";
+/**
+ * How a line is known to SAY the period's conversation was not summarised, whatever the model made
+ * of the sentence above: 대화 as the subject, at most a word between it and the verb, and not
+ * reported speech. The subject and the `고` guard are what keep a real line of the owner's out —
+ * `- 9/24: 이 사람이 상반기 보고서가 요약되지 않았다고 했다` was read as a gap when the words alone were
+ * matched: dropped from the summary, and the new gap widened over 9/24 (second review of pull
+ * request 202). Anything after the sentence is tolerated, never written: a summary made under the
+ * earlier two-sentence wording is still read. A rewording that names no 대화 (`- 9/25~9/28: 요약
+ * 없음`) is not a gap line here, by that choice.
+ */
+const GAP_SAID =
+  /대화(?:\s*내용)?(?:[은는이가도를을])?\s*(?:\S+\s+)?요약되지\s*않(?:았다|음)(?![고며])/u;
+/**
+ * The dates a gap line opens with, in every shape the summariser has been seen to write a dated line
+ * in — the twin of `isDated` in `./forget-scrub.ts`, which reads the same shapes and is not exported:
+ * `- 9/25~9/28: …`, `• 9/25–9/28`, `* 9/25-9/28`, `1. 9/25~28`, `- 9월 25일~9월 28일`, `- 9.25~9.28`,
+ * `- 2026-09-25~2026-09-28`, `- (9/25) …`; `~`, `–` or `-` between the two, the second a day alone
+ * (`9/25~28`); with or without the colon. Not `- 3/4분기: …`, where the figure is part of a word.
+ * Each shape was a second gap line a night when only `- M/D~M/D:` was read (second review of pull
+ * request 202).
+ */
+const GAP_DATE = String.raw`\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[./]\d{1,2}|\d{1,2}월\s?\d{1,2}일`;
+const GAP_DATES = new RegExp(
+  String.raw`^\s*(?:\d+[.)]\s*)?[-*•]?\s*\(?(${GAP_DATE})\s*(?:[-~–]\s*(${GAP_DATE}|\d{1,2}일?))?(?![\d\p{L}])`,
+  "u",
+);
 const DAY_MS = 86_400_000;
 
 /** A day key `2026-09-26` as a count of days. */
@@ -436,28 +467,50 @@ function shortDay(n: number): string {
 /** The days a gap line covers. */
 type Gap = { first: number; last: number };
 
-/** The gap a line names, read by its dates and the gap words, or null for any other line. */
+/** Whether a line says the period's conversation was not summarised (`GAP_SAID`). */
+const saysGap = (line: string) => GAP_SAID.test(line);
+
+/**
+ * One date of a gap line as a count of days: with its year when it carries one, else the most
+ * recent such day on or before `until`; a day alone (`9/25~28`) is counted from the first date.
+ */
+function gapDateOf(text: string, until: number, first?: number): number | null {
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(text);
+  if (iso) {
+    return Math.floor(
+      Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])) / DAY_MS,
+    );
+  }
+  const monthDay = /^(\d{1,2})(?:[./]|월\s?)(\d{1,2})일?$/.exec(text);
+  if (monthDay) {
+    return dayNumberOf(Number(monthDay[1]), Number(monthDay[2]), until);
+  }
+  const dayAlone = /^(\d{1,2})일?$/.exec(text);
+  if (dayAlone && first !== undefined) {
+    return first + Number(dayAlone[1]) - new Date(first * DAY_MS).getUTCDate();
+  }
+  return null;
+}
+
+/** The gap a line names, read by its dates and the gap sentence, or null for any other line. */
 function gapOf(line: string, until: number): Gap | null {
-  if (!line.includes(GAP_WORDS)) return null;
-  const found = GAP_DATES.exec(line.trim());
-  if (!found) return null;
-  const first = dayNumberOf(Number(found[1]), Number(found[2]), until);
-  const last =
-    found[3] && found[4]
-      ? dayNumberOf(Number(found[3]), Number(found[4]), until)
-      : first;
-  return { first, last: Math.max(first, last) };
+  if (!saysGap(line)) return null;
+  const found = GAP_DATES.exec(line);
+  if (!found?.[1]) return null;
+  const first = gapDateOf(found[1], until);
+  if (first === null) return null;
+  const last = found[2] ? gapDateOf(found[2], until, first) : first;
+  return { first, last: Math.max(first, last ?? first) };
 }
 
 /**
- * The line that stands for days the summariser never summarised: the dates and the gap words,
- * nothing about what was in them, and that the conversation of those days is still there to look
- * up — no count, because a number the model may rewrite should not sit in a sentence the Bot
- * reads as fact. The Bot is told what is not in its summary; it is never told something the model
- * did not write.
+ * The line that stands for days the summariser never summarised: the dates and the gap sentence,
+ * nothing about what was in them — no count, because a number the model may rewrite should not sit
+ * in a sentence the Bot reads as fact. The Bot is told what is not in its summary; it is never told
+ * something the model did not write.
  */
 const gapLine = (gap: Gap) =>
-  `- ${gap.first === gap.last ? shortDay(gap.first) : `${shortDay(gap.first)}~${shortDay(gap.last)}`}: 이 기간의 대화는 ${GAP_WORDS}. 그때 나눈 대화는 그대로 남아 있어 찾아볼 수 있다.`;
+  `- ${gap.first === gap.last ? shortDay(gap.first) : `${shortDay(gap.first)}~${shortDay(gap.last)}`}: ${GAP_SENTENCE}`;
 
 /**
  * The summary a close makes without the summariser: what the last close said, carried as it was,
@@ -483,7 +536,7 @@ export function unsummarisedSummary(
   const lines = (previous ?? "").split("\n").filter((line) => line.trim());
   if (!first || !last) {
     // Rows from before stamps: a gap with no dates, which nothing will join.
-    const line = `- 날짜 모름: 이 기간의 대화는 ${GAP_WORDS}. 그때 나눈 대화는 그대로 남아 있어 찾아볼 수 있다.`;
+    const line = `- 날짜 모름: ${GAP_SENTENCE}`;
     return { summary: boundedSummary([...lines, line].join("\n")), days: 0 };
   }
   let gap: Gap = { first: dayNumber(first), last: dayNumber(last) };
@@ -510,8 +563,13 @@ export function unsummarisedSummary(
  * naming the days it never covered — so the Bot would have known about the gap for one day. A
  * gap is not settled by a day's talk. Known by its days, not its wording: a line the model merged
  * or reworded still covers the gap and is left as the model wrote it (review of pull request 202,
- * where the exact words were matched and gaps multiplied). It goes at the head because the bound
- * gives up the head first, and that is the right order to forget it in.
+ * where the exact words were matched and gaps multiplied). It goes at the head, where the oldest
+ * days are, AND THE REWRITE IS HELD TO THE BOUND LESS THE LINE FIRST: bounding the two together
+ * kept the tail and cut the head, so with a rewrite within a line's length of the bound — where a
+ * long conversation's summaries sit — the line just put back was the first thing dropped (second
+ * review of pull request 202: a 2,990-character rewrite, gap line gone). Either order costs the
+ * same characters, the rewrite's oldest; this one keeps the line that says what is missing, which
+ * a day's talk never makes true again.
  */
 export function withGapsKept(
   summary: string,
@@ -524,16 +582,17 @@ export function withGapsKept(
     .map((line) => gapOf(line, until))
     .filter((gap): gap is Gap => gap !== null);
   const missing = (previous ?? "").split("\n").filter((line) => {
-    if (!line.includes(GAP_WORDS)) return false;
+    if (!saysGap(line)) return false;
     const gap = gapOf(line, until);
     if (!gap) return !summary.includes(line);
     return !covered.some(
       (held) => held.first <= gap.first && held.last >= gap.last,
     );
   });
-  return missing.length > 0
-    ? boundedSummary([...missing, summary].join("\n"))
-    : summary;
+  if (missing.length === 0) return summary;
+  const head = missing.join("\n");
+  const room = Math.max(0, SUMMARY_MAX_CHARS - head.length - 1);
+  return [head, boundedSummary(summary, room)].join("\n").trim();
 }
 
 /** The frozen system message, with the summary of what the cut replaced at its end. */
