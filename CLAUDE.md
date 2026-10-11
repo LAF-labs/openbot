@@ -143,6 +143,27 @@ after another — for telling whether a failure needs the parallel run. Not
 `bun test --parallel`: under Bun 1.3.14 it runs each file in a fresh global
 object, and some files fail there alone.
 
+### A test must be able to fail
+
+If every function a test imports returned `undefined` and the test would still
+pass, it is not a test — it is a line in the floor count. The shapes that are
+not tests: asserting only that something is defined, only that a call does not
+throw, only that a stub was called, restating a constant or a prompt string,
+and comparing a call with itself (`expect(f(a)).toEqual(f(a))`). Each of
+these stays green with the feature deleted. A test calls the subject with one
+concrete input and asserts the literal output or effect; for an absence it
+also asserts the presence on another input; for a constant it exercises the
+mechanism that reads it, not the value.
+
+A fix owes a proof that its test can fail: the change it guards is reverted,
+the test is run and seen red, and the pull request says how that was shown
+("with the `key` deleted from `home-cards.tsx` this test fails"). On
+2026-10-11 the first cut of #189 passed its own tests; a reviewer that had not
+written it found a regression in the gate it added, and beside it a boundary
+test that passed with the fix removed. Its second cut proved every new test by
+reverting the line it guards, and the test that could not fail was deleted. A
+green gate counts tests, not what they can catch.
+
 ## How a change lands
 
 **Nothing is pushed to `main`** (owner, 2026-10-02). A change is a branch
@@ -167,6 +188,29 @@ The gate runs before the pull request is opened, not instead of it, and a
 reviewer reads a diff: its 👍 is not "verified by using it", and it is not a
 release. Two rounds on the same point is a disagreement, and disagreements are
 the owner's.
+
+A review ends by sorting, not by running dry. Before anything is fixed, every
+finding goes into one of four bins — fix now, consider, noted, dismissed — and
+the dismissed ones are shown on the thread with their reason, never left out:
+what was rejected and why is how the owner overrides the sorting. More than
+about five "fix now" on one pull request means the sorting was not done. A
+hypothesis ("what if this were null") is a finding once it is traced to a call
+path that is reached, not before; "I would have written it differently" is not
+one. A review says which commit it read, and its verdict is for that patch
+alone: a rebase that changes nothing is the same patch (`git patch-id`), any
+other push is a new one.
+
+Passes are counted. From the third pass on one pull request, a finding that
+matches a pattern in `docs/laf/review-triage.md` is dismissed by default, with
+the pattern named — except that nothing about security, sign-in and sessions,
+money, data loss and migrations, or privacy is ever dismissed by pattern; those
+are read every time. The ledger exists because on 2026-10-11 Codex read #183
+four times and raised 4, 8, 6 and 8 findings, with nothing saying when it
+would stop; the owner stopped it, and the eight left were refinements of the
+evaluation's classifier, deferred to a follow-up. The same night's #189 and
+#196 were each read once more by a reviewer that had not written the code, and
+what it found came back sorted — blocking, worth fixing, left as it is — before
+anything was changed.
 
 The loop, step by step, is the `codex-pr-review` skill (installed for the owner
 in `~/.claude/skills/`). Codex is set to review the pull requests the owner's

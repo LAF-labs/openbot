@@ -49,6 +49,8 @@ DATABASE_URL=postgres://openbot:openbot@localhost:55432/openbot bun run test:ci
 ```
 
 - [ ] All four pass. If a test floor moved, say why.
+- [ ] Every test a fix adds was seen failing with the change it guards reverted, and "Proof" says
+      how that was shown.
 
 ## Proof
 
