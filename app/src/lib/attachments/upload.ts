@@ -122,6 +122,10 @@ export function uploadRefusalText(
       return t(
         "Files cannot be read right now. Try again in a moment, and tell us if it keeps happening.",
       );
+    case "laf:project_deleting":
+      // The project is being deleted under the composer (`server/src/channels/deleting.ts`): the
+      // chat says the conversation is gone, and "try again" here could never work.
+      return t("This conversation is no longer here.");
     default:
       return t("The file could not be attached. Please try again.");
   }
