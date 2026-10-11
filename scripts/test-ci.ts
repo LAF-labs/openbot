@@ -2841,6 +2841,24 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * area, legend and all), a donut the same, and no mark with a colour written on the element. 5 and
  * 6 is 11; 2391 and 11 is 2402.
  *
+ * RAISED 2026-10-11 FOR THINKING, HANDED OVER (record §4, piece 6-3's second part): `server` from
+ * 4402 to 4412, `app` from 2402 to 2403, `root` from 1440 to 1498, all in files that were there.
+ * Server, ten: six in `effort-on-the-wire.integration.test.ts` (the run handed thinking sent the
+ * deep effort whatever the deployment and the caller say — three — and no other mode sent it —
+ * three), two in `result-spillover.test.ts` (a delegated thread of either kind read as its
+ * conversation), one in `chat-tools.test.ts` (handed thinking, the run holds no tool and nothing
+ * is carried out for it), one in `turn-engine.integration.test.ts` (a conversation of its own
+ * kind, in its own mode). App, one in `step-labels.test.ts` (a hand-over named by who it was
+ * handed to, and by neither until that has arrived). Root, fifty-eight: eight in
+ * `tests/delegate.test.ts` (three more words that are and are not a target; the modes; the
+ * tool's words; what the mode of thinking names and tells), eight in agent-bot's
+ * `harness.test.ts` (the deep effort in three models' own words, withheld from three models
+ * nobody measured and from one that defines none, and deeper than the fleet's default), and
+ * forty-two in `tests/eval-delegation.test.ts` — thirty-seven on the judges of the five new
+ * scenarios, and five that walk the pack (the three new conversations held to no tool of the
+ * browser's, the two runs handed thinking held to no tool at all). By hand: 6 and 2 is 8, and 1
+ * is 9, and 1 is 10; 4402 and 10 is 4412. 8 and 8 is 16, and 42 is 58; 1440 and 58 is 1498.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2869,8 +2887,8 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4402, roots: ["server"] },
-  { name: "app", floor: 2402, roots: ["app"] },
+  { name: "server", floor: 4412, roots: ["server"] },
+  { name: "app", floor: 2403, roots: ["app"] },
   {
     name: "agent-computer",
     /*
@@ -2898,7 +2916,7 @@ const GROUPS: readonly {
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 1440, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 1498, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
