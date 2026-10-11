@@ -479,13 +479,25 @@ const EMPTY_READERS: Readonly<Record<string, Reader>> = {
     (await calendarCall(EMPTY_ACCOUNT, "list_events", args, () => now)).text,
 };
 
+/**
+ * A recall turn's call as it is recorded beside the searches of its own past (`Lookup`): null for
+ * such a search, and for the projects' other readings the name with the reading in it —
+ * `mcp__projects__read(list)`. Those went looking too, somewhere else: left as the bare name they
+ * were dropped from both counts and the turn read as one that looked nowhere (review of pull
+ * request 183).
+ */
+function calledAs(call: ObservedCall): string | null {
+  if (call.name !== READ_PROJECTS) return call.name;
+  const kind = readingOf(call.arguments ?? {});
+  return kind === "search" ? null : `${READ_PROJECTS}(${kind ?? "invalid"})`;
+}
+
 /** A call that went looking somewhere other than this conversation's own past. */
 const looksElsewhere = (name: string) =>
-  name !== READ_PROJECTS &&
-  (name.startsWith("mcp__") ||
-    name === "computer_list_files" ||
-    name === "computer_read_file" ||
-    name === "delegate");
+  name.startsWith("mcp__") ||
+  name === "computer_list_files" ||
+  name === "computer_read_file" ||
+  name === "delegate";
 
 type Lookup = { terms: string; hits: number; text: string };
 
@@ -526,11 +538,12 @@ function surfaceFor(thread: () => readonly StampedMessage[], now: () => Date) {
       const hits = (Array.isArray(found) ? found : []) as Array<{
         text?: unknown;
       }>;
-      lookups.push({
-        terms: typeof args.terms === "string" ? args.terms : "",
-        hits: hits.length,
-        text: hits.map((hit) => String(hit.text ?? "")).join("\n"),
-      });
+      if (kind === "search")
+        lookups.push({
+          terms: typeof args.terms === "string" ? args.terms : "",
+          hits: hits.length,
+          text: hits.map((hit) => String(hit.text ?? "")).join("\n"),
+        });
       return JSON.stringify(outcome);
     }
     const reader = EMPTY_READERS[call.name];
@@ -910,9 +923,10 @@ async function walkOnce(fact: Fact, arm: Arm, run: number): Promise<Walk> {
             ].join("\n"),
             answer: asked.answer || asked.said,
             lookups: surface.lookups,
-            others: asked.calls
-              .map((call) => call.name)
-              .filter((name) => name !== READ_PROJECTS),
+            others: asked.calls.flatMap((call) => {
+              const name = calledAs(call);
+              return name ? [name] : [];
+            }),
             spent: asked.spent,
             problem: asked.problem,
           });
