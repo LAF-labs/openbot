@@ -110,11 +110,18 @@ const bareOf = (word: string) => {
   return shorter.length >= 2 ? shorter : word;
 };
 
-/** Weekday shorthand read as the weekday: `화·목`, `화, 목`, `월/수/금` → 화요일 …; not the 일 of 5일. */
+/**
+ * Weekday shorthand read as the weekday: `화·목`, `화, 목`, `월/수/금` → 화요일 …; not the 일 of 5일.
+ * The last of a list keeps its particle (`화·목만`, `월/수/금에`) and is read too — only after a
+ * separator, since `일만 원` and `수만 개` are not Sundays or Wednesdays. The unseparated form
+ * (`화목`, `월수금`) is NOT read: whole tokens of weekday letters are ordinary words too often —
+ * 수금 (collecting payment, a standing line of its own), 금일, 수일, 수목, 토목, 목화 — and a rule
+ * that admits only weekday order still admits the first four.
+ */
 const weekdaysSpelled = (text: string) =>
   text.replace(
-    /(?<![\p{L}\d])([월화수목금토일])(?=\s?[·,/]\s?[월화수목금토일]|[\s,.)]|$)/gu,
-    "$1요일",
+    /(?<![\p{L}\d])([월화수목금토일])(?=\s?[·,/]\s?[월화수목금토일]|[\s,.)]|$)|(?<=[월화수목금토일]\s?[·,/]\s?)([월화수목금토일])(?=[만에])/gu,
+    "$1$2요일",
   );
 
 /** The fact's tokens as said, commas inside a number removed, in order. */
@@ -143,12 +150,13 @@ const tokensOf = (text: string) =>
  *     in the body as a whole token (5일, never 25일; 18000원, never 11000원).
  *
  * Digit-led words count only as that whole token; recurrence words never count; weekday shorthand
- * is read as the weekday; a word counts with a second particle off (지은이 → 지은). A line with no
+ * is read as the weekday on both sides, since the owner writes 화·목 on 수첩 too (third review of
+ * the same pull request); a word counts with a second particle off (지은이 → 지은). A line with no
  * colon is its own head and body. A standing line that groups two people's days loses both —
  * forgetting errs that way, as the head of this file says.
  */
 function standingLineCarries(line: string, fact: string): boolean {
-  const said = tokensOf(fact);
+  const said = tokensOf(weekdaysSpelled(fact));
   if (said.length === 0) return false;
   // The subject phrase: the tokens up to and including the first one marked 은/는/이/가/께서.
   let subjectEnd = said.findIndex((token) => /(은|는|이|가|께서)$/.test(token));
@@ -156,21 +164,14 @@ function standingLineCarries(line: string, fact: string): boolean {
   const word = (token: string) => token.replace(PARTICLE, "");
   const usable = (token: string) =>
     token.length >= 2 && !COMMON.has(token) && !RECURRENCE.has(token);
+  const spoken = said.map(word);
   const numbers = new Set(
-    said.map(word).filter((token) => /^\d/.test(token) && usable(token)),
+    spoken.filter((token) => /^\d/.test(token) && usable(token)),
   );
-  const subject = new Set(
-    said
-      .slice(0, subjectEnd + 1)
-      .map(word)
-      .filter((token) => usable(token) && !/^\d/.test(token)),
-  );
-  const predicate = new Set(
-    said
-      .slice(subjectEnd + 1)
-      .map(word)
-      .filter((token) => usable(token) && !/^\d/.test(token)),
-  );
+  // One sieve for both halves: a digit-led token is a number, never a word (5일 is not in 25일).
+  const wordy = (token: string) => usable(token) && !/^\d/.test(token);
+  const subject = new Set(spoken.slice(0, subjectEnd + 1).filter(wordy));
+  const predicate = new Set(spoken.slice(subjectEnd + 1).filter(wordy));
   const colon = line.indexOf(":");
   const headText = weekdaysSpelled(
     flat(colon >= 0 ? line.slice(0, colon) : line),
@@ -195,6 +196,16 @@ function standingLineCarries(line: string, fact: string): boolean {
     ...bodyWords,
     ...[...subject].filter((token) => holds(bodyText, token)),
   ]);
+  /*
+   * THE LIMIT OF THE NUMBER CLAUSE. A number stands in for the three words, so ONE fact word in the
+   * head and one of the fact's numbers whole in the body carry the line — and a line of another
+   * fact can have both: `- 세무사 상담료: 매달 5일 입금` for the 정산 deadline on the 5th, `- 결제:
+   * 한일포장 10만 원 이상 …` for 대성유리's 10만 원, `- 저녁 마감: 6시` for the 6시 chat hours. Such a
+   * line is lost (data loss, not a privacy failure). Measured on a run's real summaries it happened
+   * 0 times in 21,564 line × fact checks, and no simpler rule did better (third review of pull
+   * request 196), so the clause stands; the shapes are pinned as known limits in
+   * `memory-forgetting.test.ts` so a change that closes one is seen.
+   */
   return all.size >= 3 || bodyNumber;
 }
 
