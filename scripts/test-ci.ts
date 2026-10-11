@@ -2864,6 +2864,11 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * a turn that looked in two places, and six on where the decisions model may be asked. 1612 and
  * 35 is 1647.
  *
+ * RAISED 2026-10-11 FOR THE CONSENT CALLBACK ASKING THE DOOR, `server` by two (to 4404), both in
+ * `connect-config.test.ts`: the address matched as the sign-in door matches it however the line
+ * spells it, and a closed door that names the owner on the administrator line alone admitting
+ * nobody else. 4402 and 2 is 4404.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2892,7 +2897,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4402, roots: ["server"] },
+  { name: "server", floor: 4404, roots: ["server"] },
   { name: "app", floor: 2402, roots: ["app"] },
   {
     name: "agent-computer",
