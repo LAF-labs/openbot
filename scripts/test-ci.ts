@@ -2833,6 +2833,14 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * words, and telling this service's two answers from a tool's own. 16 and 8 is 24; 1416 and 24 is
  * 1440.
  *
+ * RAISED 2026-10-11 WITH THE ACCENT AND THE SHADOWS (색과 깊이), `app` by eleven (to 2402). Five in
+ * `accent-contrast.test.ts`: per theme, the accent as a mark against a card and the composer's
+ * fill, and that a chart's first series is the accent; and once, that a card casts no shadow. Six
+ * in the new `card-lead-colour.test.ts`: every bar the first colour, every progress fill, only the
+ * first of a card's figures in the accent's ink, several series in the palette's order (line and
+ * area, legend and all), a donut the same, and no mark with a colour written on the element. 5 and
+ * 6 is 11; 2391 and 11 is 2402.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2862,7 +2870,7 @@ const GROUPS: readonly {
   processes?: number;
 }[] = [
   { name: "server", floor: 4402, roots: ["server"] },
-  { name: "app", floor: 2391, roots: ["app"] },
+  { name: "app", floor: 2402, roots: ["app"] },
   {
     name: "agent-computer",
     /*
