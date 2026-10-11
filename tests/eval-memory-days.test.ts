@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { answerText, TURNS } from "../evals/days-talk";
 import {
   busyTurn,
@@ -380,4 +383,61 @@ describe("counts, never percentages of three", () => {
     expect(meanOf([])).toBeNull();
     expect(meanOf([1, 2, 3])).toBe(2);
   });
+});
+
+describe("a saved report is printed again without a model", () => {
+  /*
+   * `EVAL_MEMORY_REPORT` reads a file and asks nobody, so it has to run where there is no key. It
+   * did not: the runner imported the model's client at its head, and the client throws when it is
+   * built without one (review of pull request 183). A process of its own, with no key and no
+   * `.env`, so the test is about the script and not about what this process happens to hold.
+   */
+  test("with no OPENAI_API_KEY in the environment", () => {
+    const folder = mkdtempSync(join(tmpdir(), "eval-memory-days-"));
+    try {
+      const saved = join(folder, "report.json");
+      writeFileSync(
+        saved,
+        JSON.stringify({
+          model: "none",
+          provider: null,
+          serverModel: "none",
+          baseUrl: "none",
+          harness: "none",
+          prompt: "none",
+          catalogue: "none",
+          ranAt: "2026-10-11T00:00:00.000Z",
+          runs: 1,
+          closes: [1],
+          spentUsd: 0,
+          captures: [],
+          walks: [],
+        }),
+      );
+      const {
+        OPENAI_API_KEY: _key,
+        OPENAI_BASE_URL: _url,
+        ...env
+      } = process.env;
+      const run = Bun.spawnSync(
+        [
+          process.execPath,
+          "--env-file=/dev/null",
+          join(import.meta.dir, "../evals/memory-days.ts"),
+        ],
+        {
+          cwd: folder,
+          env: { ...env, EVAL_MEMORY_REPORT: saved },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      const said = `${run.stdout.toString()}${run.stderr.toString()}`;
+      expect(said).not.toContain("OPENAI_API_KEY");
+      expect(said).toContain("memory after days · model none");
+      expect(run.exitCode).toBe(0);
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+  }, 60_000);
 });
