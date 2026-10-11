@@ -727,12 +727,14 @@ type Night = {
    * What the close wrote, from the long walks on (absent in a report saved before them): the
    * summary the conversation carries after this night, in characters; what the summariser sent
    * back before the bound was applied; whether that was over the bound, so that the oldest-first
-   * cut ran (`boundedSummary`); and whether the summary still holds the fact.
+   * cut ran (`boundedSummary`); and the summary itself, so that whether it holds the fact is read
+   * by the rules of the day a report is printed and not of the day it was made. (The first long
+   * run kept a verdict in its place, `kept`, made by rules a review then changed: it is not read.)
    */
   summaryChars?: number;
   rawChars?: number;
   cut?: boolean;
-  kept?: Survival;
+  summary?: string;
 };
 
 type Walk = {
@@ -934,7 +936,7 @@ async function walkOnce(fact: Fact, arm: Arm, run: number): Promise<Walk> {
         summaryChars: carried.length,
         rawChars: made ? rawChars : 0,
         cut: made && rawChars > SUMMARY_MAX_CHARS,
-        kept: survivalIn(fact, carried),
+        summary: carried,
       });
       for (let turn = 0; turn < DAY_TURNS.length; turn += 1) {
         clock = at(day, HOURS[turn] ?? 9).getTime();
@@ -1135,20 +1137,42 @@ function printNights(walks: readonly Walk[]) {
   console.log(
     `  the summary carried after night: ${marks.map((day) => `${day} mean ${(meanOf(at(day)) ?? 0).toFixed(0)} max ${Math.max(0, ...at(day))}`).join(" · ")}`,
   );
+  /*
+   * Whether the summary after a night holds the fact, read now: from the night's own summary where
+   * the report kept it, and otherwise from the morning asked on, which kept its summary always.
+   */
+  const keptAfter = (walk: Walk, day: number): Survival | null => {
+    const fact = factOf(walk.id);
+    const summary =
+      walk.nights.find((night) => night.day === day)?.summary ??
+      walk.mornings.find((morning) => morning.closes === day)?.summary;
+    return fact && summary !== undefined ? survivalIn(fact, summary) : null;
+  };
+  const states = (day: number) =>
+    walks
+      .map((walk) => keptAfter(walk, day))
+      .filter((state): state is Survival => state !== null);
+  const read = marks.filter((day) => states(day).length > 0);
   console.log(
-    `  walks whose summary holds the fact whole after night: ${marks.map((day) => `${day}: ${outOf(measured.filter((night) => night.day === day && night.kept === "whole").length, at(day).length)}`).join(" · ")}`,
+    `  walks whose summary holds the fact after night (whole · part · gone): ${read.map((day) => `${day}: ${(["whole", "part", "gone"] as const).map((state) => states(day).filter((value) => value === state).length).join(" · ")}`).join("   ")}`,
   );
   console.log(
-    "\n  the last night each walk's summary held the fact whole (— never; ✓ through the last night)\n",
+    "\n  the last night read on which each walk's summary held the fact whole (— never; ✓ through the last)\n",
   );
   for (const fact of FACTS) {
     const mine = walks.filter((walk) => walk.id === fact.id);
     if (mine.length === 0) continue;
     const through = mine.map((walk) => {
-      const held = walk.nights.filter((night) => night.kept === "whole");
-      const lastHeld = Math.max(0, ...held.map((night) => night.day));
-      const end = Math.max(0, ...walk.nights.map((night) => night.day));
-      return lastHeld === 0 ? "—" : lastHeld === end ? "✓" : String(lastHeld);
+      const days = Array.from({ length: last }, (_, index) => index + 1).filter(
+        (day) => keptAfter(walk, day) !== null,
+      );
+      const held = days.filter((day) => keptAfter(walk, day) === "whole");
+      const lastHeld = held.at(-1) ?? 0;
+      return lastHeld === 0
+        ? "—"
+        : lastHeld === days.at(-1)
+          ? "✓"
+          : String(lastHeld);
     });
     console.log(`  ${pad(fact.id, 30)} ${through.join(" · ")}`);
   }
