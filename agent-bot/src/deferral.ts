@@ -204,6 +204,13 @@ export function isDeferredCall(name: string, exposed: ExposedTools): boolean {
  * same run, with what is missing and how to call it — through `tool_call`, whose arguments ARE
  * declared. A call through `tool_call` is not held to this: what it lacks, the model left out,
  * and the server's own check says so in the tool's words.
+ *
+ * WHERE THIS ANSWER IS ON RECORD: in the conversation, as the call and its result — where every
+ * call this service answers instead of forwarding is (a name nobody offered, arguments that are
+ * not an object, a loop, a schema not yet shown). The audit trail is the server's, of calls that
+ * reached it; this one never became one. And the call a person is owed a row for still does
+ * reach it: a tool paused for review stands here with an empty schema, so nothing is missing from
+ * a call to it and it is sent on to be refused there (`shared/tools/paused.ts`).
  */
 export function answerDeferredCall(
   name: string,

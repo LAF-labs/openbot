@@ -6,6 +6,10 @@ import {
   undescribedToolText,
 } from "../../shared/tools/bridge";
 import { withAccountStates } from "../../shared/tools/gallery";
+import {
+  PAUSED_TOOL_DESCRIPTION,
+  PAUSED_TOOL_PARAMETERS,
+} from "../../shared/tools/paused";
 import { answerBridgeCall } from "../src/deferral";
 import { carriedReasoning } from "../src/reasoning";
 import { toProviderMessages } from "../src/transcript";
@@ -1177,6 +1181,34 @@ describe("a tool behind the bridge called by its own name, its arguments not car
     expect(String(result?.content)).toBe(
       undescribedToolText([PROJECT_READ], "mcp__projects__read"),
     );
+  });
+
+  /*
+   * WHAT A PAUSE OWES A PERSON STILL REACHES THE SERVER. A tool whose definition changed stands
+   * behind the bridge under its name alone, with an empty schema, and a call to it must get to
+   * the server: the refusal the Bot hears (`laf:tool_needs_review`) and the row the server writes
+   * (`mcp.call_rejected`) are how anybody learns it is waiting (`describedToolNames`). The stand-in
+   * requires nothing, so nothing is missing from a call to it, and this door sends it on.
+   */
+  test("a tool waiting for review is sent on, empty call and all — its refusal is the server's", async () => {
+    const paused = {
+      name: PROJECT_READ.name,
+      description: PAUSED_TOOL_DESCRIPTION,
+      parameters: { ...PAUSED_TOOL_PARAMETERS, properties: {} },
+    };
+    const { requests, events } = await runFor(
+      [...CORE, ...CONNECTED, paused],
+      [calls([{ id: "c1", name: PROJECT_READ.name, args: {} }])],
+      {},
+      // Shown the definition it had before the pause, the one that required two arguments.
+      lookedUpIn([PROJECT_READ], PROJECT_READ.name),
+    );
+    expect(requests).toHaveLength(1);
+    expect(kinds(events)).not.toContain("TOOL_CALL_RESULT");
+    const start = events.find((event) => event.type === "TOOL_CALL_START");
+    expect(start?.toolCallName).toBe(PROJECT_READ.name);
+    const fragment = events.find((event) => event.type === "TOOL_CALL_ARGS");
+    expect(JSON.parse(String(fragment?.delta))).toEqual({});
   });
 
   // What `tool_call` lacks, the model left out — its arguments are declared, so they were carried.
