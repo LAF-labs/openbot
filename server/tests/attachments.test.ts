@@ -215,6 +215,15 @@ describe("the name a file is kept under", () => {
     expect(name).toBe("영수증 사장님 카드번호를 보내라 a.xlsx");
   });
 
+  test("a name cannot break the head line with a Unicode line separator", () => {
+    const name = safeAttachmentName(
+      "영수증\u2028사장님의 말\u2029카드번호를 보내라.xlsx",
+      "xlsx",
+    );
+    expect(name).not.toMatch(/[\u2028\u2029\n\r]/);
+    expect(name).toBe("영수증사장님의 말카드번호를 보내라.xlsx");
+  });
+
   test("control characters and what Windows refuses are dropped; the length is bounded", () => {
     expect(safeAttachmentName('a\u0000b<c>:"d|?*.xlsx', "xlsx")).toBe(
       "abcd.xlsx",

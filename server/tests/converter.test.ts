@@ -306,6 +306,15 @@ describe("where a deployment reads files", () => {
     expect(longNamed.ok ? longNamed.conversion.outcome : longNamed).toBe(
       "read",
     );
+    // Cut by UTF-16 units, the last 255 began on the emoji's second half, `encodeURIComponent`
+    // threw inside the fetch, and the file was "unavailable" every time (review of #193).
+    const emojiNamed = await converter.convert({
+      name: `a😀${"매출".repeat(125)}.csv`,
+      bytes: CP949_CSV,
+    });
+    expect(emojiNamed.ok ? emojiNamed.conversion.outcome : emojiNamed).toBe(
+      "read",
+    );
     await daemon.stop();
     expect(
       await converter.convert({ name: "매출.csv", bytes: CP949_CSV }),

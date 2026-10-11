@@ -71,8 +71,12 @@ const SIDECAR_WAIT_MS = CONVERSION_LIMITS.timeoutMs * 2 + 5_000;
 const CONVERTER_NAME_CHARS = 255;
 
 function nameForConverter(name: string): string {
-  return name.length > CONVERTER_NAME_CHARS
-    ? name.slice(-CONVERTER_NAME_CHARS)
+  // By code points, not UTF-16 units: a cut that lands inside an emoji leaves a lone surrogate,
+  // and `encodeURIComponent` throws on one — which the sidecar path read as the converter being
+  // down, for that file, every time.
+  const characters = Array.from(name);
+  return characters.length > CONVERTER_NAME_CHARS
+    ? characters.slice(-CONVERTER_NAME_CHARS).join("")
     : name;
 }
 
