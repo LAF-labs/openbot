@@ -286,6 +286,7 @@
   "app/tests/update-notice.test.tsx": 2.36,
   "app/tests/use-now.test.tsx": 0.39,
   "app/tests/version-line.test.tsx": 0.74,
+  "app/tests/vite-dev-runtime.test.ts": 0.05,
   "app/tests/waiting-for-bot-line.test.tsx": 1.75,
   "app/tests/weather-card-transcript.test.tsx": 1.16,
   "app/tests/weather-card.test.tsx": 2.01,
