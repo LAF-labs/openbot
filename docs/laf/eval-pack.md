@@ -2966,16 +2966,17 @@ run ($0.056 capture, $0.097 the questions, $0.351 the 737 closes), $0.27 for the
 | `regular-preference/aside` | 2/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 2/2 · 2/2 | 2/2 · 2/2 | 3/3 · 3/3 · 3/3 |
 | `regular-preference/correction` | 0/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 2/2 · 2/2 | 2/2 · 2/2 | 3/3 · 3/3 · 3/3 |
 | `recurring-deadline/aside` | 2/3 (+1 into `update_profile`) | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 2/3 | 3/3 · 3/3 · 2/3 (asks-again 1) | 2/2 · 2/2 | 2/2 · 2/2 | 3/3 · 3/3 · 3/3 |
-| `recurring-deadline/correction` | 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 3/3 | 3/3 · 3/3 · 1/3 | 3/3 · 3/3 · 1/3 (asks-again 2) | 1/2 · 1/2 | 2/2 · 1/2 (partial 1) | 3/3 · 3/3 · 3/3 |
+| `recurring-deadline/correction` | 3/3 | 0/3 · 0/3 · 0/3 (part 3 · 3 · 3) | 3/3 · 3/3 · 3/3 | 3/3 · 0/3 · 0/3 (part 0 · 3 · 1) | 3/3 · 3/3 · 1/3 (asks-again 2) | 0/2 · 0/2 (part 1 · 1) | 2/2 · 1/2 (partial 1) | 3/3 · 3/3 · 3/3 |
 
 | | |
 |---|---|
 | Capture, all twelve | **21/36** turns called `remember`, every one with the fact whole and none refused by a floor; a correction never wrote its old value. Asides 11/18, corrections 10/18. One more turn wrote the deadline into its own standing role (`update_profile`) instead |
 | Capture, what a turn cost | wrote it down (21): 2.0 requests, $0.0014, 26 s · did not (24, the nine below among them): 1.0 request, $0.0011, 18 s |
 | Must not be written | one-off 0/3, password 0/3, standing order 0/3 — no `remember`, no `update_profile`. Once the Bot said it had not kept the password; all three times it said it would go on showing a draft first |
-| Not written down, quiet week | in what the Bot is given: 36/36 · 36/36 · 36/36. Answer: correct 36/36 · 36/36 · 36/36 |
-| Not written down, busy week | given: 36/36 · 36/36 · **33/36**; at 14 and 21 nights 23/24 · 22/24. Answer: correct 36/36 · 36/36 · 33/36 (asks-again 3); at 14 and 21, 24/24 · 22/24 (asks-again 1, partial 1) |
-| Written down | the line in the frozen layer 108/108 mornings, and in the summary beside it 108/108. Answer: correct 108/108 |
+| Not written down, quiet week | in what the Bot is given, whole: **33/36 · 33/36 · 33/36** — the other three each night are the weekly deadline with its weekday and without "매주" (`part`). Answer: correct 36/36 · 36/36 · 36/36 |
+| Not written down, busy week | given, whole: 36/36 · 33/36 · **32/36** (part 0 · 3 · 1, gone 0 · 0 · 3); at 14 and 21 nights 22/24 · 21/24 (part 1 · 1, gone 1 · 2). Answer: correct 36/36 · 36/36 · 33/36 (asks-again 3); at 14 and 21, 24/24 · 22/24 (asks-again 1, partial 1) |
+| Written down | the line in the frozen layer 108/108 mornings; in the summary beside it, whole 102/108 (the weekly deadline without "매주" on 6). Answer: correct 108/108 |
+| What the Bot was given → what it answered, all 372 | whole → correct 351/351 · part → correct 15/15 (asked "주마다 무슨 요일…", it gave the weekday) · gone → asks-again 4, and the one bent into a date twice: correct 1, partial 1 |
 | Wrong value, or "you never said that" | **0 of 372** answers |
 | Looked it up in its own past (`mcp__projects__read` search) | **0 of 372** — not on the four mornings the fact was gone either |
 | Looked elsewhere | 4 of 372, all four on a morning the fact was gone: its folder 4, the calendar 2, mail 1, drive 1 |
@@ -2990,17 +2991,23 @@ run ($0.056 capture, $0.097 the questions, $0.351 the 737 closes), $0.27 for the
   member's days as an aside 3/3; a unit price as an aside 0/3; a staff member's changed day and a regular's
   changed order 0/3; a supplier's changed terms, a changed price and a changed deadline 3/3. The false-positive
   side: 0/9.
-- **Within a week, what was not written down was never lost on quiet days and lost 3 times in 36 on busy ones** —
-  each time by the summariser's own rewriting, not by the bound: day 1's line kept other things (the copy the
-  Bot wrote, "기획전 문구 '국산 과일만으로 …' 제안"; an order's refund) and no longer had the deadline said beside
-  them. Both recurring-deadline rows, none of the other ten. Further out, 2 of the 24 walks: a staff member's
-  days gone at 21 nights, when three weeks were merged into ranges ("9/14~28: …"), and "매주 금요일까지" kept as
-  one date ("신청 마감 9/18") — from which the Bot answered "9/18 금요일이었어요" at 14 nights and, at 21, added
-  that it could not tell whether it was weekly.
-- **When the fact was there the answer was right, and when it was gone the Bot asked again**: 366/366 and 4/4;
-  the remaining two are the bent one, answered once from the date and once hedged (`partial`). It never stated a
-  wrong value and never said nothing had been said. What it said: "기획전 신청 마감 요일은 따로 적어둔 게 없어서
-  기억이 안 나요."
+- **Within a week, what was not written down was gone from the summary 3 times in 36 on busy days and never on
+  quiet ones** — each time by the summariser's own rewriting, not by the bound: day 1's line kept other things
+  (the copy the Bot wrote, "기획전 문구 '국산 과일만으로 …' 제안"; an order's refund) and no longer had the
+  deadline said beside them. Both recurring-deadline rows, none of the other ten. Further out, 2 of the 24
+  walks: a staff member's days gone at 21 nights, when three weeks were merged into ranges ("9/14~28: …"), and
+  "매주 금요일까지" kept as one date ("신청 마감 9/18") — from which the Bot answered "9/18 금요일이었어요" at 14
+  nights and, at 21, added that it could not tell whether it was weekly.
+- **A standing deadline lost what makes it standing, from the first night.** The owner's correction — "매주
+  수요일까지라고 했는데 금요일까지로 바뀌었어" — was summarised as the change and not the rule: "기획전 신청 마감
+  수요일→금요일 변경", in all three quiet walks, every busy summary that kept the weekday at all, and two of
+  the three walks beside the notebook's own line. The weekday is there; that it is every week is not. The monthly
+  deadline, said as an aside, kept its "매달" in every summary that kept it at all. Recall did not show it: the
+  question said "주마다", and the Bot gave the weekday (15/15).
+- **When the fact was there the answer was right, and when it was gone the Bot asked again**: whole 351/351,
+  part 15/15, gone 4/4 asked again; the remaining two are the bent one, answered once from the date and once
+  hedged (`partial`). It never stated a wrong value and never said nothing had been said. What it said: "기획전
+  신청 마감 요일은 따로 적어둔 게 없어서 기억이 안 나요."
 - **It did not search its own past.** The owner's words were in the conversation the search reads on all four
   mornings, one call away. The Bot listed its folder instead, twice went on to the calendar, mail or drive, and
   then asked.
@@ -3009,7 +3016,11 @@ run ($0.056 capture, $0.097 the questions, $0.351 the 737 closes), $0.27 for the
 
 - **The close is production's.** `createConversationStore` with the `days` case's wiring: the store's `tick`, the
   decisions compactor (Jev, the server model behind it), `createDaySummarizer`, the merge with the previous
-  summary, `boundedSummary`. The question is asked on a copy (`ConversationStore.peek`), so it never puts the
+  summary, `boundedSummary`. Jev is asked only where production would ask it — the configured endpoint is
+  OpenRouter's and `JEV_ENABLED` is not `off` (`decisionEndpointFor`) — and the server model stands in
+  everywhere else; the key goes to the configured endpoint and no other host. (Until the third review the
+  harness built the Jev client against OpenRouter whatever the endpoint was, as `evals/cache-days.ts`,
+  `evals/memory.ts` and `evals/compaction.ts` still do. These runs were on OpenRouter, so nothing went astray.) The question is asked on a copy (`ConversationStore.peek`), so it never puts the
   fact back into the thread for later nights.
 - **The busy arm's first day was lighter in these runs than the arm says.** In both saved runs day 1 of
   `passing-busy` was the quiet morning with one busy evening: two other things beside the fact, where every
@@ -3046,11 +3057,20 @@ run ($0.056 capture, $0.097 the questions, $0.351 the 737 closes), $0.27 for the
   얼마였지?" need not say it again), phone hours to 평일 (the same hours on 주말 or 매일 are `wrong`), the changed
   order to its three jars (another count is `wrong`). "5일 전에 말씀하셨어요" is not the fifth, `월·수` is a wrong
   list of days and not `other`, and `asks-again` is a request to be told or a question about the fact — not
-  "다른 것도 도와드릴까요?". **The tables above, reprinted from the saved reports by each round's rules, did not
-  move by one count**: every line the Bot wrote named its subject and held the basis, every hours answer said
-  평일, every answer about the jars said three, no answer used a colon or a shorthand list, and no turn read a
-  project. One reading the rule cannot make: an answer that gives the right weekday from a date ("9/18
-  금요일이었어요") counts as `correct`.
+  "다른 것도 도와드릴까요?". Reprinted from the saved reports, those two rounds moved no count: every line the Bot
+  wrote named its subject and held the basis, every hours answer said 평일, every answer about the jars said
+  three, no answer used a colon or a shorthand list, and no turn read a project. **A third round moved one
+  row.** A recurring deadline is now held to its recurrence (매달 / 매주; an answer to "다달이 며칠…" / "주마다
+  무슨 요일…" need not repeat it), and `recurring-deadline/correction`'s survival went from whole to `part`
+  wherever the summary kept the weekday and dropped "매주": quiet 3/3 · 3/3 · 3/3 → 0/3 · 0/3 · 0/3, busy
+  3/3 · 3/3 · 1/3 → 3/3 · 0/3 · 0/3 and 1/2 · 1/2 → 0/2 · 0/2 further out, the summary beside the notebook's
+  line 3/3 → 1/3; the totals above are the new ones (quiet 36 → 33 of 36, busy 36 · 36 · 33 → 36 · 33 · 32,
+  23 · 22 → 22 · 21 of 24, the notebook arm's summaries 108 → 102). Capture and recall did not move. The same
+  round made three more distinctions that changed nothing measured: 오후 10시 is not the 10 a shop opens at, the
+  right day in the wrong month (`11월 10일`) is `wrong`, and a correction told backwards ("11,000원에서
+  9,500원으로") is the fact undone, not the fact. A summary line counts as `part` only when it holds something
+  the owner would ask for — "매달" beside another day is not part of this deadline. One reading the rule cannot
+  make: an answer that gives the right weekday from a date ("9/18 금요일이었어요") counts as `correct`.
 - **One model, one phrasing of each question, three runs.** A cell of 3/3 is three turns.
 
 ## 이 다음
