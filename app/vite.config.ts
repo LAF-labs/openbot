@@ -2,7 +2,7 @@ import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig, type Plugin, type UserConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import { devServerRefusal } from "./src/lib/build/dev-runtime";
 import { REACT_COMPILER_OPTIONS } from "./src/lib/build/react-compiler";
 import { revisionTags } from "./src/lib/build/revision-tag";
@@ -148,8 +148,29 @@ const buildRevision = (): Plugin => ({
   transformIndexHtml: () => revisionTags(process.env),
 });
 
-const config = {
+/**
+ * THE DEV SERVER REFUSES TO RUN UNDER A BUN WHOSE `node:http` CANNOT PROXY A WEBSOCKET. `serve` is
+ * the dev server and `vite preview` alike; both are the proxy. A build is neither. Why a Bun before
+ * 1.4 is refused, and the sentence: `src/lib/build/dev-runtime.ts`. A plugin's `config` hook is
+ * the first thing Vite runs for a command, so nothing has listened on a port when it throws. How
+ * the version is read is a parameter so a test can hand it Node's answer, which is no version at
+ * all (`tests/vite-dev-runtime.test.ts`, which also holds that this list carries the plugin).
+ */
+export const devRuntime = (
+  readBunVersion: () => string | undefined = () =>
+    (globalThis as { Bun?: { version: string } }).Bun?.version,
+): Plugin => ({
+  name: "laf:dev-runtime",
+  config: (_userConfig, { command }) => {
+    if (command !== "serve") return;
+    const refusal = devServerRefusal(readBunVersion());
+    if (refusal) throw new Error(refusal);
+  },
+});
+
+export default defineConfig({
   plugins: [
+    devRuntime(),
     /*
      * EVERY ROUTE'S COMPONENT BECOMES A DYNAMIC IMPORT, WITHOUT A SINGLE `.lazy.tsx` FILE.
      *
@@ -235,16 +256,4 @@ const config = {
     host: "127.0.0.1",
     proxy: apiProxy,
   },
-} satisfies UserConfig;
-
-export default defineConfig(({ command }) => {
-  // `serve` is the dev server and `vite preview` alike; both are the proxy. A build is neither.
-  // Why a Bun before 1.4 is refused: `src/lib/build/dev-runtime.ts`.
-  if (command === "serve") {
-    const refusal = devServerRefusal(
-      (globalThis as { Bun?: { version: string } }).Bun?.version,
-    );
-    if (refusal) throw new Error(refusal);
-  }
-  return config;
 });
