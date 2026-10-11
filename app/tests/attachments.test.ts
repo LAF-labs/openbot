@@ -13,6 +13,7 @@ import {
   refusalBeforeUpload,
   uploadRefusalText,
 } from "@/lib/attachments/upload";
+import { t } from "@/lib/i18n";
 import { ko } from "@/lib/i18n-ko";
 
 /** A sentence the Korean table carries, whichever locale the test process resolved to. */
@@ -144,6 +145,7 @@ describe("what the composer says before anything is sent", () => {
       "laf:attachment_unreadable",
       "laf:attachment_converter_unavailable",
       "laf:attachment_network",
+      "laf:project_deleting",
     ]) {
       const said = uploadRefusalText(code);
       expect(said).not.toContain("laf:");
@@ -167,6 +169,17 @@ describe("what the composer says before anything is sent", () => {
       uploadRefusalText("laf:attachment_too_large"),
     );
     expect(uploadRefusalText("laf:body_too_large")).not.toBe(
+      uploadRefusalText("laf:something_else"),
+    );
+  });
+
+  test("a file sent into a project being deleted is told the conversation is gone, in the chat's own words", () => {
+    // The sentence the chat already says for the same code (`server-channel-chat.tsx`,
+    // `lib/channels/queries.ts`), and never the fallback's "try again".
+    expect(uploadRefusalText("laf:project_deleting")).toBe(
+      t("This conversation is no longer here."),
+    );
+    expect(uploadRefusalText("laf:project_deleting")).not.toBe(
       uploadRefusalText("laf:something_else"),
     );
   });
