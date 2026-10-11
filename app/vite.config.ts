@@ -2,7 +2,8 @@ import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, type Plugin, type UserConfig } from "vite";
+import { devServerRefusal } from "./src/lib/build/dev-runtime";
 import { REACT_COMPILER_OPTIONS } from "./src/lib/build/react-compiler";
 import { revisionTags } from "./src/lib/build/revision-tag";
 import {
@@ -147,7 +148,7 @@ const buildRevision = (): Plugin => ({
   transformIndexHtml: () => revisionTags(process.env),
 });
 
-export default defineConfig({
+const config = {
   plugins: [
     /*
      * EVERY ROUTE'S COMPONENT BECOMES A DYNAMIC IMPORT, WITHOUT A SINGLE `.lazy.tsx` FILE.
@@ -234,4 +235,16 @@ export default defineConfig({
     host: "127.0.0.1",
     proxy: apiProxy,
   },
+} satisfies UserConfig;
+
+export default defineConfig(({ command }) => {
+  // `serve` is the dev server and `vite preview` alike; both are the proxy. A build is neither.
+  // Why a Bun before 1.4 is refused: `src/lib/build/dev-runtime.ts`.
+  if (command === "serve") {
+    const refusal = devServerRefusal(
+      (globalThis as { Bun?: { version: string } }).Bun?.version,
+    );
+    if (refusal) throw new Error(refusal);
+  }
+  return config;
 });

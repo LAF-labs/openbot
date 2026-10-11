@@ -297,6 +297,7 @@
   "app/tests/update-notice.test.tsx",
   "app/tests/use-now.test.tsx",
   "app/tests/version-line.test.tsx",
+  "app/tests/vite-dev-runtime.test.ts",
   "app/tests/waiting-for-bot-line.test.tsx",
   "app/tests/weather-card-transcript.test.tsx",
   "app/tests/weather-card.test.tsx",
