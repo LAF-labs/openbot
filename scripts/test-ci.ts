@@ -3012,6 +3012,15 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * it asks for nothing, nothing where it is empty, nothing where it is another call, nothing where
  * there was no reply, and its words trimmed). 4528 and 6 is 4534.
  *
+ * RAISED 2026-10-12 FOR THE NUMBER CLAUSE READ WHOLE: `server` from 4515 to 4530, fifteen in
+ * `memory-forgetting.test.ts`. Four dated lines sharing only a digit string with the forgotten
+ * fact that stay (an order number holding the 300 of 300g, 300 lids for 300g jars, two amounts
+ * a unit price's digits run through — each red with the substring clause restored); six dated
+ * lines saying the number whole that go, on fewer of the fact's words than the ratio asks for
+ * (the same price with a particle, in a range, with a space before its unit, in a bare run of
+ * amounts — each red with the clause deleted); five known limits of the whole-token clause
+ * pinned as what it does today. 4 and 6 is 10, and 5 is 15; 4515 and 15 is 4530.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
