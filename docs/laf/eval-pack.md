@@ -3032,8 +3032,12 @@ run ($0.056 capture, $0.097 the questions, $0.351 the 737 closes), $0.27 for the
   reads a cold cache: its dollars are the upper end. The tools are the pack's whole schema (`REALISTIC_TOOLSET`)
   and the projects' reader, each the catalogue's own object.
 - **Read by rule, no judge model.** The rules were corrected against the first run's own text where they read a
-  kept fact as lost (`10~16시`, `토→일`, `10/10`), each now a test. One reading the rule cannot make: an answer
-  that gives the right weekday from a date ("9/18 금요일이었어요") counts as `correct`.
+  kept fact as lost (`10~16시`, `토→일`, `10/10`), each now a test. Three more were tightened in review (pull
+  request 183) — an hour written `18:00` is an hour, a remembered line is the fact only when it names what the
+  fact is about, and a project read that is not a search counts as looking elsewhere — and the tables above,
+  reprinted from the saved reports, did not move: no line the Bot wrote lacked its subject, no answer used a
+  colon, and no turn read a project. One reading the rule cannot make: an answer that gives the right weekday
+  from a date ("9/18 금요일이었어요") counts as `correct`.
 - **One model, one phrasing of each question, three runs.** A cell of 3/3 is three turns.
 
 ## 이 다음
