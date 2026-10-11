@@ -156,8 +156,18 @@ export function HomeCards({
                * (review, 2026-10-10 — here there was none). The line that names it stands in for
                * it, as for a thing that is no card: the press around it still has something to
                * show and still leads to the message.
+               *
+               * KEYED TO THE THING IT DRAWS. A boundary that has caught stays caught: the one
+               * boundary here stood for every card in turn (the row's key is the section's), so
+               * after one card threw, every card the Bot made after it was the line, until the
+               * window was reloaded (2026-10-11). A new made thing is a new boundary — the message
+               * that handed it over names it, and where the server did not say which, the card.
                */}
-              <ToolRenderBoundary fallback={body} name={view.card?.name ?? ""}>
+              <ToolRenderBoundary
+                fallback={body}
+                key={thing?.kind === "made" ? thing.messageId : view.card?.name}
+                name={view.card?.name ?? ""}
+              >
                 <GalleryCard card={made} />
               </ToolRenderBoundary>
             </span>
