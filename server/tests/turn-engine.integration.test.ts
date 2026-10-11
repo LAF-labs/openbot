@@ -4,7 +4,10 @@ import type { BaseEvent, Message } from "@ag-ui/client";
 import { eq, inArray } from "drizzle-orm";
 import { isFirstMove } from "../../shared/first-move";
 import { COMPUTER_TOOLS } from "../../shared/tools/computer";
+import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import {
+  PROJECT_QUERY_READ_ONLY,
+  projectQuestionText,
   READ_PROJECTS,
   REMOVED_PROJECT_RESULT,
 } from "../../shared/tools/projects";
@@ -143,6 +146,10 @@ function scriptedBot(
     runIds: [] as Array<string | undefined>,
     /** What rode on each run beside the conversation and the tools. */
     forwarded: [] as unknown[],
+    /** The names of the tools each run was sent. */
+    offered: [] as string[][],
+    /** The conversation the engine said this agent is in. */
+    threadId: undefined as string | undefined,
     setMessages(messages: Message[]) {
       agent.messages = [...messages];
     },
@@ -150,12 +157,19 @@ function scriptedBot(
       agent.messages.push(message);
     },
     async runAgent(
-      input: { runId?: string; forwardedProps?: unknown } | undefined,
+      input:
+        | {
+            runId?: string;
+            forwardedProps?: unknown;
+            tools?: Array<{ name: string }>;
+          }
+        | undefined,
       subscriber?: Subscriber,
     ) {
       agent.inputs.push([...agent.messages]);
       agent.runIds.push(input?.runId);
       agent.forwarded.push(input?.forwardedProps);
+      agent.offered.push((input?.tools ?? []).map((tool) => tool.name));
       agent.runs += 1;
       const emit = (e: BaseEvent) => subscriber?.onEvent?.({ event: e });
       emit(event("RUN_STARTED"));
@@ -240,6 +254,8 @@ function engineWith(
     announce?: () => Promise<void>;
     /** Which projects a call's result read (`ChatToolkit.projectsRead`). */
     projectsRead?: NonNullable<ChatToolkit["projectsRead"]>;
+    /** How long a question waits for a project's own turn (`TurnEngineOptions.projectAskWaitMs`). */
+    projectAskWaitMs?: number;
   } = {},
 ) {
   const hub = createTurnHub({ keepEndedMs: 50 });
@@ -284,6 +300,9 @@ function engineWith(
     ...(options.admits ? { admits: options.admits } : {}),
     ...(options.runEnded ? { runEnded: options.runEnded } : {}),
     ...(options.handsBrowsingOver ? { handsBrowsingOver: true } : {}),
+    ...(options.projectAskWaitMs
+      ? { projectAskWaitMs: options.projectAskWaitMs }
+      : {}),
     announce: async ({ text }) => {
       announced.push(text);
       await options.announce?.();
@@ -3237,5 +3256,394 @@ describe("the wait a turn measured", () => {
     ]) {
       expect([word, serialised.includes(word)]).toEqual([word, false]);
     }
+  });
+});
+
+/*
+ * A QUESTION THE TURN PUT TO A PROJECT (record §3, piece 4-4's second part). The main
+ * conversation's Bot asks, and what answers is a run of the same Bot over the project's own
+ * conversation that reads and does nothing: every call refused, nothing written there, no lane.
+ */
+describe("a question the turn put to a project", () => {
+  const QUESTION = "항공편은 어떻게 하기로 했어?";
+  const SAID = "대한항공 KE1234로 정했어요.";
+  const ANSWER = "대한항공 KE1234입니다.";
+  /** The main conversation's Bot: one question for the project, then its answer to the person. */
+  const asking = () =>
+    scriptedBot("대한항공 KE1234래요.", {
+      id: "call-ask",
+      name: READ_PROJECTS,
+      args: JSON.stringify({ kind: "ask", project: "p", question: QUESTION }),
+    });
+  /** The same Bot in the project: it reaches for a tool first, as it would on any turn. */
+  const askedBot = () => scriptedBot(ANSWER);
+  const LIST = [
+    { name: "computer_navigate", description: "go", parameters: {} },
+    { name: "delegate", description: "hand over", parameters: {} },
+  ];
+  /** A turn's tools as `chat-tools.ts` carries the question out, and everything else as itself. */
+  const carrying =
+    (
+      project: { threadId: string },
+      outcomes: unknown[],
+      act: () => Promise<void> | void = () => {},
+    ) =>
+    (context: ChatTurnContext): ChatToolkit["execute"] =>
+    async (name, args, call) => {
+      if (name !== READ_PROJECTS) {
+        await act();
+        return { ok: true };
+      }
+      const came = await context.askProject?.({
+        threadId: project.threadId,
+        question: String(args.question),
+        tools: LIST,
+        signal: call.signal,
+      });
+      outcomes.push(came);
+      return came?.outcome === "answered"
+        ? { ok: true, answer: came.answer }
+        : { ok: false, code: `laf:${came?.outcome}` };
+    };
+  /** A project that has been talked in: a question, an answer, and a delegated run's step. */
+  const aProject = async () => {
+    const project = await aConversation();
+    await appendMessages(database, project.threadId, [
+      {
+        id: `said-${project.threadId}`,
+        role: "user",
+        content: "항공편 정하자",
+      },
+      {
+        id: `step-${project.threadId}`,
+        role: "assistant",
+        content: "",
+        lafDelegated: "call-old",
+        toolCalls: [
+          {
+            id: "call-old-open",
+            type: "function",
+            function: { name: "computer_navigate", arguments: "{}" },
+          },
+        ],
+      } as Message,
+      {
+        id: `opened-${project.threadId}`,
+        role: "tool",
+        toolCallId: "call-old-open",
+        content: "{}",
+        lafDelegated: "call-old",
+      } as Message,
+      { id: `settled-${project.threadId}`, role: "assistant", content: SAID },
+    ]);
+    return project;
+  };
+  const send = async (
+    engine: ReturnType<typeof engineWith>["engine"],
+    conversation: { threadId: string; channelId: string },
+    text: string,
+  ) => {
+    const sent = await engine.send({
+      ...conversation,
+      owner: { id: OWNER, role: "user" },
+      botId: BOT,
+      messages: [asked(text)],
+      tools: null,
+    });
+    if (!sent.ok) throw new Error("not sent");
+    return sent.turnId;
+  };
+  const runsOf = async (threadId: string) =>
+    database
+      .select({ runId: lafThreadRuns.runId })
+      .from(lafThreadRuns)
+      .where(eq(lafThreadRuns.threadId, threadId));
+
+  test("it is asked over the project's own conversation, every call it makes is refused, and nothing is left there", async () => {
+    const main = await aConversation();
+    const project = await aProject();
+    const before = await messagesFor(database, project.threadId);
+    const outcomes: unknown[] = [];
+    const acted: string[] = [];
+    const bots = [asking(), askedBot()];
+    const made: ReturnType<typeof scriptedBot>[] = [];
+    const { engine } = engineWith(
+      bots[0] as ReturnType<typeof scriptedBot>,
+      carrying(project, outcomes, () => {
+        acted.push("a call was carried out");
+      }),
+      {
+        resolveAgents: async () => {
+          const next = bots[made.length] as ReturnType<typeof scriptedBot>;
+          made.push(next);
+          return { [BOT]: next as unknown as LoopAgent };
+        },
+      },
+    );
+    const turnId = await send(engine, main, "제주 여행 항공편 어떻게 됐지?");
+    await until(async () => (await statusOf(turnId)) === "done");
+
+    expect(outcomes).toEqual([{ outcome: "answered", answer: ANSWER }]);
+    const [, reader] = made;
+    if (!reader) throw new Error("nobody was asked");
+    // In the project's conversation: its thread, and its list at the head.
+    expect(reader.threadId).toBe(project.threadId);
+    expect(reader.offered[0]).toEqual(LIST.map((tool) => tool.name));
+    // What it read: what was said there — not a delegated run's steps — and the question last.
+    expect(
+      reader.inputs[0]?.map((message) => [message.role, message.content]),
+    ).toEqual([
+      ["user", "항공편 정하자"],
+      ["assistant", SAID],
+      ["user", projectQuestionText(QUESTION)],
+    ]);
+    // It says it only reads, on every run, and each is filed under the turn that asked.
+    expect(reader.forwarded).toEqual([
+      { readsOnly: true },
+      { readsOnly: true },
+    ]);
+    expect(reader.runIds).toEqual([`${turnId}.q1.0`, `${turnId}.q1.1`]);
+    // The tool it reached for was answered by one refusal, and nobody carried it out.
+    expect(
+      reader.messages
+        .filter((message) => message.role === "tool")
+        .map((message) => JSON.parse(String(message.content))),
+    ).toEqual([
+      {
+        ok: false,
+        code: PROJECT_QUERY_READ_ONLY,
+        reason: toolResultText(PROJECT_QUERY_READ_ONLY),
+      },
+    ]);
+    expect(acted).toEqual([]);
+
+    // The project is as it was: no message, no run of its own.
+    expect(await messagesFor(database, project.threadId)).toEqual(before);
+    expect(await runsOf(project.threadId)).toEqual([]);
+    // And the main conversation holds the call and its answer — none of the asked run's steps.
+    const stored = await messagesFor(database, main.threadId);
+    expect(stored.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "tool",
+      "assistant",
+    ]);
+    expect(JSON.parse(String(stored[2]?.content))).toEqual({
+      ok: true,
+      answer: ANSWER,
+    });
+  });
+
+  test("it waits for the project's own turn to end, and reads what that turn wrote", async () => {
+    const main = await aConversation();
+    const project = await aProject();
+    const outcomes: unknown[] = [];
+    let entered: () => void = () => {};
+    const working = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const bots = [
+      scriptedBot("프로젝트 일은 다 됐어요."),
+      asking(),
+      askedBot(),
+    ];
+    const made: ReturnType<typeof scriptedBot>[] = [];
+    const { engine } = engineWith(
+      bots[0] as ReturnType<typeof scriptedBot>,
+      carrying(project, outcomes, async () => {
+        entered();
+        await gate;
+      }),
+      {
+        resolveAgents: async () => {
+          const next = bots[made.length] as ReturnType<typeof scriptedBot>;
+          made.push(next);
+          return { [BOT]: next as unknown as LoopAgent };
+        },
+      },
+    );
+    const projectTurn = await send(engine, project, "숙소도 찾아줘");
+    await working;
+    const mainTurn = await send(engine, main, "항공편 어떻게 됐지?");
+    // The main turn has asked and is waiting: its Bot's first reply is filed, and nobody was asked.
+    await until(
+      async () => (await messagesFor(database, main.threadId)).length >= 2,
+    );
+    expect(made).toHaveLength(2);
+    release();
+    await until(async () => (await statusOf(mainTurn)) === "done");
+    expect(await statusOf(projectTurn)).toBe("done");
+
+    expect(outcomes).toEqual([{ outcome: "answered", answer: ANSWER }]);
+    const said = made[2]?.inputs[0]?.map((message) => message.content) ?? [];
+    // The whole of the turn it waited for, its last words included, then the question.
+    expect(said.slice(-3)).toEqual([
+      expect.stringContaining('"ok":true'),
+      "프로젝트 일은 다 됐어요.",
+      projectQuestionText(QUESTION),
+    ]);
+    expect(said).toContain("숙소도 찾아줘");
+  });
+
+  test("a project still working when the wait is over is said to be busy, and nobody is asked", async () => {
+    const main = await aConversation();
+    const project = await aProject();
+    const outcomes: unknown[] = [];
+    let entered: () => void = () => {};
+    const working = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const bots = [scriptedBot(), asking()];
+    const made: ReturnType<typeof scriptedBot>[] = [];
+    const { engine } = engineWith(
+      bots[0] as ReturnType<typeof scriptedBot>,
+      carrying(project, outcomes, async () => {
+        entered();
+        await gate;
+      }),
+      {
+        projectAskWaitMs: 30,
+        resolveAgents: async () => {
+          const next = bots[made.length] as ReturnType<typeof scriptedBot>;
+          if (!next) throw new Error("a third Bot was asked for");
+          made.push(next);
+          return { [BOT]: next as unknown as LoopAgent };
+        },
+      },
+    );
+    const projectTurn = await send(engine, project, "숙소도 찾아줘");
+    await working;
+    const mainTurn = await send(engine, main, "항공편 어떻게 됐지?");
+    await until(async () => (await statusOf(mainTurn)) === "done");
+    expect(outcomes).toEqual([{ outcome: "busy" }]);
+    expect(made).toHaveLength(2);
+    release();
+    await until(async () => (await statusOf(projectTurn)) === "done");
+  });
+
+  test("a stop while it waits ends the turn as stopped, and the project's turn goes on", async () => {
+    const main = await aConversation();
+    const project = await aProject();
+    const outcomes: unknown[] = [];
+    let entered: () => void = () => {};
+    const working = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const bots = [scriptedBot(), asking()];
+    const made: ReturnType<typeof scriptedBot>[] = [];
+    const { engine } = engineWith(
+      bots[0] as ReturnType<typeof scriptedBot>,
+      carrying(project, outcomes, async () => {
+        entered();
+        await gate;
+      }),
+      {
+        resolveAgents: async () => {
+          const next = bots[made.length] as ReturnType<typeof scriptedBot>;
+          if (!next) throw new Error("a third Bot was asked for");
+          made.push(next);
+          return { [BOT]: next as unknown as LoopAgent };
+        },
+      },
+    );
+    const projectTurn = await send(engine, project, "숙소도 찾아줘");
+    await working;
+    const mainTurn = await send(engine, main, "항공편 어떻게 됐지?");
+    await until(
+      async () => (await messagesFor(database, main.threadId)).length >= 2,
+    );
+    expect(engine.stop(main.threadId)).toBe(true);
+    await until(async () => (await statusOf(mainTurn)) === "stopped");
+    // Stopped, not answered: the question came to nothing and nobody was asked.
+    expect(outcomes).toEqual([]);
+    expect(made).toHaveLength(2);
+    expect(await statusOf(projectTurn)).toBe("running");
+    release();
+    await until(async () => (await statusOf(projectTurn)) === "done");
+  });
+
+  test("an answer the model could not give is said to be unavailable, and the turn goes on", async () => {
+    const main = await aConversation();
+    const project = await aProject();
+    const outcomes: unknown[] = [];
+    const failing = {
+      ...scriptedBot(),
+      async runAgent(_input: unknown, subscriber?: Subscriber) {
+        subscriber?.onRunErrorEvent?.({ event: { message: "provider gone" } });
+        return { result: undefined, newMessages: [] };
+      },
+    };
+    const bots = [asking(), failing];
+    const made: unknown[] = [];
+    const { engine } = engineWith(
+      bots[0] as ReturnType<typeof scriptedBot>,
+      carrying(project, outcomes),
+      {
+        resolveAgents: async () => {
+          const next = bots[made.length];
+          made.push(next);
+          return { [BOT]: next as unknown as LoopAgent };
+        },
+      },
+    );
+    const turnId = await send(engine, main, "항공편 어떻게 됐지?");
+    await until(async () => (await statusOf(turnId)) === "done");
+    expect(outcomes).toEqual([{ outcome: "unavailable" }]);
+    expect(await messagesFor(database, project.threadId)).toHaveLength(4);
+  });
+
+  test("a turn that holds the browser asks without taking it again", async () => {
+    const main = await aConversation();
+    const project = await aProject();
+    const outcomes: unknown[] = [];
+    const lane = createBotLane();
+    const bots = [asking(), askedBot()];
+    const made: ReturnType<typeof scriptedBot>[] = [];
+    const ask = carrying(project, outcomes);
+    const { engine } = engineWith(
+      bots[0] as ReturnType<typeof scriptedBot>,
+      (context: ChatTurnContext): ChatToolkit["execute"] =>
+        async (name, args, call) => {
+          // The turn has the browser before it asks, as one that browsed and then asked would.
+          expect(await context.borrowBrowser?.()).toBe(true);
+          return ask(context)(name, args, call);
+        },
+      {
+        lane,
+        resolveAgents: async () => {
+          const next = bots[made.length] as ReturnType<typeof scriptedBot>;
+          made.push(next);
+          return { [BOT]: next as unknown as LoopAgent };
+        },
+      },
+    );
+    const turnId = await send(engine, main, "항공편 어떻게 됐지?");
+    await until(async () => (await statusOf(turnId)) === "done");
+    expect(outcomes).toEqual([{ outcome: "answered", answer: ANSWER }]);
+    // One holder there has ever been: the turn. The question took nothing.
+    expect(lane.grants(BOT)).toBe(1);
+    expect(lane.busy(BOT)).toBe(false);
+  });
+
+  test("a conversation is not asked from inside its own turn", async () => {
+    const main = await aConversation();
+    const outcomes: unknown[] = [];
+    const bot = asking();
+    const { engine } = engineWith(bot, carrying(main, outcomes));
+    const turnId = await send(engine, main, "항공편 어떻게 됐지?");
+    await until(async () => (await statusOf(turnId)) === "done");
+    expect(outcomes).toEqual([{ outcome: "unavailable" }]);
   });
 });

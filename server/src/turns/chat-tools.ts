@@ -103,7 +103,11 @@ import { codeFor, isBadRequest, statusFor } from "../computer/routes";
 import { BOTS_OWN_LOOK, readFileInputOf } from "../computer/schema";
 import { snapshotForModel } from "../computer/snapshot-lines";
 import { describeFailure } from "../failure-text";
-import type { ProjectToolkit } from "../channels/project-tool";
+import type {
+  ProjectAnswer,
+  ProjectAsker,
+  ProjectToolkit,
+} from "../channels/project-tool";
 import type { GoalStore } from "../goals/store";
 import { goalApprovals, goalTools } from "../goals/tools";
 import { log } from "../log";
@@ -189,6 +193,8 @@ export type ChatToolsDeps = {
     botId: string;
     threadId: string;
     runId: string;
+    /** The turn's way to put a question to a project (`ChatTurnContext.askProject`), if it has one. */
+    ask?: ProjectAsker;
   }) => Promise<ProjectToolkit | null>;
   auditStore?: AuditStore;
   /**
@@ -257,6 +263,21 @@ export type ChatTurnContext = {
     execute: LoopExecutor;
     signal: AbortSignal;
   }) => Promise<{ answer: string; steps: UnattendedStep[] }>;
+  /**
+   * Put a question to a project, as a run over that project's own conversation that reads and
+   * does nothing (`engine.ts`, record §3 piece 4-4's second part): `tools` is the list that
+   * conversation's turns are sent, so the head it is cached under is the one this run is sent;
+   * every call the run makes is refused; nothing is written to the project. `busy` is a project
+   * whose own turn did not end in the time a question waits; `unavailable` is an answer that
+   * could not be had. Throws a stop. Absent, no project can be asked.
+   */
+  askProject?: (ask: {
+    /** The project's own conversation. */
+    threadId: string;
+    question: string;
+    tools: Tool[];
+    signal: AbortSignal;
+  }) => Promise<ProjectAnswer>;
 };
 
 export type ChatToolkit = {
@@ -561,9 +582,27 @@ export function createChatTools(deps: ChatToolsDeps) {
      * window declared. Not in a project's conversation, and not where it could not be asked whose
      * the conversation is — a project reading its neighbours is the worse of the two mistakes.
      */
+    /*
+     * WHAT A PROJECT IS ASKED WITH: this turn's own list without the project tool, which is the
+     * list a project's turn is put together with here — the two differ by that tool and nothing
+     * else (`chat-tools.test.ts` holds them to it). Read when a question is asked, by which time
+     * the list below is made.
+     */
+    let projectList: Tool[] = [];
+    const askProject = context.askProject;
     const projects = deps.projects
       ? await deps
-          .projects({ userId: owner.id, botId, threadId, runId })
+          .projects({
+            userId: owner.id,
+            botId,
+            threadId,
+            runId,
+            ...(askProject
+              ? {
+                  ask: (asked) => askProject({ ...asked, tools: projectList }),
+                }
+              : {}),
+          })
           .catch((error: unknown) => {
             log.warn("project_tool_not_offered", {
               bot: botId,
@@ -655,6 +694,7 @@ export function createChatTools(deps: ChatToolsDeps) {
       ...offered,
       ...own.filter((tool) => !offered.some((one) => one.name === tool.name)),
     ].map(told);
+    projectList = tools.filter((tool) => !isProjectToolName(tool.name));
     if (declared) {
       /*
        * Not the browser's own tools where the turn hands its browsing over: every window declares

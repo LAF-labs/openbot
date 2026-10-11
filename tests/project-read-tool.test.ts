@@ -1,11 +1,13 @@
 /**
- * The main conversation's project tool, as the bridge and the store see it (record §3, piece 4-4's
- * first part; `shared/tools/projects.ts`): behind the bridge and never at the head, found by the
- * words a Bot would look for it with, and the mark and the one sentence a deleted project's copy
- * is covered by.
+ * The main conversation's project tool, as the bridge and the store see it (record §3, piece 4-4;
+ * `shared/tools/projects.ts`): behind the bridge and never at the head, found by the words a Bot
+ * would look for it with, the mark and the one sentence a deleted project's copy is covered by —
+ * and the words a question put to a project is carried in.
  */
 import { describe, expect, test } from "bun:test";
+import { REMINDER_CLOSE, REMINDER_OPEN } from "../shared/prompt/context.ko";
 import { TOOL_RESULT_KO } from "../shared/prompt/tool-results.ko";
+import { TOOL_RESULT_CUT } from "../shared/spillover";
 import {
   CORE_TOOL_NAMES,
   DEPLOYMENT_FAMILIES,
@@ -22,13 +24,19 @@ import { GOAL_TOOLS } from "../shared/tools/goals";
 import {
   isProjectReadKind,
   isProjectToolName,
+  PROJECT_ANSWER_MAX_CHARS,
   PROJECT_CONTENT_REMOVED,
+  PROJECT_QUERY_READ_ONLY,
+  PROJECT_QUESTION_MAX_CHARS,
   PROJECT_READ_KINDS,
   PROJECT_TOOLS,
   PROJECTS_FAMILY,
+  projectQuestionText,
   projectsReadBy,
   READ_PROJECTS,
   REMOVED_PROJECT_RESULT,
+  readsOnly,
+  readsOnlyForwarded,
 } from "../shared/tools/projects";
 
 const [tool] = PROJECT_TOOLS;
@@ -77,18 +85,24 @@ describe("where the tool stands", () => {
 });
 
 describe("what it is called with", () => {
-  test("three readings in one tool, and the reading is the one thing every call says", () => {
+  test("four readings in one tool, and the reading is the one thing every call says", () => {
     const parameters = tool?.parameters as unknown as {
       properties: Record<string, { enum?: readonly string[] }>;
       required: readonly string[];
     };
     expect(parameters.properties.kind?.enum).toEqual([...PROJECT_READ_KINDS]);
-    expect([...PROJECT_READ_KINDS]).toEqual(["list", "search", "summary"]);
+    expect([...PROJECT_READ_KINDS]).toEqual([
+      "list",
+      "search",
+      "summary",
+      "ask",
+    ]);
     expect(parameters.required).toEqual(["kind"]);
     expect(Object.keys(parameters.properties).sort()).toEqual([
       "cursor",
       "kind",
       "project",
+      "question",
       "terms",
     ]);
   });
@@ -111,6 +125,56 @@ describe("what it is called with", () => {
 
   test("it says it only reads: nothing in its words offers to act in a project", () => {
     expect(tool?.description).toContain("읽기만 한다");
+    // Asking is not a way round that, and the words say so where a Bot reads them.
+    expect(tool?.description).toContain(
+      "ask로 물어도 그쪽은 아무것도 하지 않는다",
+    );
+  });
+});
+
+describe("a question put to a project", () => {
+  const text = projectQuestionText("숙소는 어디로 정했어?");
+
+  test("is the question first, then a note of this deployment's that it is not the person's", () => {
+    expect(text.startsWith("숙소는 어디로 정했어?\n\n")).toBe(true);
+    const note = text.slice(text.indexOf(REMINDER_OPEN));
+    expect(note.endsWith(REMINDER_CLOSE)).toBe(true);
+    expect(note).toContain("이 사람이 쓴 것이 아니다");
+    // What the asked side is told before it reaches for a tool, so no step is spent finding out.
+    expect(note).toContain("도구를 쓰지 않는다");
+    expect(note).toContain("이 대화에 남지 않는다");
+  });
+
+  test("the refusal a call is answered with says what to do next", () => {
+    expect(TOOL_RESULT_KO[PROJECT_QUERY_READ_ONLY]).toContain(
+      "이 대화에 이미 있는 것만으로 바로 답한다",
+    );
+  });
+
+  test("a question and its answer are bounded well inside what a result may hold", () => {
+    expect(PROJECT_QUESTION_MAX_CHARS).toBeLessThanOrEqual(1_000);
+    expect(PROJECT_ANSWER_MAX_CHARS).toBeLessThanOrEqual(TOOL_RESULT_CUT / 8);
+  });
+});
+
+describe("the word a run says when it only reads its conversation", () => {
+  test("is read back as said", () => {
+    expect(readsOnly(readsOnlyForwarded())).toBe(true);
+    expect(readsOnly({ ...readsOnlyForwarded(), device: {} })).toBe(true);
+  });
+
+  test.each([
+    [{}],
+    [{ readsOnly: "true" }],
+    [{ readsOnly: 1 }],
+    [{ readsOnly: false }],
+    [{ readOnly: true }],
+    [null],
+    [undefined],
+    ["readsOnly"],
+    [[true]],
+  ])("%j is an ordinary run", (forwarded) => {
+    expect(readsOnly(forwarded)).toBe(false);
   });
 });
 
@@ -164,6 +228,10 @@ describe("what stands where a deleted project's content was", () => {
       "laf:project_empty",
       "laf:project_summary_partial",
       "laf:project_summary_unavailable",
+      "laf:project_read_bare",
+      "laf:project_busy",
+      "laf:project_ask_unavailable",
+      PROJECT_QUERY_READ_ONLY,
       PROJECT_CONTENT_REMOVED,
     ]) {
       expect(Object.hasOwn(TOOL_RESULT_KO, code)).toBe(true);

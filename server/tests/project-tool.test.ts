@@ -225,6 +225,11 @@ describe("which reading a call asks for", () => {
     [{ terms: "숙소" }, "search"],
     [{ project: "제주 여행", terms: "숙소" }, "summary"],
     [{ project: "   " }, "list"],
+    // A question is a question, with or without the project it is for — the reading says which is missing.
+    [{ kind: "ask" }, "ask"],
+    [{ project: "제주 여행", question: "숙소는?" }, "ask"],
+    [{ question: "숙소는?" }, "ask"],
+    [{ project: "제주 여행", question: "   " }, "summary"],
     // Said, and not one of the three: refused, whatever else it carries.
     [{ kind: "query" }, null],
     [{ kind: "write", project: "제주 여행" }, null],

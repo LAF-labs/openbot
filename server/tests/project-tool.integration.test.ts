@@ -9,8 +9,11 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
+import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import { TOOL_RESULT_CUT } from "../../shared/spillover";
 import {
+  PROJECT_ANSWER_MAX_CHARS,
+  PROJECT_QUESTION_MAX_CHARS,
   PROJECT_SEARCH_HITS,
   READ_PROJECTS,
 } from "../../shared/tools/projects";
@@ -18,6 +21,7 @@ import {
   createProjectSummaries,
   createProjectTools,
   PROJECT_SUMMARY_MESSAGES,
+  type ProjectAsker,
   type ProjectSummarizer,
 } from "../src/channels/project-tool";
 import { createDatabase } from "../src/db/client";
@@ -218,8 +222,18 @@ function turn(
     isSpent?: boolean;
     summaries?: ReturnType<typeof createProjectSummaries>;
     runId?: string;
+    /** The turn's way to ask a project; null for a path that has none. */
+    ask?: ProjectAsker | null;
   } = {},
 ) {
+  /** What the turn's asker was handed, when a case leaves the answering to this helper. */
+  const put: Array<{ threadId: string; question: string }> = [];
+  const ask: ProjectAsker =
+    options.ask ??
+    (async ({ threadId, question }) => {
+      put.push({ threadId, question });
+      return { outcome: "answered", answer: `답 ${put.length}` };
+    });
   const asked: Array<{ name: string; transcript: string }> = [];
   const summaries = options.summaries ?? createProjectSummaries();
   const summarize: ProjectSummarizer =
@@ -239,6 +253,7 @@ function turn(
     userId: options.userId ?? ME,
     agentId: BOT,
     ...(options.runId ? { runId: options.runId } : {}),
+    ...(options.ask === null ? {} : { ask }),
   });
   let calls = 0;
   const call = async (args: Record<string, unknown>) => {
@@ -247,7 +262,7 @@ function turn(
     const outcome = await toolkit.execute(READ_PROJECTS, args, { id });
     return { outcome, read: toolkit.read(id) };
   };
-  return { asked, call, summaries, toolkit };
+  return { asked, call, put, summaries, toolkit };
 }
 
 describe("the list", () => {
@@ -719,6 +734,257 @@ describe("the summary", () => {
   });
 });
 
+describe("a question put to a project", () => {
+  test("goes to that project's own conversation, and what comes back names the project it read", async () => {
+    const { call, put, asked } = turn();
+    const { outcome, read } = await call({
+      kind: "ask",
+      project: "제주 여행 프로젝트",
+      question: "  숙소는 어디로 정했어?  ",
+    });
+    expect(outcome).toMatchObject({
+      ok: true,
+      project: TRIP.channel,
+      name: "제주 여행",
+      answer: "답 1",
+    });
+    expect(put).toEqual([
+      { threadId: TRIP.thread, question: "숙소는 어디로 정했어?" },
+    ]);
+    expect(read).toEqual([TRIP.channel]);
+    // The Bot's own model answered: no summary was written for it.
+    expect(asked).toHaveLength(0);
+  });
+
+  test.each([
+    ["no question", { kind: "ask", project: "제주 여행" }, "question"],
+    [
+      "a question of spaces",
+      { kind: "ask", project: "제주 여행", question: "   " },
+      "question",
+    ],
+    [
+      "a question longer than one question is",
+      {
+        kind: "ask",
+        project: "제주 여행",
+        question: "가".repeat(PROJECT_QUESTION_MAX_CHARS + 1),
+      },
+      "question",
+    ],
+    ["no project", { kind: "ask", question: "숙소는?" }, "project"],
+  ] as const)(
+    "%s is refused, and nobody is asked",
+    async (_what, args, field) => {
+      const { call, put } = turn();
+      const { outcome, read } = await call(args);
+      expect(outcome).toMatchObject({
+        ok: false,
+        code: "laf:project_read_invalid",
+        field,
+      });
+      expect(put).toEqual([]);
+      expect(read).toBeUndefined();
+    },
+  );
+
+  test("a project that is not this person's, is on its way out, or was never made is not found — and nobody is asked", async () => {
+    const { call, put } = turn();
+    for (const project of [THEIRS.channel, LEAVING.channel, "없는 프로젝트"]) {
+      const { outcome } = await call({
+        kind: "ask",
+        project,
+        question: "뭐야?",
+      });
+      expect(outcome).toMatchObject({
+        ok: false,
+        code: "laf:project_not_found",
+      });
+    }
+    expect(put).toEqual([]);
+  });
+
+  test("a name two projects have is not guessed at", async () => {
+    const { call, put } = turn();
+    const { outcome, read } = await call({
+      kind: "ask",
+      project: "이사 준비",
+      question: "언제 이사해?",
+    });
+    expect(outcome).toMatchObject({
+      ok: false,
+      code: "laf:project_ambiguous",
+    });
+    expect(put).toEqual([]);
+    expect(new Set(read)).toEqual(new Set([TWIN_A.channel, TWIN_B.channel]));
+  });
+
+  test("a project nothing was said in has nobody to ask: no request is made of it", async () => {
+    const { call, put } = turn();
+    const { outcome, read } = await call({
+      kind: "ask",
+      project: EMPTY.channel,
+      question: "뭐 하기로 했어?",
+    });
+    expect(outcome).toMatchObject({
+      ok: true,
+      project: EMPTY.channel,
+      empty: true,
+    });
+    expect(put).toEqual([]);
+    expect(read).toEqual([EMPTY.channel]);
+  });
+
+  test.each([
+    [
+      "the project's own turn is still going",
+      { ask: async () => ({ outcome: "busy" }) },
+      "laf:project_busy",
+    ],
+    [
+      "no answer could be had",
+      { ask: async () => ({ outcome: "unavailable" }) },
+      "laf:project_ask_unavailable",
+    ],
+    [
+      "the answer was nothing but a fence",
+      { ask: async () => ({ outcome: "answered", answer: "```\n```" }) },
+      "laf:project_ask_unavailable",
+    ],
+    [
+      "the turn has no way to ask",
+      { ask: null },
+      "laf:project_ask_unavailable",
+    ],
+    [
+      "the day's budget is spent",
+      { isSpent: true },
+      "laf:project_ask_unavailable",
+    ],
+  ] as const)(
+    "when %s the asker is told so, with the project it was about",
+    async (_why, options, code) => {
+      const { call, put } = turn(options as Parameters<typeof turn>[0]);
+      const { outcome, read } = await call({
+        kind: "ask",
+        project: TRIP.channel,
+        question: "숙소는?",
+      });
+      expect(outcome).toMatchObject({
+        ok: false,
+        code,
+        project: TRIP.channel,
+        name: "제주 여행",
+      });
+      expect(outcome.answer).toBeUndefined();
+      expect(read).toEqual([TRIP.channel]);
+      expect(put).toEqual([]);
+    },
+  );
+
+  test("the call's own signal is what the asker is stopped by, and a stop is thrown through", async () => {
+    const stop = new AbortController();
+    let handed: AbortSignal | undefined;
+    const { toolkit } = turn({
+      ask: async ({ signal }) => {
+        handed = signal;
+        throw new Error("laf:run_stopped");
+      },
+    });
+    await expect(
+      toolkit.execute(
+        READ_PROJECTS,
+        { kind: "ask", project: TRIP.channel, question: "숙소는?" },
+        { id: "call-stop", signal: stop.signal },
+      ),
+    ).rejects.toThrow("laf:run_stopped");
+    expect(handed).toBe(stop.signal);
+    expect(toolkit.read("call-stop")).toBeUndefined();
+  });
+
+  test("an answer about a project deleted while it was being answered is handed to nobody", async () => {
+    const GOING = place("asked-going");
+    await database.insert(channels).values({
+      id: GOING.channel,
+      name: "묻는 사이 지울 것",
+      description: "",
+      kind: "project",
+    });
+    await database
+      .insert(channelMemberships)
+      .values({ channelId: GOING.channel, userId: ME });
+    await database
+      .insert(channelAgents)
+      .values({ channelId: GOING.channel, agentId: BOT });
+    await database.insert(channelThreads).values({
+      userId: ME,
+      channelId: GOING.channel,
+      threadId: GOING.thread,
+    });
+    await database.insert(lafThreadMessages).values(
+      said(GOING.thread, 1, {
+        id: "asked-going-said",
+        role: "user",
+        content: "묻는 사이 지울 프로젝트의 말",
+      }),
+    );
+    const { call } = turn({
+      ask: async () => {
+        // The person asks for the deletion while the question is being answered.
+        await database
+          .update(channels)
+          .set({ deletingAt: new Date() })
+          .where(eq(channels.id, GOING.channel));
+        return { outcome: "answered", answer: "묻는 사이 지울 프로젝트의 답" };
+      },
+    });
+    const { outcome, read } = await call({
+      kind: "ask",
+      project: GOING.channel,
+      question: "뭐였지?",
+    });
+    expect(outcome).toMatchObject({ ok: false, code: "laf:project_not_found" });
+    expect(JSON.stringify(outcome)).not.toContain("지울 프로젝트");
+    expect(read).toBeUndefined();
+
+    await database
+      .delete(lafThreadMessages)
+      .where(eq(lafThreadMessages.threadId, GOING.thread));
+    await database.delete(channels).where(eq(channels.id, GOING.channel));
+  });
+
+  test("an answer longer than an answer may be is cut at a line, to the bound", async () => {
+    const lines = Array.from({ length: 400 }, (_, index) => `- 줄 ${index}`);
+    const { call } = turn({
+      ask: async () => ({ outcome: "answered", answer: lines.join("\n") }),
+    });
+    const { outcome } = await call({
+      kind: "ask",
+      project: TRIP.channel,
+      question: "전부 말해 줘",
+    });
+    const answer = String(outcome.answer);
+    expect(answer.length).toBeLessThanOrEqual(PROJECT_ANSWER_MAX_CHARS);
+    expect(answer.startsWith("- 줄 0\n- 줄 1")).toBe(true);
+    expect(lines).toContain(answer.split("\n").at(-1) ?? "");
+  });
+});
+
+describe("a call that carries nothing", () => {
+  test("is answered with the list and a line saying what was missing — a list asked for by name has no such line", async () => {
+    const { call } = turn();
+    const bare = await call({});
+    expect(bare.outcome).toMatchObject({
+      ok: true,
+      note: toolResultText("laf:project_read_bare"),
+    });
+    expect(bare.outcome).toHaveProperty("projects");
+    const named = await call({ kind: "list" });
+    expect(named.outcome).not.toHaveProperty("note");
+    expect(named.outcome.projects).toEqual(bare.outcome.projects);
+  });
+});
+
 describe("a call that does not say which reading", () => {
   test.each([
     [{}, "projects"],
@@ -726,6 +992,7 @@ describe("a call that does not say which reading", () => {
     [{ kind: null }, "projects"],
     [{ terms: word("숙소") }, "hits"],
     [{ project: "제주 여행" }, "summary"],
+    [{ project: "제주 여행", question: "숙소는?" }, "answer"],
   ] as const)(
     "%j is read by what it carries, not refused",
     async (args, holds) => {
@@ -751,9 +1018,12 @@ describe("what the tool hands over", () => {
       { kind: "list" },
       { kind: "search", terms: word("숙소") },
       { kind: "summary", project: TRIP.channel },
+      { kind: "ask", project: TRIP.channel, question: "숙소는?" },
     ]) {
       const { outcome } = await call(args);
       expect(JSON.stringify(outcome).length).toBeLessThan(TOOL_RESULT_CUT / 4);
     }
+    // And the longest answer there can be, with the longest name: still a fraction of the cut.
+    expect(PROJECT_ANSWER_MAX_CHARS).toBeLessThanOrEqual(TOOL_RESULT_CUT / 8);
   });
 });

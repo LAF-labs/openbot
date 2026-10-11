@@ -1,7 +1,7 @@
 /**
- * THE MAIN CONVERSATION'S WAY INTO THE PROJECTS, carried out by this server (record §3, piece 4-4's
- * first part, 2026-10-11): one tool, three readings — which projects there are, where something was
- * said, and where one project has got to.
+ * THE MAIN CONVERSATION'S WAY INTO THE PROJECTS, carried out by this server (record §3, piece 4-4,
+ * 2026-10-11): one tool, four readings — which projects there are, where something was said, where
+ * one project has got to, and a question put to the project itself.
  *
  * BEHIND THE BRIDGE (`shared/tools/projects.ts`): its name rides in the conversation's context
  * layer and nothing rides at the head of the prompt. Offered in a chat turn of a conversation that
@@ -27,6 +27,13 @@
  * nobody asks about costs nothing; one asked about twice without a word said in between costs one
  * call. Kept in this process, which is the deployment (`docs/laf/deployment-model.md`): a restart
  * makes it again on the next read.
+ *
+ * A QUESTION IS ANSWERED BY THE PROJECT'S OWN CONVERSATION, and this file only carries it there and
+ * back. What answers is a run of the same Bot over that conversation that reads and does nothing —
+ * every call it makes is refused, nothing is written to the project (`turns/engine.ts`
+ * `askProject`, handed in per turn as `ask`). What comes back is a copy like the other three and is
+ * marked like them. Dearer than a summary — the Bot's own model over the whole conversation, where
+ * a summary is the server's small model once — so the tool's words send a Bot to the summary first.
  */
 import type { Tool } from "@ag-ui/client";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
@@ -37,6 +44,8 @@ import { isDelegated } from "../../../shared/tools/delegate";
 import {
   isProjectReadKind,
   type ProjectReadKind,
+  PROJECT_ANSWER_MAX_CHARS,
+  PROJECT_QUESTION_MAX_CHARS,
   PROJECT_SEARCH_HITS,
   PROJECT_TOOLS,
   READ_PROJECTS,
@@ -180,12 +189,27 @@ export type ProjectToolDeps = {
   timeZoneOf: (userId: string) => Promise<string>;
 };
 
+/** What a question put to a project came to (`turns/engine.ts` `askProject`). */
+export type ProjectAnswer =
+  | { outcome: "answered"; answer: string }
+  /** The project's own turn did not end in the time a question waits. */
+  | { outcome: "busy" }
+  /** No answer could be had: the model failed, or ran out of the question's time. */
+  | { outcome: "unavailable" };
+
+/** The turn's way to put a question to a project's own conversation. Throws a stop. */
+export type ProjectAsker = (ask: {
+  threadId: string;
+  question: string;
+  signal: AbortSignal;
+}) => Promise<ProjectAnswer>;
+
 export type ProjectToolkit = {
   tools: Tool[];
   execute(
     name: string,
     args: Record<string, unknown>,
-    call: { id: string },
+    call: { id: string; signal?: AbortSignal },
   ): Promise<ToolOutcome>;
   /**
    * The projects a call's result read, for the mark on its stored message. Undefined for a call
@@ -218,10 +242,10 @@ const text = (value: unknown) =>
  * of six calls in one turn, two arrived as `{}` — the Bot called the tool by its own name, which a
  * name in the context layer lets it do, and a provider sends a function it was not given a schema
  * for with no arguments at all. Each was a round spent on being told the shape. So a call that
- * names a project is a summary, one with words to find is a search, and one with nothing is the
- * list — the cheapest reading, and what a Bot that knows nothing yet needs first. A `kind` that IS
- * said and is not one of the three is still refused: that is a Bot asking for something this tool
- * does not do.
+ * carries a question is a question, one that names a project and asks nothing is a summary, one
+ * with words to find is a search, and one with nothing is the list — the cheapest reading, and
+ * what a Bot that knows nothing yet needs first. A `kind` that IS said and is not one of the four
+ * is still refused: that is a Bot asking for something this tool does not do.
  */
 export function readingOf(
   args: Record<string, unknown>,
@@ -230,6 +254,7 @@ export function readingOf(
   if (args.kind !== undefined && args.kind !== null && args.kind !== "") {
     return null;
   }
+  if (text(args.question)) return "ask";
   if (text(args.project)) return "summary";
   if (text(args.terms)) return "search";
   return "list";
@@ -349,6 +374,8 @@ export function createProjectTools(dependencies: ProjectToolDeps) {
     agentId: string;
     /** The turn's run: a search does not hand a turn its own question back. */
     runId?: string;
+    /** The turn's way to ask a project. Absent — a path with no turn — a question is unavailable. */
+    ask?: ProjectAsker;
   }): ProjectToolkit => {
     const { userId, agentId } = turn;
     const readBy = new Map<string, string[]>();
@@ -410,31 +437,39 @@ export function createProjectTools(dependencies: ProjectToolDeps) {
       );
     };
 
-    const summary = async (
+    /** The one project a call means — or what the call is answered with instead. */
+    const meant = async (
       callId: string,
       args: Record<string, unknown>,
-    ): Promise<ToolOutcome> => {
+    ): Promise<{ project: Project } | { instead: ToolOutcome }> => {
       const wanted = text(args.project);
-      if (!wanted) return invalid("project");
+      if (!wanted) return { instead: invalid("project") };
       const projects = await projectsOf(database, userId, agentId);
       const found = projectsNamed(projects, wanted);
       if (found.length === 0) {
-        return reading(
-          callId,
-          projects.map((project) => project.id),
-          refused("laf:project_not_found", { projects: projects.map(named) }),
-        );
+        return {
+          instead: reading(
+            callId,
+            projects.map((project) => project.id),
+            refused("laf:project_not_found", { projects: projects.map(named) }),
+          ),
+        };
       }
       const [project] = found;
       if (!project || found.length > 1) {
-        return reading(
-          callId,
-          found.map((one) => one.id),
-          refused("laf:project_ambiguous", { projects: found.map(named) }),
-        );
+        return {
+          instead: reading(
+            callId,
+            found.map((one) => one.id),
+            refused("laf:project_ambiguous", { projects: found.map(named) }),
+          ),
+        };
       }
-      const about = { project: project.id, name: project.name };
+      return { project };
+    };
 
+    /** How far a project's conversation goes: its last message's number, and how many there are. */
+    const extentOf = async (project: Project) => {
       const [counted] = await database
         .select({
           last: sql<number | null>`max(${lafThreadMessages.seq})::int`,
@@ -442,15 +477,29 @@ export function createProjectTools(dependencies: ProjectToolDeps) {
         })
         .from(lafThreadMessages)
         .where(eq(lafThreadMessages.threadId, project.threadId));
-      const last = counted?.last ?? null;
-      if (last === null) {
-        return reading(callId, [project.id], {
-          ok: true,
-          ...about,
-          empty: true,
-          note: toolResultText("laf:project_empty"),
-        });
-      }
+      return { last: counted?.last ?? null, total: counted?.total ?? 0 };
+    };
+
+    const nothingSaid = (callId: string, project: Project): ToolOutcome =>
+      reading(callId, [project.id], {
+        ok: true,
+        project: project.id,
+        name: project.name,
+        empty: true,
+        note: toolResultText("laf:project_empty"),
+      });
+
+    const summary = async (
+      callId: string,
+      args: Record<string, unknown>,
+    ): Promise<ToolOutcome> => {
+      const resolved = await meant(callId, args);
+      if ("instead" in resolved) return resolved.instead;
+      const { project } = resolved;
+      const about = { project: project.id, name: project.name };
+
+      const { last, total } = await extentOf(project);
+      if (last === null) return nothingSaid(callId, project);
 
       const answered = (held: Held): ToolOutcome => ({
         ok: true,
@@ -488,14 +537,7 @@ export function createProjectTools(dependencies: ProjectToolDeps) {
         await timeZoneOf(userId),
         RESULT_CHARS,
       );
-      if (!/^(사장님|봇): /mu.test(whole)) {
-        return reading(callId, [project.id], {
-          ok: true,
-          ...about,
-          empty: true,
-          note: toolResultText("laf:project_empty"),
-        });
-      }
+      if (!/^(사장님|봇): /mu.test(whole)) return nothingSaid(callId, project);
       const newest = newestOf(whole);
       const made = await summarize({
         name: project.name,
@@ -520,11 +562,62 @@ export function createProjectTools(dependencies: ProjectToolDeps) {
       const held: Held = {
         seq: last,
         summary: made,
-        isPartial:
-          newest.isCut || (counted?.total ?? 0) > PROJECT_SUMMARY_MESSAGES,
+        isPartial: newest.isCut || total > PROJECT_SUMMARY_MESSAGES,
       };
       summaries.put(project.id, held);
       return reading(callId, [project.id], answered(held));
+    };
+
+    const ask = async (
+      callId: string,
+      args: Record<string, unknown>,
+      signal: AbortSignal | undefined,
+    ): Promise<ToolOutcome> => {
+      const question = text(args.question);
+      if (!question || question.length > PROJECT_QUESTION_MAX_CHARS) {
+        return invalid("question");
+      }
+      const resolved = await meant(callId, args);
+      if ("instead" in resolved) return resolved.instead;
+      const { project } = resolved;
+      const about = { project: project.id, name: project.name };
+      // A project nobody has said anything in has nobody to ask: no request is made of it.
+      if ((await extentOf(project)).last === null) {
+        return nothingSaid(callId, project);
+      }
+      const unavailable = () =>
+        reading(
+          callId,
+          [project.id],
+          refused("laf:project_ask_unavailable", about),
+        );
+      if (!turn.ask || (await budgetSpent?.())) return unavailable();
+      // A stop is thrown through: it ends the turn that asked, as it ends any call of its.
+      const came = await turn.ask({
+        threadId: project.threadId,
+        question,
+        signal: signal ?? new AbortController().signal,
+      });
+      if (came.outcome === "busy") {
+        return reading(
+          callId,
+          [project.id],
+          refused("laf:project_busy", about),
+        );
+      }
+      if (came.outcome === "unavailable") return unavailable();
+      // The mark, read again — as for a summary: the answer took as long as a model takes.
+      if (!(await isStillThere(database, project.id))) {
+        return refused("laf:project_not_found");
+      }
+      const answer = boundedBriefing(came.answer, PROJECT_ANSWER_MAX_CHARS);
+      if (!answer) return unavailable();
+      return reading(callId, [project.id], {
+        ok: true,
+        ...about,
+        answer,
+        ...(project.lastAt ? { through: project.lastAt.toISOString() } : {}),
+      });
     };
 
     return {
@@ -533,12 +626,21 @@ export function createProjectTools(dependencies: ProjectToolDeps) {
         if (name !== READ_PROJECTS) return refused("laf:tool_unknown");
         const kind = readingOf(args);
         if (!kind) return invalid("kind");
+        const listed = async (): Promise<ToolOutcome> => {
+          const projects = await list(call.id);
+          // Asked for by name, the list is the list. Come to by default, it says what was missing.
+          return isProjectReadKind(args.kind)
+            ? projects
+            : { ...projects, note: toolResultText("laf:project_read_bare") };
+        };
         const outcome =
           kind === "list"
-            ? await list(call.id)
+            ? await listed()
             : kind === "search"
               ? await find(call.id, args)
-              : await summary(call.id, args);
+              : kind === "ask"
+                ? await ask(call.id, args, call.signal)
+                : await summary(call.id, args);
         /*
          * Never long enough to be filed as a file (the head of this file). Nothing here can reach
          * the cut by its own bounds; a result that did would be a second copy in the Bot's folder,
