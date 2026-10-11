@@ -23,7 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { conversationOf, primaryBot, useMyBots } from "@/lib/agents/my-bots";
 import { requestJump } from "@/lib/channels/jump";
 import { channelListQueryOptions } from "@/lib/channels/queries";
-import { activeLocale, t } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 import {
   kindBesideTime,
   kindLabel,
@@ -36,6 +36,7 @@ import {
 import { readLineOf } from "@/lib/read-line";
 import { settledOf, useReading } from "@/lib/reading";
 import { cn } from "@/lib/utils";
+import { dayAndMinute } from "@/lib/when";
 
 /**
  * 만든 것 — EVERYTHING THE BOT MADE (muse-shape plan §3.5, phase 6 = v1, 2026-09-27).
@@ -184,18 +185,6 @@ function MadePage() {
   );
 }
 
-/** When it was made, in the person's language: the date and the minute. */
-function madeWhen(iso: string): string {
-  const at = new Date(iso);
-  if (Number.isNaN(at.getTime())) return "";
-  return at.toLocaleString(activeLocale, {
-    month: "long",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
 /**
  * One thing the Bot made: the title it gave it, when — and a press back to it.
  *
@@ -239,7 +228,7 @@ function MadeCard({ item }: { item: MadeItem }) {
         </span>
         <span className="text-muted-foreground text-xs" data-made-when>
           {beside ? `${beside} · ` : ""}
-          {madeWhen(item.at)}
+          {dayAndMinute(item.at)}
         </span>
       </span>
     </button>

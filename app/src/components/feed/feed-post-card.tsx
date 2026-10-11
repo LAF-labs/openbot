@@ -7,8 +7,9 @@ import {
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { focusRingBare } from "@/components/ui/focus";
-import { activeLocale, t } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { dayAndMinute } from "@/lib/when";
 
 /**
  * ONE 소식 POST: its label, title and three or four lines, the pages it came from — and the three
@@ -41,12 +42,7 @@ export function FeedPostCard({
   onLike: () => void;
   post: FeedPost;
 }) {
-  const when = new Date(post.createdAt).toLocaleString(activeLocale, {
-    month: "long",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  const when = dayAndMinute(post.createdAt);
   return (
     <article
       className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4"
