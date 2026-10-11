@@ -120,6 +120,13 @@ const refusedEmailCode = refusalCode("SIGN_IN_NOT_ADMITTED");
 const secondPersonCode = refusalCode("DEPLOYMENT_HAS_ACCOUNT");
 
 /**
+ * The provider did not vouch for the address (2026-10-11: the seat belongs to whoever proves it).
+ * Refused while the account is being made and when a row nobody has proved asks for a session,
+ * through the same `refuse`.
+ */
+const unverifiedCode = refusalCode("SIGN_IN_EMAIL_UNVERIFIED");
+
+/**
  * A session TAKEN AWAY, as the server's guard answers it (`server/src/auth/session-revocation.ts`) and
  * as the app carries it to this screen in `?error=` (`load-current-user.ts`, `use-session-gate.ts`).
  * Read out of the server rather than copied, like the refusal above, and held to the app's own copy.
@@ -250,6 +257,7 @@ const cases: Case[] = [
       ...callbackCodes(),
       refusedEmailCode,
       secondPersonCode,
+      unverifiedCode,
       revokedSessionCode,
       ...PROVIDER_CODES,
     ]),
@@ -437,6 +445,7 @@ describe("the codes a sign-in can come back with", () => {
         ...callbackCodes(),
         refusedEmailCode,
         secondPersonCode,
+        unverifiedCode,
         revokedSessionCode,
         RATE_LIMITED.code,
         ...PROVIDER_CODES,
@@ -455,6 +464,7 @@ describe("the codes a sign-in can come back with", () => {
         ...callbackCodes(),
         refusedEmailCode,
         secondPersonCode,
+        unverifiedCode,
         revokedSessionCode,
         RATE_LIMITED.code,
         ...PROVIDER_CODES,

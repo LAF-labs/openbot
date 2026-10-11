@@ -18,7 +18,13 @@ export type OidcStub = {
   close: () => void;
 };
 
-type Issued = { challenge: string; email: string; nonce: string | null };
+type Issued = {
+  challenge: string;
+  email: string;
+  nonce: string | null;
+  /** Whether the provider vouches for the address. `stub_unverified=1` on the authorize URL says no. */
+  verified: boolean;
+};
 
 function base64url(input: Buffer | string): string {
   return Buffer.from(input).toString("base64url");
@@ -75,6 +81,7 @@ export function startOidcStub(clientId: string): Promise<OidcStub> {
         challenge: url.searchParams.get("code_challenge") ?? "",
         email: url.searchParams.get("stub_email") ?? "",
         nonce: url.searchParams.get("nonce"),
+        verified: url.searchParams.get("stub_unverified") !== "1",
       });
       const back = new URL(url.searchParams.get("redirect_uri") as string);
       back.searchParams.set("code", code);
@@ -109,7 +116,7 @@ export function startOidcStub(clientId: string): Promise<OidcStub> {
             aud: clientId,
             sub: `stub:${grant.email}`,
             email: grant.email,
-            email_verified: true,
+            email_verified: grant.verified,
             name: "사장님",
             iat: now,
             exp: now + 300,
@@ -128,7 +135,7 @@ export function startOidcStub(clientId: string): Promise<OidcStub> {
       return json(response, 200, {
         sub: `stub:${grant?.email ?? "unknown"}`,
         email: grant?.email,
-        email_verified: true,
+        email_verified: grant?.verified ?? false,
         name: "사장님",
       });
     }
@@ -174,6 +181,8 @@ export async function startSignIn(
   auth: Handler,
   origin: string,
   email: string,
+  /** `{ verified: false }` is a provider that does not vouch for the address. Vouched for by default. */
+  options: { verified?: boolean } = {},
 ): Promise<StartedSignIn> {
   const jar: CookieJar = new Map();
   const started = await auth.handler(
@@ -190,6 +199,9 @@ export async function startSignIn(
   const { url } = (await started.json()) as { url: string };
   const authorize = new URL(url);
   authorize.searchParams.set("stub_email", email);
+  if (options.verified === false) {
+    authorize.searchParams.set("stub_unverified", "1");
+  }
   const hop = await fetch(authorize, { redirect: "manual" });
   const callback = hop.headers.get("location");
   if (hop.status !== 302 || !callback) {

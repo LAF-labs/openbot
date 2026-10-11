@@ -2281,6 +2281,8 @@ export const ko: Record<string, string> = {
   "This place is already used by another account, and one place takes one account. Sign in with the account you first signed up with.":
     "이곳은 이미 다른 계정으로 쓰고 있어요. 한 곳에는 한 계정만 쓸 수 있으니, 처음 가입한 계정으로 로그인해 주세요.",
   // 로그인이 실패한 게 아니라, 쓰던 세션을 회수당했을 때 (명단에서 빠졌거나 관리자가 계정을 지웠을 때).
+  "The account you chose has not verified its email address yet. Verify it at that service, or sign in with a different button.":
+    "고른 계정은 아직 이메일 인증이 안 되어 있어요. 그 서비스에서 이메일을 인증하거나, 다른 버튼으로 로그인해 주세요.",
   "This account's access here was taken away, so it was signed out. If that is a mistake, ask whoever manages this place.":
     "이 계정의 권한이 회수되어 로그아웃되었어요. 잘못된 일이라면 이곳을 관리하는 분께 문의해 주세요.",
   "This email already has an account here, made with a different button. Sign in with the one you used first.":

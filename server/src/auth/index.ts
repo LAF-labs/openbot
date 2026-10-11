@@ -34,6 +34,19 @@ export const SIGN_IN_NOT_ADMITTED = "laf:sign_in_not_admitted";
 export const DEPLOYMENT_HAS_ACCOUNT = "laf:deployment_has_account";
 
 /**
+ * The provider did not say the address is verified, so it is not an address anybody has proved.
+ *
+ * The seat is the one address the list names, and it belongs to whoever proves that address — a
+ * provider vouching for it is the only proof there is. An arrival the provider does not vouch for is
+ * refused before a row exists, and a row that is not verified gets no session: with better-auth's
+ * default linking rule a verified sign-in to the same address would otherwise be refused for as long
+ * as the unverified row stood, which is the wrong person being kept out (2026-10-11). Through the
+ * fleet's broker Google and Naver addresses arrive verified and Kakao's carries its own flag; of
+ * better-auth's direct providers, Naver never says verified, so direct Naver sign-in is refused here.
+ */
+export const SIGN_IN_EMAIL_UNVERIFIED = "laf:sign_in_email_unverified";
+
+/**
  * The fleet learns that this machine now has somebody on it.
  *
  * The same envelope the withdrawal sends, so the fleet's records can be reconciled against a
@@ -105,7 +118,10 @@ export function createAuth(
    * either road reaches the sign-in screen carrying the same fact, and the screen owns the words.
    */
   const refuse = (
-    code: typeof SIGN_IN_NOT_ADMITTED | typeof DEPLOYMENT_HAS_ACCOUNT,
+    code:
+      | typeof SIGN_IN_NOT_ADMITTED
+      | typeof DEPLOYMENT_HAS_ACCOUNT
+      | typeof SIGN_IN_EMAIL_UNVERIFIED,
   ): never => {
     throw new APIError("FORBIDDEN", { message: code, code });
   };
@@ -197,6 +213,8 @@ export function createAuth(
            */
           before: async (user) => {
             if (!door.admits(user.email)) refuse(SIGN_IN_NOT_ADMITTED);
+            // Then the proof, before any row is read for it: see `SIGN_IN_EMAIL_UNVERIFIED`.
+            if (user.emailVerified !== true) refuse(SIGN_IN_EMAIL_UNVERIFIED);
             if (await door.heldBySomebodyElse({ email: user.email })) {
               refuse(DEPLOYMENT_HAS_ACCOUNT);
             }
@@ -242,13 +260,24 @@ export function createAuth(
            * every request by the guards.
            */
           before: async (session) => {
-            if (!door.enforced) return { data: session };
             const [account] = await database
-              .select({ email: users.email })
+              .select({
+                email: users.email,
+                emailVerified: users.emailVerified,
+              })
               .from(users)
               .where(eq(users.id, session.userId))
               .limit(1);
-            if (!account || !door.admits(account.email)) {
+            /*
+             * A row nobody has proved gets no session, in every environment: one from before this
+             * rule, or one whose provider still does not vouch for the address. better-auth marks
+             * the row verified the moment a sign-in to it arrives verified, before this runs, so
+             * the address proving itself later is let in.
+             */
+            if (account?.emailVerified !== true) {
+              refuse(SIGN_IN_EMAIL_UNVERIFIED);
+            }
+            if (door.enforced && !door.admits(account.email)) {
               refuse(SIGN_IN_NOT_ADMITTED);
             }
             return { data: session };

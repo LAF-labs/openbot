@@ -527,6 +527,7 @@
   "server/tests/security-middleware.test.ts",
   "server/tests/server-model-calls.test.ts",
   "server/tests/session-revocation.integration.test.ts",
+  "server/tests/sign-in-verified.integration.test.ts",
   "server/tests/settle-widths.test.ts",
   "server/tests/settle.test.ts",
   "server/tests/shop-boundary.test.ts",
