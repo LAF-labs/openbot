@@ -2908,6 +2908,12 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * browser's, the two runs handed thinking held to no tool at all). By hand: 6 and 2 is 8, and 1
  * is 9, and 1 is 10; 4421 and 10 is 4431. 8 and 8 is 16, and 42 is 58; 1647 and 58 is 1705.
  *
+ * RAISED 2026-10-11 FOR WHAT A DELEGATED RUN HANDS BACK, `server` by six (to 4437), all in
+ * `turn-engine.integration.test.ts`: a run that ends without an answer hands nothing back through
+ * the engine — not what it said on the way — and five on the reading itself (the last reply where
+ * it asks for nothing, nothing where it is empty, nothing where it is another call, nothing where
+ * there was no reply, and its words trimmed). 4431 and 6 is 4437.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2936,7 +2942,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4431, roots: ["server"] },
+  { name: "server", floor: 4437, roots: ["server"] },
   { name: "app", floor: 2403, roots: ["app"] },
   {
     name: "agent-computer",
