@@ -227,6 +227,21 @@ export function boundedSummary(text: string, max = SUMMARY_MAX_CHARS): string {
 }
 
 /**
+ * The tokens of the instruction's one sample line, which the summariser is told never to write. A
+ * line that still holds one is the example copied, not a fact about this owner, and it is dropped
+ * before the summary is stored (review of pull request 196).
+ */
+const PLACEHOLDER_TOKENS = ["<무엇>", "<언제마다", "어떤 조건>"] as const;
+
+/** The summary without any line that is the instruction's placeholder. */
+export function withoutPlaceholderLines(text: string): string {
+  return text
+    .split("\n")
+    .filter((line) => !PLACEHOLDER_TOKENS.some((token) => line.includes(token)))
+    .join("\n");
+}
+
+/**
  * The summariser's instructions. English, like every server-side judge's; the summary itself is in
  * the conversation's language, because the Bot reads it in front of Korean.
  *
@@ -251,7 +266,7 @@ export const DAY_SUMMARY_SYSTEM = [
   "- Write in Korean, as short bullet lines, oldest first: dated lines (`- 9/21: …`) for what happened, then a short block of standing facts (the rule below). Carry over what `previous` said unless the transcript settled or replaced it.",
   "- Call the owner 이 사람 (`- 9/21: 이 사람이 …`), never 사장님 or any other title, whatever the transcript's labels say: the person may be a student or an office worker.",
   "- Keep every concrete fact the owner may ask about later: names of people and suppliers, quantities, prices and amounts, order numbers, dates and times, reasons (a refund reason, a customer's request), promises and deadlines, the owner's preferences and rules.",
-  "- A standing fact holds until the owner changes it: a deadline that comes round every month or every week, which weekdays someone works, opening hours, a supplier's payment terms, a unit price, a regular customer's preference. Write each on its own undated line, keeping the words that say how often or on what condition it holds, after the dated lines, in the shape `- <무엇>: <언제마다 / 어떤 조건>` — the owner's own words in place of the brackets, never this placeholder. A date passing does not settle it; it changes only when the owner says so, and then only the new value is written.",
+  "- A standing fact is something the owner said that holds until the owner changes or ends it: a deadline that comes round every month or every week, which weekdays someone works, opening hours, a supplier's payment terms, a unit price, a regular customer's preference. Write each on its own undated line, in the owner's own words — the name as the owner said it, weekdays written out, no shorthand — keeping the words that say how often or on what condition it holds, after the dated lines, in the shape `- <무엇>: <언제마다 / 어떤 조건>`, never this placeholder. A date passing does not settle it. When the owner changes it, write only the new value; when the owner says it no longer holds — a person left, a supplier was dropped, a regular stopped — drop the line. Only the owner's own words (the transcript's 사장님 lines) make a standing fact: a supplier's terms, hours or a price that the assistant read on a page or in a result are never one, however standing they sound — they stay a dated line that says the assistant read them. A fact `previous` still holds as a dated line is moved into the block, not written twice.",
   "- Keep details the assistant read on web pages that it did not repeat to the owner, when they could matter later.",
   "- Keep what is still open or waiting. Drop greetings, small talk, and steps of browsing that led nowhere.",
   `- At most ${SUMMARY_MAX_CHARS} characters. When it would be longer, shorten or drop the oldest settled items first; never drop anything from the transcript's last day, or anything still open.`,
@@ -299,7 +314,7 @@ export function createDaySummarizer(
     };
     const answer = await askModel(call, ask);
     if (!answer.ok) throw new Error(`summary: ${answer.because}`);
-    const summary = boundedSummary(answer.text);
+    const summary = boundedSummary(withoutPlaceholderLines(answer.text));
     if (!summary) throw new Error("summary: unreadable");
     return summary;
   };

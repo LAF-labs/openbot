@@ -81,8 +81,18 @@ function numbersOf(text: string): string[] {
 }
 
 /**
+ * A dated summary line: `- 9/21: …`, `- 9/14~9/16: …`, `- 2026-09-21: …`. The summary's other
+ * lines are its standing facts, one fact a line (`day-close.ts`, `DAY_SUMMARY_SYSTEM`).
+ */
+const isDated = (line: string) =>
+  /^\s*[-*•]?\s*(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2}|\d{1,2}월\s?\d{1,2}일)/.test(
+    line,
+  );
+
+/**
  * THE RULE: whether one summary line carries one forgotten fact. The fact word for word, any of
- * its numbers, or most of its distinctive words (two at least) in the line.
+ * its numbers, or most of its distinctive words (two at least) in the line — or, on a standing
+ * line, two of them.
  */
 export function lineCarries(line: string, fact: string): boolean {
   const here = flat(line);
@@ -94,7 +104,30 @@ export function lineCarries(line: string, fact: string): boolean {
   const words = distinctiveWords(fact);
   if (words.length === 0) return false;
   const found = words.filter((word) => here.includes(word)).length;
-  return found >= Math.min(2, words.length) && found / words.length >= 0.6;
+  if (found >= Math.min(2, words.length) && found / words.length >= 0.6) {
+    return true;
+  }
+  /*
+   * A STANDING LINE IS TERSE — a head and a value, `- 지은(포장 알바): 매주 화·목 출근` — so it holds
+   * few of a notebook line's words: three of the six of "포장 알바 지은이는 화요일과 목요일에만
+   * 출근한다.", under the ratio above, and a forgotten standing fact stayed in what the Bot is
+   * given on the rule arm, the floor this file promises when the judge model is unavailable
+   * (review of pull request 196). A standing line holds one fact about one subject, so two of the
+   * fact's distinctive words in it are the fact. A dated line keeps the ratio: it carries several
+   * things of its day at once, and two words in it may belong to another of them. A standing line
+   * that groups two people's days loses both — forgetting errs that way.
+   *
+   * A name is said with a particle of its own before the sentence's — "지은이는" — and one strip
+   * leaves "지은이", which the standing line's bare "지은" does not hold. So here a word also counts
+   * with a second particle off, where two letters remain (never "사과" to "사").
+   */
+  if (isDated(line)) return false;
+  const bare = words.filter((word) => {
+    if (here.includes(word)) return true;
+    const shorter = word.replace(PARTICLE, "");
+    return shorter.length >= 2 && shorter !== word && here.includes(shorter);
+  }).length;
+  return bare >= 2;
 }
 
 /** The lines a scrub looks at: a summary is written as bullet lines, one fact or event each. */
