@@ -374,6 +374,27 @@ describe("a summary's own shorthand is still the fact", () => {
     ).toBe("whole");
   });
 
+  test("every value under a name that is not the subject's is part of the fact, not the fact", () => {
+    const place = fact("regular-preference/aside");
+    // As the server model wrote it on the first walk of weeks (2026-10-11).
+    expect(
+      survivalIn(
+        place,
+        "- 9/14: 단골 한정숍 님은 택배를 꼭 경비실에 맡겨 달라고 요청(규칙으로 유지).",
+      ),
+    ).toBe("part");
+    expect(
+      survivalIn(
+        place,
+        "- 9/14: 단골 한정숙 님은 택배를 꼭 경비실에 맡겨 달라고 요청.",
+      ),
+    ).toBe("whole");
+    // One value of two on a line about something else is still nothing.
+    expect(
+      survivalIn(fact("supplier-terms/aside"), "- 9/20: 한일포장은 월말 결제."),
+    ).toBe("gone");
+  });
+
   test("an arrow that ends on the old day is not the new one", () => {
     expect(
       survivalIn(
