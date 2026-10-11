@@ -234,14 +234,24 @@ export function boundedSummary(text: string, max = SUMMARY_MAX_CHARS): string {
  * dates, promises, preferences), what the Bot read that nobody restated (an order's refund reason,
  * a customer's request), what was decided, and what is still open. Measured in `eval:cache`'s
  * `days` case: a fact stated on day 1 asked on day 5.
+ *
+ * STANDING FACTS ARE NOT EVENTS. Told only "short dated bullet lines", the summariser attached a
+ * date to everything, and a fact with no date of its own — a deadline every month, a staff
+ * member's weekdays — was flattened into one date ("매주 금요일까지" became "- 9/18: …") or dropped
+ * as settled once its date had passed: `eval:memory-days`, 2026-10-11, lost 3 of 36 over a busy
+ * week and only the recurring rows, with the summary half its bound. So a standing fact is its own
+ * undated line, recurrence words kept, in a block AFTER the dated lines: `boundedSummary` cuts
+ * from the head, so the block is what the cut reaches last, where at the head it would be the
+ * first thing gone in month two.
  */
 export const DAY_SUMMARY_SYSTEM = [
   "You maintain the running summary of one shop assistant's long conversation with the shop owner.",
   "The user message is JSON: `previous` is the summary so far (may be empty), `transcript` is the conversation since, with day headers, and `day` is today.",
   "Write the new summary that replaces both. Rules:",
-  "- Write in Korean, as short dated bullet lines (`- 9/21: …`), oldest first. Carry over what `previous` said unless the transcript settled or replaced it.",
+  "- Write in Korean, as short bullet lines, oldest first: dated lines (`- 9/21: …`) for what happened, then a short block of standing facts (the rule below). Carry over what `previous` said unless the transcript settled or replaced it.",
   "- Call the owner 이 사람 (`- 9/21: 이 사람이 …`), never 사장님 or any other title, whatever the transcript's labels say: the person may be a student or an office worker.",
   "- Keep every concrete fact the owner may ask about later: names of people and suppliers, quantities, prices and amounts, order numbers, dates and times, reasons (a refund reason, a customer's request), promises and deadlines, the owner's preferences and rules.",
+  "- A standing fact holds until the owner changes it: a recurring deadline (매달 5일까지, 매주 금요일까지), which days someone works (화·목), hours, a supplier's terms, a price, a regular's preference. Write each on its own undated line with its recurrence words kept, after the dated lines (`- 세무사 정산 자료: 매달 5일까지`). A date passing does not settle it; it changes only when the owner says so, and then only the new value is written.",
   "- Keep details the assistant read on web pages that it did not repeat to the owner, when they could matter later.",
   "- Keep what is still open or waiting. Drop greetings, small talk, and steps of browsing that led nowhere.",
   `- At most ${SUMMARY_MAX_CHARS} characters. When it would be longer, shorten or drop the oldest settled items first; never drop anything from the transcript's last day, or anything still open.`,
