@@ -2788,6 +2788,11 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `jev-decisions.test.ts`: what a decision is filed as costing — a figure where the provider said
  * one, and none for a figure below nothing, for words, for nothing said.
  *
+ * RAISED 2026-10-11 FOR THE REVIEW OF THE PROJECT REGISTRY AND THE SEARCH, `server` by five (to
+ * 4395): one in `channel-routes.test.ts` (two presses at once for the last project make one), four
+ * in `conversation-search.integration.test.ts` (a snippet cut between characters as a person sees
+ * them — a flag, a family, a decomposed syllable, a skin tone at its start).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2816,7 +2821,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4390, roots: ["server"] },
+  { name: "server", floor: 4395, roots: ["server"] },
   { name: "app", floor: 2261, roots: ["app"] },
   {
     name: "agent-computer",
