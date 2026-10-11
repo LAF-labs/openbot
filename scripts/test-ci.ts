@@ -2793,6 +2793,12 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * in `conversation-search.integration.test.ts` (a snippet cut between characters as a person sees
  * them — a flag, a family, a decomposed syllable, a skin tone at its start).
  *
+ * RAISED 2026-10-11 FOR THE DAY'S BUDGET READ TO THE END: `server` by seven (to 4402), in
+ * `model-usage.test.ts` — a total the endpoint did not say is the parts summed (one, and four
+ * shapes of not saying), a part below nothing is no count, a total it did say stands; `app` by
+ * six (to 2267), in `today-usage.test.ts` — four shares that are a whole hundredth and were read
+ * one under, one in dollars, and the notice at the 80% the meter says.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2821,8 +2827,8 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4395, roots: ["server"] },
-  { name: "app", floor: 2261, roots: ["app"] },
+  { name: "server", floor: 4402, roots: ["server"] },
+  { name: "app", floor: 2267, roots: ["app"] },
   {
     name: "agent-computer",
     /*
