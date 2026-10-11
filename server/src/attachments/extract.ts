@@ -9,7 +9,7 @@
  * PDF text. Both parse untrusted input, so both are asked for text only — no formulas evaluated, no
  * HTML, no scripts — and bounded in rows and pages.
  */
-import { extractText, getDocumentProxy } from "unpdf";
+import { getDocumentProxy } from "unpdf";
 import * as XLSX from "xlsx";
 import { cutAtCodeUnits } from "../../../shared/sound-text";
 
@@ -120,13 +120,47 @@ export function readSheets(bytes: Uint8Array, mimeType: string): Extracted {
   };
 }
 
+type PdfDocument = Awaited<ReturnType<typeof getDocumentProxy>>;
+type TextContent = Awaited<
+  ReturnType<Awaited<ReturnType<PdfDocument["getPage"]>>["getTextContent"]>
+>;
+
+/**
+ * One page's text, as unpdf's `extractText` joins it: each item's string, and a line break where
+ * the item ends a line.
+ */
+function textOfPage(content: TextContent): string {
+  return content.items
+    .map((item) =>
+      "str" in item ? `${item.str}${item.hasEOL ? "\n" : ""}` : "",
+    )
+    .join("");
+}
+
 export async function readPdf(bytes: Uint8Array): Promise<Extracted> {
   // A copy: pdf.js takes ownership of the buffer it is given and detaches it.
   const document = await getDocumentProxy(new Uint8Array(bytes));
-  const { totalPages, text } = await extractText(document, {
-    mergePages: false,
-  });
-  const pages = text.slice(0, PDF_PAGES).map((page) => page.trim());
+  const totalPages = document.numPages;
+  const pages: string[] = [];
+  try {
+    /*
+     * PAGE BY PAGE, AND ONLY THE PAGES THAT ARE READ. unpdf's `extractText` opens every page of the
+     * document at once (`Promise.all` over `numPages`) and keeps them all, so the pages past the
+     * sixtieth were parsed only to be sliced off — and a long PDF was killed for its memory rather
+     * than read: measured 2026-10-11 on the sidecar's bundle under its 512 MB bound, a 6 MB PDF of
+     * 5,000 text pages died (`failure: "memory"`) and the person was told the file was damaged.
+     * Opened one at a time and let go after, the sixty pages cost the same whatever stands behind
+     * them.
+     */
+    const read = Math.min(totalPages, PDF_PAGES);
+    for (let number = 1; number <= read; number += 1) {
+      const page = await document.getPage(number);
+      pages.push(textOfPage(await page.getTextContent()).trim());
+      page.cleanup();
+    }
+  } finally {
+    await document.loadingTask.destroy();
+  }
   const withText = pages.filter((page) => page.length > 0);
   if (withText.length === 0) return { body: "", whole: null };
 
