@@ -19,13 +19,31 @@ is a name, and nothing draws a face or takes a colour from one (2026-10-09). How
 hard it thinks is the deployment's, fixed, shown nowhere and set by nobody, the
 Bot included (2026-10-08, landed 2026-10-09).
 
-**Decided 2026-10-08, not yet built** (`docs/laf/redesign-2026-10.md`): a home
-panel of widgets replaces the sidebar; projects sit beside the one main
-conversation; the main conversation is an orchestrator on a fixed model and
-effort that hands browsing and background work to sub-agents; an 계정 menu
-keeps logins on the server and cards only on the person's device, never on
-ours. Still one Bot. Until a piece lands, the code and the rules below describe
-what runs — build toward that record, and move a rule here when its piece lands.
+**Decided 2026-10-08** (`docs/laf/redesign-2026-10.md`), and most of it runs
+since 2026-10-10/11. What runs: the sidebar is gone — one top row is the
+window's handle, and everything the column led to is behind the person's
+picture; 홈 is a panel at the left that folds and holds 오늘 and the cards 소식 ·
+목표 · 만든 것; projects sit beside the one main conversation, each a
+conversation of the same Bot with a folder of its own, found by 검색 and deleted
+whole, and the main conversation reads them through a tool of its own; the main
+conversation keeps its fixed model and effort and hands browsing to a run of its
+own — `delegate` stands at its head in place of the browser's eleven tools,
+which ride only with that run, while the folder's three stay with the
+conversation; the computer can hold background browsers beside the main one,
+named in a header, though nothing opens one yet, and a conversation queues at
+the call that uses the browser; 설정's 계정 keeps the logins a person saves on
+the server, filled into the boxes of the origin they were saved for and nowhere
+else; a trial's day can be counted in dollars; the accent is `#2079E7`. Still
+only decided: panels the Bot makes and refreshes on a sentence (pieces 7-2 and
+7-3), cards kept only on the person's device and never on ours, and captchas
+(the 8-x pieces). Deep reasoning runs too (piece 6-3, 2026-10-11): `delegate`
+takes `to: "think"` beside `browser` (`shared/tools/delegate.ts`), and the same
+Bot thinks in a run of its own with no tools, in a conversation of its own per
+kind of work (`<thread>.browse`, `<thread>.think`), on an effort the server sets
+for that mode alone. Background work handed to a sub-agent is not a value of
+`to` yet. Still one Bot. Until a piece lands, the code and the rules below
+describe what runs — build toward that record, and move a rule here when its
+piece lands.
 
 The product is a **cloud engine plus an installed app shell**. The engine runs
 on a VM; `desktop/` is a Tauri window onto the deployed origin and holds no
@@ -213,11 +231,12 @@ what it found came back sorted — blocking, worth fixing, left as it is — bef
 anything was changed.
 
 The loop, step by step, is the `codex-pr-review` skill (installed for the owner
-in `~/.claude/skills/`). Codex is set to review the pull requests the owner's
-GitHub account opens here, on every push (chatgpt.com → Codex → 설정 → 코드 검토);
-Dependabot's are not reviewed automatically. That setting predates the rule above.
-Until it is switched off, a review of an unfinished head is read but not looped
-on, and a direction record's reviews are not waited for.
+in `~/.claude/skills/`). Codex used to review every push to the pull requests
+the owner's GitHub account opens here, by a setting (chatgpt.com → Codex → 설정 →
+코드 검토) that predated the rule above; the owner switched it off on
+2026-10-11. Nothing is reviewed unasked now: a review happens when `@codex
+review` is written on a finished head, at merge time, and a direction record
+is never sent one.
 
 `AGENTS.md` is where Codex looks first in the repository, after the pull
 request's own title and body. It holds no rules of its own: it sends the
