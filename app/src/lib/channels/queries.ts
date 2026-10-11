@@ -17,7 +17,8 @@ export type AgentChannel = {
   active: boolean;
   /**
    * The Bot's one main conversation, or a project beside it (the server's `channels.kind`, piece
-   * 4-1). Absent from a server before 2026-10-10, which had only the rule (`my-bots.ts`).
+   * 4-1). The server always says; optional only because this is what arrived on the wire, and
+   * one that does not say is neither (`my-bots.ts`, `channels/projects.ts`).
    */
   kind?: "main" | "project";
 };

@@ -182,6 +182,7 @@ async function cardScreen(
           {
             id: "channel_1",
             agentIds: [BOT],
+            kind: "main",
             createdAt: "2026-09-01T00:00:00.000Z",
             lastMessageAt: null,
           },

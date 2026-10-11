@@ -105,14 +105,26 @@ describe("the Bot the app opens on", () => {
 });
 
 describe("a Bot's conversation", () => {
-  test("is its oldest one-Bot channel, the one the server's create resolves to", () => {
+  test("is its one-Bot channel that says main, whatever its age", () => {
     const channels = [
-      channel("newer", ["a"], "2026-09-10T00:00:00Z"),
-      channel("oldest", ["a"], "2026-09-01T00:00:00Z"),
-      channel("room", ["a", "b"], "2026-08-01T00:00:00Z"),
-      channel("other", ["b"], "2026-07-01T00:00:00Z"),
+      {
+        ...channel("newer", ["a"], "2026-09-10T00:00:00Z"),
+        kind: "main" as const,
+      },
+      {
+        ...channel("oldest", ["a"], "2026-09-01T00:00:00Z"),
+        kind: "project" as const,
+      },
+      {
+        ...channel("room", ["a", "b"], "2026-08-01T00:00:00Z"),
+        kind: "main" as const,
+      },
+      {
+        ...channel("other", ["b"], "2026-07-01T00:00:00Z"),
+        kind: "main" as const,
+      },
     ];
-    expect(conversationOf("a", channels)?.id).toBe("oldest");
+    expect(conversationOf("a", channels)?.id).toBe("newer");
   });
 
   test("is none before its first message", () => {
@@ -154,12 +166,16 @@ describe("a Bot's conversation", () => {
     ).toBeUndefined();
   });
 
-  test("a server from before the column says nothing, and the rule answers: the oldest", () => {
+  /*
+   * There is no server from before the column to meet: the app is served by the release that
+   * answers it. A channel that says nothing is not guessed at by its age — a project is as old.
+   */
+  test("one that does not say what it is is not taken for the main one", () => {
     expect(
       conversationOf("a", [
         channel("newer", ["a"], "2026-09-10T00:00:00Z"),
         channel("oldest", ["a"], "2026-09-01T00:00:00Z"),
-      ])?.id,
-    ).toBe("oldest");
+      ]),
+    ).toBeUndefined();
   });
 });

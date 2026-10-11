@@ -88,6 +88,7 @@ function server(
             agentIds: ["bot-1"],
             threadId: "t1",
             active: true,
+            kind: "main",
             lastMessage: "다 했어요",
             lastMessageAt: new Date().toISOString(),
             lastMessageAgentId: "bot-1",
