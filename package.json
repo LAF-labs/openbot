@@ -40,6 +40,7 @@
     "eval:first-move": "bun --env-file=.env evals/first-move-run.ts",
     "eval:page-facts": "bun --env-file=.env evals/page-facts-run.ts",
     "eval:browse": "bun --env-file=.env evals/browse.ts",
+    "eval:memory-days": "bun --env-file=.env evals/memory-days.ts",
     "eval:from-failures": "bun --env-file=.env scripts/eval-from-failures.ts"
   },
   "devDependencies": {
