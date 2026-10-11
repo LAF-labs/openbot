@@ -164,21 +164,14 @@ function standingLineCarries(line: string, fact: string): boolean {
   const word = (token: string) => token.replace(PARTICLE, "");
   const usable = (token: string) =>
     token.length >= 2 && !COMMON.has(token) && !RECURRENCE.has(token);
+  const spoken = said.map(word);
   const numbers = new Set(
-    said.map(word).filter((token) => /^\d/.test(token) && usable(token)),
+    spoken.filter((token) => /^\d/.test(token) && usable(token)),
   );
-  const subject = new Set(
-    said
-      .slice(0, subjectEnd + 1)
-      .map(word)
-      .filter((token) => usable(token) && !/^\d/.test(token)),
-  );
-  const predicate = new Set(
-    said
-      .slice(subjectEnd + 1)
-      .map(word)
-      .filter((token) => usable(token) && !/^\d/.test(token)),
-  );
+  // One sieve for both halves: a digit-led token is a number, never a word (5일 is not in 25일).
+  const wordy = (token: string) => usable(token) && !/^\d/.test(token);
+  const subject = new Set(spoken.slice(0, subjectEnd + 1).filter(wordy));
+  const predicate = new Set(spoken.slice(subjectEnd + 1).filter(wordy));
   const colon = line.indexOf(":");
   const headText = weekdaysSpelled(
     flat(colon >= 0 ? line.slice(0, colon) : line),
