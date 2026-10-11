@@ -188,7 +188,7 @@ export function AdminSidebar({
                 // One rhythm with the app sidebar, and it was only ever a claim: the shared row is
                 // 54px (`--sand-row-height`, `h-row`) and this rail drew 40. The active state still
                 // does not dip back to the hover fill when the row you are on is hovered.
-                className="h-row hover:bg-foreground/5 data-[status=active]:bg-foreground/8 data-[status=active]:hover:bg-foreground/8"
+                className="h-row hover:bg-foreground/5 data-[status=active]:bg-primary/8 data-[status=active]:text-link data-[status=active]:hover:bg-primary/8"
                 render={(props) => (
                   <Link
                     {...adminLinkOptions}
@@ -213,7 +213,7 @@ export function AdminSidebar({
                     // One rhythm with the app sidebar, and it was only ever a claim: the shared row is
                     // 54px (`--sand-row-height`, `h-row`) and this rail drew 40. The active state still
                     // does not dip back to the hover fill when the row you are on is hovered.
-                    className="h-row hover:bg-foreground/5 data-[status=active]:bg-foreground/8 data-[status=active]:hover:bg-foreground/8"
+                    className="h-row hover:bg-foreground/5 data-[status=active]:bg-primary/8 data-[status=active]:text-link data-[status=active]:hover:bg-primary/8"
                     render={(props) => (
                       <Link {...item.linkOptions} {...props}>
                         <item.icon />

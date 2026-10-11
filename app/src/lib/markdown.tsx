@@ -5,13 +5,14 @@ import { markdownWords } from "@/lib/markdown-words";
  * Shared markdown rendering for Bot prose and tool results.
  *
  * Links open in a new tab with `noreferrer` because content can come from a model or remote MCP
- * server.
+ * server. A link is in the accent's ink (2026-10-11) and stays underlined, so its colour is not
+ * the only thing that says it is one.
  */
 export const markdownComponents = {
   a: ({ href, children, ...rest }: ComponentProps<"a">) => (
     <a
       {...rest}
-      className="underline underline-offset-2 hover:no-underline"
+      className="text-link underline underline-offset-2 hover:no-underline"
       href={href}
       rel="noreferrer noopener"
       target="_blank"

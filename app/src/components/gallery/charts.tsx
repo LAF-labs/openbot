@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
 import { activeLocale, t } from "@/lib/i18n";
 import { GalleryFrame } from "./frame";
-import { seriesColour } from "./palette";
+import { leadColour, seriesColour } from "./palette";
 import { GALLERY_CONFIRMATIONS } from "@shared/tools/gallery";
 
 const point = z.object({
@@ -92,10 +92,7 @@ function Legend({ items }: { items: { label: string; colour: string }[] }) {
     <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
       {items.map((item) => (
         <li className="flex items-center gap-1.5 text-xs" key={item.label}>
-          <span
-            className="size-2 shrink-0 rounded-[3px]"
-            style={{ background: item.colour }}
-          />
+          <span className={`size-2 shrink-0 rounded-[3px] ${item.colour}`} />
           <span className="text-muted-foreground">{item.label}</span>
         </li>
       ))}
@@ -124,7 +121,7 @@ export function BarChartCard({
       ) : (
         // Columns stretch to full row height so percentage bar heights use the chart area.
         <div className="flex items-stretch gap-2" style={{ height: HEIGHT }}>
-          {points.map((entry, index) => (
+          {points.map((entry) => (
             // Each column measures itself, and a label with no room gives way (`valueRoom`).
             <div
               className="@container/bar flex min-w-0 flex-1 flex-col items-center justify-end gap-1.5"
@@ -139,14 +136,13 @@ export function BarChartCard({
                   their natural height and only the bar itself scales. */}
               <div className="flex w-full flex-1 items-end">
                 <div
-                  className="w-full rounded-t-md transition-[height]"
+                  className={`w-full rounded-t-md transition-[height] ${leadColour("bg")}`}
                   style={{
                     // Normalize to the largest bar so similar values still show their differences.
                     height:
                       max > 0
                         ? `${Math.max((entry.value / max) * 100, 2)}%`
                         : "2%",
-                    background: seriesColour(index),
                   }}
                 />
               </div>
@@ -195,7 +191,8 @@ export function PieChartCard({
       ...entry,
       arc,
       offset: -travelled,
-      colour: seriesColour(index),
+      stroke: seriesColour(index, "stroke"),
+      swatch: seriesColour(index, "bg"),
     });
     travelled += arc;
   }
@@ -216,12 +213,12 @@ export function PieChartCard({
           >
             {slices.map((slice) => (
               <circle
+                className={slice.stroke}
                 cx={size / 2}
                 cy={size / 2}
                 fill="none"
                 key={slice.label}
                 r={radius}
-                stroke={slice.colour}
                 strokeDasharray={`${slice.arc} ${circumference - slice.arc}`}
                 strokeDashoffset={slice.offset}
                 strokeWidth={stroke}
@@ -237,8 +234,7 @@ export function PieChartCard({
             {slices.map((slice) => (
               <li className="flex items-center gap-2 text-sm" key={slice.label}>
                 <span
-                  className="size-2.5 shrink-0 rounded-[3px]"
-                  style={{ background: slice.colour }}
+                  className={`size-2.5 shrink-0 rounded-[3px] ${slice.swatch}`}
                 />
                 <span className="min-w-0 flex-1 truncate">{slice.label}</span>
                 <span className="tabular-nums text-muted-foreground">
@@ -322,20 +318,19 @@ function Plot({
           const points = line.values.map(
             (value, i) => `${xAt(i)},${yAt(value)}`,
           );
-          const colour = seriesColour(index);
           return (
             <g key={line.name}>
               {filled ? (
                 <polygon
-                  fill={colour}
+                  className={seriesColour(index, "fill")}
                   fillOpacity={0.14}
                   points={`${xAt(0)},${height - pad.bottom} ${points.join(" ")} ${xAt(line.values.length - 1)},${height - pad.bottom}`}
                 />
               ) : null}
               <polyline
+                className={seriesColour(index, "stroke")}
                 fill="none"
                 points={points.join(" ")}
-                stroke={colour}
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth={2}
@@ -368,7 +363,7 @@ function Plot({
         <Legend
           items={series.map((line, index) => ({
             label: line.name,
-            colour: seriesColour(index),
+            colour: seriesColour(index, "bg"),
           }))}
         />
       ) : null}
@@ -440,7 +435,7 @@ export function ProgressChartCard({
         <Empty />
       ) : (
         <ul className="space-y-3">
-          {points.map((entry, index) => {
+          {points.map((entry) => {
             const share =
               entry.target > 0
                 ? Math.min((entry.value / entry.target) * 100, 100)
@@ -455,11 +450,8 @@ export function ProgressChartCard({
                 </div>
                 <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-foreground/5">
                   <div
-                    className="h-full rounded-full"
-                    style={{
-                      width: `${share}%`,
-                      background: seriesColour(index),
-                    }}
+                    className={`h-full rounded-full ${leadColour("bg")}`}
+                    style={{ width: `${share}%` }}
                   />
                 </div>
               </li>

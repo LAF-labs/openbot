@@ -7,12 +7,13 @@ import { join } from "node:path";
  *
  * One accent, the same for everybody (`--app-accent` in `styles.css`). It was the Bot's — the
  * colour of its face, one of ten palettes, every one measured here — until 2026-10-09, when the Bot
- * stopped having a face. The neutral control is what is left, and a brand colour, when there is
- * one, is a change to four lines that these tests measure the moment it is made. They read
- * `styles.css` back — the values the browser will actually use, not a copy of them — and measure
- * every pair a screen puts together:
+ * stopped having a face; a near-black neutral until 2026-10-11; #2079e7 since (the owner), with a
+ * lighter #5b9df2 in the dark. It is four lines per theme, and these tests read `styles.css` back —
+ * the values the browser will actually use, not a copy of them — and measure every pair a screen
+ * puts together:
  *
- *  - the label on a filled control, and on its hover (4.5:1, it is text);
+ *  - the label on a filled control, and on its hover (4.5:1, it is text — but see the one
+ *    exception the decision made, at that test);
  *  - the same value as text — a link, the name of what the Bot is waiting on — on the page, the
  *    sidebar and a card, and on the accent's own 8% tint (4.5:1);
  *  - the value as a focus ring or a border against the page (3:1, WCAG 1.4.11).
@@ -126,9 +127,17 @@ function accent(theme: Theme) {
 
 describe("the accent, the same for everybody", () => {
   for (const theme of ["light", "dark"] as const) {
-    test(`${theme}: the label on a filled control reads at 4.5:1, hovered or not`, () => {
+    /*
+     * THE LIGHT FILL IS THE ONE PAIR UNDER 4.5, AND IT WAS CHOSEN KNOWING IT (the owner,
+     * 2026-10-11): white on #2079e7 is 4.24:1. The floor here is what that value measures, so a
+     * fill any lighter fails, and the label must be the whitest there is — the page's #fcfcfc on it
+     * is 4.13. Everything the choice left free still clears 4.5: the hover, and the dark fill.
+     */
+    test(`${theme}: the label on a filled control reads at 4.5:1, hovered or not — 4.2 on the light fill the owner chose`, () => {
       const { fill, hover, foreground } = accent(theme);
-      expect(contrast(fill, foreground)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(fill, foreground)).toBeGreaterThanOrEqual(
+        theme === "light" ? 4.2 : 4.5,
+      );
       expect(contrast(hover, foreground)).toBeGreaterThanOrEqual(4.5);
     });
 
@@ -138,9 +147,12 @@ describe("the accent, the same for everybody", () => {
       const short = Object.entries(grounds)
         .filter(([, ground]) => contrast(ink, ground) < 4.5)
         .map(([name]) => name);
-      // The accent's own 8% tint (`bg-primary/8`) — a selected row, the pill — is a surface too.
-      if (contrast(ink, mix(fill, 0.08, grounds.page)) < 4.5)
-        short.push("tint");
+      // The accent's own 8% tint (`bg-primary/8`) — a chosen row, the pill — is a surface too, and
+      // it is laid over each of the three: 설정's chosen row is the tint over the sidebar's grey.
+      for (const [name, ground] of Object.entries(grounds)) {
+        if (contrast(ink, mix(fill, 0.08, ground)) < 4.5)
+          short.push(`tint over ${name}`);
+      }
       expect(short).toEqual([]);
     });
 
@@ -149,7 +161,49 @@ describe("the accent, the same for everybody", () => {
         contrast(accent(theme).fill, surfaces(theme).page),
       ).toBeGreaterThanOrEqual(3);
     });
+
+    /*
+     * A CARD'S ONE THING IS IN THE ACCENT (2026-10-11): the bars of a chart, the fill of a progress
+     * bar and a line are marks on a card, and the composer's hairline while it is typed in is a
+     * mark on the composer's own fill — the lightest surface in the dark, where #2079e7 itself was
+     * 3.29 and the reason the dark accent is a lighter one.
+     */
+    test(`${theme}: as a mark it stands out 3:1 from a card and from the composer's fill`, () => {
+      const { fill } = accent(theme);
+      const values = palette(theme);
+      expect(contrast(fill, surfaces(theme).card)).toBeGreaterThanOrEqual(3);
+      expect(
+        contrast(fill, rgb(values["--sand-fill-elevated"] as string)),
+      ).toBeGreaterThanOrEqual(3);
+    });
+
+    test(`${theme}: a chart's first series is the accent, whatever the accent is`, () => {
+      const values = palette(theme);
+      expect(values["--chart-1"]).toBe("var(--app-accent)");
+      expect(resolved(values, "--chart-1")).toBe(
+        resolved(values, "--app-accent"),
+      );
+    });
   }
+
+  /*
+   * ONLY WHAT FLOATS CASTS A SHADOW (the owner, 2026-10-11): a menu, a popover, a dialog, the
+   * composer. A card in the conversation had a lift of its own (`shadow-card`) from 2026-09-24;
+   * it is a hairline and a fill now, and the token must not come back as a class somebody types.
+   */
+  test("a card casts no shadow: the sheet has two elevations, and the card's is not one", () => {
+    expect(CSS).not.toMatch(/--shadow-card\s*:/);
+    expect(CSS).not.toMatch(/--sand-shadow-card\s*:/);
+    expect(CSS).toMatch(/--shadow-popover\s*:/);
+    expect(CSS).toMatch(/--shadow-composer\s*:/);
+    const surface = readFileSync(
+      join(import.meta.dir, "../src/components/ui/card-surface.ts"),
+      "utf8",
+    );
+    expect(
+      /export const chatCard =\s*"([^"]+)"/.exec(surface)?.[1],
+    ).not.toMatch(/shadow/);
+  });
 
   /*
    * NO PALETTE PER BOT, AND NONE PUT BACK BEFORE THE FIRST PAINT (2026-10-09). The sheet mapped

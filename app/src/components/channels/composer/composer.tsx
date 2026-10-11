@@ -737,7 +737,7 @@ export function Composer({
              * reads as a raised surface rather than as a card.
              *
              * A 3px focus ring used to bloom around it. Grok focuses by darkening the hairline to
-             * `border/focus` and nothing else — on a control that is already the brightest thing on
+             * `border/focus` and nothing else (the accent since 2026-10-11, as every focus is) — on a control that is already the brightest thing on
              * the screen, a ring is noise, and it was the one place the app shouted.
              *
              * `pl-4` replaces the inset the removed `+` button used to provide.

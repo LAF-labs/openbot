@@ -91,7 +91,9 @@ describe("an ended browsing card's picture", () => {
     // Two rows, and the list already read once for both: no picture is drawn, and none asked for.
     expect(view.host.querySelectorAll("img")).toHaveLength(0);
     expect(asked.filter((path) => path.includes("/frames/"))).toEqual([]);
-    for (const fold of [...view.host.querySelectorAll('[class*="shadow-card"]')]
+    for (const fold of [
+      ...view.host.querySelectorAll('[class*="max-w-md"][class*="bg-card"]'),
+    ]
       .map(foldOf)
       .filter((fold) => fold !== null)) {
       await view.press(fold);

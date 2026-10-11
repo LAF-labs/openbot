@@ -20,8 +20,8 @@
  * indicator anywhere in the app. The app already spelled it both ways.
  *
  * THE RING IS THE ACCENT (`--ring` is `--app-accent`) — the Bot's colour from 2026-09-24, the
- * neutral control's since the Bot lost its face on 2026-10-09 — and that changed what carries the
- * contrast. The old ring was a 50% halo of a 40% grey — about 1.3:1 against the page,
+ * neutral control's from 2026-10-09, #2079e7 since 2026-10-11 (4.13:1 on the page; in the dark
+ * #5b9df2, 6.84:1) — and that changed what carries the contrast. The old ring was a 50% halo of a 40% grey — about 1.3:1 against the page,
  * a hint rather than an indicator. Now the part that must clear 3:1 is solid: the recoloured border
  * on a control, the whole inset ring on a row. The halo around a control is 35% of the same colour,
  * there to make the solid line findable, not to carry it.
@@ -37,6 +37,19 @@
  */
 export const focusRing =
   "outline-hidden focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/35";
+
+/**
+ * For a control FILLED with the accent — the default button, the send button — laid over the house
+ * ring, which it overrides.
+ *
+ * The house ring recolours the border and adds a 35% halo. On a fill that is already the accent the
+ * border has nothing to change to, and the halo alone is what is left: measured 2026-10-11, 1.6:1
+ * against the page in the light (it was 2.3 while the accent was near-black, and was short then
+ * too). So the ring here is solid, and stands off the fill by 2px of the page's own colour: the
+ * accent against the page is 4.13:1 in the light and 6.84 in the dark.
+ */
+export const focusRingOnFill =
+  "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
 /**
  * For a row inside a padded popup — a menu item, a combobox option, a listbox entry.
@@ -84,7 +97,10 @@ export const focusRingNested =
  * keyboard's own vocabulary, and a chosen-and-focused tile said it twice in two greys.
  *
  * So selection is a BORDER and a FILL, and focus keeps the rings. The two stack legibly: a hairline
- * in the foreground colour with a tinted ground, wrapped in the focus halo when it is also focused.
+ * in the accent with the accent's 8% tint for a ground and the word in its ink, wrapped in the
+ * focus halo when it is also focused. (The hairline was the foreground colour and the ground a
+ * grey until 2026-10-11, when the accent stopped being a near-black: what a person has chosen is in
+ * the accent, as what they can press is.)
  *
  * The element must already have a border box for this to land — `border` with any colour, which
  * every `Button` has (`border border-transparent`). On a bare `div` add `border` first, or the
@@ -106,4 +122,4 @@ export const focusRingNested =
  * computed, and so did every outline picker in the app. A class with both variants sorts after both.
  */
 export const selectedWhenPressed =
-  "aria-pressed:border-foreground aria-pressed:bg-accent aria-pressed:text-foreground dark:aria-pressed:border-foreground dark:aria-pressed:bg-accent";
+  "aria-pressed:border-primary aria-pressed:bg-primary/8 aria-pressed:text-link dark:aria-pressed:border-primary dark:aria-pressed:bg-primary/8";

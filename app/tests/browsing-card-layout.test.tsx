@@ -141,7 +141,9 @@ function read(card: Element) {
     detail: card.querySelector("p.text-sm:not(.font-medium)")?.textContent,
     buttons: buttons.map((button) => (button.textContent ?? "").trim()),
     filled: buttons
-      .filter((button) => button.className.includes("bg-primary"))
+      // The class itself: every button also names the accent's tint for when it is chosen
+      // (`aria-pressed:bg-primary/8`), which is not a fill.
+      .filter((button) => button.classList.contains("bg-primary"))
       .map((button) => (button.textContent ?? "").trim()),
     hasPictureBox: card.querySelector('[class*="aspect-[16/10]"]') !== null,
     text: card.textContent ?? "",
@@ -149,7 +151,7 @@ function read(card: Element) {
 }
 
 function cardsIn(host: HTMLElement) {
-  return [...host.querySelectorAll('[class*="shadow-card"]')];
+  return [...host.querySelectorAll('[class*="max-w-md"][class*="bg-card"]')];
 }
 
 describe("a browsing card", () => {

@@ -93,7 +93,7 @@ export function GoalRow({
     <button
       aria-pressed={isSelected}
       className={cn(
-        "flex w-full items-center gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:bg-accent aria-pressed:border-foreground/30 aria-pressed:bg-accent",
+        "flex w-full items-center gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:bg-accent aria-pressed:border-primary/50 aria-pressed:bg-primary/8",
         focusRing,
       )}
       data-goal={goal.id}

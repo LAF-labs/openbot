@@ -122,7 +122,7 @@ function MadePage() {
               className={cn(
                 "rounded-full border px-3 py-1.5 text-sm transition-colors",
                 isActive
-                  ? "border-foreground bg-foreground text-background"
+                  ? "border-primary bg-primary/8 text-link"
                   : "border-border bg-card hover:bg-muted/60",
                 focusRing,
               )}

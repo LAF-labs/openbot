@@ -138,7 +138,9 @@ async function stage() {
 
 /** The task's own surface: the last one drawn, under whatever question is asked above it. */
 function surfaceIn(host: HTMLElement): Element {
-  const surface = [...host.querySelectorAll('[class*="shadow-card"]')].at(-1);
+  const surface = [
+    ...host.querySelectorAll('[class*="max-w-md"][class*="bg-card"]'),
+  ].at(-1);
   if (!surface) throw new Error("no task drawn");
   return surface;
 }
@@ -527,7 +529,7 @@ describe("a browsing task that is happening", () => {
       </>,
     );
     const surfaces = () => [
-      ...view.host.querySelectorAll('[class*="shadow-card"]'),
+      ...view.host.querySelectorAll('[class*="max-w-md"][class*="bg-card"]'),
     ];
     const expandedOf = (surface: Element | undefined) =>
       (surface ? foldOf(surface) : null)?.getAttribute("aria-expanded") ?? null;

@@ -7,7 +7,7 @@ import { useConversation } from "@/lib/copilot/conversation";
 import type { GalleryComponent } from "@/lib/copilot/gallery-registry";
 import { activeLocale, t } from "@/lib/i18n";
 import { GalleryFrame } from "./frame";
-import { seriesColour } from "./palette";
+import { leadColour } from "./palette";
 import {
   ACTIVITY_REPORT_FUNCTIONS,
   GALLERY_CONFIRMATIONS,
@@ -203,16 +203,15 @@ function ActivityChart({
       title={title ?? t("Bot activity")}
     >
       <ul className="flex flex-col gap-2">
-        {rows.map((row, index) => (
+        {rows.map((row) => (
           <li className="flex items-center gap-3" key={row.bot}>
             <span className="w-40 shrink-0 truncate text-xs text-muted-foreground">
               {row.bot}
             </span>
             <span className="h-4 flex-1 overflow-hidden rounded bg-foreground/5">
               <span
-                className="block h-full rounded"
+                className={`block h-full rounded ${leadColour("bg")}`}
                 style={{
-                  backgroundColor: seriesColour(index),
                   // Normalize to the busiest Bot so relative activity stays readable across ranges.
                   width: `${most === 0 ? 0 : Math.round((row.actions / most) * 100)}%`,
                 }}

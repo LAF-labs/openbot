@@ -169,7 +169,7 @@ function UpdateControl({
                   buttonVariants({ size: "icon-lg", variant: "ghost" }),
                   isWithheld
                     ? "text-muted-foreground opacity-60"
-                    : "text-primary",
+                    : "text-foreground",
                 )}
                 onClick={handlePress}
                 type="button"
@@ -205,7 +205,7 @@ function UpdateControl({
           aria-hidden="true"
           className={cn(
             "size-4 shrink-0",
-            isWithheld ? "text-muted-foreground" : "text-primary",
+            isWithheld ? "text-muted-foreground" : "text-foreground",
           )}
         />
         <span className="min-w-0 flex-1 truncate text-left">{phrase}</span>

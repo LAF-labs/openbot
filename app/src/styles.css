@@ -124,7 +124,13 @@ html {
   --sand-text-on-color: #fcfcfc;
   --sand-border-weak: #17191c1a;
   --sand-border-default: #17191c26;
-  --sand-border-focus: #17191c66;
+  /*
+   * The composer's hairline while it is typed in — its whole focus indicator, since a ring around
+   * the brightest thing on the screen was noise (`composer.tsx`). The accent, as every other focus
+   * indicator is; it was a 40% grey of the ink while the accent was the ink. Said once: `.dark`
+   * changes the accent and this follows it.
+   */
+  --sand-border-focus: var(--app-accent);
   --sand-fill-primary: #17191c;
   --sand-fill-primary-hover: #33363b;
   --sand-fill-secondary: #71788217;
@@ -139,10 +145,11 @@ html {
   --sand-shadow-popover:
     0 10px 20px -3px #0000001a, 0 4px 6px -4px #0000001a, 0 0 0 1px #e4e4e40a;
   /*
-   * The third elevation: a card in the conversation. Lower than a popover — it is part of the page,
-   * not over it — and like the other two it is a hairline and nothing else in the dark.
+   * THERE WAS A THIRD, `--sand-shadow-card` (2026-09-24 to 2026-10-11): a card in the conversation
+   * was lifted a little. Only what floats over the page casts a shadow now — a menu, a popover, a
+   * dialog, the composer (the owner, 2026-10-11) — and a card is part of the page: a hairline and
+   * no lift.
    */
-  --sand-shadow-card: 0 1px 2px #17191c0a, 0 2px 6px -2px #17191c0d;
 
   /* ---- geometry, identical on web and desktop ---- */
   --sand-hairline: 0.5px;
@@ -163,23 +170,32 @@ html {
   /*
    * ---- the app's accent: one place ----
    *
-   * THE COLOUR OF EVERYTHING A PERSON CAN PRESS — a filled control, the send button, the focus
-   * ring, selection — and, as `-ink`, the colour of a link. The neutral near-black control, in both
-   * themes, for everybody.
+   * #2079E7 (the owner, 2026-10-11). THE COLOUR OF WHAT A PERSON PRESSES OR HAS CHOSEN — the
+   * filled control, the send button, the focus ring, the chosen tab, row or menu item, selection —
+   * and of the one thing a card is about: the figure, the fill of a progress bar, a chart's first
+   * series (`--chart-1`). As `-ink` it is the colour of a link and of every word written in it.
    *
-   * IT WAS THE BOT'S, from 2026-09-24 to 2026-10-09: the colour picked for its face, put on <html>
-   * as `data-accent` and mapped to four values per palette at the end of this sheet. The Bot has no
-   * face now, so there is no per-Bot colour; those blocks went, and so did the script in index.html
-   * that put the last one back before the first paint. A brand colour is undecided
-   * (docs/laf/redesign-2026-10.md, 미정 1). When there is one, it is these four lines — light here,
-   * dark in `.dark` — and `app/tests/accent-contrast.test.ts` measures whatever they say: a label
-   * on the fill and its hover at 4.5:1, the ink at 4.5:1 on every surface, a ring at 3:1 on the
-   * page.
+   * IT WAS THE BOT'S, from 2026-09-24 to 2026-10-09 (the colour of its face, ten palettes mapped
+   * from `data-accent` on <html>), and a near-black neutral from then until 2026-10-11, while the
+   * brand colour was undecided (docs/laf/redesign-2026-10.md, §1 "색과 깊이").
+   *
+   * FOUR LINES, light here and dark in `.dark`, and `app/tests/accent-contrast.test.ts` measures
+   * whatever they say. What was measured for these:
+   *
+   *  - The fill is the owner's value, as given. White on it is 4.24:1 — under the 4.5 a 13px label
+   *    wants, and the decision was made knowing it — so the label is pure white rather than the
+   *    page's #fcfcfc (4.13), and the hover is a step darker (5.00), never lighter.
+   *  - As a mark (a ring, a bar, a line) it is 4.13:1 on the page and 4.24 on a card: over the 3:1 a
+   *    mark needs.
+   *  - AS TEXT IT IS SHORT: 4.13 on the page, 3.96 on the sidebar's grey. So words are written in
+   *    `-ink`, the same hue (213°) a step darker: 5.33 on the page, 5.09 on the sidebar, 5.46 on a
+   *    card, and on the accent's own 8% tint 4.82 over the page and 4.62 over the sidebar — the
+   *    chosen row of 설정's rail, the pair that set the value (#1669d0 was 4.48 there).
    */
-  --app-accent: var(--sand-fill-primary);
-  --app-accent-hover: var(--sand-fill-primary-hover);
-  --app-accent-foreground: var(--sand-text-on-primary);
-  --app-accent-ink: var(--sand-text-accent);
+  --app-accent: #2079e7;
+  --app-accent-hover: #1a6dd6;
+  --app-accent-foreground: #ffffff;
+  --app-accent-ink: #1567cc;
 
   /* ---- the shadcn names every existing component already reads ---- */
   --background: var(--sand-bg-base);
@@ -207,11 +223,23 @@ html {
   --border: var(--sand-border-weak);
   --input: var(--sand-border-default);
   --ring: var(--app-accent);
-  --chart-1: #1084fe;
-  --chart-2: #00bca6;
-  --chart-3: #9159fe;
-  --chart-4: #ff9800;
-  --chart-5: #777777;
+  /*
+   * THE SERIES OF A CHART, IN ORDER (`components/gallery/palette.ts` reads them as classes). The
+   * first is the accent: a card has one thing it is about, and in a chart that is its first series.
+   * The other five are the palette the cards have always drawn in, so a second series keeps the
+   * colour it had. They were hex values in that file, the same in both themes, which is why the
+   * first could not follow the accent into the dark; and these five names held shadcn's stock
+   * palette, read by nothing.
+   *
+   * The fourth was a sky blue (#0ea5e9) 14° of hue from the accent: a first and a fourth series
+   * side by side read as one. It is a cyan now.
+   */
+  --chart-1: var(--app-accent);
+  --chart-2: #10b981;
+  --chart-3: #f59e0b;
+  --chart-4: #06b6d4;
+  --chart-5: #8b5cf6;
+  --chart-6: #ec4899;
   --radius: 10px;
   --sidebar: var(--sand-bg-subtle);
   --sidebar-foreground: var(--sand-text-primary);
@@ -226,8 +254,8 @@ html {
 .dark {
   /*
    * Dark is not the light palette darkened. The greys are alpha over the ground, the accent keeps
-   * its hue, and every shadow token goes fully transparent — depth in the dark theme comes from a
-   * hairline ring, never from a shadow that has nothing to fall on.
+   * its hue and is lighter, and depth is a hairline ring first — with a shadow under it since
+   * 2026-10-11, see the shadow tokens below.
    *
    * The ground is #0f1012, not #070707: text at #f2f3f5 on true black is the halation a long read
    * in a dark room makes worse, and a sidebar two steps up from black has somewhere to sit.
@@ -240,7 +268,6 @@ html {
   --sand-text-on-primary: #17191c;
   --sand-border-weak: #f2f3f51a;
   --sand-border-default: #f2f3f526;
-  --sand-border-focus: #f2f3f566;
   --sand-fill-primary: #f2f3f5;
   --sand-fill-primary-hover: #d4d6da;
   --sand-fill-secondary: #8a90992e;
@@ -250,18 +277,34 @@ html {
   --sand-fill-bubble-user: #3a3d44;
   --sand-fill-accent: #1084fe;
   --sand-text-accent: #459ffe;
-  --sand-shadow-composer: 0 0 0 var(--sand-hairline) var(--sand-border-weak);
-  --sand-shadow-popover: 0 0 0 var(--sand-hairline) var(--sand-border-default);
-  --sand-shadow-card: 0 0 #0000;
+  /*
+   * A HAIRLINE AND, SINCE 2026-10-11, A SHADOW UNDER IT. The dark elevations were the hairline
+   * alone, on the reasoning that a shadow has nothing to fall on against a near-black ground. What
+   * floats casts a shadow now, in both themes (the owner), and on #0f1012 a black one is still seen
+   * where it crosses a card or a line of text — it is the hairline that draws the edge.
+   */
+  --sand-shadow-composer:
+    0 2px 10px -2px #00000066,
+    0 0 0 var(--sand-hairline) var(--sand-border-weak);
+  --sand-shadow-popover:
+    0 12px 28px -6px #00000099, 0 4px 8px -4px #00000066,
+    0 0 0 var(--sand-hairline) var(--sand-border-default);
 
   --destructive: #ff5667;
   --success: #38d591;
   --warning: #ffaf38;
-  --chart-1: #459ffe;
-  --chart-2: #38cbba;
-  --chart-3: #a97efe;
-  --chart-4: #ffaf38;
-  --chart-5: #b7b7b7;
+
+  /*
+   * THE ACCENT IN THE DARK: the same hue (213°), lighter. #2079e7 itself is 4.01:1 on a dark card
+   * and 3.29 on the composer's fill — a mark, barely, and no colour for a word. #5b9df2 is 6.84 on
+   * the page, 6.12 on a card and 5.02 on the composer's fill, so it is the ink too. It is too light
+   * to carry white (2.78), so the label on it is the page's near-black (6.84), as the label on the
+   * neutral control was. The hover is a step darker, as in the light.
+   */
+  --app-accent: #5b9df2;
+  --app-accent-hover: #4a92ef;
+  --app-accent-foreground: #0f1012;
+  --app-accent-ink: #5b9df2;
 }
 
 * {
@@ -353,6 +396,7 @@ body {
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
+  --color-chart-6: var(--chart-6);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
@@ -454,15 +498,16 @@ body {
    * `ring-1 ring-foreground/10`, which is three declarations approximating one token. It also broke
    * the theme rule — in dark, depth here is a hairline ring and NEVER a shadow, because a shadow has
    * nothing to fall on against #070707, and the token already encodes exactly that switch while
-   * `shadow-md` does not. Naming them makes `shadow-popover` and `shadow-composer` the whole answer.
+   * `shadow-md` does not (a hairline was the whole of it until 2026-10-11; it is still what draws the
+   * edge). Naming them makes `shadow-popover` and `shadow-composer` the whole answer.
    *
-   * A THIRD SINCE 2026-09-24, `shadow-card`: the browsing, approval, help and routine cards were four
-   * surfaces with four borders and no lift, and a card that sits in the conversation wants to read as
-   * a thing the Bot handed over. Same rule — a hairline and nothing else in the dark.
+   * AND ONLY THESE TWO (the owner, 2026-10-11): what floats over the page casts a shadow — a menu,
+   * a popover, a dialog, the composer — and nothing else does. There was a third from 2026-09-24,
+   * `shadow-card`, a small lift under a card in the conversation; a card is part of the page, and
+   * is a hairline and a fill.
    */
   --shadow-popover: var(--sand-shadow-popover);
   --shadow-composer: var(--sand-shadow-composer);
-  --shadow-card: var(--sand-shadow-card);
 
   /* The sidebar's width, as `w-sidebar`, so the column carries no inline style. */
   --spacing-sidebar: var(--sand-sidebar-width);
