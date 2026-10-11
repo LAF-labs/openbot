@@ -10,6 +10,13 @@
  * begins is the first to carry it; a reminder never names it, so no conversation's cache breaks for
  * it in the middle of a day.
  *
+ * THE MAIN CONVERSATION'S DAY ONLY, NEVER A PROJECT'S (`docs/laf/redesign-2026-10.md` §3: "프로젝트에
+ * 매일 밤 드리밍을 돌리지 않는다"). The close runs once per kept conversation and the guidance is the
+ * Bot's, one list; each reading REPLACES the last (`guidance-store.ts replaceDream`), so a project's
+ * close — a day about one errand, in which no habit shows — handed to the dream would retire what
+ * the main conversation taught that morning, and the Bot would carry tomorrow whichever
+ * conversation happened to close last. A project is refused here, by the thread it closes.
+ *
  * WHAT IT MAY READ AND WRITE. The owner's and the Bot's words only (`dialogueOf`): a page the Bot
  * read is no source of how the owner likes to work, and leaving results out keeps a page from
  * writing itself into tomorrow's layer. It writes declarative lines about the owner, and each one is
@@ -24,7 +31,7 @@ import {
 } from "../../../shared/notebook";
 import { askModel, jsonFrom, type ModelCall } from "../computer/model-call";
 import type { Database } from "../db/client";
-import { agentProfiles } from "../db/schema";
+import { agentProfiles, channels, channelThreads } from "../db/schema";
 import { log } from "../log";
 import type { GuidanceStore } from "./guidance-store";
 import { recordMemoryReceipt } from "./memory-receipts";
@@ -75,9 +82,30 @@ function ownerChars(dialogue: string): number {
 
 export type Dream = (input: {
   botId: string;
+  /** The conversation whose day closed: a project's is never dreamed on. */
+  threadId: string;
   dialogue: string;
   day: string;
 }) => Promise<void>;
+
+/**
+ * Whether a thread is a project's (`channels.kind`). Asked of the database rather than of the
+ * registry in memory (`channels/thread-projects.ts`): the dream runs once a day, and one row then is
+ * cheaper than wiring the registry through the conversation store for a reading that never waits.
+ * A thread with no channel is nobody's project, as that registry answers too.
+ */
+async function isProjectThread(
+  database: Database,
+  threadId: string,
+): Promise<boolean> {
+  const [row] = await database
+    .select({ kind: channels.kind })
+    .from(channelThreads)
+    .innerJoin(channels, eq(channels.id, channelThreads.channelId))
+    .where(eq(channelThreads.threadId, threadId))
+    .limit(1);
+  return row?.kind === "project";
+}
 
 export function createDream(options: {
   database: Database;
@@ -86,7 +114,8 @@ export function createDream(options: {
   timeoutMs?: number;
 }): Dream {
   const { database, guidance } = options;
-  return async ({ botId, dialogue, day }) => {
+  return async ({ botId, threadId, dialogue, day }) => {
+    if (await isProjectThread(database, threadId)) return;
     const [profile] = await database
       .select({ ownerUserId: agentProfiles.ownerUserId })
       .from(agentProfiles)
