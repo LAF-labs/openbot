@@ -17,7 +17,7 @@ import {
   chatCardMeta,
   chatCardPadding,
 } from "@/components/ui/card-surface";
-import { focusRing } from "@/components/ui/focus";
+import { focusRingBare } from "@/components/ui/focus";
 import { activeLocale, t } from "@/lib/i18n";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
@@ -187,7 +187,7 @@ export function WeatherCard({ result }: { result: string }) {
                 <>
                   {" · "}
                   <Link
-                    className={`underline underline-offset-2 hover:text-foreground ${focusRing}`}
+                    className={`underline underline-offset-2 hover:text-foreground ${focusRingBare}`}
                     hash="location"
                     to="/settings/shop"
                   >

@@ -8,7 +8,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { focusRing } from "@/components/ui/focus";
+import { focusRingBare } from "@/components/ui/focus";
 import { t } from "@/lib/i18n";
 import {
   categoryLabel,
@@ -124,7 +124,7 @@ export function IdeaCard({
 
   const linkClass = cn(
     "flex min-w-0 flex-1 items-center gap-3 rounded-xl p-3 pr-11 text-left transition-colors hover:bg-accent",
-    focusRing,
+    focusRingBare,
   );
 
   return (

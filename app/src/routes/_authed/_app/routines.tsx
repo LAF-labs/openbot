@@ -33,7 +33,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { focusRing } from "@/components/ui/focus";
+import { focusRingBare } from "@/components/ui/focus";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -231,7 +231,7 @@ function RoutineRow({
         <button
           aria-expanded={showRuns}
           // The house ring. It had none at all, so tabbing across a list of routines went dark.
-          className={`flex min-w-0 flex-1 flex-col items-start gap-0.5 rounded-md text-left ${focusRing}`}
+          className={`flex min-w-0 flex-1 flex-col items-start gap-0.5 rounded-md text-left ${focusRingBare}`}
           data-routine-row
           onClick={() => setShowRuns((open) => !open)}
           // What the chevron means, for a pointer that rests on the row.

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { focusRing } from "@/components/ui/focus";
+import { focusRingBare } from "@/components/ui/focus";
 import { isProject } from "@/lib/channels/projects";
 import { channelListQueryOptions } from "@/lib/channels/queries";
 import { t } from "@/lib/i18n";
@@ -59,7 +59,7 @@ export function ScreenSwitch() {
     >
       <Link
         aria-current={isOnChat ? "page" : undefined}
-        className={cn(PART, isOnChat ? ON : OFF, focusRing)}
+        className={cn(PART, isOnChat ? ON : OFF, focusRingBare)}
         data-screen="chat"
         to="/"
       >
@@ -67,7 +67,7 @@ export function ScreenSwitch() {
       </Link>
       <Link
         aria-current={isOnProject ? "page" : undefined}
-        className={cn(PART, isOnProject ? ON : OFF, focusRing)}
+        className={cn(PART, isOnProject ? ON : OFF, focusRingBare)}
         data-screen="projects"
         to="/projects"
       >

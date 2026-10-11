@@ -31,7 +31,7 @@ import { useIsOnline } from "@/components/layout/connection-notice";
 import { LiveRegion } from "@/components/layout/live-region";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
-import { focusRing } from "@/components/ui/focus";
+import { focusRingBare } from "@/components/ui/focus";
 import {
   MessageContent,
   MessageFooter,
@@ -542,7 +542,7 @@ function Queued({
              */
             <button
               aria-label={t("Stop the current job and send: {text}", { text })}
-              className={`ml-2 font-medium text-foreground underline underline-offset-2 ${focusRing}`}
+              className={`ml-2 font-medium text-foreground underline underline-offset-2 ${focusRingBare}`}
               onClick={onStopForThis}
               type="button"
             >
@@ -558,7 +558,7 @@ function Queued({
                * because the bubble it sits under is the answer for everybody who can see it.
                */
               aria-label={t("Remove queued message: {text}", { text })}
-              className={`ml-2 underline underline-offset-2 hover:text-foreground ${focusRing}`}
+              className={`ml-2 underline underline-offset-2 hover:text-foreground ${focusRingBare}`}
               onClick={onRemove}
               type="button"
             >

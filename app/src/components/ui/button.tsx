@@ -55,8 +55,33 @@ const buttonVariants = cva(
           "bg-secondary text-secondary-foreground not-disabled:hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
         ghost:
           "not-disabled:hover:bg-muted not-disabled:hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:not-disabled:hover:bg-muted/50",
+        /*
+         * The red as WORDS on its own wash, so the wash is thin: MEASURED 2026-10-11 against the
+         * coral of the dark (#ff5667), a 20% wash on a card left the label at 4.19:1, and 30%
+         * under the pointer at 3.52. At 12% it is 4.74 on a card and 5.39 on the page (the light's
+         * 10% of #c21d2e is 5.07 and 4.95). The hover is the light's 20% in both themes, 4.2 on a
+         * card — under 4.5 while the pointer is on it, and left so: `accent-contrast.test.ts`
+         * pins the resting wash.
+         */
         destructive:
-          "bg-destructive/10 text-destructive not-disabled:hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:not-disabled:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
+          "bg-destructive/10 text-destructive not-disabled:hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/12 dark:not-disabled:hover:bg-destructive/20 dark:focus-visible:ring-destructive/40",
+        /*
+         * THE PRESS THAT CANNOT BE TAKEN BACK — 삭제 in a confirm, 모두 멈추기 — is filled, because
+         * the tinted `destructive` above is a pale wash that reads as a button that cannot be
+         * pressed. Two dialogs wrote this fill by hand over `variant="destructive"`, and in the
+         * dark it never arrived: `cn()` replaces `bg-destructive/10` with `bg-destructive`, but
+         * `dark:bg-destructive/20` is another group to tailwind-merge and stayed, so the dark fill
+         * was the 20% wash with the page's near-black ink laid on it — MEASURED 2026-10-11, 1.2:1,
+         * the button in the delete-project dialog a maroon smudge. As a variant the dark fill is
+         * declared once and nothing is merged.
+         *
+         * The label is white on the light red (#c21d2e, 6.1:1) and the page's own near-black on
+         * the dark coral (#ff5667, where white is 3.0:1 and #0f1012 is 6.5), the trick the
+         * accent's label plays in the dark. `app/tests/accent-contrast.test.ts` reads both back.
+         * Focus is the accent's standoff ring (`focusRingOnFill`): a red halo on a red fill is the
+         * 1.6:1 that ring exists to avoid.
+         */
+        "destructive-fill": `bg-destructive text-white not-disabled:hover:bg-[color-mix(in_oklch,var(--destructive),black_12%)] dark:bg-destructive dark:text-background dark:not-disabled:hover:bg-[color-mix(in_oklch,var(--destructive),black_8%)] ${focusRingOnFill}`,
         link: "text-link underline-offset-4 not-disabled:hover:underline",
       },
       size: {

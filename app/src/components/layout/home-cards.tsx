@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/card-surface";
 import { ToolRenderBoundary } from "@/components/channels/tool-boundary";
 import { cardToDraw, GalleryCard } from "@/components/gallery/gallery-card";
-import { focusRing } from "@/components/ui/focus";
+import { focusRing, focusRingBare } from "@/components/ui/focus";
 import { requestJump } from "@/lib/channels/jump";
 import { feedQueryOptions, feedUnseenQueryOptions } from "@/lib/feed/queries";
 import { goalsQueryOptions } from "@/lib/goals/queries";
@@ -176,7 +176,7 @@ export function HomeCards({
             <li key={is}>
               <div className="flex flex-col gap-1" data-home-card={is}>
                 <Link
-                  className={cn(PART, focusRing)}
+                  className={cn(PART, focusRingBare)}
                   data-home-card-page
                   to={to}
                 >
@@ -185,7 +185,7 @@ export function HomeCards({
                 {thing?.kind === "made" ? (
                   <Link
                     aria-label={view.line}
-                    className={cn("block rounded-xl", focusRing)}
+                    className={cn("block rounded-xl", focusRingBare)}
                     data-home-card-thing
                     onClick={() =>
                       requestJump({
@@ -219,7 +219,7 @@ export function HomeCards({
                 data-home-card={is}
               >
                 <Link
-                  className={cn(PART, focusRing)}
+                  className={cn(PART, focusRingBare)}
                   data-home-card-page
                   to={to}
                 >
@@ -227,7 +227,7 @@ export function HomeCards({
                 </Link>
                 {thing.kind === "goal" ? (
                   <Link
-                    className={cn(PART, "flex flex-col gap-0.5", focusRing)}
+                    className={cn(PART, "flex flex-col gap-0.5", focusRingBare)}
                     data-home-card-thing
                     search={{ goal: thing.id }}
                     to="/goals"
@@ -236,7 +236,7 @@ export function HomeCards({
                   </Link>
                 ) : (
                   <Link
-                    className={cn(PART, "flex flex-col gap-0.5", focusRing)}
+                    className={cn(PART, "flex flex-col gap-0.5", focusRingBare)}
                     data-home-card-thing
                     // Left for the conversation to take when it is drawn: which row to show.
                     onClick={() =>

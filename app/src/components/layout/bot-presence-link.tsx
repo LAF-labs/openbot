@@ -6,7 +6,7 @@ import {
   PILL_TONES,
 } from "@/components/channels/bot-header";
 import { usePresence } from "@/components/channels/use-presence";
-import { focusRing } from "@/components/ui/focus";
+import { focusRingBare } from "@/components/ui/focus";
 import { conversationOf, useMyBots } from "@/lib/agents/my-bots";
 import type { AgentProfile } from "@/lib/agents/queries";
 import { channelListQueryOptions } from "@/lib/channels/queries";
@@ -72,7 +72,7 @@ function PresenceOf({
       aria-label={`${agent.name} · ${word}. ${t("Conversation")}`}
       className={cn(
         "flex h-8 min-w-0 shrink items-center gap-1.5 rounded-lg px-2 transition-colors hover:bg-accent",
-        focusRing,
+        focusRingBare,
       )}
       data-bot-presence
       {...destination}
