@@ -2799,6 +2799,12 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * six (to 2267), in `today-usage.test.ts` — four shares that are a whole hundredth and were read
  * one under, one in dollars, and the notice at the 80% the meter says.
  *
+ * RAISED 2026-10-11 FOR THE ONE JOIN THAT READS A PERSON'S CONVERSATIONS: `server` by seven (to
+ * 4522), in `conversations-of.integration.test.ts` — the join does not return a conversation marked
+ * for deletion and does when told to (two); the Bot's main conversation, the roster read by id and
+ * the roster listed each keep that (three); the project limit's count and the deletion each say
+ * `includingDeleting` and see one (two).
+ *
  * RAISED 2026-10-11 FOR THE SPELLINGS OF ANOTHER PROJECT'S FILE (the review of the file-scope
  * rule), `root` from 1295 to 1416, in files that were there. Twelve in `file-scope.test.ts`: a
  * `..` in a path is no name of the folder's, so the rule refuses it and places nothing (ten) —
@@ -2994,7 +3000,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4515, roots: ["server"] },
+  { name: "server", floor: 4522, roots: ["server"] },
   { name: "app", floor: 2421, roots: ["app"] },
   {
     name: "agent-computer",
