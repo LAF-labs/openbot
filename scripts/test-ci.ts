@@ -2841,7 +2841,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * area, legend and all), a donut the same, and no mark with a colour written on the element. 5 and
  * 6 is 11; 2391 and 11 is 2402.
  *
- * RAISED 2026-10-11 FOR WHAT AN OWNER SAID IN PASSING, `root` from 1440 to 1582, all in one new
+ * RAISED 2026-10-11 FOR WHAT AN OWNER SAID IN PASSING, `root` from 1440 to 1612, all in one new
  * file, `tests/eval-memory-days.test.ts` — the half of `eval:memory-days` that needs no model.
  * Eighty-eight on the table: seven a fact for twelve facts (the owner's message holds the fact and
  * never asks to be remembered, a correction has a morning and an aside none, the scripted answer
@@ -2852,7 +2852,12 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * on the counts — eight of those from the review of pull request 183 (a clock written with a
  * colon as the value, as the old value and as neither; its minutes; the same clock in a summary;
  * a line that holds the values and not what they are about). 88 and 54 is 142; 1440 and 142 is
- * 1582.
+ * 1582. Thirty more from its second review: two on the day the fact is said (a busy arm's first
+ * day is a busy day, a quiet one is as it was), eight on a written line that lacks what a price is
+ * the price of, the days a schedule holds on, or how many jars; eighteen answers (hours on other
+ * days, a list of weekdays in shorthand, "5일 전에", a price asked per kilo, one jar for three, a
+ * question that asks for nothing), one on what asking for the fact is, and one that prints a
+ * saved report in a process with no model key. 1582 and 30 is 1612.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -2911,7 +2916,7 @@ const GROUPS: readonly {
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 1582, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 1612, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
