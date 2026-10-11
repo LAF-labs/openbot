@@ -3021,6 +3021,16 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * amounts — each red with the clause deleted); five known limits of the whole-token clause
  * pinned as what it does today. 4 and 6 is 10, and 5 is 15; 4515 and 15 is 4530.
  *
+ * RAISED 2026-10-12 FOR THE NUMBER READ IN EVERY WRITING: `server` from 4530 to 4553, twenty-three
+ * in `memory-forgetting.test.ts` (Codex's first review of pull request 204). Sixteen dated lines
+ * that carry the fact in another writing and go — a price with two particles stacked, a phone
+ * with and without its hyphens, with dots, with spaces, a business number, a hyphen range, 그램
+ * for g and 킬로 and ㎏ for kg, 짜리/씩/정도 after the measure, a number glued to its word,
+ * full-width digits — each red with the piece it names reverted; three identifiers that are one
+ * whole value and stay (an account sharing a group with the phone, an order number, a date);
+ * four known limits pinned (만/천 words, a two-group identifier, 개 against EA). 16 and 3 is 19,
+ * and 4 is 23; 4530 and 23 is 4553.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
