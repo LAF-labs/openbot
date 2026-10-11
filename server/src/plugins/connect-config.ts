@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import type { DeploymentAdmission } from "../auth/admission";
 import type { DeploymentConfig } from "../config";
 import type { Database } from "../db/client";
 import { users } from "../db/schema";
@@ -17,6 +18,16 @@ export function connectConfigFor(input: {
   config: Pick<DeploymentConfig, "auth" | "keyEncryptionKey" | "connectors">;
   database: Database;
   sharedClient: SharedClientLookup;
+  /**
+   * Who the deployment still lets act (`auth/admission.ts`), the one reading of the sign-in list
+   * every unattended path asks. The callback is one: it carries no session, and until 2026-10-11
+   * this module read the list on its own — `SIGN_IN_ALLOWED_EMAILS` alone, as written, compared
+   * to the stored address by `includes`. Two ways that disagreed with the door: an address the
+   * line spells with a capital never matched the lowercase row (the owner's own consent refused),
+   * and a production list naming the owner only on `INITIAL_ADMIN_EMAILS` read as no list at all
+   * (anybody's consent accepted).
+   */
+  admission: Pick<DeploymentAdmission, "admitsPerson">;
 }): ConnectConfig | undefined {
   const { auth, connectors } = input.config;
   /*
@@ -30,18 +41,19 @@ export function connectConfigFor(input: {
     appUrl: auth.trustedOrigins[0],
     encryptionKey: input.config.keyEncryptionKey,
     /*
-     * This fork has no removal ledger, so "still has access" is what sign-in itself would answer:
-     * the user row exists, and the address is still on the allow-list when one is configured.
+     * "Still has access" is two facts: the row is still there — a person who left by their own
+     * hand inside the state's ten minutes must not get a fresh token written for them, whatever
+     * the list says (with the door open, the list says yes to any id) — and the deployment still
+     * admits them, asked of the same admission the routines and the outbox ask.
      */
     personHasAccess: async (userId: string) => {
       const [person] = await input.database
-        .select({ email: users.email })
+        .select({ id: users.id })
         .from(users)
         .where(eq(users.id, userId))
         .limit(1);
       if (!person) return false;
-      const allowed = auth.allowedEmails ?? [];
-      return allowed.length === 0 || allowed.includes(person.email);
+      return input.admission.admitsPerson(userId);
     },
     sharedClient: input.sharedClient,
     /*
