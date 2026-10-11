@@ -2908,6 +2908,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * browser's, the two runs handed thinking held to no tool at all). By hand: 6 and 2 is 8, and 1
  * is 9, and 1 is 10; 4421 and 10 is 4431. 8 and 8 is 16, and 42 is 58; 1647 and 58 is 1705.
  *
+ * RAISED 2026-10-11 FOR THE EMPTY CARD FRAME, `app` by eighteen (to 2421). Seventeen in
+ * `server-run-step-line.test.tsx`, on `CardCall` with the gallery's own cards and schemas: five
+ * complete calls the schema refuses and the renderer draws (a seventh figure, a tone outside the
+ * four, a record with no fields, an item with no `done`, a value written as a word) are still the
+ * card; ten with nothing in them (`{}` three times, two of them as the dev rows held it, a blank
+ * title and no items, a list, a word, nothing, a field the card does not show, a figure with
+ * nothing in it, a field that is blank twice) draw nothing at all; two for a call still streaming
+ * in — drawn from whatever has arrived, and a bar chart drawn while its point has no label yet. One
+ * in `home-cards-frame.test.tsx`: 홈's boundary is a new one for a new made thing, so the card after
+ * one that threw is drawn — the real `HomeCards`, with the gallery's gate stood in for, and the test
+ * fails with the key taken out. 2403 and 18 is 2421.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -2937,7 +2949,7 @@ const GROUPS: readonly {
   processes?: number;
 }[] = [
   { name: "server", floor: 4431, roots: ["server"] },
-  { name: "app", floor: 2403, roots: ["app"] },
+  { name: "app", floor: 2421, roots: ["app"] },
   {
     name: "agent-computer",
     /*
