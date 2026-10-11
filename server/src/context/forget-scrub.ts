@@ -81,18 +81,127 @@ function numbersOf(text: string): string[] {
 }
 
 /**
- * A dated summary line: `- 9/21: …`, `- 9/14~9/16: …`, `- 2026-09-21: …`. The summary's other
- * lines are its standing facts, one fact a line (`day-close.ts`, `DAY_SUMMARY_SYSTEM`).
+ * A dated summary line: `- 9/21: …`, `- 9/14~9/16: …`, `- 2026-09-21: …`, `- 9.21: …`,
+ * `- (9/21) …`, `1. 9/21: …`. Not `- 3/4분기: …` or `- 3.5kg: …`, where the figure is part of a
+ * word. The summary's other lines are its standing facts (`day-close.ts`, `DAY_SUMMARY_SYSTEM`).
  */
-const isDated = (line: string) =>
-  /^\s*[-*•]?\s*(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2}|\d{1,2}월\s?\d{1,2}일)/.test(
+export const isDated = (line: string) =>
+  /^\s*(?:\d+[.)]\s*)?[-*•]?\s*\(?(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[./]\d{1,2}|\d{1,2}월\s?\d{1,2}일)(?![\d\p{L}])/u.test(
     line,
   );
 
+/** Every month, every week: a word every standing fact of a kind shares, so it names none. */
+const RECURRENCE = new Set([
+  "매달",
+  "매월",
+  "매주",
+  "매일",
+  "매년",
+  "다달이",
+  "달마다",
+  "주마다",
+  "월마다",
+  "해마다",
+]);
+
+/** Said with a particle of its own before the sentence's — "지은이는" — a name needs two strips. */
+const bareOf = (word: string) => {
+  const shorter = word.replace(PARTICLE, "");
+  return shorter.length >= 2 ? shorter : word;
+};
+
+/** Weekday shorthand read as the weekday: `화·목`, `화, 목`, `월/수/금` → 화요일 …; not the 일 of 5일. */
+const weekdaysSpelled = (text: string) =>
+  text.replace(
+    /(?<![\p{L}\d])([월화수목금토일])(?=\s?[·,/]\s?[월화수목금토일]|[\s,.)]|$)/gu,
+    "$1요일",
+  );
+
+/** The fact's tokens as said, commas inside a number removed, in order. */
+const tokensOf = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/(\d),(?=\d{3})/g, "$1")
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+
+/**
+ * THE STANDING-LINE ARM. A standing line is terse — a head and a value, `- 지은(포장 알바): 매주
+ * 화·목 출근` — so it holds few of a notebook line's words: two of the six of "포장 알바 지은이는
+ * 화요일과 목요일에만 출근한다.", under the ratio in `lineCarries`, and a forgotten standing fact
+ * stayed in what the Bot is given on the rule arm, the floor this file promises when the judge
+ * model is unavailable (review of pull request 196). But a line of the same kind shares words with
+ * it that name nothing — a role (포장 알바), a recurrence (매달), the digits of a price or a day
+ * (18,000원에 → "18"; 5일 inside 25일) — and a first arm that took any two words erased unrelated
+ * standing facts: 민수's Saturdays for 지은's Tuesdays, a VAT date for the 정산 deadline (second
+ * review of the same pull request). So the rule reads the line as `head: body`:
+ *
+ *   - the head holds one of the fact's words (any), so the line is about something the fact names;
+ *   - the body holds a word of what the fact SAYS about its subject — a predicate word, not one of
+ *     the subject phrase up to its 은/는/이/가, since "포장 알바" is a role two lines can share;
+ *   - and either three of the fact's words are in the line altogether, or a number of the fact's is
+ *     in the body as a whole token (5일, never 25일; 18000원, never 11000원).
+ *
+ * Digit-led words count only as that whole token; recurrence words never count; weekday shorthand
+ * is read as the weekday; a word counts with a second particle off (지은이 → 지은). A line with no
+ * colon is its own head and body. A standing line that groups two people's days loses both —
+ * forgetting errs that way, as the head of this file says.
+ */
+function standingLineCarries(line: string, fact: string): boolean {
+  const said = tokensOf(fact);
+  if (said.length === 0) return false;
+  // The subject phrase: the tokens up to and including the first one marked 은/는/이/가/께서.
+  let subjectEnd = said.findIndex((token) => /(은|는|이|가|께서)$/.test(token));
+  if (subjectEnd < 0) subjectEnd = -1;
+  const word = (token: string) => token.replace(PARTICLE, "");
+  const usable = (token: string) =>
+    token.length >= 2 && !COMMON.has(token) && !RECURRENCE.has(token);
+  const numbers = new Set(
+    said.map(word).filter((token) => /^\d/.test(token) && usable(token)),
+  );
+  const subject = new Set(
+    said
+      .slice(0, subjectEnd + 1)
+      .map(word)
+      .filter((token) => usable(token) && !/^\d/.test(token)),
+  );
+  const predicate = new Set(
+    said
+      .slice(subjectEnd + 1)
+      .map(word)
+      .filter((token) => usable(token) && !/^\d/.test(token)),
+  );
+  const colon = line.indexOf(":");
+  const headText = weekdaysSpelled(
+    flat(colon >= 0 ? line.slice(0, colon) : line),
+  );
+  const bodyText = weekdaysSpelled(
+    flat(colon >= 0 ? line.slice(colon + 1) : line),
+  );
+  const holds = (text: string, token: string) =>
+    text.includes(token) || text.includes(bareOf(token));
+  const headWords = [...subject, ...predicate].filter((token) =>
+    holds(headText, token),
+  );
+  const bodyWords = [...predicate].filter((token) => holds(bodyText, token));
+  const bodyTokens = new Set(tokensOf(bodyText).map(word));
+  const bodyNumber = [...numbers].some(
+    (number) => bodyTokens.has(number) || bodyTokens.has(bareOf(number)),
+  );
+  if (headWords.length === 0) return false;
+  if (bodyWords.length === 0 && !bodyNumber) return false;
+  const all = new Set([
+    ...headWords,
+    ...bodyWords,
+    ...[...subject].filter((token) => holds(bodyText, token)),
+  ]);
+  return all.size >= 3 || bodyNumber;
+}
+
 /**
  * THE RULE: whether one summary line carries one forgotten fact. The fact word for word, any of
- * its numbers, or most of its distinctive words (two at least) in the line — or, on a standing
- * line, two of them.
+ * its numbers, or most of its distinctive words (two at least) in the line — a dated line's test,
+ * unchanged; a standing line is also read as `head: body` (`standingLineCarries`).
  */
 export function lineCarries(line: string, fact: string): boolean {
   const here = flat(line);
@@ -107,27 +216,7 @@ export function lineCarries(line: string, fact: string): boolean {
   if (found >= Math.min(2, words.length) && found / words.length >= 0.6) {
     return true;
   }
-  /*
-   * A STANDING LINE IS TERSE — a head and a value, `- 지은(포장 알바): 매주 화·목 출근` — so it holds
-   * few of a notebook line's words: three of the six of "포장 알바 지은이는 화요일과 목요일에만
-   * 출근한다.", under the ratio above, and a forgotten standing fact stayed in what the Bot is
-   * given on the rule arm, the floor this file promises when the judge model is unavailable
-   * (review of pull request 196). A standing line holds one fact about one subject, so two of the
-   * fact's distinctive words in it are the fact. A dated line keeps the ratio: it carries several
-   * things of its day at once, and two words in it may belong to another of them. A standing line
-   * that groups two people's days loses both — forgetting errs that way.
-   *
-   * A name is said with a particle of its own before the sentence's — "지은이는" — and one strip
-   * leaves "지은이", which the standing line's bare "지은" does not hold. So here a word also counts
-   * with a second particle off, where two letters remain (never "사과" to "사").
-   */
-  if (isDated(line)) return false;
-  const bare = words.filter((word) => {
-    if (here.includes(word)) return true;
-    const shorter = word.replace(PARTICLE, "");
-    return shorter.length >= 2 && shorter !== word && here.includes(shorter);
-  }).length;
-  return bare >= 2;
+  return !isDated(line) && standingLineCarries(line, fact);
 }
 
 /** The lines a scrub looks at: a summary is written as bullet lines, one fact or event each. */
