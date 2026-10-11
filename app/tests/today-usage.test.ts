@@ -154,6 +154,32 @@ describe("the share of today used", () => {
     ).toBe(100);
   });
 
+  /*
+   * 290,000 of a million is 0.29, and 0.29 × 100 is 28.999999999999996 in a double: floored, a
+   * day that had used 29% to the token read 28%. Rounding down is for a day that used 28.6%, not
+   * for the arithmetic's own error.
+   */
+  test.each([
+    [290_000, 29],
+    [570_000, 57],
+    [999_999, 99],
+    [800_000, 80],
+  ])(
+    "%d of a million is %d%%, not one under it",
+    (tokensUsedToday, percent) => {
+      expect(usageOf(parseTrial(trial({ tokensUsedToday })))?.percent).toBe(
+        percent,
+      );
+    },
+  );
+
+  test("and in dollars, where the day's sum is a decimal", () => {
+    expect(
+      usageOf(parseTrial(trial({ dailyBudgetUsd: 1, costUsdToday: 0.57 })))
+        ?.percent,
+    ).toBe(57);
+  });
+
   test("is nothing to draw without a trial, a count, or a budget", () => {
     expect(usageOf(undefined)).toBeNull();
     const { tokensUsedToday: _unread, ...unread } = trial();
@@ -182,6 +208,16 @@ describe("the notice above the composer", () => {
     expect(noticeDue(used(800_000), null, at)).toBe(true);
     expect(noticeDue(used(1_000_000), null, at)).toBe(true);
     expect(noticeDue(null, null, at)).toBe(false);
+  });
+
+  test("is shown at the 80% the meter says, where the division does not land on it", () => {
+    // 0.44 over 0.55 — the day the contract priced — is 0.7999999999999999 in a double. The meter
+    // said 80% and the notice, reading the ratio, stayed away from the number beside it.
+    const usage = usageOf(
+      parseTrial(trial({ dailyBudgetUsd: 0.55, costUsdToday: 0.44 })),
+    );
+    expect(usage?.percent).toBe(80);
+    expect(noticeDue(usage, null, at)).toBe(true);
   });
 
   test("dismissed, it stays away for the rest of that Seoul day and comes back the next", () => {

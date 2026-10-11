@@ -60,6 +60,9 @@ export function todayUsageReading(
     : { state: "failed", previous: null, isRetrying: isFetching };
 }
 
+/** What `Math.floor` is allowed to overlook: the double's error, never a share of the day. */
+const PERCENT_SLACK = 1e-9;
+
 /** Today's use, or nothing to draw — no trial, a count the server could not read, or no budget. */
 export function usageOf(trial: Trial | undefined): TodayUsage | null {
   if (!trial) return null;
@@ -69,11 +72,17 @@ export function usageOf(trial: Trial | undefined): TodayUsage | null {
   const used = inDollars ? trial.costUsdToday : trial.tokensUsedToday;
   if (used === undefined || budget === undefined || !(budget > 0)) return null;
   const ratio = used / budget;
+  /*
+   * FLOORED PAST THE DOUBLE'S OWN ERROR. 290,000 of a million is 0.29, and 0.29 × 100 is
+   * 28.999999999999996: floored as it stood, a day that had used 29% to the token read 28%, and
+   * 0.44 of the $0.55 day the contract priced (0.7999999999999999) read 79%. Rounding down is for a
+   * day that used 28.6%, not for the arithmetic's; a billionth of a percent is far under either.
+   */
   return {
     used,
     budget,
     ratio,
-    percent: Math.min(100, Math.floor(ratio * 100)),
+    percent: Math.min(100, Math.floor(ratio * 100 + PERCENT_SLACK)),
   };
 }
 
@@ -89,13 +98,23 @@ export function seoulDayKey(at: Date): string {
   return seoulDate.format(at);
 }
 
+/**
+ * Whether today is at the 80% the notice and the meter's warning colour both turn on at.
+ *
+ * Read off the percent the person is shown, not the ratio: at 0.44 of $0.55 the ratio is
+ * 0.7999999999999999, and a notice that read it stayed away from a meter saying 80% beside it.
+ */
+export function nearlySpent(usage: TodayUsage): boolean {
+  return usage.percent >= USAGE_NOTICE_AT * 100;
+}
+
 /** Whether the notice is shown: at 80% or more, unless it was dismissed on this same Seoul day. */
 export function noticeDue(
   usage: TodayUsage | null,
   dismissedDay: string | null,
   now: Date,
 ): boolean {
-  if (!usage || usage.ratio < USAGE_NOTICE_AT) return false;
+  if (!usage || !nearlySpent(usage)) return false;
   return dismissedDay !== seoulDayKey(now);
 }
 
