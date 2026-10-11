@@ -778,7 +778,8 @@ describe("a project, against the real tables", () => {
   test("two presses at once for the last project make one project, not two: the count is fenced", async () => {
     const owner = await createPersistentUser();
     const agentId = await createPersistentAgent({ name: "새벽", owner });
-    // One short of the limit, as rows: what the count reads, without forty-nine round trips.
+    // One short of the limit, as rows — the four a project is (`conversationsOf` reads a
+    // conversation as a member's channel with the member's thread) — without forty-nine round trips.
     const ids = Array.from(
       { length: PROJECTS_PER_BOT - 1 },
       () => `${testPrefix}-full-${randomUUID()}`,
@@ -798,6 +799,13 @@ describe("a project, against the real tables", () => {
     await database
       .insert(channelAgents)
       .values(ids.map((channelId) => ({ channelId, agentId })));
+    await database.insert(channelThreads).values(
+      ids.map((channelId) => ({
+        channelId,
+        userId: owner.id,
+        threadId: randomUUID(),
+      })),
+    );
 
     /*
      * Two transactions at once need two transaction connections, and this file's pool has one
