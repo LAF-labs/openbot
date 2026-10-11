@@ -785,9 +785,12 @@ export function createConversationStore(
        * layer of the epoch this close begins — never a change in the middle of one. The dialogue
        * only: a page's words are no source of how the owner likes to work. Told which conversation
        * this is: the guidance is the Bot's, this close is one conversation's, and a project's day
-       * is never read for it (`agents/dream.ts`).
+       * is never read for it (`agents/dream.ts`). AND NOT FOR A CONVERSATION DROPPED MEANWHILE: a
+       * project deleted while its close sat in the summariser has no channel rows left by now, so
+       * the dream could no longer tell it from the main conversation and would read its day (review
+       * of pull request 185). `kept` is what `drop` clears, the same test the context write makes.
        */
-      if (days.dream) {
+      if (days.dream && conversation.kept) {
         try {
           await days.dream({
             botId: conversation.botId,
@@ -1150,7 +1153,9 @@ export function createConversationStore(
        * the conversation itself and keeps it when it is done — a minute from now, after the row it
        * would write has been deleted, and the write is an upsert (review, 2026-10-10: a deleted
        * project's context came back that way, and from `forget` and the day clock, which walk the
-       * list). Unkept, what they hold writes nothing.
+       * list). Unkept, what they hold writes no context row — and a close that is mid-way runs no
+       * dream, which writes the Bot's guidance, not this conversation's row (review of pull request
+       * 185: with its channel gone the dream could not tell a deleted project from the main).
        */
       if (conversation) conversation.kept = false;
       conversations.delete(threadId);

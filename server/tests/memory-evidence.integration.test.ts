@@ -551,7 +551,14 @@ describe("the nightly dream", () => {
    * is the Bot's, and the dream's new reading replaces its old one — so a project's close, reading
    * only its own day about something else, would retire what the main conversation taught.
    */
-  test("a project's close never dreams: the habit the main conversation taught survives it", async () => {
+  /**
+   * A main conversation and a project of the same Bot, each with yesterday's talk, in a conversation
+   * store whose dream is the real one over a model that reads the day it is handed and nothing
+   * else: a habit where one shows, else none.
+   */
+  async function twoConversations(options: {
+    summarize?: (input: { transcript: string }) => Promise<string>;
+  }) {
     const { owner, bot, threadId: mainThread } = await setup();
     const projectChannel = `${prefix}-project-${randomUUID()}`;
     const projectThread = `${prefix}-project-thread-${randomUUID()}`;
@@ -571,7 +578,6 @@ describe("the nightly dream", () => {
     const guidance = store.guidance;
     if (!guidance) throw new Error("the real store carries guidance");
 
-    // A model that reads the day it is handed and nothing else: a habit where one shows, else none.
     const asked: string[] = [];
     const dream = createDream({
       database,
@@ -624,7 +630,7 @@ describe("the nightly dream", () => {
     const conversations = createConversationStore({
       now: () => now.getTime(),
       days: {
-        summarize: async () => "- 요약",
+        summarize: options.summarize ?? (async () => "- 요약"),
         history: async (thread) => threads[thread] ?? [],
         fallbackTimeZone: "Asia/Seoul",
         dream,
@@ -652,24 +658,94 @@ describe("the nightly dream", () => {
         now,
       });
     }
+    const guidanceLines = async () =>
+      (await guidance.list(bot.id, owner.id)).map((line) => line.content);
+    const receipts = async () =>
+      database
+        .select({ job: agentMemoryReceipts.job })
+        .from(agentMemoryReceipts)
+        .where(eq(agentMemoryReceipts.agentId, bot.id));
+    return {
+      bot,
+      mainThread,
+      projectThread,
+      projectChannel,
+      conversations,
+      asked,
+      guidanceLines,
+      receipts,
+    };
+  }
 
+  test("a project's close never dreams: the habit the main conversation taught survives it", async () => {
+    const {
+      mainThread,
+      projectThread,
+      conversations,
+      asked,
+      guidanceLines,
+      receipts,
+    } = await twoConversations({});
     expect(await conversations.closeNow(mainThread)).toBe(true);
-    expect(
-      (await guidance.list(bot.id, owner.id)).map((line) => line.content),
-    ).toEqual(["이 사람은 짧은 답을 좋아한다."]);
+    expect(await guidanceLines()).toEqual(["이 사람은 짧은 답을 좋아한다."]);
 
     // The project's close, afterwards, with more than enough of the owner's own words in it.
     expect(await conversations.closeNow(projectThread)).toBe(true);
-    expect(
-      (await guidance.list(bot.id, owner.id)).map((line) => line.content),
-    ).toEqual(["이 사람은 짧은 답을 좋아한다."]);
+    expect(await guidanceLines()).toEqual(["이 사람은 짧은 답을 좋아한다."]);
     // The model read the main conversation's day, once, and never the project's.
     expect(asked).toHaveLength(1);
     expect(asked[0]).toContain("짧게");
-    const receipts = await database
-      .select({ job: agentMemoryReceipts.job })
-      .from(agentMemoryReceipts)
-      .where(eq(agentMemoryReceipts.agentId, bot.id));
-    expect(receipts).toEqual([{ job: "dream" }]);
+    expect(await receipts()).toEqual([{ job: "dream" }]);
+  });
+
+  /*
+   * THE NARROW WINDOW (review of pull request 185): a project deleted while its close sits in the
+   * summariser. Deletion drops the conversation from the store and deletes the channel rows; the
+   * close carries on, and with no channel row left the dream could not tell the project from the
+   * main conversation. The close must not dream for a conversation that is no longer kept.
+   */
+  test("a project deleted while its close is mid-summary is not dreamed on either", async () => {
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let entered = () => {};
+    const inSummariser = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const {
+      mainThread,
+      projectThread,
+      projectChannel,
+      conversations,
+      asked,
+      guidanceLines,
+      receipts,
+    } = await twoConversations({
+      summarize: async ({ transcript }) => {
+        if (transcript.includes("제주")) {
+          entered();
+          await held;
+        }
+        return "- 요약";
+      },
+    });
+    expect(await conversations.closeNow(mainThread)).toBe(true);
+    expect(await guidanceLines()).toEqual(["이 사람은 짧은 답을 좋아한다."]);
+
+    const closing = conversations.closeNow(projectThread);
+    await inSummariser;
+    // What deleting a project does, meanwhile: drops the conversation, then deletes its rows.
+    await conversations.drop(projectThread);
+    await database
+      .delete(channelThreads)
+      .where(eq(channelThreads.channelId, projectChannel));
+    await database.delete(channels).where(eq(channels.id, projectChannel));
+    release();
+    await closing;
+
+    expect(await guidanceLines()).toEqual(["이 사람은 짧은 답을 좋아한다."]);
+    expect(asked).toHaveLength(1);
+    expect(await receipts()).toEqual([{ job: "dream" }]);
   });
 });
