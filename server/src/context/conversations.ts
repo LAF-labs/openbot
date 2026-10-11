@@ -212,6 +212,29 @@ export type UsageContext = {
 export type ConversationStore = {
   /** The system message and the messages for one run, with the epoch decided. */
   prepare(input: PrepareInput): Prepared;
+  /**
+   * The conversation as its own next run would carry it, WITHOUT BEING A RUN OF IT (record §3,
+   * piece 4-4's second part): the epoch's frozen layer as it stands, and `messages` cut,
+   * compacted and carrying their reminders the way `prepare` hands them on. For a run that reads
+   * a conversation and is not part of it — the main conversation asking a project a question.
+   *
+   * IT CHANGES NOTHING, and that is the whole of why it exists. `prepare` on the same thread would
+   * take the question for the person's new message: open an epoch on any difference in the key,
+   * take a day's close that is waiting, put the reminders that are due on a message that is never
+   * stored and mark their facts as told — so the person's next real message in that conversation
+   * would never carry the new date — and move the question's dollars and the idle clock. Nothing
+   * is touched here, kept or in memory: no epoch, no reminder, no `known`, no clock, no write.
+   *
+   * Null where this process holds nothing for the thread: the caller says what it then sends.
+   */
+  peek(
+    threadId: string,
+    messages: readonly AgentMessage[],
+  ): {
+    system: string;
+    messages: AgentMessage[];
+    epoch: { id: string; reason: EpochReason };
+  } | null;
   /** A usage row of `threadId`'s run: its dollars go on the question, its time on the idle clock. */
   recordUsage(
     threadId: string,
@@ -996,6 +1019,27 @@ export function createConversationStore(
           fresh,
         },
         question: { costUsd: conversation.question.costUsd },
+      };
+    },
+
+    peek(threadId, messages) {
+      const conversation = conversations.get(threadId);
+      if (!conversation) return null;
+      // The cut and the plan as they are stored; neither the missing-cut log nor `raw` is this run's.
+      const { carried: current } = afterCut(messages, conversation.epoch.cut);
+      const carried = applyCompaction(current, conversation.compaction);
+      const reminders = conversation.reminders;
+      return {
+        system: conversation.epoch.system,
+        messages: carried.map((message) =>
+          message.role === "user" && reminders[message.id]
+            ? carrying(message, reminders[message.id] ?? "")
+            : message,
+        ),
+        epoch: {
+          id: conversation.epoch.id,
+          reason: conversation.epoch.reason,
+        },
       };
     },
 

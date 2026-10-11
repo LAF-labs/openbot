@@ -25,6 +25,12 @@ import { UNANSWERED_RESULT } from "../../../shared/task-ending";
 import { computerTool, drivesTheBrowser } from "../../../shared/tools/computer";
 import { isDelegated } from "../../../shared/tools/delegate";
 import { withheldToolsForwarded } from "../../../shared/tools/paused";
+import {
+  PROJECT_QUERY_READ_ONLY,
+  projectQuestionText,
+  readsOnlyForwarded,
+} from "../../../shared/tools/projects";
+import { toolResultText } from "../../../shared/prompt/tool-results.ko";
 import type { AgentActor } from "../agents/profile-types";
 import {
   classifyTurnFailure,
@@ -69,6 +75,20 @@ export const CHAT_TURN_TIMEOUT_MS = 90 * 60_000;
  * in all — long enough for a connection that dropped to be replaced, short against a turn.
  */
 const PERSIST_RETRY_MS: readonly number[] = [150, 500, 1_500];
+
+/**
+ * How long a question put to a project waits for that project's own turn to end
+ * (`askProject`). A turn that only talks is over in seconds; one that browses takes minutes, and a
+ * main conversation's Bot is told "it is working now" instead of being kept that long.
+ */
+export const PROJECT_ASK_WAIT_MS = 20_000;
+/** How long the answer may take: one or two requests over a conversation the provider has cached. */
+export const PROJECT_ASK_TIMEOUT_MS = 60_000;
+/**
+ * How many times the asked side may come back asking for a tool before it is made to answer with
+ * what it has. Every call is refused, so each is a request spent on reading a refusal.
+ */
+export const PROJECT_ASK_MAX_STEPS = 2;
 
 /** The result a call gets when the person stopped the turn while it was out: `laf:stopped`. */
 const STOPPED_RESULT = { ok: false, code: "laf:stopped", stopped: true };
@@ -151,6 +171,8 @@ export type TurnEngineOptions = {
   handsBrowsingOver?: boolean;
   /** How long to wait before each further try at a turn's last write. A test's are shorter. */
   persistRetryMs?: readonly number[];
+  /** `PROJECT_ASK_WAIT_MS`, for a test that does not wait twenty seconds to see a refusal. */
+  projectAskWaitMs?: number;
   /**
    * The clock a turn's measure is read off (`telemetry/run-meter.ts`). A test's is moved by hand,
    * so each part of a turn took exactly as long as the test says it did.
@@ -449,6 +471,7 @@ export function createTurnEngine(options: TurnEngineOptions) {
   const maxSteps = options.maxSteps ?? CHAT_MAX_STEPS;
   const timeoutMs = options.timeoutMs ?? CHAT_TURN_TIMEOUT_MS;
   const persistRetryMs = options.persistRetryMs ?? PERSIST_RETRY_MS;
+  const projectAskWaitMs = options.projectAskWaitMs ?? PROJECT_ASK_WAIT_MS;
   const now = options.now ?? Date.now;
   const lane = options.lane;
 
@@ -882,6 +905,168 @@ export function createTurnEngine(options: TurnEngineOptions) {
         return { answer: said.at(-1) ?? "", steps };
       };
 
+      /*
+       * A QUESTION PUT TO A PROJECT, INSIDE THE TURN (record §3, piece 4-4's second part). The main
+       * conversation's Bot asks the same Bot in a project something, and what answers is a run over
+       * THAT PROJECT'S OWN CONVERSATION: its thread id, so the frozen layer and the provider's
+       * cache are the project's; its stored messages as its own next turn would carry them; its
+       * usual tools at the head. The question rides as one more message at the end. So it costs
+       * what the project's cached conversation costs to read, and one question.
+       *
+       * IT READS AND DOES NOTHING ELSE, AND THE SERVER IS WHAT SAYS SO:
+       * - Every call it makes is answered with one refusal, whatever the tool. The tools are not
+       *   taken off the list — a list that changed for one question would be a different head, and
+       *   the question and the project's next turn would each pay for the whole conversation.
+       * - Nothing is written to the project's thread: no message, no step, no event to any window.
+       *   The question and its answer exist in this turn alone (the record's open question 5,
+       *   decided as it recommended).
+       * - The project's context is read and not written (`readsOnlyForwarded`,
+       *   `ConversationStore.peek`): an ordinary run on that thread would take the question for the
+       *   person's new message there — open an epoch, take a waiting day's close, spend the
+       *   reminders that are due on a message nobody keeps.
+       * - No lane. This turn may hold the Bot's browser already, and the lane cannot be taken twice;
+       *   a run that carries out nothing has no use for what the lane keeps apart.
+       *
+       * AFTER THE PROJECT'S OWN TURN, NOT BESIDE IT. A turn running there is halfway through what
+       * it is writing, so the question waits for it — as long as `PROJECT_ASK_WAIT_MS`, then the
+       * asker is told the project is working. The other way round nothing waits: a message the
+       * person sends in the project while a question is being answered starts its turn at once.
+       * `send` refuses a conversation that has a turn, and a window told so with no turn to watch
+       * has nothing to wait for; and a run that appends nothing has nothing for that turn to race.
+       * This is narrower than the record's "stands in one line with the project's turns", and the
+       * record now says why.
+       *
+       * A stop ends it as it ends the turn. Running out of its own time, or the model failing, is
+       * an answer that could not be had — the turn goes on and its Bot reads the summary instead.
+       */
+      let questions = 0;
+      const silent = async (
+        projectThread: string,
+        within: number,
+        stop: AbortSignal,
+      ): Promise<boolean> => {
+        const theirs = [...unfinished].filter(
+          (one) => one.threadId === projectThread,
+        );
+        if (theirs.length === 0) return true;
+        if (within <= 0 || stop.aborted) return false;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        let stopped: (() => void) | undefined;
+        const ended = await Promise.race([
+          Promise.all(theirs.map((one) => one.ended)).then(() => true),
+          new Promise<false>((resolve) => {
+            timer = setTimeout(() => resolve(false), within);
+          }),
+          new Promise<false>((resolve) => {
+            stopped = () => resolve(false);
+            stop.addEventListener("abort", stopped, { once: true });
+          }),
+        ]);
+        clearTimeout(timer);
+        if (stopped) stop.removeEventListener("abort", stopped);
+        return ended;
+      };
+      const askProject: NonNullable<ChatTurnContext["askProject"]> = async (
+        ask,
+      ) => {
+        // A conversation cannot be asked from inside its own turn: it would wait for itself.
+        if (ask.threadId === threadId) return { outcome: "unavailable" };
+        const waitUntil =
+          Date.now() + Math.min(projectAskWaitMs, endsAt - Date.now());
+        const read = async (): Promise<Message[]> => {
+          const kept = (await messagesFor(options.database, ask.threadId))
+            .filter((message) => !isDelegated(message))
+            .map(forTheBot);
+          return repairUnanswered(
+            options.handsBrowsingOver ? withoutBrowserSteps(kept) : kept,
+          );
+        };
+        /*
+         * Read when the project is silent, and read again if a turn began while it was being read:
+         * the person's message is filed before its turn is listed as running (`send`), so a read
+         * that crossed one may hold a question with nothing after it.
+         */
+        let history: Message[] | null = null;
+        for (let look = 0; look < 2 && history === null; look += 1) {
+          if (
+            !(await silent(ask.threadId, waitUntil - Date.now(), ask.signal))
+          ) {
+            break;
+          }
+          const held = await read();
+          if (!live.has(ask.threadId)) history = held;
+        }
+        if (ask.signal.aborted) throw new RunStopped([]);
+        if (history === null) return { outcome: "busy" };
+
+        const reader = (await options.resolveAgents(owner))[botId];
+        if (!reader) return { outcome: "unavailable" };
+        questions += 1;
+        const ordinal = questions;
+        reader.threadId = ask.threadId;
+        reader.setMessages([
+          ...history,
+          {
+            id: randomUUID(),
+            role: "user",
+            content: projectQuestionText(ask.question),
+          },
+        ]);
+        const base = reader.messages.length;
+        try {
+          await runTurnLoop(reader, {
+            tools: ask.tools,
+            // Whatever it calls. Not started, not judged, not audited: nothing was attempted.
+            execute: async () => ({
+              ok: false,
+              code: PROJECT_QUERY_READ_ONLY,
+              reason: toolResultText(PROJECT_QUERY_READ_ONLY),
+            }),
+            timeoutMs: Math.max(
+              1,
+              Math.min(PROJECT_ASK_TIMEOUT_MS, endsAt - Date.now()),
+            ),
+            maxSteps: PROJECT_ASK_MAX_STEPS,
+            // Built here and only here: nothing a window sent says a run reads only.
+            forwardedProps: {
+              ...readsOnlyForwarded(),
+              ...(input.device === undefined ? {} : { device: input.device }),
+            },
+            // Under the turn's id like every run of it, and apart from `.1` and a delegation's `.d1`.
+            runIdFor: (n) => `${turn.id}.q${ordinal}.${n}`,
+            signal: ask.signal,
+            observe: (event) => {
+              events += 1;
+              // What it cost is the turn's. What it tried to call was carried out by nobody.
+              if (String(event.type) === "CUSTOM") meter.observe(event);
+            },
+          });
+        } catch (error) {
+          if (error instanceof RunStopped || ask.signal.aborted) throw error;
+          log.warn("project_ask_failed", {
+            bot: botId,
+            reason:
+              error instanceof RunDeadline
+                ? "deadline"
+                : error instanceof RunFailed
+                  ? error.reason
+                  : describeFailure(error),
+          });
+          return { outcome: "unavailable" };
+        }
+        const said = reader.messages
+          .slice(base)
+          .filter((message) => message.role === "assistant")
+          .map((message) =>
+            typeof message.content === "string" ? message.content.trim() : "",
+          )
+          .filter(Boolean);
+        const answer = said.at(-1);
+        return answer
+          ? { outcome: "answered", answer }
+          : { outcome: "unavailable" };
+      };
+
       const toolkit = await options.tools(
         {
           botId,
@@ -891,6 +1076,7 @@ export function createTurnEngine(options: TurnEngineOptions) {
           awaitPerson,
           borrowBrowser,
           delegate,
+          askProject,
         },
         input.tools,
       );

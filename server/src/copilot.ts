@@ -23,6 +23,7 @@ import type { Persona } from "../../shared/persona";
 import type { ShopProfile } from "../../shared/shop/catalogue";
 import { isDeferredToolName, openAccountsIn } from "../../shared/tools/bridge";
 import { type WithheldTools, withheldToolsIn } from "../../shared/tools/paused";
+import { readsOnly } from "../../shared/tools/projects";
 import { deviceOf } from "../../shared/whereabouts";
 import type { AgentActor } from "./agents/profile-types";
 import { type AuditStore, auditRowLost, recordAuditEvent } from "./audit";
@@ -592,7 +593,16 @@ function remoteAgentWithPrompt(
            * is a break in the prefix — something rewrote bytes the provider had — and is said so
            * in the log. Counts and ids only; nothing a person wrote.
            */
-          const context = conversations?.recordUsage(input.threadId, usage);
+          /*
+           * A RUN THAT ONLY READS A CONVERSATION COUNTS NOTHING ON IT (`readsOnly`, below): its
+           * dollars are not that conversation's question, its time is not that conversation's
+           * idle clock, and it must not be what tips that conversation into a compaction. The
+           * row is still written, under the run that asked, and says which kind it is.
+           */
+          const reading = readsOnly(input.forwardedProps);
+          const context = reading
+            ? null
+            : conversations?.recordUsage(input.threadId, usage);
           const share = cacheReadOf(usage);
           const cacheLow =
             context !== undefined &&
@@ -635,7 +645,7 @@ function remoteAgentWithPrompt(
                   }
                 : {}),
               ...(cacheLow ? { cacheLow: true } : {}),
-              source: "bot-turn",
+              source: reading ? "project-query" : "bot-turn",
             },
           }).catch(auditRowLost("model.usage"));
         }
@@ -710,30 +720,46 @@ function remoteAgentWithPrompt(
           ? filedToolResult(message, agent.id, spill, input.threadId)
           : message,
       );
-    const prepared = conversations?.prepare({
-      threadId: input.threadId,
-      botId: agent.id,
-      mode,
-      messages: history,
-      key: {
-        harness: HARNESS_VERSION,
-        model: options.model,
-        effort: supportsEffort ? FIXED_EFFORT : "none",
-        tools: toolsFingerprint(input.tools),
-      },
-      facts,
-      system: frozen,
-      routine: routineRunOf(forwarded),
-      now,
-    });
+    /*
+     * A RUN THAT READS A CONVERSATION WITHOUT BEING PART OF IT (`readsOnly`) is handed what that
+     * conversation's own next run would carry — its frozen layer, its cut, its reminders — and
+     * the store is not told a run happened (`ConversationStore.peek`). Its last message is the
+     * question, which the store has never seen and gives nothing to. Where the store holds
+     * nothing for the thread the layer is drawn from what is true now and kept nowhere.
+     */
+    const reading = readsOnly(forwarded);
+    const peeked = reading
+      ? (conversations?.peek(input.threadId, history) ?? null)
+      : null;
+    const prepared = reading
+      ? undefined
+      : conversations?.prepare({
+          threadId: input.threadId,
+          botId: agent.id,
+          mode,
+          messages: history,
+          key: {
+            harness: HARNESS_VERSION,
+            model: options.model,
+            effort: supportsEffort ? FIXED_EFFORT : "none",
+            tools: toolsFingerprint(input.tools),
+          },
+          facts,
+          system: frozen,
+          routine: routineRunOf(forwarded),
+          now,
+        });
     const prompt: StandingRoleMessage = {
       id: promptMessageId(agent.id),
       role: "system",
-      content: prepared?.system ?? frozen(facts),
+      content: prepared?.system ?? peeked?.system ?? frozen(facts),
     };
     return next.run({
       ...input,
-      messages: [prompt, ...(prepared?.messages ?? history)],
+      messages: [
+        prompt,
+        ...(prepared?.messages ?? peeked?.messages ?? history),
+      ],
       /*
        * WHAT THE ENDPOINT IS TOLD ABOUT THIS RUN, beside the conversation.
        *
@@ -768,6 +794,10 @@ function remoteAgentWithPrompt(
               question: { costUsd: prepared.question.costUsd },
               epoch: { id: prepared.epoch.id, reason: prepared.epoch.reason },
             }
+          : {}),
+        // The epoch it read under, for that service's log. No question: its dollars are nobody's.
+        ...(peeked
+          ? { epoch: { id: peeked.epoch.id, reason: peeked.epoch.reason } }
           : {}),
       },
     });

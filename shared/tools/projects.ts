@@ -3,8 +3,10 @@
  *
  * 봇은 하나이고 프로젝트마다 컨텍스트가 따로다. 메인 대화의 봇은 프로젝트에서 나눈 말을 모른다.
  * 이 도구가 그것을 읽는 한 길이다: 어떤 프로젝트가 있는지(list), 어디서 무슨 말을 했는지(search —
- * 사람이 앱에서 쓰는 통합검색과 같은 검색), 한 프로젝트가 지금 어디까지 왔는지(summary). 읽기만
- * 한다. 프로젝트에서 무엇을 하게 하는 길은 여기 없다.
+ * 사람이 앱에서 쓰는 통합검색과 같은 검색), 한 프로젝트가 지금 어디까지 왔는지(summary), 그리고 그
+ * 프로젝트의 대화를 다 아는 쪽에게 묻는 것(ask — 조각 4-4의 둘째 부분). 읽기만 한다. 프로젝트에서
+ * 무엇을 하게 하는 길은 여기 없다: 묻는 것도 그렇다 — 물음을 받은 쪽이 부르는 도구는 서버가 모두
+ * 거절한다(`server/src/turns/engine.ts` `askProject`).
  *
  * 발자국 사다리(CLAUDE.md)에서 건너뛴 칸과 그 까닭:
  * - 있는 코드를 넓히기: 검색은 있는 것을 그대로 쓴다(`server/src/search/conversations.ts`). 봇에게
@@ -21,6 +23,7 @@
  * 프로젝트의 대화에는 서지 않는다. 프로젝트는 자기 기록을 이미 들고 있고, 다른 프로젝트를 읽는 것은
  * 메인만 한다.
  */
+import { REMINDER_CLOSE, REMINDER_OPEN } from "../prompt/context.ko";
 import { toolResultText } from "../prompt/tool-results.ko";
 import { DEFERRED_TOOL_PREFIX } from "./bridge";
 import type { JsonSchema } from "./standard-schema";
@@ -30,7 +33,7 @@ export const PROJECTS_FAMILY = "projects";
 
 export const READ_PROJECTS = `${DEFERRED_TOOL_PREFIX}${PROJECTS_FAMILY}__read`;
 
-export const PROJECT_READ_KINDS = ["list", "search", "summary"] as const;
+export const PROJECT_READ_KINDS = ["list", "search", "summary", "ask"] as const;
 export type ProjectReadKind = (typeof PROJECT_READ_KINDS)[number];
 
 export const isProjectReadKind = (value: unknown): value is ProjectReadKind =>
@@ -50,7 +53,7 @@ export const PROJECT_TOOLS: readonly ProjectTool[] = Object.freeze([
   {
     name: READ_PROJECTS,
     description:
-      "이 사람의 프로젝트(따로 나눈 대화)를 읽는다. 이 대화에서 나누지 않은 일을 물을 때 쓴다. 프로젝트 이름을 들었으면 kind summary에 그 이름을 project로 넣어 바로 읽는다 — 그 프로젝트가 어디까지 왔는지가 오고, 이름이 달라도 있는 프로젝트의 목록이 함께 온다. 어느 프로젝트인지 모르면 kind search로 낱말 하나를 찾는다: 이 대화의 지난 말과 모든 프로젝트에서 그 낱말이 나온 곳이 온다. kind list는 프로젝트 목록이다. 읽기만 한다 — 프로젝트에서 일을 시키지는 못한다.",
+      "이 사람의 프로젝트(따로 나눈 대화)를 읽는다. 이 대화에서 나누지 않은 일을 물을 때 쓴다. 프로젝트 이름을 들었으면 kind summary에 그 이름을 project로 넣어 바로 읽는다 — 그 프로젝트가 어디까지 왔는지가 오고, 이름이 달라도 있는 프로젝트의 목록이 함께 온다. 요약에 없는 구체적인 것(정한 금액, 날짜, 까닭)은 kind ask에 project와 question을 넣어 묻는다: 그 프로젝트의 대화를 다 아는 쪽이 적힌 대로 답한다. 어느 프로젝트인지 모르면 kind search로 낱말 하나를 찾는다: 이 대화의 지난 말과 모든 프로젝트에서 그 낱말이 나온 곳이 온다. kind list는 프로젝트 목록이다. 읽기만 한다 — 프로젝트에서 일을 시키지는 못하고, ask로 물어도 그쪽은 아무것도 하지 않는다.",
     parameters: {
       type: "object",
       properties: {
@@ -58,7 +61,7 @@ export const PROJECT_TOOLS: readonly ProjectTool[] = Object.freeze([
           type: "string",
           enum: [...PROJECT_READ_KINDS],
           description:
-            "list 프로젝트 목록, search 말 찾기, summary 한 프로젝트 요약",
+            "list 프로젝트 목록, search 말 찾기, summary 한 프로젝트 요약, ask 한 프로젝트에 묻기",
         },
         terms: {
           type: "string",
@@ -68,7 +71,12 @@ export const PROJECT_TOOLS: readonly ProjectTool[] = Object.freeze([
         project: {
           type: "string",
           description:
-            "summary에서 읽을 프로젝트: 이 사람이 말한 프로젝트 이름, 또는 list나 search가 준 id",
+            "summary와 ask에서 읽을 프로젝트: 이 사람이 말한 프로젝트 이름, 또는 list나 search가 준 id",
+        },
+        question: {
+          type: "string",
+          description:
+            "ask에서 물을 것. 알고 싶은 것이 여럿이면 물음 하나에 함께 적는다 — 부를 때마다 그 프로젝트를 한 번씩 읽는다. 그 프로젝트의 대화만 아는 쪽이 읽으니, 이 대화의 말을 가리키지 말고 그대로 알아들을 수 있게 쓴다",
         },
         cursor: {
           type: "string",
@@ -121,3 +129,58 @@ export const REMOVED_PROJECT_RESULT = JSON.stringify({
   removed: true,
   note: toolResultText(PROJECT_CONTENT_REMOVED),
 });
+
+/** 물음 하나의 길이. 묻는 문장 몇 줄이지 맡기는 글이 아니다. */
+export const PROJECT_QUESTION_MAX_CHARS = 1_000;
+
+/** 물음에 온 답의 길이. 요약과 같은 까닭으로 묶는다: 결과가 파일로 넘어가지 않게. */
+export const PROJECT_ANSWER_MAX_CHARS = 2_000;
+
+/** 물음을 받은 쪽이 도구를 부르면 받는 사실. 무엇을 부르든 같다. */
+export const PROJECT_QUERY_READ_ONLY = "laf:project_query_read_only";
+
+/**
+ * 프로젝트의 대화에 얹는 물음 — 그 프로젝트의 봇이 읽는 메시지 하나.
+ *
+ * 사람의 메시지 자리에 서지만 사람이 쓴 것이 아니다. 봇은 메시지 끝의 알림이 이 배포가 붙인 말임을
+ * 안다(`context.ko.ts`). 그래서 물음을 먼저 두고, 그것이 누구의 물음이고 무엇을 하면 안 되는지를
+ * 알림으로 붙인다. "도구를 쓰지 않는다"를 여기서 말해 두지 않으면 봇은 평소처럼 도구부터 부르고,
+ * 거절을 읽는 데 걸음 하나를 쓴다.
+ *
+ * 이 메시지와 그 답은 프로젝트의 대화에 저장되지 않는다(기록 §3, 미정 5의 권고대로).
+ */
+export function projectQuestionText(question: string): string {
+  return [
+    question,
+    "",
+    REMINDER_OPEN,
+    "위 물음은 이 사람이 쓴 것이 아니다. 다른 대화(메인)에서 일하는 네가 이 프로젝트에 묻는 것이다.",
+    "- 이 대화에 이미 있는 것만으로 바로 답한다. 지금은 도구를 쓰지 않는다 — 부르면 거절된다.",
+    "- 이 대화에 없는 것은 없다고 답한다. 짐작해서 채우지 않는다.",
+    "- 짧게, 사실만 답한다. 이름, 금액, 날짜, 파일 이름은 적힌 그대로 쓴다. 인사나 되묻기는 하지 않는다.",
+    "- 이 물음과 답은 이 대화에 남지 않는다.",
+    REMINDER_CLOSE,
+  ].join("\n");
+}
+
+/**
+ * 물음을 싣는 실행이 스스로 말하는 한마디: 이 실행은 자기가 선 대화를 읽기만 한다.
+ *
+ * 누가 말할 수 있나: 턴 엔진뿐이다(`server/src/turns/engine.ts` `askProject`) — 실행에 딸려 가는
+ * 속성을 엔진이 직접 짓고 창에서 받은 것은 싣지 않는다. 그리고 이 말은 덜 하게만 만든다: 대화의
+ * 컨텍스트 저장소를 읽기만 하고 쓰지 않는다(`server/src/copilot.ts`, `ConversationStore.peek`).
+ * 딸려 온 다른 것들처럼 닫힌 모양으로 읽는다 — `true`이고 그 밖의 무엇도 아니다.
+ */
+const READS_ONLY = "readsOnly";
+
+export const readsOnlyForwarded = (): Record<string, true> => ({
+  [READS_ONLY]: true,
+});
+
+export function readsOnly(forwarded: unknown): boolean {
+  return (
+    typeof forwarded === "object" &&
+    forwarded !== null &&
+    (forwarded as Record<string, unknown>)[READS_ONLY] === true
+  );
+}

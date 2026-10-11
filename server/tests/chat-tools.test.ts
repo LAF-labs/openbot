@@ -149,6 +149,73 @@ describe("which tools a turn offers", () => {
     expect(toolkit.projectsRead?.("call-2")).toBeUndefined();
   });
 
+  test("a question for a project goes with the list a project's turn is sent: this turn's, without the project tool", async () => {
+    const asked: unknown[] = [];
+    let ask:
+      | ((asked: {
+          threadId: string;
+          question: string;
+          signal: AbortSignal;
+        }) => Promise<unknown>)
+      | undefined;
+    const deps = {
+      gateway: {} as unknown as ComputerGateway,
+      people: createPersonAnswers(),
+    };
+    const declared = [tool("computer_read_file"), tool("somebody_elses_tool")];
+    const main = await createChatTools({
+      ...deps,
+      projects: async (turn) => {
+        ask = turn.ask;
+        return {
+          tools: [tool(READ_PROJECTS)],
+          execute: async () => ({ ok: true }),
+          read: () => undefined,
+        };
+      },
+    })(
+      {
+        ...context,
+        askProject: async (one) => {
+          asked.push(one);
+          return { outcome: "answered", answer: "대한항공" };
+        },
+      },
+      declared,
+    );
+    const signal = new AbortController().signal;
+    expect(
+      await ask?.({ threadId: "thread-p", question: "항공편은?", signal }),
+    ).toEqual({ outcome: "answered", answer: "대한항공" });
+    // What a project's own turn is put together with here: the same deps, and no project tool.
+    const project = await createChatTools({
+      ...deps,
+      projects: async () => null,
+    })(context, declared);
+    expect(asked).toEqual([
+      {
+        threadId: "thread-p",
+        question: "항공편은?",
+        signal,
+        tools: project.tools,
+      },
+    ]);
+    expect(project.tools.length).toBeGreaterThan(0);
+    expect(main.tools).toEqual([...project.tools, tool(READ_PROJECTS)]);
+  });
+
+  test("a turn with no way to ask hands the project tool none", async () => {
+    const turns: Array<Record<string, unknown>> = [];
+    await createChatTools({
+      people: createPersonAnswers(),
+      projects: async (turn) => {
+        turns.push(turn);
+        return null;
+      },
+    })(context, []);
+    expect(turns[0]).not.toHaveProperty("ask");
+  });
+
   test.each([
     ["in a project's conversation", async (): Promise<null> => null],
     [

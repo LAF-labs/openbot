@@ -971,9 +971,9 @@ const chatTools = createChatTools({
   persona: shopStore,
   goals: goalStore,
   // Not in a project's conversation: a project holds its own record, and reads no other's.
-  projects: async ({ userId, botId, threadId, runId }) =>
+  projects: async ({ userId, botId, threadId, runId, ask }) =>
     (await threadProjects.of(threadId)) === null
-      ? projectTools({ userId, agentId: botId, runId })
+      ? projectTools({ userId, agentId: botId, runId, ...(ask ? { ask } : {}) })
       : null,
   auditStore: bootAuditStore,
   // What a waiting connect card asks: 연결's own reading, from the sources the screen is drawn from.

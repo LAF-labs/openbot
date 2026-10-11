@@ -9,6 +9,7 @@ import {
 import type { AuditEventInput, AuditStore } from "../src/audit";
 import { withAccountStates } from "../../shared/tools/gallery";
 import { withheldToolsText } from "../../shared/tools/paused";
+import { readsOnlyForwarded } from "../../shared/tools/projects";
 import type { AgentStandingProfile } from "../src/copilot";
 import { buildAgents } from "../src/copilot";
 import {
@@ -874,5 +875,199 @@ describe("수첩: what the owner changes reaches the Bot without touching the he
       reason: "memory_forgotten",
     });
     expect(JSON.stringify(cleared.request.messages)).not.toContain("10시~21시");
+  });
+});
+
+/*
+ * A QUESTION PUT TO A PROJECT (record §3, piece 4-4's second part) is a run over the project's own
+ * conversation that is not a run OF it: it reads what that conversation's next run would carry and
+ * leaves the conversation exactly as it found it. Each case here is one thing an ordinary run would
+ * have changed.
+ */
+describe("a run that only reads a conversation leaves it as it was", () => {
+  const reading = { forwardedProps: readsOnlyForwarded() };
+  /** The stored conversation with a question at its end that the conversation never keeps. */
+  const asked = (...said: string[]): Message[] => [
+    ...conversation(...said),
+    { id: `a${said.length - 1}`, role: "assistant", content: "네." },
+    { id: "question", role: "user", content: "항공편은 어떻게 하기로 했어?" },
+  ];
+
+  test("it is sent the conversation's own head and history, and the question as it was written", async () => {
+    const store = createConversationStore();
+    setSystemTime(minutes(0));
+    const first = await run(store, conversation("안녕"));
+    setSystemTime(minutes(4));
+    const read = await run(store, asked("안녕"), reading);
+
+    expect(system(read.request)).toBe(system(first.request));
+    expect(JSON.stringify(read.request.tools)).toBe(
+      JSON.stringify(first.request.tools),
+    );
+    // What the conversation's own run sent, then its answer and the question: a pure append.
+    expect(
+      read.request.messages.slice(0, first.request.messages.length),
+    ).toEqual(first.request.messages);
+    expect(lastUser(read.request)).toBe("항공편은 어떻게 하기로 했어?");
+    // The epoch it read under, and no question's dollars: they are nobody's.
+    expect(read.forwarded.epoch).toEqual(first.forwarded.epoch);
+    expect(read.forwarded).not.toHaveProperty("question");
+  });
+
+  test("THE DAY'S REMINDER IS NOT SPENT ON IT: the person's next message there still carries the date", async () => {
+    const store = createConversationStore();
+    setSystemTime(minutes(0));
+    await run(store, conversation("안녕"));
+    // 18 hours later, Friday morning: the question arrives before the person's first word of the day.
+    setSystemTime(minutes(18 * 60));
+    const read = await run(store, asked("안녕"), reading);
+    expect(lastUser(read.request)).not.toContain("<알림>");
+
+    setSystemTime(minutes(18 * 60 + 1));
+    const next = await run(store, conversation("안녕", "오늘 뭐 하지?"));
+    expect(lastUser(next.request)).toContain(
+      "날짜가 바뀌었다. 오늘은 2026-09-25 (금)이다.",
+    );
+    // And a reminder the conversation already carries is read where it stands.
+    setSystemTime(minutes(18 * 60 + 2));
+    const again = await run(store, asked("안녕", "오늘 뭐 하지?"), reading);
+    expect(
+      again.request.messages.slice(0, next.request.messages.length),
+    ).toEqual(next.request.messages);
+  });
+
+  test("NO EPOCH OPENS FOR IT, whatever list it was sent with", async () => {
+    const store = createConversationStore();
+    const prepare = spyOn(store, "prepare");
+    setSystemTime(minutes(0));
+    const first = await run(store, conversation("안녕"));
+    setSystemTime(minutes(3));
+    const read = await run(store, asked("안녕"), {
+      ...reading,
+      // A list the conversation was never sent: an ordinary run would be `tools_changed`.
+      tools: [
+        ...TOOLS,
+        { name: "skill_view", description: "읽는다", parameters: {} },
+      ],
+      model: "another/model",
+    });
+    expect(read.forwarded.epoch).toEqual(first.forwarded.epoch);
+    expect(system(read.request)).toBe(system(first.request));
+    expect(prepare).toHaveBeenCalledTimes(1);
+
+    setSystemTime(minutes(5));
+    const next = await run(store, conversation("안녕", "그래"));
+    expect(next.forwarded.epoch).toEqual(first.forwarded.epoch);
+    expect(system(next.request)).toBe(system(first.request));
+  });
+
+  test("ITS DOLLARS ARE NOT THE CONVERSATION'S: the row says what it is and the store counts nothing", async () => {
+    const rows: AuditEventInput[] = [];
+    const auditStore: AuditStore = {
+      insert: async (event) => {
+        rows.push(event);
+      },
+    };
+    const store = createConversationStore();
+    const recordUsage = spyOn(store, "recordUsage");
+    setSystemTime(minutes(0));
+    await run(store, conversation("안녕"));
+    setSystemTime(minutes(2));
+    await run(store, asked("안녕"), {
+      ...reading,
+      auditStore,
+      usage: {
+        prompt_tokens: 9000,
+        completion_tokens: 20,
+        total_tokens: 9020,
+        cost: 0.0004,
+        prompt_tokens_details: { cached_tokens: 8832, cache_write_tokens: 0 },
+      },
+    });
+    await Bun.sleep(0);
+    expect(recordUsage).not.toHaveBeenCalled();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.payload).toMatchObject({
+      source: "project-query",
+      threadId: "thread_miso",
+      costUsd: 0.0004,
+      cachedPromptTokens: 8832,
+    });
+    // No epoch on the row: the conversation's count of its epoch's requests did not move.
+    expect(rows[0]?.payload).not.toHaveProperty("epochId");
+
+    // The conversation's own next step is still inside the question it was answering, at $0.
+    setSystemTime(minutes(3));
+    const step = await run(store, conversation("안녕"));
+    expect(step.forwarded.question).toEqual({ costUsd: 0 });
+  });
+
+  test("a conversation this process holds nothing for is read with a layer drawn now, and still held nowhere", async () => {
+    const store = createConversationStore();
+    setSystemTime(minutes(0));
+    const read = await run(store, asked("안녕"), reading);
+    expect(system(read.request)).toContain("오늘은 2026-09-24 (목)");
+    expect(read.forwarded).not.toHaveProperty("epoch");
+    expect(store.peek("thread_miso", [])).toBeNull();
+
+    // Its own first run under this process is still its first: nothing was started for it.
+    const first = await run(store, conversation("안녕", "그래"));
+    expect(first.forwarded.epoch).toMatchObject({ reason: "resumed" });
+  });
+
+  test("`readsOnly` is `true` and nothing else: any other value is an ordinary run", async () => {
+    for (const said of ["true", 1, {}, null]) {
+      const store = createConversationStore();
+      const prepare = spyOn(store, "prepare");
+      await run(store, conversation("안녕"), {
+        forwardedProps: { readsOnly: said },
+      });
+      expect(prepare).toHaveBeenCalledTimes(1);
+    }
+  });
+});
+
+describe("peek", () => {
+  test("hands back the stored reminders on their messages and writes nothing", async () => {
+    const saves: unknown[] = [];
+    const store = createConversationStore({
+      persistence: {
+        loadAll: async () => [],
+        save: async (state) => {
+          saves.push(structuredClone(state));
+        },
+      },
+    });
+    setSystemTime(minutes(0));
+    await run(store, conversation("안녕"));
+    setSystemTime(minutes(18 * 60));
+    await run(store, conversation("안녕", "오늘 뭐 하지?"));
+    await store.settled();
+    const before = JSON.stringify(saves.at(-1));
+    const written = saves.length;
+
+    const history = [
+      ...conversation("안녕", "오늘 뭐 하지?"),
+      { id: "question", role: "user", content: "물음" },
+    ];
+    const frozen = structuredClone(history);
+    const peeked = store.peek("thread_miso", history as never);
+    expect(peeked?.messages.map((message) => message.id)).toEqual(
+      history.map((message) => message.id),
+    );
+    expect(String(peeked?.messages[2]?.content)).toContain("날짜가 바뀌었다");
+    expect(peeked?.messages.at(-1)?.content).toBe("물음");
+    // Nothing handed in was changed, and nothing was written behind it.
+    expect(history).toEqual(frozen);
+    await store.settled();
+    expect(saves).toHaveLength(written);
+
+    // The conversation's next step — the same newest message — has nothing new to write either:
+    // had the look moved anything, this run would write the difference.
+    setSystemTime(minutes(18 * 60 + 5));
+    await run(store, conversation("안녕", "오늘 뭐 하지?"));
+    await store.settled();
+    expect(saves).toHaveLength(written);
+    expect(JSON.stringify(saves.at(-1))).toBe(before);
   });
 });
