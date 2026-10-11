@@ -58,6 +58,9 @@ const ALL = [MAIN, PROJECT, LEFT, THEIRS, LONG];
 
 const at = (minute: number) => new Date(Date.UTC(2026, 9, 10, 9, minute));
 
+/** Characters as a person sees them: what a snippet is counted and cut in. */
+const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
 const SECRET = word("도구결과");
 const ARGUMENT = word("도구인자");
 const PICTURE = word("그림자료");
@@ -602,6 +605,28 @@ describe("the words a person typed", () => {
     expect([...emoji]).toHaveLength(SNIPPET_LENGTH + 1);
     expect(emoji).toBe(`${"😀".repeat(SNIPPET_LENGTH)}…`);
     expect(snippetOf("Excel 표", ["excel"])).toBe("Excel 표");
+  });
+
+  test.each([
+    ["a flag", `가${"🇰🇷".repeat(200)}`, "🇰🇷"],
+    ["a family", `가${"👨‍👩‍👧".repeat(200)}`, "👨‍👩‍👧"],
+    // 한 as macOS writes it into a file name: three jamo a person reads as one syllable.
+    ["a decomposed syllable", "한".repeat(200), "한"],
+  ])(
+    "a snippet is cut between characters as a person sees them, never through %s",
+    (_name, text, whole) => {
+      const cut = snippetOf(text, ["없는말"]);
+      expect(cut.endsWith(`${whole}…`)).toBe(true);
+      expect([...GRAPHEMES.segment(cut)]).toHaveLength(SNIPPET_LENGTH + 1);
+    },
+  );
+
+  test("nor does it begin through one, when the match is far in", () => {
+    const cut = snippetOf(`${"👍🏽".repeat(100)} 찾는말 ${"나".repeat(300)}`, [
+      "찾는말",
+    ]);
+    expect(cut.startsWith("…👍🏽")).toBe(true);
+    expect(cut).toContain("찾는말");
   });
 
   test("the words found are marked, and nothing else", () => {

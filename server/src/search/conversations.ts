@@ -95,20 +95,36 @@ export function likePattern(term: string): string {
   return `%${term.replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
 }
 
+/** Characters as a person sees them (`shared/sound-text.ts` `cutOnGraphemes` is the same lesson). */
+const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
 /**
- * The words around the first term found, on one line. Cut by characters and not by bytes or
- * UTF-16 halves: half an emoji is not text (`shared/sound-text.ts` is the same lesson).
+ * The words around the first term found, on one line. Cut by characters AS A PERSON SEES THEM,
+ * not by bytes, UTF-16 halves or code points: half an emoji is not text. Cut by code points it
+ * ended a snippet on `🇰` of 🇰🇷, on `👨‍👩‍` of a family, on the first jamo of a syllable pasted
+ * from a file name, and began one on the bare skin tone of a 👍🏽 (measured, 2026-10-11).
  */
 export function snippetOf(text: string, terms: readonly string[]): string {
-  const line = [...text.replace(/\s+/gu, " ").trim()];
-  const folded = line.map((character) => character.toLowerCase()).join("");
+  const line = [...GRAPHEMES.segment(text.replace(/\s+/gu, " ").trim())].map(
+    (one) => one.segment,
+  );
+  const folded = line.map((character) => character.toLowerCase());
+  const whole = folded.join("");
   let first = -1;
   for (const term of terms) {
-    const found = folded.indexOf(term.toLowerCase());
+    const found = whole.indexOf(term.toLowerCase());
     if (found !== -1 && (first === -1 || found < first)) first = found;
   }
-  // `found` counts UTF-16 units of the folded line; the cut is made in characters.
-  const lead = first <= 0 ? 0 : [...folded.slice(0, first)].length;
+  // `found` counts UTF-16 units of the folded line; the cut is made at the character holding it.
+  let lead = 0;
+  if (first > 0) {
+    let units = 0;
+    for (const character of folded) {
+      if (units + character.length > first) break;
+      units += character.length;
+      lead += 1;
+    }
+  }
   const start =
     line.length <= SNIPPET_LENGTH ? 0 : Math.max(0, lead - SNIPPET_LEAD);
   const end = Math.min(line.length, start + SNIPPET_LENGTH);
