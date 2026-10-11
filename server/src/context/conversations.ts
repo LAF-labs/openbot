@@ -77,6 +77,7 @@ import {
 } from "./compaction";
 import {
   afterCut,
+  boundedSummary,
   closePoint,
   type DayCut,
   type DaySummarizer,
@@ -162,6 +163,12 @@ type Conversation = {
   closing: boolean;
   /** When the last close failed, ms: the next attempt waits `CLOSE_RETRY_MS`. */
   closeFailedAt: number | null;
+  /**
+   * Failed closes in a row on the cut as it stands. From the first, an attempt is bounded to the
+   * oldest unclosed day; at `CLOSE_FALLBACK_AFTER` the day is closed without the model. Memory
+   * only, like the clock beside it: a restart starts the count again, and costs one more attempt.
+   */
+  closeFailures: number;
   /** What the last look for a close was made against; nothing changed, nothing to look at again. */
   closeCheckedKey: string | null;
   /** Said once per cut: the thread the run carried did not hold the message the cut is after. */
@@ -361,6 +368,63 @@ export type DayEpochSetting = {
 const DEFAULT_CLOSE_IDLE_MS = 2 * 60_000;
 /** After a failed close (the summariser down), the next attempt waits this long. */
 const CLOSE_RETRY_MS = 30 * 60_000;
+/**
+ * After this many failed closes in a row, the day is closed without the model (`unsummarised`).
+ *
+ * A FAILED CLOSE MUST NOT BE A PERMANENT ONE. Measured in `eval:memory-days`' sixty-night walk
+ * (pull request 200): two of twenty-four conversations stopped closing after one close ran to the
+ * summariser's 120 s, and never closed again — 57 and 40 nights in a row — because every later
+ * attempt sent the same summary with one more day of transcript behind it, larger each night, and
+ * nothing ever gave up; one of the two reproduced outside the walk (no reply in 200 s, twice). The
+ * whole conversation was then carried behind the last summary: a question of 176K–246K prompt
+ * tokens instead of 8K. Three, not one: the other walk's night did not reproduce (its input,
+ * rebuilt, came back in 3 s), so one failure is as likely a provider's bad minute as an input the
+ * model cannot finish, and the retry is bounded to the oldest day so it is never larger than what
+ * failed. The fallback the agent runtimes document is the same shape — compaction fails, the
+ * context is cut deterministically and the conversation goes on (research in the pull request).
+ */
+const CLOSE_FALLBACK_AFTER = 3;
+
+/** The local day a stamped message was first seen on, or null for a row from before stamps. */
+function dayOf(message: StampedMessage, zone: string): string | null {
+  const at = (message as { lafAt?: unknown }).lafAt;
+  return typeof at === "string" ? dayLabel(new Date(at), zone) : null;
+}
+
+/** A day label as the summary writes one: `9/26`. */
+const shortDay = (label: string) =>
+  `${Number(label.slice(5, 7))}/${Number(label.slice(8, 10))}`;
+
+/**
+ * The summary a close makes without the model: what the last close said, carried as it was, and
+ * one line that says which days the model never summarised — the dates and the count, nothing
+ * about what was in them. The Bot is told what is not in the summary; it is never told something
+ * the model did not write. Held to the bound the way every summary is, oldest lines first.
+ */
+export function unsummarisedSummary(
+  previous: string | null,
+  span: readonly StampedMessage[],
+  zone: string,
+): { summary: string; days: number } {
+  const days = [
+    ...new Set(
+      span.map((message) => dayOf(message, zone)).filter(Boolean) as string[],
+    ),
+  ].sort();
+  const first = days[0];
+  const last = days[days.length - 1];
+  const when =
+    first && last
+      ? first === last
+        ? shortDay(first)
+        : `${shortDay(first)}~${shortDay(last)}`
+      : "날짜 모름";
+  const line = `- ${when}: 이 기간의 대화 ${span.length}건은 요약되지 않았다 (요약이 ${CLOSE_FALLBACK_AFTER}번 실패). 그동안의 일은 이 요약에 없다.`;
+  return {
+    summary: boundedSummary([previous ?? "", line].filter(Boolean).join("\n")),
+    days: days.length,
+  };
+}
 
 /** The frozen system message, with the summary of what the cut replaced at its end. */
 function withSummary(system: string, cut: DayCut | undefined): string {
@@ -705,6 +769,7 @@ export function createConversationStore(
     close: null,
     closing: false,
     closeFailedAt: null,
+    closeFailures: 0,
     closeCheckedKey: null,
     cutMissingLogged: false,
     requests: 0,
@@ -737,49 +802,94 @@ export function createConversationStore(
       if (days.busy && (await days.busy(conversation.botId))) return false;
       const stored = await days.history(conversation.threadId);
       conversation.closeCheckedKey = key;
-      const point = closePoint(stored, {
-        today,
-        timeZone: zone,
-        after: conversation.epoch.cut?.through ?? null,
-      });
-      if (!point) return conversation.close !== null;
+      const after = conversation.epoch.cut?.through ?? null;
+      const whole = closePoint(stored, { today, timeZone: zone, after });
+      if (!whole) return conversation.close !== null;
+      const failures = conversation.closeFailures;
+      const giveUp = failures >= CLOSE_FALLBACK_AFTER;
+      /*
+       * A RETRY IS NEVER LARGER THAN WHAT FAILED. The span grows by a day for every night the close
+       * fails, and the attempt that failed was already too much for the model; so after a failure
+       * the attempt is the oldest unclosed day alone — the same input as the night before, or
+       * smaller — and the close it makes stands for that day only, the rest carried as it is. The
+       * next close, on the moved cut, takes what remains.
+       */
+      let point = whole;
+      let closeDay = today;
+      if (failures > 0 && !giveUp) {
+        const firstDay = dayOf(whole.span[0] as StampedMessage, zone);
+        const second = whole.span
+          .map((message) => dayOf(message, zone))
+          .find((day) => day !== null && day !== firstDay);
+        const oldest = second
+          ? closePoint(stored, { today: second, timeZone: zone, after })
+          : null;
+        if (oldest) {
+          point = oldest;
+          closeDay = second as string;
+        }
+      }
       if (conversation.close?.through === point.through) return true;
       const chars = JSON.stringify(point.span).length;
       if (chars < (days.minChars ?? MIN_DAY_CLOSE_CHARS)) return false;
-      /*
-       * THE EXISTING COMPACTION FIRST (`./compaction`: Jev, the server model behind it, the rule
-       * below both), so what the summariser reads has lost the page reads nobody needs and kept the
-       * ones Jev judged still matter — with the same redacted excerpts.
-       */
-      let span: readonly StampedMessage[] = point.span;
+      const previous = conversation.epoch.cut?.summary ?? null;
+      let summary: string;
       let arm = "none";
-      if (setting?.compact) {
-        try {
-          const decided = await setting.compact(span);
-          span = applyCompaction(span, decided.plan) as StampedMessage[];
-          arm = decided.arm;
-        } catch {
-          arm = "failed";
+      let transcriptChars = 0;
+      if (giveUp) {
+        /*
+         * WITHOUT THE MODEL. The last summary carried as it was, and the days it never covered
+         * named in it — never written for it. Said out loud with the counts, because this is the
+         * one close after which the Bot does not know what those days held; the owner's screen and
+         * the conversation's own search still do.
+         */
+        const made = unsummarisedSummary(previous, point.span, zone);
+        summary = made.summary;
+        arm = "unsummarised";
+        log.warn("day_close_unsummarised", {
+          bot: conversation.botId,
+          messages: point.span.length,
+          days: made.days,
+          spanChars: chars,
+          failures,
+        });
+      } else {
+        /*
+         * THE EXISTING COMPACTION FIRST (`./compaction`: Jev, the server model behind it, the rule
+         * below both), so what the summariser reads has lost the page reads nobody needs and kept
+         * the ones Jev judged still matter — with the same redacted excerpts.
+         */
+        let span: readonly StampedMessage[] = point.span;
+        if (setting?.compact) {
+          try {
+            const decided = await setting.compact(span);
+            span = applyCompaction(span, decided.plan) as StampedMessage[];
+            arm = decided.arm;
+          } catch {
+            arm = "failed";
+          }
         }
+        const transcript = transcriptOf(span, zone);
+        transcriptChars = transcript.length;
+        const forgotten = days.forgotten
+          ? await days.forgotten(conversation.botId)
+          : [];
+        const written = await days.summarize({
+          previous,
+          transcript,
+          day: closeDay,
+          forgotten,
+        });
+        /*
+         * TOLD, AND CHECKED. The owner's message saying a fact they later forgot is in the
+         * transcript the summariser read, and a model told not to write something sometimes writes
+         * it anyway.
+         */
+        summary =
+          forgotten.length > 0
+            ? (await scrub({ summary: written, forgotten })).summary
+            : written;
       }
-      const transcript = transcriptOf(span, zone);
-      const forgotten = days.forgotten
-        ? await days.forgotten(conversation.botId)
-        : [];
-      const written = await days.summarize({
-        previous: conversation.epoch.cut?.summary ?? null,
-        transcript,
-        day: today,
-        forgotten,
-      });
-      /*
-       * TOLD, AND CHECKED. The owner's message saying a fact they later forgot is in the transcript
-       * the summariser read, and a model told not to write something sometimes writes it anyway.
-       */
-      const summary =
-        forgotten.length > 0
-          ? (await scrub({ summary: written, forgotten })).summary
-          : written;
       /*
        * THE DREAM, BEFORE THE CLOSE CAN BE TAKEN, so the standing guidance it writes is in the frozen
        * layer of the epoch this close begins — never a change in the middle of one. The dialogue
@@ -796,7 +906,7 @@ export function createConversationStore(
             botId: conversation.botId,
             threadId: conversation.threadId,
             dialogue: dialogueOf(transcriptOf(point.span, zone)),
-            day: today,
+            day: closeDay,
           });
         } catch (error) {
           log.warn("dream_failed", {
@@ -805,14 +915,15 @@ export function createConversationStore(
           });
         }
       }
-      conversation.close = { through: point.through, summary, day: today };
+      conversation.close = { through: point.through, summary, day: closeDay };
       conversation.closeFailedAt = null;
+      conversation.closeFailures = 0;
       // Counts only. Never a message, never the summary.
       log.info("day_closed", {
         bot: conversation.botId,
         messages: point.span.length,
         spanChars: chars,
-        transcriptChars: transcript.length,
+        transcriptChars,
         summaryChars: summary.length,
         arm,
         ms: Date.now() - started,
@@ -820,9 +931,13 @@ export function createConversationStore(
       return true;
     } catch (error) {
       conversation.closeFailedAt = now;
+      conversation.closeFailures += 1;
+      // The count and the time: a close that ran to its bound reads apart from one refused at once.
       log.warn("day_close_failed", {
         bot: conversation.botId,
         reason: describeFailure(error),
+        failures: conversation.closeFailures,
+        ms: Date.now() - started,
       });
       return false;
     } finally {
