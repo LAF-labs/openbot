@@ -225,6 +225,82 @@ const kind = (read: number) => ({
   probabilities: { read, change: 1 - read, unclear: 0 },
 });
 
+/*
+ * WHAT A DECISION COST, AS IT IS FILED (`DecisionCall.onUsage`). The day's budget adds the dollars
+ * on these rows (`usage/daily-budget.ts`), so a figure is filed only when it is one: a number,
+ * finite, and not below nothing. `askModel` and the usage reader already held that line; this
+ * call filed whatever number came, a negative one included — which would have been taken off the
+ * day's spend.
+ */
+describe("what a decision is filed as costing", () => {
+  const filed = async (usage: unknown) => {
+    const rows: unknown[] = [];
+    const { call } = endpoint(() =>
+      json({
+        id: "d1",
+        model: MODEL,
+        provider: "TypeSafe",
+        answers: { yes: { type: "noul", noul: 0.9 } },
+        usage,
+      }),
+    );
+    const log = quietLog();
+    try {
+      await askDecision(
+        { ...call, onUsage: (row) => rows.push(row) },
+        {
+          purpose: "test",
+          state: {},
+          questions: { yes: { type: "noul", instructions: "q" } },
+          timeoutMs: 2_000,
+        },
+      );
+    } finally {
+      log.restore();
+    }
+    return rows;
+  };
+
+  test.each([
+    ["what the provider said", 0.0000126, 0.0000126],
+    ["nothing at all, which is a price", 0, 0],
+  ])("a figure is filed: %s", async (_what, cost, expected) => {
+    expect(await filed({ input_tokens: 300, output_tokens: 20, cost })).toEqual(
+      [
+        {
+          model: MODEL,
+          promptTokens: 300,
+          completionTokens: 20,
+          totalTokens: 320,
+          costUsd: expected,
+        },
+      ],
+    );
+  });
+
+  test.each([
+    ["below nothing", -0.004],
+    ["barely below nothing", -1e-9],
+    ["words", "0.01"],
+    ["nothing said", undefined],
+    ["null", null],
+  ])(
+    "no figure is filed for a cost that is %s, and the tokens still are",
+    async (_what, cost) => {
+      const rows = await filed({ input_tokens: 300, output_tokens: 20, cost });
+      expect(rows).toEqual([
+        {
+          model: MODEL,
+          promptTokens: 300,
+          completionTokens: 20,
+          totalTokens: 320,
+        },
+      ]);
+      expect(rows[0]).not.toHaveProperty("costUsd");
+    },
+  );
+});
+
 describe("the Jev auto-reviewer: allow or ask, never deny", () => {
   test("allows only over the bar on both counts, and says with what", async () => {
     const { call, sent } = endpoint(() =>

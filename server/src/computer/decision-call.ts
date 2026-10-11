@@ -259,7 +259,14 @@ export async function askDecision(
           promptTokens: inputTokens,
           completionTokens: outputTokens,
           totalTokens: inputTokens + outputTokens,
-          ...(typeof cost === "number" && Number.isFinite(cost)
+          /*
+           * A FIGURE BELOW NOTHING IS NOT A COST. Filed as it came, a negative one would be taken
+           * OFF the day's spend (`usage/daily-budget.ts` adds the rows' dollars), and a trial's
+           * day would grow by it. Left out instead — as `askModel` leaves one out
+           * (`model-call.ts`, `reported`) and the usage reader does (`usage/model-usage.ts`,
+           * `said`) — so the row is priced by its tokens, like any row no provider put a price on.
+           */
+          ...(typeof cost === "number" && Number.isFinite(cost) && cost >= 0
             ? { costUsd: cost }
             : {}),
         });
