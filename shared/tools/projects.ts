@@ -53,7 +53,7 @@ export const PROJECT_TOOLS: readonly ProjectTool[] = Object.freeze([
   {
     name: READ_PROJECTS,
     description:
-      "이 사람의 프로젝트(따로 나눈 대화)를 읽는다. 이 대화에서 나누지 않은 일을 물을 때 쓴다. 프로젝트 이름을 들었으면 kind summary에 그 이름을 project로 넣어 바로 읽는다 — 그 프로젝트가 어디까지 왔는지가 오고, 이름이 달라도 있는 프로젝트의 목록이 함께 온다. 요약에 없는 구체적인 것(정한 금액, 날짜, 까닭)은 kind ask에 project와 question을 넣어 묻는다: 그 프로젝트의 대화를 다 아는 쪽이 적힌 대로 답한다. 어느 프로젝트인지 모르면 kind search로 낱말 하나를 찾는다: 이 대화의 지난 말과 모든 프로젝트에서 그 낱말이 나온 곳이 온다. kind list는 프로젝트 목록이다. 읽기만 한다 — 프로젝트에서 일을 시키지는 못하고, ask로 물어도 그쪽은 아무것도 하지 않는다.",
+      "이 대화의 지난 말과 이 사람의 프로젝트(따로 나눈 대화)를 읽는다. 전에 말했거나 했던 일이 요약에도 지금 대화에도 없으면 kind search로 낱말 하나를 찾는다: 이 대화의 지난 말과 모든 프로젝트에서 그 낱말이 나온 자리가 오니, 읽고 거기서 답한다. 이 대화에서 나누지 않은 일을 물을 때도 쓴다 — 프로젝트 이름을 들었으면 kind summary에 그 이름을 project로 넣어 바로 읽는다: 그 프로젝트가 어디까지 왔는지가 오고, 이름이 달라도 있는 프로젝트의 목록이 함께 온다. 그 요약에 없는 구체적인 것(정한 금액, 날짜, 까닭)은 kind ask에 project와 question을 넣어 묻는다: 그 프로젝트의 대화를 다 아는 쪽이 적힌 대로 답한다. 어느 프로젝트인지 모르면 search로 찾는다. kind list는 프로젝트 목록이다. 읽기만 한다 — 프로젝트에서 일을 시키지는 못하고, ask로 물어도 그쪽은 아무것도 하지 않는다.",
     parameters: {
       type: "object",
       properties: {
@@ -61,7 +61,7 @@ export const PROJECT_TOOLS: readonly ProjectTool[] = Object.freeze([
           type: "string",
           enum: [...PROJECT_READ_KINDS],
           description:
-            "list 프로젝트 목록, search 말 찾기, summary 한 프로젝트 요약, ask 한 프로젝트에 묻기",
+            "search 이 대화의 지난 말과 프로젝트에서 말 찾기, list 프로젝트 목록, summary 한 프로젝트 요약, ask 한 프로젝트에 묻기",
         },
         terms: {
           type: "string",

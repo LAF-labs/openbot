@@ -203,6 +203,13 @@ export function bareNameOf(name: string): string {
 }
 
 /**
+ * 이 대화의 지난 말을 찾는 도구를 부르는 이름 — 아래 표가 그 도구에 달고, 요약의 머리말이 그 낱말로
+ * 가리킨다(`shared/prompt/context.ko.ts` `earlierSummaryText`). 한 곳에 두어 둘이 같은 낱말을 쓴다.
+ * 여기인 까닭: 이 파일은 프롬프트 쪽을 가져오지 않고, 프롬프트 쪽은 이미 이 파일을 가져온다.
+ */
+export const PAST_TALK_LOOKUP = "지난 대화 검색";
+
+/**
  * 서비스 하나를 사람이 부르는 한국어 이름.
  *
  * 서버 카탈로그의 `key`로 찾는다. 여기 없는 키(관리자가 주소로 더한 서버)는 키 그대로 나간다 —
@@ -225,8 +232,10 @@ export const FAMILY_LABELS_KO: Readonly<Record<string, string>> = Object.freeze(
     "kma-weather": "날씨",
     // 연결된 서비스가 아니라 이 배포의 서버가 실행하는 목표 툴(`shared/tools/goals.ts`).
     goals: "목표",
-    // 메인 대화가 프로젝트를 읽는 도구(`shared/tools/projects.ts`) — 이것도 이 배포의 서버가 실행한다.
-    projects: "프로젝트",
+    // 메인 대화가 자기 지난 대화와 프로젝트를 읽는 도구(`shared/tools/projects.ts`) — 이것도 이 배포의
+    // 서버가 실행한다. "프로젝트"로만 서 있던 동안 봇은 요약에 없는 지난 일을 여기서 찾지 않았다
+    // (`shared/prompt/context.ko.ts` `earlierSummaryText`의 주석); 요약의 머리말이 이 낱말로 가리킨다.
+    projects: `프로젝트·${PAST_TALK_LOOKUP}`,
   },
 );
 
