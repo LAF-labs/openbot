@@ -3111,6 +3111,11 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `.cursor/BUGBOT.md` sends Bugbot to CLAUDE.md, and neither is long enough for Bugbot to cut it
  * (30,000 characters a rule). 1710 and 2 is 1712.
  *
+ * RAISED 2026-10-11 FOR THE MEMORY WALKS OF WEEKS, `root` from 1705 to 1707, both in
+ * `tests/eval-memory-days.test.ts`: sixty busy days pair their people differently for seven weeks
+ * and hold none of the table's numbers, and every value under a name that is not the subject's is
+ * part of the fact and not the fact.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
