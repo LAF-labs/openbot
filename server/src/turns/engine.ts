@@ -266,6 +266,30 @@ export function byConversation<T>(
   };
 }
 
+/**
+ * What a delegated run handed back: its last reply, where that reply asks for nothing.
+ *
+ * THE LAST REPLY, NOT THE LAST THING IT SAID. This used to take the last words of any reply the
+ * run made — and a run says things between its steps ("들어가 볼게요", with the call that goes
+ * in). So a run that ended without an answer handed back a sentence it had said on the way: its
+ * last reply empty, or its last turn spent on one more call after the steps ran out
+ * (`runner/turn-loop.ts` answers that call `laf:run_over` and ends). The Bot that delegated read
+ * `{ ok: true, answer: "공식 홈페이지에서 확인 중이에요." }` and had nothing to tell the person —
+ * seen in the model eval (2026-10-11, `minimum-wage-from-its-page`): it handed the same work over
+ * twice more, the second time adding "'확인 중' 같은 말로 끝내지 말고 금액을 포함하세요", and
+ * ran out of turns. Found by the owner reading this function.
+ *
+ * A reply that asks for a tool is a step, whatever it says; a run whose last reply is one, or is
+ * empty, handed nothing back — and that is a call that failed (`chat-tools.ts`).
+ */
+export function handedBack(messages: readonly Message[]): string {
+  const last = messages
+    .filter((message) => message.role === "assistant")
+    .at(-1);
+  if (!last || (last.toolCalls?.length ?? 0) > 0) return "";
+  return typeof last.content === "string" ? last.content.trim() : "";
+}
+
 /** Whether a call is one of the browser's own: a tool of the computer's that drives a page. */
 const isBrowserStep = (name: string | undefined): boolean =>
   name !== undefined &&
@@ -916,13 +940,7 @@ export function createTurnEngine(options: TurnEngineOptions) {
             await persistNow();
           },
         });
-        const said = worker.messages
-          .filter((message) => message.role === "assistant")
-          .map((message) =>
-            typeof message.content === "string" ? message.content.trim() : "",
-          )
-          .filter(Boolean);
-        return { answer: said.at(-1) ?? "", steps };
+        return { answer: handedBack(worker.messages), steps };
       };
 
       /*
