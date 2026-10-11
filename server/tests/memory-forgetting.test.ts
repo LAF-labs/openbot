@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+// The evaluation's own table, so the instruction can be held to say none of it.
+import { FACTS } from "../../evals/memory-days-facts";
 import {
   contextFactsFor,
   contextLayerText,
@@ -10,15 +12,20 @@ import {
   type PrepareInput,
 } from "../src/context/conversations";
 import {
+  boundedSummary,
   createDaySummarizer,
+  cutOf,
   DAY_SUMMARY_SYSTEM,
   dialogueOf,
   FORGOTTEN_RULE,
   type DaySummarizer,
   type StampedMessage,
+  SUMMARY_MAX_CHARS,
+  withoutPlaceholderLines,
 } from "../src/context/day-close";
 import {
   createSummaryScrubber,
+  isDated,
   lineCarries,
   scrubByRule,
 } from "../src/context/forget-scrub";
@@ -380,6 +387,291 @@ describe("what the summariser is told", () => {
     expect(request.system).toContain(FORGOTTEN_RULE);
     expect(request.system).toContain("things they said not to write down");
     expect(JSON.parse(request.user).forgotten).toEqual([PLAN]);
+  });
+
+  /*
+   * A fact with no date of its own — every month by the 5th, Tuesdays and Thursdays — was written
+   * as a dated event and lost its recurrence or was dropped as settled (eval:memory-days,
+   * 2026-10-11). The instruction now keeps such a fact as an undated line, after the dated ones.
+   */
+  test("a standing fact keeps its recurrence, undated, after the dated lines", () => {
+    expect(DAY_SUMMARY_SYSTEM).toContain(
+      "something the owner said that holds until the owner changes or ends it",
+    );
+    expect(DAY_SUMMARY_SYSTEM).toContain("on its own undated line");
+    expect(DAY_SUMMARY_SYSTEM).toContain("after the dated lines");
+    expect(DAY_SUMMARY_SYSTEM).toContain("A date passing does not settle it");
+    // Ended, not merely changed; a page's claim never standing; a dated fact moved, not doubled.
+    expect(DAY_SUMMARY_SYSTEM).toContain("drop the line");
+    expect(DAY_SUMMARY_SYSTEM).toContain("makes a standing fact");
+    expect(DAY_SUMMARY_SYSTEM).toContain("write it in the block, once");
+  });
+
+  /*
+   * The sample of the shape is a visible placeholder, never a fact that looks real: a concrete
+   * example line in a summariser's instruction can be copied into a real person's summary — a
+   * person with no 세무사 could find one carried into what their Bot believes (review of pull
+   * request 196). And the first wording's examples were the evaluation's own rows, so the rows it
+   * measured were measured with the answer in the instruction.
+   */
+  test("the sample line is a bracketed placeholder, not a real-looking fact", () => {
+    expect(DAY_SUMMARY_SYSTEM).toContain("`- <무엇>: <언제마다 / 어떤 조건>`");
+    expect(DAY_SUMMARY_SYSTEM).toContain("never this placeholder");
+  });
+
+  /*
+   * Every backticked snippet is one of a short list, so a real-looking example line cannot come
+   * back in a later wording without this test naming it (review of pull request 196).
+   */
+  test("every backticked snippet in the instruction is on the allowlist", () => {
+    const allowed = new Set([
+      "`previous`",
+      "`transcript`",
+      "`day`",
+      "`- 9/21: …`",
+      "`- 9/21: 이 사람이 …`",
+      "`- <무엇>: <언제마다 / 어떤 조건>`",
+    ]);
+    const snippets = DAY_SUMMARY_SYSTEM.match(/`[^`]*`/g) ?? [];
+    expect(snippets.length).toBeGreaterThan(0);
+    expect(snippets.filter((snippet) => !allowed.has(snippet))).toEqual([]);
+  });
+
+  test("a line that is still the placeholder is dropped before the summary is stored", async () => {
+    const bodies: Array<{ messages: Array<{ content: string }> }> = [];
+    const summarize = createDaySummarizer(
+      {
+        baseUrl: "https://model.example.test/v1",
+        model: "z-ai/glm-5.3-flash",
+        apiKey: async () => "k",
+        fetch: (async (_url: unknown, init?: RequestInit) => {
+          bodies.push(JSON.parse(String(init?.body)));
+          return new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: [
+                      "- 9/24: 이 사람이 택배 두 건을 보냄.",
+                      "- <무엇>: <언제마다 / 어떤 조건>",
+                      "- 한빛농산 유자 납품: 매주 월요일",
+                    ].join("\n"),
+                  },
+                },
+              ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }) as unknown as typeof fetch,
+      },
+      { timeoutMs: 5_000 },
+    );
+    const summary = await summarize({
+      previous: null,
+      transcript: "사장님: 한빛농산 유자는 매주 월요일에 들어와",
+      day: "2026-09-25 (금)",
+    });
+    expect(bodies).toHaveLength(1);
+    expect(summary).toBe(
+      "- 9/24: 이 사람이 택배 두 건을 보냄.\n- 한빛농산 유자 납품: 매주 월요일",
+    );
+    expect(
+      withoutPlaceholderLines("- 세무사: <언제마다>\n- 지은: 화요일"),
+    ).toBe("- 지은: 화요일");
+  });
+
+  test("nothing the evaluation's table says is in the instruction", () => {
+    for (const fact of FACTS) {
+      expect(fact.entity.test(DAY_SUMMARY_SYSTEM)).toBe(false);
+      for (const value of fact.values) {
+        expect(value.test(DAY_SUMMARY_SYSTEM)).toBe(false);
+      }
+      if (fact.stale) expect(fact.stale.test(DAY_SUMMARY_SYSTEM)).toBe(false);
+    }
+  });
+});
+
+describe("a standing line among the dated ones", () => {
+  const DEADLINE = "매출 정산 자료는 매달 5일까지 세무사에게 넘겨야 한다.";
+  const WITH_STANDING = [
+    "- 9/14: 이 사람이 세무사에게 보낼 안부 문자를 부탁해 초안을 써 줌.",
+    "- 9/15: 20260207번 주문 받는 곳을 춘천 효자동으로 바꿈.",
+    "- 세무사 정산 자료: 매달 5일까지",
+    "- 지은(포장 알바): 매주 화·목 출근",
+  ].join("\n");
+
+  test("the one the owner forgot goes, the dated line about the same person stays", () => {
+    const { summary, removed } = scrubByRule(WITH_STANDING, [DEADLINE]);
+    expect(removed).toBe(1);
+    expect(summary).not.toContain("매달 5일까지");
+    expect(summary).toContain("안부 문자");
+    expect(summary).toContain("매주 화·목 출근");
+  });
+
+  /*
+   * A standing line is terse — a head and a value — so it holds few of a notebook line's words,
+   * and the rule's 60% of distinctive words left a forgotten standing fact in what the Bot is
+   * given: `- 지은(포장 알바): 매주 화·목 출근` has 2 of the 6 words of "포장 알바 지은이는 화요일과
+   * 목요일에만 출근한다." (review of pull request 196). The rule arm alone is what is tested here —
+   * the floor that stands when the judge model is unavailable.
+   */
+  const JIEUN = "포장 알바 지은이는 화요일과 목요일에만 출근한다.";
+  const YUJA = "유자는 청운농원에서 1kg에 18,000원에 들여온다.";
+  const DAESUNG =
+    "대성유리는 월말 결제이고, 10만 원 넘게 주문하면 무료배송이다.";
+  const REGULAR = "단골 한정숙 님은 택배를 꼭 경비실에 맡겨 달라고 한다.";
+  const TERSE: ReadonlyArray<[fact: string, line: string]> = [
+    [
+      "포장 알바 지은이는 화요일과 목요일에만 출근한다.",
+      "- 지은(포장 알바): 매주 화·목 출근",
+    ],
+    [
+      "매출 정산 자료는 매달 5일까지 세무사에게 넘겨야 한다.",
+      "- 세무사: 매달 5일",
+    ],
+    ["채팅 문의는 저녁 6시까지만 받는다.", "- 채팅 문의: 저녁 6시까지"],
+    [
+      "대성유리는 월말 결제이고, 10만 원 넘게 주문하면 무료배송이다.",
+      "- 대성유리 결제: 월말",
+    ],
+    [
+      "포장 알바 지은이는 화요일과 목요일에만 출근한다.",
+      "- 알바 출근: 지은 화·목, 민수 일요일",
+    ],
+  ];
+  test.each(TERSE)(
+    "a terse standing line carrying the forgotten fact %#",
+    (fact, line) => {
+      expect(lineCarries(line, fact)).toBe(true);
+      expect(
+        scrubByRule(`${WITH_STANDING}\n${line}`, [fact]).summary,
+      ).not.toContain(line);
+    },
+  );
+
+  /*
+   * A standing line of the SAME KIND shares words that name nothing — a role (포장 알바), a
+   * recurrence (매달), the digits of a price or a day (18,000원 → "18"; 5일 inside 25일) — and a
+   * first arm that took any two words erased unrelated facts: every line here was dropped by it
+   * (second review of pull request 196). Each must stay.
+   */
+  const STAYS: ReadonlyArray<[fact: string, line: string]> = [
+    [YUJA, "- 딸기: 논산 김 사장님네서 1kg에 11,000원"],
+    [YUJA, "- 블루베리: 1kg에 25,000원"],
+    [DEADLINE, "- 부가세 신고: 세무사가 매달 25일에 처리"],
+    [DEADLINE, "- 부가세 신고: 매달 25일"],
+    [DEADLINE, "- 카드 대금: 매달 15일 자동이체"],
+    [DAESUNG, "- 한일포장 결제: 다음 달 10일"],
+    [DAESUNG, "- 청운농원 결제: 매달 10일 계좌이체"],
+    [JIEUN, "- 민수(포장 알바): 매주 토요일 출근"],
+    [JIEUN, "- 포장 상자 발주: 알바 통해 매주 주문"],
+    [REGULAR, "- 단골 오 사장님: 택배 문 앞에 두기"],
+    [JIEUN, "- 9/14: 이 사람이 지은이에게 줄 안내문 세 줄을 부탁함."],
+    [JIEUN, "- 재고: 유자청 40병, 포장 상자 120개"],
+    [JIEUN, "- 민수: 주말 포장 담당, 일요일에 나옴"],
+    // A dated line sharing words under the ratio stays on the dated arm — and would go on the
+    // standing arm, so this row fails if `isDated` ever stops telling them apart.
+    [DEADLINE, "- 9/14 세무사: 매달 5일 자료 넘김 완료"],
+    [DEADLINE, "- 9/14: 부가세 신고: 세무사가 매달 25일에 처리"],
+  ];
+  test.each(STAYS)("an unrelated line stays %#", (fact, line) => {
+    expect(lineCarries(line, fact)).toBe(false);
+  });
+
+  test("one forget on a mixed summary takes one line", () => {
+    const mixed = [
+      "- 9/14: 이 사람이 세무사에게 보낼 안부 문자를 부탁해 초안을 써 줌.",
+      "- 9/15: 20260207번 주문 받는 곳을 춘천 효자동으로 바꿈.",
+      "- 매출 정산 자료: 매달 5일까지 세무사님께 넘기기",
+      "- 부가세 신고: 세무사가 매달 25일에 처리",
+      "- 카드 대금: 매달 15일 자동이체",
+      "- 지은(포장 알바): 매주 화·목 출근",
+      "- 민수(포장 알바): 매주 토요일 출근",
+      "- 한일포장 결제: 다음 달 10일",
+      "- 단골 오 사장님: 택배 문 앞에 두기",
+    ].join("\n");
+    const { summary, removed } = scrubByRule(mixed, [DEADLINE]);
+    expect(removed).toBe(1);
+    expect(summary).not.toContain("매달 5일까지");
+    expect(summary).toContain("부가세 신고");
+    expect(summary).toContain("카드 대금");
+  });
+
+  /*
+   * Known limits of the rule arm, left to the judge model in production: a line that names the
+   * subject and nothing of what the fact says in words the fact used. Pinned so a change that
+   * closes one is seen, not to assert the limit is right.
+   */
+  const LIMITS: ReadonlyArray<[fact: string, line: string, carried: boolean]> =
+    [
+      [JIEUN, "- 지은이: 화·목 출근", true],
+      [JIEUN, "- 지은이 출근: 화, 목", true],
+      ["채팅 문의는 저녁 6시까지만 받는다.", "- 채팅 상담 마감: 18시", false],
+      ["채팅 문의는 저녁 6시까지만 받는다.", "- 채팅: 18:00까지", false],
+    ];
+  test.each(LIMITS)(
+    "the rule arm on %# reads %s as %p",
+    (fact, line, carried) => {
+      expect(lineCarries(line, fact)).toBe(carried);
+    },
+  );
+
+  test.each([
+    ["- 9/21: …", true],
+    ["- 9/14~9/16: …", true],
+    ["- 2026-09-21: …", true],
+    ["- 9.21: …", true],
+    ["- (9/21) …", true],
+    ["1. 9/21: …", true],
+    ["- 3/4분기 정산: …", false],
+    ["- 3.5kg 설탕: …", false],
+    ["- 세무사: 매달 5일", false],
+  ])("isDated(%s) is %p", (line, dated) => {
+    expect(isDated(line)).toBe(dated);
+  });
+
+  test("the hard cut is reported, with whether the day being closed lost a line", () => {
+    const standing = Array.from(
+      { length: 160 },
+      (_, i) => `- 거래처 ${i}: 매달 ${(i % 28) + 1}일 계좌이체로 결제`,
+    );
+    const whole = [
+      ...standing,
+      "- 9/25: 어제의 열린 일",
+      "- 9/26: 오늘의 열린 일",
+    ].join("\n");
+    const kept = boundedSummary(whole);
+    const cut = cutOf(whole, kept, "2026-09-26 (토)");
+    expect(cut).not.toBeNull();
+    expect(cut?.lines).toBeGreaterThan(0);
+    expect(cut?.chars).toBe(whole.trim().length - kept.length);
+    // The oldest standing lines went, the tail with the dated lines stayed: no last-day line cut.
+    expect(cut?.lastDay).toBe(false);
+    expect(kept).toContain("- 9/26: 오늘의 열린 일");
+    const tailFirst = [
+      ...standing.slice(0, 2),
+      "- 9/26: 오늘의 열린 일",
+      ...standing,
+    ].join("\n");
+    const keptTail = boundedSummary(tailFirst);
+    expect(cutOf(tailFirst, keptTail, "2026-09-26 (토)")?.lastDay).toBe(true);
+    expect(cutOf("- 9/26: 짧다", "- 9/26: 짧다", "2026-09-26 (토)")).toBeNull();
+  });
+
+  test("the bound cuts the oldest dated lines and reaches the standing block last", () => {
+    const dated = Array.from(
+      { length: 120 },
+      (_, day) =>
+        `- 9/${(day % 30) + 1}: ${20260200 + day}번 주문 받는 곳을 바꾸고 송장을 다시 뽑음.`,
+    );
+    const standing = [
+      "- 세무사 정산 자료: 매달 5일까지",
+      "- 지은(포장 알바): 매주 화·목 출근",
+    ];
+    const bounded = boundedSummary([...dated, ...standing].join("\n"));
+    expect(bounded.length).toBeLessThanOrEqual(SUMMARY_MAX_CHARS);
+    expect(bounded).not.toContain(dated[0] as string);
+    expect(bounded.endsWith(standing.join("\n"))).toBe(true);
   });
 });
 
