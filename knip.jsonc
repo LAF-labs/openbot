@@ -42,7 +42,9 @@
         "src/routes/**/*.tsx",
         "scripts/*.ts",
         "tests/**/*.test.{ts,tsx}",
-        "tests/support/*-render.tsx"
+        "tests/support/*-render.tsx",
+        // Loads `vite.config.ts` in a process of its own, for the same reason the renders run so.
+        "tests/support/*-probe.ts"
       ],
       // The stylesheet is in the project so its `@import`s count as uses of tailwindcss and friends.
       "project": [
