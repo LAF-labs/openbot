@@ -38,6 +38,8 @@ export type BotDayItem =
       reason?: string | null;
       /** Facts remembered during the turn. Absent from a server before 2026-09-25. */
       learned?: number;
+      /** The newest of them, which 수첩 lands on (`#memory-<id>`). Absent before 2026-10-11. */
+      memoryId?: string | null;
       label: string | null;
       channelId: string | null;
       messageId: string | null;
@@ -54,6 +56,7 @@ export type BotDayItem =
       channelId: string | null;
       messageId: string | null;
       learned?: number;
+      memoryId?: string | null;
     }
   | { kind: "learned"; memoryId: string; at: string; head: string }
   /** The memory's background work that changed something (`server/src/agents/day.ts`). */

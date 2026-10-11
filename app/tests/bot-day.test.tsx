@@ -151,7 +151,13 @@ function server(options: {
   return asked;
 }
 
-const PATHS = ["/channel/$channelId", "/channel/new", "/routines", "/agents"];
+const PATHS = [
+  "/channel/$channelId",
+  "/channel/new",
+  "/routines",
+  "/agents",
+  "/notebook",
+];
 
 async function day(
   options: Parameters<typeof server>[0],
@@ -287,6 +293,7 @@ describe("오늘", () => {
   });
 
   test("what a turn remembered is on its row, not three more rows", async () => {
+    // A server from before the row named its newest memory (2026-10-11): the count is in the row.
     const view = await day({
       items: [chat("c-1", { learned: 3, label: "우리 가게 소개" })],
     });
@@ -294,6 +301,42 @@ describe("오늘", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toContain("우리 가게 소개");
     expect(rows[0]).toContain("Remembered 3");
+  });
+
+  test("a remembered row lands on its line in 수첩; 기억함 N on a turn's row lands on the newest", async () => {
+    const view = await day({
+      items: [
+        {
+          kind: "learned",
+          memoryId: "m-1",
+          at: at(2),
+          head: "월요일은 쉰다",
+        },
+        chat("c-1", { learned: 2, memoryId: "m-new", label: "우리 가게 소개" }),
+      ],
+    });
+    // The count is a press of its own beside the turn's row, which still opens the conversation.
+    const rows = view.rows();
+    expect(rows).toEqual([
+      expect.stringContaining("Remembered · 월요일은 쉰다"),
+      expect.stringContaining("우리 가게 소개"),
+      "Remembered 2",
+    ]);
+    expect(rows[1]).not.toContain("Remembered 2");
+
+    await view.press(view.button("Remembered · 월요일은 쉰다"));
+    await view.settle(30);
+    expect(view.router.state.location.pathname).toBe("/notebook");
+    expect(view.router.state.location.hash).toBe("memory-m-1");
+    expect(view.router.state.location.search).toEqual({ agent: "bot-1" });
+
+    await view.press(view.button("Remembered 2"));
+    await view.settle(30);
+    expect(view.router.state.location.hash).toBe("memory-m-new");
+
+    await view.press(view.button("우리 가게 소개"));
+    await view.settle(30);
+    expect(view.router.state.location.pathname).toBe("/channel/ch-1");
   });
 
   test("the memory's background work is a receipt row, overnight only before six", async () => {

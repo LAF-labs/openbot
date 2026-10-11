@@ -71,6 +71,12 @@ export function revealWhenDrawn(id: string, withinMs = 6000): void {
     // Marked a moment, as a transcript row is: `:target` does not follow the router's pushState.
     element.setAttribute("data-jumped", "true");
     setTimeout(() => element.removeAttribute("data-jumped"), 2400);
+    /*
+     * And the keyboard goes with the eye, where the element takes it (a memory line on 수첩 does,
+     * `tabIndex={-1}`; a routine's card does not, and this is nothing there): Enter on the row that
+     * sent somebody here otherwise left focus behind on the row, a screen away from what it showed.
+     */
+    if (element instanceof HTMLElement) element.focus({ preventScroll: true });
   };
   const found = document.getElementById(id);
   if (found) {
