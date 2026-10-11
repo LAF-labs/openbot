@@ -5,7 +5,12 @@
  * and the words a question put to a project is carried in.
  */
 import { describe, expect, test } from "bun:test";
-import { REMINDER_CLOSE, REMINDER_OPEN } from "../shared/prompt/context.ko";
+import { FACTS } from "../evals/memory-days-facts";
+import {
+  earlierSummaryText,
+  REMINDER_CLOSE,
+  REMINDER_OPEN,
+} from "../shared/prompt/context.ko";
 import { TOOL_RESULT_KO } from "../shared/prompt/tool-results.ko";
 import { TOOL_RESULT_CUT } from "../shared/spillover";
 import {
@@ -17,6 +22,7 @@ import {
   FAMILY_LABELS_KO,
   isDeferredToolName,
   oneLine,
+  PAST_TALK_LOOKUP,
   searchTools,
   serverKeyOf,
 } from "../shared/tools/bridge";
@@ -53,12 +59,12 @@ describe("where the tool stands", () => {
     expect(isProjectToolName("mcp__projects__write")).toBe(false);
   });
 
-  test("it is named to the Bot under 프로젝트, and counted as nobody's connection", () => {
+  test("it is named to the Bot under 프로젝트·지난 대화 검색, and counted as nobody's connection", () => {
     expect(serverKeyOf(READ_PROJECTS)).toBe(PROJECTS_FAMILY);
-    expect(FAMILY_LABELS_KO[PROJECTS_FAMILY]).toBe("프로젝트");
+    expect(FAMILY_LABELS_KO[PROJECTS_FAMILY]).toBe("프로젝트·지난 대화 검색");
     expect(DEPLOYMENT_FAMILIES.has(PROJECTS_FAMILY)).toBe(true);
     expect(deferredToolsText([READ_PROJECTS])).toContain(
-      `- 프로젝트: ${READ_PROJECTS}`,
+      `- 프로젝트·지난 대화 검색: ${READ_PROJECTS}`,
     );
     // A person with nothing connected is not told to look again among "connected services".
     expect(deferredFamiliesLine([READ_PROJECTS])).toBe(
@@ -73,6 +79,9 @@ describe("where the tool stands", () => {
     "지난 대화에서 찾기",
     "대화 기록 검색",
     "project summary",
+    // The words the summary header sends a Bot looking with.
+    PAST_TALK_LOOKUP,
+    "요약에 없는 지난 일",
   ])("a Bot looking for it with %j finds it first", (query) => {
     const beside = [...GOAL_TOOLS, ...PROJECT_TOOLS];
     expect(searchTools(beside, query)[0]?.name).toBe(READ_PROJECTS);
@@ -80,7 +89,84 @@ describe("where the tool stands", () => {
 
   test("a search's one line for it says what it is, whole", () => {
     const line = oneLine(tool?.description ?? "");
-    expect(line).toBe("이 사람의 프로젝트(따로 나눈 대화)를 읽는다.");
+    expect(line).toBe(
+      "이 대화의 지난 말과 이 사람의 프로젝트(따로 나눈 대화)를 읽는다.",
+    );
+  });
+});
+
+/*
+ * THE WAY BACK TO WHAT THE SUMMARY LACKS. Told "모른다고 하거나 다시 확인한다", the Bot did not look in
+ * its own past conversation: 0 of 9 real turns on 2026-10-12, 14 of 75 mornings in the sixty-night
+ * walk (#200) — and every correct answer on those mornings came from the search. The search was
+ * named to it as "프로젝트" and nothing else. Now the header names the tool as the list calls it,
+ * the list calls it what the header says, and the tool's own words lead with this conversation's
+ * past. Muse's route, as it describes it: summary lacks it → search memory, past conversation
+ * first → read what is found → answer from it; say "I don't know" only after the search is empty.
+ */
+describe("the way back to what the summary lacks", () => {
+  // A day whose digits no evaluation fact's value shape reads as its own (the test below).
+  const header = earlierSummaryText("- 어제의 한 줄", "2026-09-25 (금)").split(
+    "\n",
+  )[0] as string;
+
+  test("the header sends the Bot to the search by the name the tool list gives it, before 모른다", () => {
+    const label = FAMILY_LABELS_KO[PROJECTS_FAMILY] ?? "";
+    expect(label).toContain(PAST_TALK_LOOKUP);
+    expect(header).toContain(
+      `${PAST_TALK_LOOKUP}(${READ_PROJECTS}, kind search)`,
+    );
+    // What the summary already answers is answered from it — the control: no search for that.
+    const answers = header.indexOf("요약에 있는 것은 그대로 답한다");
+    const search = header.indexOf(READ_PROJECTS);
+    // One empty search is not proof; the latest statement wins over what a search finds.
+    const unknown = header.indexOf("두세 번 달리 찾아본 뒤에만 모른다고 한다");
+    expect(header).toContain("가장 나중 것이 맞다");
+    expect(answers).toBeGreaterThan(-1);
+    expect(search).toBeGreaterThan(answers);
+    expect(unknown).toBeGreaterThan(search);
+    // And a project's conversation, which has no such tool, is told what to do without one.
+    expect(header).toContain("그 도구가 목록에 없으면 바로 모른다고 한다");
+    expect(header).not.toContain("다시 확인한다");
+    // With nothing summarised there is no header, and so no sentence sending anyone anywhere.
+    expect(earlierSummaryText("  ", "2026-09-25 (금)")).toBe("");
+  });
+
+  test("the tool's own words lead with this conversation's past, in the line and in the kinds", () => {
+    expect(oneLine(tool?.description ?? "")).toContain("이 대화의 지난 말");
+    const parameters = tool?.parameters as unknown as {
+      properties: { kind: { description: string } };
+    };
+    const kind = parameters.properties.kind.description;
+    expect(kind.startsWith("search 이 대화의 지난 말")).toBe(true);
+    // Searching is said to be for what the summary and the conversation at hand do not hold.
+    const description = tool?.description ?? "";
+    expect(description).toContain("요약에도 지금 대화에도 없으면 kind search");
+    expect(description.indexOf("kind search")).toBeLessThan(
+      description.indexOf("kind summary"),
+    );
+  });
+
+  /*
+   * What a model is told never holds an evaluation's own answers (docs/laf/eval-pack.md, "모델에게
+   * 주는 말에 평가의 답을 넣지 않는다"): the header, the label and the description, held against every
+   * fact `eval:memory-days` asks for — no subject, no value, no old value of any of them.
+   */
+  test("none of the evaluation's facts is in what the Bot reads about the search", () => {
+    const read = [
+      header,
+      FAMILY_LABELS_KO[PROJECTS_FAMILY] ?? "",
+      tool?.description ?? "",
+    ].join("\n");
+    expect(FACTS.length).toBeGreaterThan(0);
+    for (const fact of FACTS) {
+      expect(fact.entity.test(read)).toBe(false);
+      for (const value of fact.values) expect(value.test(read)).toBe(false);
+      if (fact.stale) expect(fact.stale.test(read)).toBe(false);
+    }
+    // The check can see a fact: the fact's own line is caught by it.
+    const [first] = FACTS;
+    expect(first?.values.every((value) => value.test(first.said))).toBe(true);
   });
 });
 
