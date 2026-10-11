@@ -117,20 +117,34 @@ export function primaryBot(
  *
  * WHAT A CONVERSATION IS, IS WHAT THE SERVER SAYS (2026-10-10, `channels.kind`). The oldest one
  * was the rule; a project is another conversation with the same Bot and may one day be the older
- * of the two. Where none says `main`, the Bot has no main conversation — the oldest project is not
- * offered in its place, and neither is one that says nothing: the app is served by the release
- * that answers it (`images.yml` publishes both under one tag), so there is no server from before
- * the column for this code to meet, and a guess for one was twenty lines nothing could reach.
+ * of the two. Where the server says and none is `main`, the Bot has no main conversation — the
+ * oldest project is not offered in its place, and neither is one that says nothing beside others
+ * that do.
+ *
+ * ONLY A SERVER FROM BEFORE THE COLUMN, which says nothing of any of them, is still answered by
+ * the oldest. Not a server that exists: both images ride one tag (`images.yml`), but
+ * `docker compose up -d` swaps the two containers one after the other and `web` waits on nothing
+ * (`docker-compose.yml`), so for the length of that swap this app can be served over the previous
+ * API — `docs/laf/deploying.md` names the same window for the sign-in buttons. Without the guess,
+ * every Bot on the screen that swap lands on has no conversation until the roster is fetched
+ * again. DELETE THIS GUESS once no release a deployment can be upgrading from answers without
+ * `kind`: the first `:stable` after 2026-10-10 (migration 0064) is the last one that can meet
+ * such an API, so the release after that one takes the guess and its test out.
  */
 export function conversationOf(
   agentId: string,
   channels: readonly ChannelSummary[] | undefined,
 ): ChannelSummary | undefined {
+  let oldest: ChannelSummary | undefined;
   let main: ChannelSummary | undefined;
+  let isSaid = false;
   for (const channel of channels ?? []) {
     if (channel.agentIds.length !== 1 || channel.agentIds[0] !== agentId) {
       continue;
     }
+    if (!oldest || channel.createdAt < oldest.createdAt) oldest = channel;
+    if (channel.kind === undefined) continue;
+    isSaid = true;
     if (
       channel.kind === "main" &&
       (!main || channel.createdAt < main.createdAt)
@@ -138,5 +152,5 @@ export function conversationOf(
       main = channel;
     }
   }
-  return main;
+  return isSaid ? main : oldest;
 }

@@ -167,14 +167,28 @@ describe("a Bot's conversation", () => {
   });
 
   /*
-   * There is no server from before the column to meet: the app is served by the release that
-   * answers it. A channel that says nothing is not guessed at by its age — a project is as old.
+   * THE PREVIOUS API, FOR THE LENGTH OF A CONTAINER SWAP: `docker compose up -d` replaces `web`
+   * and `server` one after the other, so this app can be answered once by a server from before
+   * `channels.kind`, which says nothing of any conversation. The guess stays for that window and
+   * goes with the release after the first `:stable` past 2026-10-10 (`conversationOf`).
    */
-  test("one that does not say what it is is not taken for the main one", () => {
+  test("a server from before the column says nothing of any, and the oldest answers for the swap", () => {
     expect(
       conversationOf("a", [
         channel("newer", ["a"], "2026-09-10T00:00:00Z"),
         channel("oldest", ["a"], "2026-09-01T00:00:00Z"),
+      ])?.id,
+    ).toBe("oldest");
+  });
+
+  test("one that says nothing beside others that do is not taken for the main one", () => {
+    expect(
+      conversationOf("a", [
+        channel("unsaid", ["a"], "2026-08-01T00:00:00Z"),
+        {
+          ...channel("project", ["a"], "2026-09-01T00:00:00Z"),
+          kind: "project" as const,
+        },
       ]),
     ).toBeUndefined();
   });
