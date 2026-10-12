@@ -3097,6 +3097,16 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `routine-notepad.integration.test.ts` (a run that opened no browser lets go of none; a
  * letting-go is given its own time and the lane is not held past it). 4613 and 12 is 4625.
  *
+ * RAISED 2026-10-12 FOR CODEX'S SECOND READ OF THE SAME (pull request 210): `server` by five (to
+ * 4630) — three in `computer-browsers.test.ts` (a letting-go waits for an open in flight under
+ * the name, so one that lands late is let go of too; an open reaches the computer with the
+ * caller's own time; an open the caller had already stopped is not sent) and two in
+ * `unattended-facts.test.ts` (the call's signal reaches the gateway's open; while the open is on
+ * its way the toolkit says the run may hold the browser) — and `agent-computer` by two (to 620),
+ * in `tab-cap.test.ts`: in a background browser a Bot holds two tabs, a window's window closes
+ * the one before it and nothing opens past two; the main browser's six are as they were. 4625
+ * and 5 is 4630; 618 and 2 is 620.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -3125,7 +3135,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4625, roots: ["server"] },
+  { name: "server", floor: 4630, roots: ["server"] },
   { name: "app", floor: 2446, roots: ["app"] },
   {
     name: "agent-computer",
@@ -3150,7 +3160,7 @@ const GROUPS: readonly {
      * could not be removed failing the call, and five names that are paths refusing the whole
      * removal.
      */
-    floor: 618,
+    floor: 620,
     roots: ["agent-computer"],
     processes: 1,
   },
