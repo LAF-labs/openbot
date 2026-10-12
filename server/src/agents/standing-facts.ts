@@ -178,7 +178,6 @@ const shortFiguresOf = (line: string) =>
  * 5만 원 said and 50,000원 written do not meet: the line is to be in the owner's own words.
  */
 export function figuresQuoted(line: string, quote: string): boolean {
-  if (line || quote) return true;
   if (!figuresOf(line).every((run) => oldSubstringCarries(quote, run))) {
     return false;
   }
