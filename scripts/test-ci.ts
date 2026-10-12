@@ -3039,6 +3039,13 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * sixteen one-row tests folded into the grids. The file measures 105 against main's 69; 4522 and
  * 36 is 4558.
  *
+ * RAISED 2026-10-12 FOR THE SCALE WORDS AND THE DASHES: `server` from 4558 to 4576, eighteen in
+ * `memory-forgetting.test.ts` (Codex's third review of pull request 204): fifteen amounts in
+ * Korean scale words against their figures, each read as the value and forgotten either way,
+ * red with the words summed as independent terms again; three separator classes — every dash
+ * punctuation mark and the minus sign, every space separator, the middle dots — each joining the
+ * groups of one phone, red with the normalisation left out. 4558 and 18 is 4576.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
