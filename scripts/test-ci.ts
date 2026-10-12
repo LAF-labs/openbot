@@ -3046,6 +3046,16 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * punctuation mark and the minus sign, every space separator, the middle dots — each joining the
  * groups of one phone, red with the normalisation left out. 4558 and 18 is 4576.
  *
+ * REBASED 2026-10-12 onto main's 4528 (the small cleanups' tests): 4528 and 54 is 4582.
+ * RAISED THE SAME NIGHT FOR THE CLAUSE BY CONSTRUCTION: `server` from 4580 to 4596, sixteen in
+ * `memory-forgetting.test.ts` (Codex's fourth review of pull request 204): Codex's ten quoted
+ * calls, verbatim, each carried; seven lines that go by construction, each shown first-rule-
+ * carried and not exempt (an identifier's group, a list of sizes, a unit of the same dimension,
+ * a counter the table does not know, 300분 for 300명); the property over every pair the file
+ * holds — carried, or clearly another number for a reason that is (a) or (b); 조 as a counter not
+ * read as trillions. Two exception rows and two STAYS rows became by-construction rows. 10 and 7
+ * is 17, less the two rows folded, and the property and the 조 test: 4582 and 16 is 4598.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
