@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
+import { Hono } from "hono";
 import {
   type AnswerCode,
   COMPUTER_CODES,

@@ -47,8 +47,13 @@ export const SLOT_LABEL_KO: Readonly<Record<NotebookSlot, string>> = {
   offer: "파는 것",
 };
 
-/** Who wrote a line. Decided by the route it came through, never by the body. */
-export type MemorySource = "bot" | "owner";
+/**
+ * Who wrote a line. Decided by the route it came through, never by the body: `bot` through
+ * `remember` in a conversation, `owner` on 수첩, `night` by the server at the day's close from a
+ * standing fact the owner stated (`server/src/agents/standing-facts.ts`). A night line is the
+ * Bot's for the carry rule and for the owner's 맞아요 / 잊기; the word is so 수첩 can say who wrote it.
+ */
+export type MemorySource = "bot" | "owner" | "night";
 
 /** One line as the carry rule needs it. */
 export type NotebookLine = {

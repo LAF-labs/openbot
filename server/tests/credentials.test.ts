@@ -4,9 +4,9 @@ import { eq } from "drizzle-orm";
 import { createApp } from "../src/app";
 import { loadConfig } from "../src/config";
 import {
+  CredentialUnavailableError,
   createCredential,
   createCredentialStore,
-  CredentialUnavailableError,
   decryptCredentialForUse,
   decryptSecret,
   encryptSecret,

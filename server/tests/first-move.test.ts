@@ -18,7 +18,6 @@ import {
   FIRST_MOVES,
   FOLLOW_UP_ANAPHORS,
   FOLLOW_UP_OPENERS,
-  firstMoveForTurns as tellTurns,
   firstMoveStateOf,
   isFollowUp,
   kindsMentioned,
@@ -28,6 +27,7 @@ import {
   mentionsWeather,
   questionsFor,
   settleDecision,
+  firstMoveForTurns as tellTurns,
   warmFirstMove,
 } from "../src/turns/first-move";
 

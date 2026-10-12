@@ -9,8 +9,8 @@
  * cookie riding along.
  */
 import { describe, expect, test } from "bun:test";
-import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
+import { Hono } from "hono";
 import { createApp } from "../src/app";
 import type { AppVariables, AuthService } from "../src/auth/guards";
 import { upgradeOriginAllowed } from "../src/auth/origin";

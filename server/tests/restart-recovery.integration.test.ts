@@ -43,12 +43,12 @@ import {
 } from "../src/db/schema";
 import { createAlimtalkAdapter } from "../src/notifications/alimtalk";
 import { withOutboxWatch } from "../src/notifications/from-audit";
-import { solapiSettings } from "../src/plugins/alimtalk/solapi";
 import {
   createNotificationOutbox,
   type NotificationAdapter,
   type NotificationRecord,
 } from "../src/notifications/outbox";
+import { solapiSettings } from "../src/plugins/alimtalk/solapi";
 import type { PartnerConnections } from "../src/plugins/partner-connections";
 import { createRoutineFailureDelivery } from "../src/routines/deliver";
 import {

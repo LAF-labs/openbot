@@ -1,8 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { Hono } from "hono";
 import { and, eq, sql } from "drizzle-orm";
+import type { MiddlewareHandler } from "hono";
+import { Hono } from "hono";
 import { createAuditStore } from "../src/audit";
+import type { AppVariables } from "../src/auth/guards";
 import { createApprovalRegistry } from "../src/computer/approvals";
 import type { ActionPolicy } from "../src/computer/policy";
 import { createCredentialStore } from "../src/credentials";
@@ -14,11 +16,9 @@ import {
   mcpUserCredentials,
   users,
 } from "../src/db/schema";
-import type { AppVariables } from "../src/auth/guards";
-import type { MiddlewareHandler } from "hono";
 import {
-  challengeFor,
   type ConnectOrigin,
+  challengeFor,
   sealConnectState,
 } from "../src/plugins/oauth";
 import { createPluginRoutes } from "../src/plugins/routes";

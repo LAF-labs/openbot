@@ -13,11 +13,11 @@ import type { AppVariables, AuthenticatedActor } from "../src/auth/guards";
 import { createDatabase } from "../src/db/client";
 import { agents, lafRoutineRuns, lafRoutines, users } from "../src/db/schema";
 import { createRoutineRoutes } from "../src/routines/routes";
-import { SUMMARY_MAX_CHARS } from "../src/routines/store";
 import {
   createRoutineService,
   type RoutineServiceOptions,
 } from "../src/routines/service";
+import { SUMMARY_MAX_CHARS } from "../src/routines/store";
 import { TEST_POOL } from "./support/database";
 
 /**

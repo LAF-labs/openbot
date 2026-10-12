@@ -53,13 +53,15 @@ import {
   MAIN_SCOPE,
   projectScope,
 } from "../../../shared/file-scope";
-import type { LoginVault } from "../logins/store";
 import type { AuditStore } from "../audit";
+import type { LoginVault } from "../logins/store";
+import type { Workbench } from "../workbench/client";
 import { type ApprovalRegistry, createApprovalRegistry } from "./approvals";
 import type { ReviewSubject, ReviewVerdict } from "./auto-review";
 import { browserOf, computerOf } from "./bot-id";
 import type { ComputerClient } from "./client";
 import { createActs } from "./gateway/acts";
+import type { ActionActor } from "./gateway/caller";
 import { createGovern } from "./gateway/govern";
 import { createHandovers } from "./gateway/handovers";
 import { createNavigation, type SiteSeen } from "./gateway/navigation";
@@ -69,13 +71,10 @@ import { createPageReads, createSnapshotCache } from "./gateway/snapshots";
 import { createTypedLedger, type HighRiskCheck } from "./high-risk";
 import type { ActionPolicy } from "./policy";
 import { createRepeatDetector, type RepeatDetector } from "./repeat";
-import type { Workbench } from "../workbench/client";
 import {
   createStandingApprovalStore,
   type StandingApprovalStore,
 } from "./standing-approvals";
-
-import type { ActionActor } from "./gateway/caller";
 
 export {
   type ActionActor,

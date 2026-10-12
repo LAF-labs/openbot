@@ -19,6 +19,7 @@ import {
   ElementNotFoundError,
   StaleSnapshotError,
 } from "../src/computer/client";
+import { SECRET_FIELD_RULE } from "../src/computer/default-policy";
 import {
   ActionNeedsApprovalError,
   ActionRefusedError,
@@ -31,9 +32,8 @@ import {
   createRepeatDetector,
   type RepeatDetector,
 } from "../src/computer/repeat";
-import { SECRET_FIELD_RULE } from "../src/computer/default-policy";
-import { createStandingApprovalStore } from "../src/computer/standing-approvals";
 import type { SnapshotResult } from "../src/computer/schema";
+import { createStandingApprovalStore } from "../src/computer/standing-approvals";
 import { A_CLICK } from "./support/subjects";
 
 /**

@@ -30,6 +30,10 @@ import {
   createRuntimeAgentLoader,
 } from "./agents/runtime-agents";
 import { withShopProfile } from "./agents/shop-context";
+import {
+  createStandingExtractor,
+  createStandingHook,
+} from "./agents/standing-facts";
 import { createApp } from "./app";
 import {
   converterSettingFor,
@@ -54,21 +58,21 @@ import {
 import { startBackgroundWork } from "./boot/background";
 import { keepServingThroughUnhandledRejections } from "./boot/process";
 import { reconcileBeforeServing } from "./boot/reconcile";
-import { createProjectDeletion } from "./channels/deleting";
 import { recordActivity } from "./channels/activity";
+import { createProjectDeletion } from "./channels/deleting";
 import {
   type ChannelActivityEvent,
   createChannelEventHub,
 } from "./channels/events";
-import { createChannelStore } from "./channels/routes";
 import {
   createProjectSummaries,
   createProjectTools,
 } from "./channels/project-tool";
-import { createThreadProjects } from "./channels/thread-projects";
+import { createChannelStore } from "./channels/routes";
 import { websocket as channelSocket } from "./channels/socket";
 import { createStallGuard } from "./channels/stall-guard";
 import { createThreadIdentity } from "./channels/thread-identity";
+import { createThreadProjects } from "./channels/thread-projects";
 import { createSandboxedStore } from "./components/sandboxed";
 import { createComponentStore } from "./components/store";
 import { createApprovalRegistry } from "./computer/approvals";
@@ -262,6 +266,8 @@ const conversations = createConversationStore({
           forgotten: forgottenForBot(database),
           // The nightly dream, read late like the summariser (`agents/dream.ts`).
           dream: (input: Parameters<typeof dream>[0]) => dream(input),
+          // The standing facts the owner stated, to 수첩 (`agents/standing-facts.ts`); read late too.
+          standing: (input: Parameters<typeof standing>[0]) => standing(input),
         },
       }
     : {}),
@@ -671,6 +677,17 @@ const dream = createDream({
   database,
   guidance: agentMemoryStore.guidance ?? createGuidanceStore(database),
   call: modelCalls.dreamCall,
+});
+/**
+ * The close's additions to 수첩: a call of its own on the server model (the dream's call, the same
+ * judge path), written through the same store the Bot's `remember` goes through.
+ */
+const standing = createStandingHook({
+  database,
+  store: agentMemoryStore,
+  extract: createStandingExtractor(modelCalls.dreamCall, {
+    timeoutMs: 90_000,
+  }),
 });
 
 /**

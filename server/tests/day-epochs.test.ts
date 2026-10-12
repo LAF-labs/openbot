@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { recentLines } from "../src/log";
 import {
   contextFactsFor,
   contextLayerText,
@@ -10,9 +9,6 @@ import {
   type ConversationPersistence,
   createConversationStore,
   type PrepareInput,
-} from "../src/context/conversations";
-import { delegatedThreadOf } from "../src/turns/engine";
-import {
   unsummarisedSummary,
   withGapsKept,
 } from "../src/context/conversations";
@@ -25,6 +21,8 @@ import {
   transcriptOf,
 } from "../src/context/day-close";
 import type { SummaryScrubber } from "../src/context/forget-scrub";
+import { recentLines } from "../src/log";
+import { delegatedThreadOf } from "../src/turns/engine";
 
 /**
  * The day's close, measured where it matters: what the next request carries.

@@ -7,6 +7,7 @@ import {
   reminderLines,
   systemPromptText,
 } from "../../shared/prompt";
+import { STANDING_EXTRACT_SYSTEM } from "../src/agents/standing-facts";
 import {
   createConversationStore,
   type PrepareInput,
@@ -21,7 +22,6 @@ import {
   FORGOTTEN_RULE,
   type StampedMessage,
   SUMMARY_MAX_CHARS,
-  withoutPlaceholderLines,
 } from "../src/context/day-close";
 import {
   createSummaryScrubber,
@@ -834,36 +834,25 @@ describe("what the summariser is told", () => {
   /*
    * A fact with no date of its own — every month by the 5th, Tuesdays and Thursdays — was written
    * as a dated event and lost its recurrence or was dropped as settled (eval:memory-days,
-   * 2026-10-11). The instruction now keeps such a fact as an undated line, after the dated ones.
+   * 2026-10-11). Pull request 196 kept such a fact as an undated block inside the summary; now it
+   * goes to 수첩 by a call of its own (`agents/standing-facts.ts`), and the summary is the day's
+   * record: dated lines only, no standing bullet, no block, nothing kept back after the lines.
    */
-  test("a standing fact keeps its recurrence, undated, after the dated lines", () => {
+  test("the instruction asks for dated lines only and carries no standing block", () => {
     expect(DAY_SUMMARY_SYSTEM).toContain(
-      "something the owner said that holds until the owner changes or ends it",
+      "as short dated bullet lines (`- 9/21: …`), oldest first",
     );
-    expect(DAY_SUMMARY_SYSTEM).toContain("on its own undated line");
-    expect(DAY_SUMMARY_SYSTEM).toContain("after the dated lines");
-    expect(DAY_SUMMARY_SYSTEM).toContain("A date passing does not settle it");
-    // Ended, not merely changed; a page's claim never standing; a dated fact moved, not doubled.
-    expect(DAY_SUMMARY_SYSTEM).toContain("drop the line");
-    expect(DAY_SUMMARY_SYSTEM).toContain("makes a standing fact");
-    expect(DAY_SUMMARY_SYSTEM).toContain("write it in the block, once");
-  });
-
-  /*
-   * The sample of the shape is a visible placeholder, never a fact that looks real: a concrete
-   * example line in a summariser's instruction can be copied into a real person's summary — a
-   * person with no 세무사 could find one carried into what their Bot believes (review of pull
-   * request 196). And the first wording's examples were the evaluation's own rows, so the rows it
-   * measured were measured with the answer in the instruction.
-   */
-  test("the sample line is a bracketed placeholder, not a real-looking fact", () => {
-    expect(DAY_SUMMARY_SYSTEM).toContain("`- <무엇>: <언제마다 / 어떤 조건>`");
-    expect(DAY_SUMMARY_SYSTEM).toContain("never this placeholder");
+    expect(DAY_SUMMARY_SYSTEM).not.toContain("standing fact");
+    expect(DAY_SUMMARY_SYSTEM).not.toContain("undated");
+    expect(DAY_SUMMARY_SYSTEM).not.toContain("block");
+    expect(DAY_SUMMARY_SYSTEM).not.toContain("notebook");
+    expect(DAY_SUMMARY_SYSTEM).not.toContain("<무엇>");
   });
 
   /*
    * Every backticked snippet is one of a short list, so a real-looking example line cannot come
-   * back in a later wording without this test naming it (review of pull request 196).
+   * back in a later wording without this test naming it (review of pull request 196). The same
+   * for the night's extractor, whose instruction names kinds and holds no example line.
    */
   test("every backticked snippet in the instruction is on the allowlist", () => {
     const allowed = new Set([
@@ -872,63 +861,37 @@ describe("what the summariser is told", () => {
       "`day`",
       "`- 9/21: …`",
       "`- 9/21: 이 사람이 …`",
-      "`- <무엇>: <언제마다 / 어떤 조건>`",
     ]);
     const snippets = DAY_SUMMARY_SYSTEM.match(/`[^`]*`/g) ?? [];
     expect(snippets.length).toBeGreaterThan(0);
     expect(snippets.filter((snippet) => !allowed.has(snippet))).toEqual([]);
   });
 
-  test("a line that is still the placeholder is dropped before the summary is stored", async () => {
-    const bodies: Array<{ messages: Array<{ content: string }> }> = [];
-    const summarize = createDaySummarizer(
-      {
-        baseUrl: "https://model.example.test/v1",
-        model: "z-ai/glm-5.3-flash",
-        apiKey: async () => "k",
-        fetch: (async (_url: unknown, init?: RequestInit) => {
-          bodies.push(JSON.parse(String(init?.body)));
-          return new Response(
-            JSON.stringify({
-              choices: [
-                {
-                  message: {
-                    content: [
-                      "- 9/24: 이 사람이 택배 두 건을 보냄.",
-                      "- <무엇>: <언제마다 / 어떤 조건>",
-                      "- 한빛농산 유자 납품: 매주 월요일",
-                    ].join("\n"),
-                  },
-                },
-              ],
-            }),
-            { status: 200, headers: { "content-type": "application/json" } },
-          );
-        }) as unknown as typeof fetch,
-      },
-      { timeoutMs: 5_000 },
-    );
-    const summary = await summarize({
-      previous: null,
-      transcript: "사장님: 한빛농산 유자는 매주 월요일에 들어와",
-      day: "2026-09-25 (금)",
-    });
-    expect(bodies).toHaveLength(1);
-    expect(summary).toBe(
-      "- 9/24: 이 사람이 택배 두 건을 보냄.\n- 한빛농산 유자 납품: 매주 월요일",
-    );
-    expect(
-      withoutPlaceholderLines("- 세무사: <언제마다>\n- 지은: 화요일"),
-    ).toBe("- 지은: 화요일");
+  test("every backticked snippet in the extractor's instruction is on its allowlist", () => {
+    const allowed = new Set([
+      "`messages`",
+      "`m0`",
+      "`m1`",
+      "`notebook`",
+      "`n0`",
+      "`n1`",
+      "`line`",
+      "`quote`",
+    ]);
+    const snippets = STANDING_EXTRACT_SYSTEM.match(/`[^`]*`/g) ?? [];
+    expect(snippets.length).toBeGreaterThan(0);
+    expect(snippets.filter((snippet) => !allowed.has(snippet))).toEqual([]);
   });
 
-  test("nothing the evaluation's table says is in the instruction", () => {
-    for (const fact of FACTS) {
-      expect(fact.entity.test(DAY_SUMMARY_SYSTEM)).toBe(false);
-      for (const value of fact.values) {
-        expect(value.test(DAY_SUMMARY_SYSTEM)).toBe(false);
+  test("nothing the evaluation's table says is in the instruction, nor in the extractor's", () => {
+    for (const instruction of [DAY_SUMMARY_SYSTEM, STANDING_EXTRACT_SYSTEM]) {
+      for (const fact of FACTS) {
+        expect(fact.entity.test(instruction)).toBe(false);
+        for (const value of fact.values) {
+          expect(value.test(instruction)).toBe(false);
+        }
+        if (fact.stale) expect(fact.stale.test(instruction)).toBe(false);
       }
-      if (fact.stale) expect(fact.stale.test(DAY_SUMMARY_SYSTEM)).toBe(false);
     }
   });
 });

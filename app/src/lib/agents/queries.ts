@@ -99,8 +99,11 @@ export type AgentMemory = {
   id: string;
   content: string;
   createdAt: string;
-  /** `bot`: written by the Bot in a conversation. `owner`: written or corrected on 수첩. */
-  source: "bot" | "owner";
+  /**
+   * `bot`: written by the Bot in a conversation. `owner`: written or corrected on 수첩. `night`:
+   * written by the server at the day's close, from a standing fact the owner stated.
+   */
+  source: "bot" | "owner" | "night";
   /** The owner's own line, or a Bot's line the owner said is right. */
   confirmed: boolean;
   /** One of the shop's named lines (`shared/notebook.ts`), or null. */

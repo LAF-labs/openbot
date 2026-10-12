@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { TOOL_RESULT_CUT } from "../../shared/spillover";
 import {
   MAX_RESULT_CHARS,
   resultText,
@@ -6,7 +7,6 @@ import {
   trimDetail,
   VENDOR_DETAIL_CHARS,
 } from "../src/plugins/mcp";
-import { TOOL_RESULT_CUT } from "../../shared/spillover";
 
 /**
  * What a vendor's answer looks like by the time a model reads it.

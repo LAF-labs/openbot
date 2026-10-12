@@ -6,16 +6,16 @@ import {
   spyOn,
   test,
 } from "bun:test";
-import type { AuditEventInput, AuditStore } from "../src/audit";
 import { withAccountStates } from "../../shared/tools/gallery";
 import { withheldToolsText } from "../../shared/tools/paused";
 import { readsOnlyForwarded } from "../../shared/tools/projects";
-import type { AgentStandingProfile } from "../src/copilot";
-import { buildAgents } from "../src/copilot";
+import type { AuditEventInput, AuditStore } from "../src/audit";
 import {
   type ConversationStore,
   createConversationStore,
 } from "../src/context/conversations";
+import type { AgentStandingProfile } from "../src/copilot";
+import { buildAgents } from "../src/copilot";
 
 /**
  * Epochs and reminders, measured where they matter: on the request the provider receives.

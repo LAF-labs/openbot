@@ -5,12 +5,12 @@ import {
   addressKeyOf,
   DEFAULT_TRUSTED_ORIGIN,
 } from "../../shared/net/own-addresses";
+import { NOTES_RULE, RETIRED_NOTES_RULE } from "../src/computer/policy-store";
 import {
   ENVIRONMENT,
   loadConfig,
   TEST_TOKEN_ENCRYPTION_KEY,
 } from "../src/config";
-import { NOTES_RULE, RETIRED_NOTES_RULE } from "../src/computer/policy-store";
 import { log } from "../src/log";
 
 /**

@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import { inArray } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { UNANSWERED_RESULT } from "../../shared/task-ending";
 import {
   type BotDay,
   createDayReader,
@@ -28,7 +29,6 @@ import {
   lafThreadRuns,
   users,
 } from "../src/db/schema";
-import { UNANSWERED_RESULT } from "../../shared/task-ending";
 import { TEST_POOL } from "./support/database";
 
 const database = createDatabase(
