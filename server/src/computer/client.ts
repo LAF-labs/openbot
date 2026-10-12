@@ -1040,12 +1040,12 @@ export function createComputerClient(options: ComputerClientOptions) {
        * is an answer and not a failure: the computer holds only so many at once
        * (`agent-computer/src/browsers.ts`), and what to do about it is the caller's to decide.
        */
-      async openBrowser(): Promise<{
+      async openBrowser(caller?: AbortSignal): Promise<{
         opened: boolean;
         open: number;
         cap: number;
       }> {
-        return (await post("/browsers/open", {})) as {
+        return (await post("/browsers/open", {}, caller)) as {
           opened: boolean;
           open: number;
           cap: number;

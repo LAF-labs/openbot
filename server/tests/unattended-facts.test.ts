@@ -308,6 +308,58 @@ describe("the browser a run's pages are in", () => {
     expect(toolkit.browserOpened?.()).toBe(true);
   });
 
+  /*
+   * A RUN STOPPED, OR OUT OF TIME, WHILE ITS FIRST OPEN WAS ON ITS WAY (Codex's second read). The
+   * loop abandons the call and the run's end lets go; the open must go down with the call, and
+   * until the computer has answered, the toolkit says the run may be holding the browser — so
+   * the end lets go, and the gateway's letting-go waits for the open to land.
+   */
+  test("the open is cut with the call: the call's own signal reaches the gateway", async () => {
+    const askedWith: unknown[] = [];
+    const gateway = {
+      openBrowser: async (
+        _botId: string,
+        _browser: string,
+        _by: unknown,
+        within: unknown,
+      ) => {
+        askedWith.push(within);
+        return { opened: true };
+      },
+      read: async () => page,
+      handedOver: () => undefined,
+    } as unknown as ComputerGateway;
+    const toolkit = await createUnattendedTools({ gateway })(
+      "bot-1",
+      actor,
+      ROUTINES,
+    );
+    const signal = new AbortController().signal;
+    await toolkit.execute("computer_read", {}, { id: "call-1", signal });
+    expect(askedWith).toEqual([signal]);
+  });
+
+  test("while the open is on its way, the toolkit says the run may be holding the browser", async () => {
+    let land = () => undefined as void;
+    const { gateway } = computer(
+      () =>
+        new Promise((resolve) => {
+          land = () => resolve({ opened: true });
+        }),
+    );
+    const toolkit = await createUnattendedTools({ gateway })(
+      "bot-1",
+      actor,
+      ROUTINES,
+    );
+    const reading = toolkit.execute("computer_read", {});
+    await Bun.sleep(0);
+    expect(toolkit.browserOpened?.()).toBe(true);
+    land();
+    await reading;
+    expect(toolkit.browserOpened?.()).toBe(true);
+  });
+
   test("given no browser, a run's pages are in the main one, and nothing is opened for it", async () => {
     const { gateway, calls, opened } = computer();
     const toolkit = await createUnattendedTools({ gateway })("bot-1", actor);
