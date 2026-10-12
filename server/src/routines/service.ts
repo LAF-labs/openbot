@@ -117,7 +117,19 @@ export type RoutineServiceOptions = {
    * Absent, a routine runs as it always did: toolless, able to think and not to look. Present, it
    * is an agent turn. See runner/unattended.ts for why the loop lives on the server.
    */
-  tools?: (botId: string, actor: ActionActor) => Promise<UnattendedToolkit>;
+  tools?: (
+    botId: string,
+    actor: ActionActor,
+    where?: { browser: string },
+  ) => Promise<UnattendedToolkit>;
+  /**
+   * The background browser a routine's pages are in, and how it is let go of at the run's end
+   * (record §5, "루틴 옮기기"; `ROUTINE_BROWSER`). Present, a run's page tools drive that browser
+   * and not the main one, and the lane a run stands in is that browser's: routines run one after
+   * another — the deployment's, since the browser is the deployment's — and neither wait for nor
+   * hold up a conversation that is browsing. Absent — no computer — a run is as it was.
+   */
+  browser?: { name: string; letGo: (botId: string) => Promise<unknown> };
   /**
    * A run with tools is over, however it ended: told to the gateway, so that a login the run put
    * into a page stops being held and its tab is closed (`computer/gateway/secrets.ts`). Named by

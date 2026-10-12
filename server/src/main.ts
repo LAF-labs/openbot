@@ -72,6 +72,7 @@ import { createThreadIdentity } from "./channels/thread-identity";
 import { createSandboxedStore } from "./components/sandboxed";
 import { createComponentStore } from "./components/store";
 import { createApprovalRegistry } from "./computer/approvals";
+import { ROUTINE_BROWSER } from "./computer/bot-id";
 import { createComputerClient } from "./computer/client";
 import { createComputerGateway } from "./computer/gateway";
 import { createHighRiskCheck } from "./computer/high-risk";
@@ -876,6 +877,12 @@ const routineService = createRoutineService({
     ? {
         runEnded: (botId: string, runKey: string) =>
           computerGateway.runEnded(botId, runKey),
+        // A routine's pages are in the background browser for routines, not the main one.
+        browser: {
+          name: ROUTINE_BROWSER,
+          letGo: (botId: string) =>
+            computerGateway.releaseBrowser(botId, ROUTINE_BROWSER),
+        },
       }
     : {}),
   goals: goalStore,
