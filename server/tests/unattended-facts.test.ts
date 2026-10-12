@@ -245,6 +245,69 @@ describe("the browser a run's pages are in", () => {
     expect(calls).toEqual([["read", "bot-1@routine"]]);
   });
 
+  /*
+   * THE OPEN IS ASKED FOR AS THIS RUN'S ACTOR (Codex's read): a refusal — no room, or a browser the
+   * run before could not let go of — is a row of the gateway's, and the row says who was refused.
+   */
+  test("the browser is asked for as the run's actor, so a refusal's row says who", async () => {
+    const askedBy: unknown[] = [];
+    const gateway = {
+      openBrowser: async (_botId: string, _browser: string, by: unknown) => {
+        askedBy.push(by);
+        return { opened: true };
+      },
+      read: async () => page,
+      handedOver: () => undefined,
+    } as unknown as ComputerGateway;
+    const toolkit = await createUnattendedTools({ gateway })(
+      "bot-1",
+      actor,
+      ROUTINES,
+    );
+    await toolkit.execute("computer_read", {});
+    expect(askedBy).toEqual([actor]);
+  });
+
+  /*
+   * WHAT THE RUN'S END HAS TO LET GO OF (Codex's read): a run that never asked for a page opened
+   * nothing, and its end should not wait on a computer for nothing — with the deployment's one
+   * routine lane held the while. The toolkit says whether it asked and was not told no.
+   */
+  test("says whether it opened the browser: not before a page is asked for, not after no room, and yes after one opened", async () => {
+    const quiet = await createUnattendedTools({ gateway: computer().gateway })(
+      "bot-1",
+      actor,
+      ROUTINES,
+    );
+    expect(quiet.browserOpened?.()).toBe(false);
+    await quiet.execute("computer_list_files", {});
+    expect(quiet.browserOpened?.()).toBe(false);
+
+    const refused = await createUnattendedTools({
+      gateway: computer(async () => ({ opened: false })).gateway,
+    })("bot-1", actor, ROUTINES);
+    await refused.execute("computer_read", {});
+    expect(refused.browserOpened?.()).toBe(false);
+
+    const opened = await createUnattendedTools({ gateway: computer().gateway })(
+      "bot-1",
+      actor,
+      ROUTINES,
+    );
+    await opened.execute("computer_read", {});
+    expect(opened.browserOpened?.()).toBe(true);
+  });
+
+  test("an open that threw may have opened it: the run's end lets go", async () => {
+    const toolkit = await createUnattendedTools({
+      gateway: computer(async () => {
+        throw new Error("the computer did not answer");
+      }).gateway,
+    })("bot-1", actor, ROUTINES);
+    await toolkit.execute("computer_read", {});
+    expect(toolkit.browserOpened?.()).toBe(true);
+  });
+
   test("given no browser, a run's pages are in the main one, and nothing is opened for it", async () => {
     const { gateway, calls, opened } = computer();
     const toolkit = await createUnattendedTools({ gateway })("bot-1", actor);
