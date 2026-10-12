@@ -511,6 +511,14 @@ describe("the number clause on a dated line", () => {
     ],
     ["가격은 11 000원이다(청운농원 유자 매입).", "- 9/14: 대금 211,000원 입금"],
   ];
+  // Each by-construction row on its own, against the literal result: the property below skips a
+  // pair the clause carries, so without this a row could change side unseen (eighth review).
+  test.each(BY_CONSTRUCTION)(
+    "an ambiguous line goes, by construction %#",
+    (fact, line) => {
+      expect(lineCarries(line, fact)).toBe(true);
+    },
+  );
   test.each(FRAGMENTS)(
     "a fragment of the fact's number exempts nothing %#",
     (fact, line) => {
