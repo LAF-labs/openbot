@@ -13,9 +13,16 @@
  * Bot's own for its main browser, which is every caller's today, so nothing they pass changed —
  * and a chat turn takes it at the first call that uses the browser instead of at its first step
  * (which of the computer's tools that is: `drivesTheBrowser`, `shared/tools/computer.ts`).
- * A routine's run still takes it whole: a routine nearly always browses, its notepad is read
+ * A routine's run still takes a lane whole: a routine nearly always browses, its notepad is read
  * inside the lane so that a run queued behind another sees what that one settled, and its ledger
  * row opens once the lane lets it through (`routines/run.ts`).
+ *
+ * AND A ROUTINE'S LANE IS NOT A BOT'S (2026-10-12, record §5 "루틴 옮기기"). Its pages are in the
+ * deployment's background browser for routines, which the run opens and throws away, so what it
+ * holds is that browser itself (`laneOfBrowser`, `computer/bot-id.ts`) — not `bot@browser`, the
+ * id of one Bot's pages in it, under which two Bots' routines would not wait for each other and
+ * the first to end would close the browser under the second. A conversation in the main browser
+ * and a routine no longer wait for each other at all.
  *
  * A promise chain rather than a lock: it costs nothing when there is no second caller, and it
  * cannot deadlock because nothing here waits on anything but the holder in front of it.
@@ -33,7 +40,10 @@ export type LaneHold = {
 };
 
 export type BotLane = {
-  /** Run `task` once whoever has this browser has finished. */
+  /**
+   * Run `task` once whoever has this browser has finished. A computer's id, or — for a run that
+   * has a background browser whole — that browser's own lane (`laneOfBrowser`).
+   */
   run<T>(computerId: string, task: () => Promise<T>): Promise<T>;
   /** Hold the browser, once whoever has it has finished, until the hold is released. */
   acquire(computerId: string): Promise<LaneHold>;

@@ -113,6 +113,153 @@ describe("a routine's looks at the page", () => {
   });
 });
 
+/*
+ * THE BROWSER A RUN'S PAGES ARE IN (record §5, "루틴 옮기기"). A routine's page tools drive the Bot's
+ * background browser for routines; the Bot's folder is no browser's; and that browser is opened
+ * when a page is first asked for, never the main one in its place.
+ */
+describe("the browser a run's pages are in", () => {
+  const page = {
+    title: "예시",
+    url: "https://example.com/",
+    text: "본문",
+    truncated: false,
+  };
+  /** A computer that records which of its browsers each call was for. */
+  const computer = (
+    open: () => Promise<{ opened: boolean }> = async () => ({ opened: true }),
+  ) => {
+    const calls: [string, string][] = [];
+    const opened: [string, string][] = [];
+    const seen =
+      (what: string, answer: unknown) =>
+      async (computerId: string): Promise<never> => {
+        calls.push([what, computerId]);
+        return answer as never;
+      };
+    const gateway = {
+      openBrowser: async (botId: string, browser: string) => {
+        opened.push([botId, browser]);
+        return open();
+      },
+      navigate: seen("navigate", page),
+      read: seen("read", page),
+      snapshot: seen("snapshot", {
+        ...page,
+        snapshotId: 1,
+        elements: [],
+        tabs: [],
+      }),
+      listFiles: seen("listFiles", { files: [] }),
+      writeFile: seen("writeFile", { path: "a.txt", bytes: 1 }),
+      handedOver: () => undefined,
+    } as unknown as ComputerGateway;
+    return { gateway, calls, opened };
+  };
+  const ROUTINES = { browser: "routine" };
+
+  test("page tools drive the browser the run was given, opened once at the first of them", async () => {
+    const { gateway, calls, opened } = computer();
+    const toolkit = await createUnattendedTools({ gateway })(
+      "bot-1",
+      actor,
+      ROUTINES,
+    );
+    // Assembling the tools opens nothing: a run that never asks for a page starts no browser.
+    expect(opened).toEqual([]);
+    await toolkit.execute("computer_navigate", { url: "https://example.com" });
+    await toolkit.execute("computer_read", {});
+    await toolkit.execute("computer_snapshot", {});
+    expect(opened).toEqual([["bot-1", "routine"]]);
+    expect(calls).toEqual([
+      ["navigate", "bot-1@routine"],
+      ["read", "bot-1@routine"],
+      ["snapshot", "bot-1@routine"],
+    ]);
+  });
+
+  test("the folder's tools are the Bot's, in no browser, and open none", async () => {
+    const { gateway, calls, opened } = computer();
+    const toolkit = await createUnattendedTools({ gateway })(
+      "bot-1",
+      actor,
+      ROUTINES,
+    );
+    await toolkit.execute("computer_list_files", {});
+    await toolkit.execute("computer_write_file", {
+      path: "a.txt",
+      contents: "x",
+    });
+    expect(calls).toEqual([
+      ["listFiles", "bot-1"],
+      ["writeFile", "bot-1"],
+    ]);
+    expect(opened).toEqual([]);
+  });
+
+  test("with no room for it the call is answered with the fact — and is not made in the main browser", async () => {
+    let room = false;
+    const { gateway, calls, opened } = computer(async () => ({
+      opened: room,
+    }));
+    const toolkit = await createUnattendedTools({ gateway })(
+      "bot-1",
+      actor,
+      ROUTINES,
+    );
+    const outcome = await toolkit.execute("computer_navigate", {
+      url: "https://example.com",
+    });
+    expect(outcome).toEqual({
+      ok: false,
+      code: "laf:browser_failed",
+      reason: toolResultText("laf:browser_failed"),
+    });
+    expect(calls).toEqual([]);
+
+    // The Bot is told to try once more, and that try asks again: there may be room by then.
+    room = true;
+    await toolkit.execute("computer_navigate", { url: "https://example.com" });
+    expect(opened).toHaveLength(2);
+    expect(calls).toEqual([["navigate", "bot-1@routine"]]);
+  });
+
+  test("a try to open it that threw is forgotten: the next call asks again", async () => {
+    let tries = 0;
+    const { gateway, calls, opened } = computer(async () => {
+      tries += 1;
+      if (tries === 1) throw new Error("the computer did not answer");
+      return { opened: true };
+    });
+    const toolkit = await createUnattendedTools({ gateway })(
+      "bot-1",
+      actor,
+      ROUTINES,
+    );
+    const first = await toolkit.execute("computer_read", {});
+    expect((first as { ok: boolean }).ok).toBe(false);
+    expect(calls).toEqual([]);
+    const second = await toolkit.execute("computer_read", {});
+    expect((second as { ok: boolean }).ok).toBe(true);
+    expect(opened).toHaveLength(2);
+    expect(calls).toEqual([["read", "bot-1@routine"]]);
+  });
+
+  test("given no browser, a run's pages are in the main one, and nothing is opened for it", async () => {
+    const { gateway, calls, opened } = computer();
+    const toolkit = await createUnattendedTools({ gateway })("bot-1", actor);
+    await toolkit.execute("computer_navigate", { url: "https://example.com" });
+    await toolkit.execute("computer_read", {});
+    await toolkit.execute("computer_list_files", {});
+    expect(calls).toEqual([
+      ["navigate", "bot-1"],
+      ["read", "bot-1"],
+      ["listFiles", "bot-1"],
+    ]);
+    expect(opened).toEqual([]);
+  });
+});
+
 describe("what the executor refuses on its own", () => {
   test("arguments that are not what the tool takes", async () => {
     const toolkit = await createUnattendedTools({ gateway: UNTOUCHED })(

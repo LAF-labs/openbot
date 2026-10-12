@@ -74,6 +74,33 @@ export function computerIdOf(botId: string, browser?: string | null): string {
   return browser ? `${botId}@${browser}` : botId;
 }
 
+/**
+ * The background browser routines run in (record §5, "루틴 옮기기").
+ *
+ * ONE NAME, AND SO ONE BROWSER FOR THE DEPLOYMENT. The computer opens and lets go of a background
+ * browser by its name alone — "the browser is every Bot's that is sent to it"
+ * (`agent-computer/src/routes.ts`) — and what is a Bot's there is its tabs and its session, as in
+ * the main one. So every routine of the deployment is in this browser, whichever Bot's it is, and
+ * routines take one of the computer's two background seats and never both
+ * (`agent-computer/src/browsers.ts`).
+ */
+export const ROUTINE_BROWSER = "routine";
+
+/**
+ * The lane a background browser is held in by a run that has it WHOLE: opened for the run and
+ * thrown away at its end (`routines/run.ts`).
+ *
+ * THE BROWSER'S, NOT THE BOT'S IN IT. `computerIdOf(bot, browser)` is the lane of one Bot's pages
+ * in a browser, and two Bots' lanes there do not wait for each other — which is right in the main
+ * browser, which nobody closes. A run that closes the browser when it ends would close it under
+ * the other Bot's run: on an account with several Bots (from before 2026-09-24) the second routine
+ * to finish found no browser under the name and failed on a code nobody can read. So such a run
+ * stands in the browser's own lane. No Bot's id begins with `@`, so it is nobody's computer.
+ */
+export function laneOfBrowser(browser: string): string {
+  return `@${browser}`;
+}
+
 /** The Bot and the browser a computer's id names; `browser` is null for the main one. */
 export function computerOf(computerId: string): {
   botId: string;

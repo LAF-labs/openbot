@@ -172,7 +172,10 @@ function deployment(
   withLane = false,
   /** The run's toolkit and where its end is told, where a case is about those. */
   overrides: Partial<
-    Pick<Parameters<typeof createRoutineService>[0], "tools" | "runEnded">
+    Pick<
+      Parameters<typeof createRoutineService>[0],
+      "tools" | "runEnded" | "browser" | "lane"
+    >
   > = {},
 ) {
   const requests: ProviderRequest[] = [];
@@ -566,6 +569,182 @@ describe("a routine run's end", () => {
       [bot.botId, `routine:${answered?.id}`],
       [bot.botId, `routine:${failed?.id}`],
     ]);
+  }, 30_000);
+
+  /*
+   * A ROUTINE'S PAGES ARE IN ITS OWN BROWSER (record §5, "루틴 옮기기"): its tools are built for
+   * the Bot's background browser for routines, and that browser is let go of when the run is over
+   * — after the computer was told so, because the values the run typed are released in the
+   * browser they were typed into before that browser is closed.
+   */
+  test("its tools are built for the routines' browser, which is let go of after the run is told over — answered or failed", async () => {
+    const bot = await reviewBot();
+    const built: unknown[] = [];
+    const order: string[] = [];
+    let fails = false;
+    const { service } = deployment(
+      bot,
+      () => {
+        if (fails)
+          throw Object.assign(new Error("overloaded"), { status: 503 });
+        return says("새 리뷰가 없습니다.");
+      },
+      false,
+      {
+        tools: async (_botId, _actor, where) => {
+          built.push(where);
+          return { tools: [], execute: idle };
+        },
+        runEnded: async () => void order.push("told over"),
+        browser: {
+          name: "routine",
+          letGo: async (botId) => void order.push(`let go of ${botId}`),
+        },
+      },
+    );
+    const routine = await reviewRoutine(bot, service);
+
+    await service.runNow(bot.owner, routine.id);
+    expect((await service.runs(bot.owner, routine.id))[0]?.ok).toBe(true);
+    expect(built).toEqual([{ browser: "routine" }]);
+    expect(order).toEqual(["told over", `let go of ${bot.botId}`]);
+
+    fails = true;
+    await service.runNow(bot.owner, routine.id);
+    expect((await service.runs(bot.owner, routine.id))[0]?.ok).toBe(false);
+    expect(order).toEqual([
+      "told over",
+      `let go of ${bot.botId}`,
+      "told over",
+      `let go of ${bot.botId}`,
+    ]);
+  }, 30_000);
+
+  test("a browser that could not be let go of is not the run's failure", async () => {
+    const bot = await reviewBot();
+    const { service } = deployment(
+      bot,
+      () => says("새 리뷰가 없습니다."),
+      false,
+      {
+        tools: async () => ({ tools: [], execute: idle }),
+        browser: {
+          name: "routine",
+          letGo: async () => {
+            throw new Error("the computer did not answer");
+          },
+        },
+      },
+    );
+    const routine = await reviewRoutine(bot, service);
+    await service.runNow(bot.owner, routine.id);
+    expect((await service.runs(bot.owner, routine.id))[0]?.ok).toBe(true);
+  }, 30_000);
+
+  /*
+   * AND IT STANDS IN THAT BROWSER'S LANE (`laneOfBrowser`). A conversation holding the main
+   * browser does not hold a routine up — the run below would never end if it did. And the lane
+   * is the browser's own, not the Bot's in it: the browser is one for the deployment, and a run
+   * closes it when it ends.
+   */
+  test("a conversation that holds the main browser does not hold a routine up: its lane is its own browser's", async () => {
+    const bot = await reviewBot();
+    const lane = createBotLane();
+    const { service } = deployment(
+      bot,
+      () => says("새 리뷰가 없습니다."),
+      false,
+      {
+        lane,
+        browser: { name: "routine", letGo: async () => undefined },
+      },
+    );
+    const routine = await reviewRoutine(bot, service);
+    const browsing = await lane.acquire(bot.botId);
+    await service.runNow(bot.owner, routine.id);
+    expect((await service.runs(bot.owner, routine.id))[0]?.ok).toBe(true);
+    // One hold on the main browser — the conversation's — and one on the routines' own.
+    expect(lane.grants(bot.botId)).toBe(1);
+    expect(lane.grants("@routine")).toBe(1);
+    browsing.release();
+  }, 30_000);
+
+  /*
+   * TWO BOTS, ONE BROWSER. On an account with several Bots the first routine to finish closed the
+   * browser the other was still in, when each stood in its own Bot's lane. The second waits for
+   * the first to have let the browser go — it has not so much as had its tools built until then.
+   * Nothing here waits on a clock: the first run is held inside its tools until the second has
+   * asked for the lane.
+   */
+  test("another Bot's routine waits until the first has let the browser go", async () => {
+    const first = await reviewBot();
+    const second = await reviewBot();
+    const real = createBotLane();
+    const asked: string[] = [];
+    let bothAsked = () => {};
+    const bothInLine = new Promise<void>((resolve) => {
+      bothAsked = resolve;
+    });
+    const lane: typeof real = {
+      ...real,
+      run: (key, task) => {
+        asked.push(key);
+        if (asked.length === 2) bothAsked();
+        return real.run(key, task);
+      },
+    };
+    const order: string[] = [];
+    let firstIsIn = () => {};
+    const firstInTheBrowser = new Promise<void>((resolve) => {
+      firstIsIn = resolve;
+    });
+    const of = (bot: { botId: string }, label: string, held?: Promise<void>) =>
+      deployment(bot, () => says("새 리뷰가 없습니다."), false, {
+        lane,
+        tools: async () => {
+          order.push(`${label} has its tools`);
+          firstIsIn();
+          await held;
+          return { tools: [], execute: idle };
+        },
+        browser: {
+          name: "routine",
+          letGo: async () => void order.push(`${label} let the browser go`),
+        },
+      }).service;
+    const one = of(first, "the first", bothInLine);
+    const two = of(second, "the second");
+    const routineOne = await reviewRoutine(first, one);
+    const routineTwo = await reviewRoutine(second, two);
+
+    const running = one.runNow(first.owner, routineOne.id);
+    await firstInTheBrowser;
+    await Promise.all([running, two.runNow(second.owner, routineTwo.id)]);
+
+    expect(asked).toEqual(["@routine", "@routine"]);
+    expect(order).toEqual([
+      "the first has its tools",
+      "the first let the browser go",
+      "the second has its tools",
+      "the second let the browser go",
+    ]);
+  }, 30_000);
+
+  test("with no browser of its own, a routine stands in the Bot's lane as before", async () => {
+    const bot = await reviewBot();
+    const lane = createBotLane();
+    const { service } = deployment(
+      bot,
+      () => says("새 리뷰가 없습니다."),
+      false,
+      {
+        lane,
+      },
+    );
+    const routine = await reviewRoutine(bot, service);
+    await service.runNow(bot.owner, routine.id);
+    expect(lane.grants(bot.botId)).toBe(1);
+    expect(lane.grants("@routine")).toBe(0);
   }, 30_000);
 
   test("is told of no run that never had tools: one whose tools could not be assembled, and one that runs without any", async () => {

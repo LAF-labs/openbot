@@ -6,7 +6,10 @@ import {
   browserOf,
   computerIdOf,
   computerOf,
+  isBotId,
   isBrowserName,
+  laneOfBrowser,
+  ROUTINE_BROWSER,
 } from "../src/computer/bot-id";
 import {
   BROWSER_HEADER,
@@ -94,6 +97,24 @@ describe("a computer's id", () => {
     null,
   ])("%p is not", (name) => {
     expect(isBrowserName(name)).toBe(false);
+  });
+});
+
+/*
+ * THE ROUTINES' BROWSER (record §5, "루틴 옮기기"). Its name is one the computer takes, and the lane
+ * it is held in is nobody's computer: not a Bot's main browser, and not one Bot's pages in it — a
+ * run that held only its own Bot's would have the browser closed under it by another Bot's.
+ */
+describe("the routines' browser", () => {
+  test("has a name the computer takes", () => {
+    expect(isBrowserName(ROUTINE_BROWSER)).toBe(true);
+  });
+
+  test("is held in a lane of its own, the same whichever Bot's routine asks", () => {
+    const lane = laneOfBrowser(ROUTINE_BROWSER);
+    expect(lane).toBe("@routine");
+    expect(isBotId(lane)).toBe(false);
+    expect(lane).not.toBe(computerIdOf("bot-1", ROUTINE_BROWSER));
   });
 });
 

@@ -33,6 +33,7 @@ import {
 import { secretFieldsOf } from "../../../shared/secret-ask";
 import {
   computerTool,
+  drivesTheBrowser,
   UNATTENDED_COMPUTER_TOOLS,
   UNATTENDED_SAVED_LOGIN,
 } from "../../../shared/tools/computer";
@@ -41,6 +42,7 @@ import {
   withheldToolsForwarded,
 } from "../../../shared/tools/paused";
 import { SKILL_VIEW } from "../../../shared/tools/skills";
+import { computerIdOf } from "../computer/bot-id";
 import {
   type ActionActor,
   ActionNeedsApprovalError,
@@ -393,8 +395,43 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
   return async (
     botId: string,
     actor: ActionActor,
+    /**
+     * The background browser this run's pages are in (`ROUTINE_BROWSER` for a routine). Absent,
+     * the Bot's main one, as every run was before routines moved.
+     */
+    where?: { browser: string },
   ): Promise<UnattendedToolkit> => {
     const { gateway, pluginStore } = options;
+    /*
+     * WHICH COMPUTER A CALL IS FOR. A page tool is for the browser this run was given; the
+     * folder's three are for the Bot — a folder is no browser's, and the computer takes a file
+     * call without one.
+     *
+     * A BACKGROUND BROWSER IS OPENED AT THE FIRST CALL THAT DRIVES A PAGE, AND ONCE. Not when the
+     * run starts: a routine that only reads mail through a connected service would start a
+     * Chromium every morning to open nothing, on a machine whose browsers share three gigabytes.
+     * `opened: false` is the computer saying it has no room, and that call is answered with the
+     * fact — NEVER carried out in the main browser instead: there the run would be signed in as
+     * the person on the days there was no room and as nobody on the others. Only a browser that
+     * opened is remembered: the Bot is told to try once more (`laf:browser_failed`), and that try
+     * asks the computer again, whether the first was answered no or not answered at all.
+     */
+    const page = computerIdOf(botId, where?.browser);
+    let opening: Promise<boolean> | undefined;
+    const pageReady = (): Promise<boolean> => {
+      if (!where || !gateway) return Promise.resolve(true);
+      opening ??= gateway.openBrowser(botId, where.browser).then(
+        (answer) => {
+          if (!answer.opened) opening = undefined;
+          return answer.opened;
+        },
+        (error: unknown) => {
+          opening = undefined;
+          throw error;
+        },
+      );
+      return opening;
+    };
     const granted = pluginStore
       ? await pluginStore.offeredToModel(botId)
       : { tools: [], skills: [] };
@@ -514,8 +551,16 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
         if (!gateway) {
           return unknownTool();
         }
-        // The computer id is the Bot id, exactly as the acting routes pass it.
-        const c = botId;
+        // The browser this run's pages are in, and the Bot's own computer for its folder.
+        const c = page;
+        const folder = botId;
+        if (drivesTheBrowser(name) && !(await pageReady())) {
+          return {
+            ok: false,
+            code: "laf:browser_failed",
+            reason: toolResultText("laf:browser_failed"),
+          };
+        }
         // The run's deadline, on its way to the computer. See `ToolExecutor`.
         const signal = call?.signal;
         switch (name) {
@@ -538,7 +583,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
             return {
               ok: true,
               ...withNotes(
-                await gateway.read(botId, {
+                await gateway.read(c, {
                   whole: args.whole === true,
                   ...(typeof args.from === "string" && args.from.trim()
                     ? { from: args.from.trim() }
@@ -552,7 +597,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
               ok: true,
               ...snapshotForModel(
                 withNotes(
-                  await gateway.snapshot(botId, {
+                  await gateway.snapshot(c, {
                     botId,
                     actor,
                     ...BOTS_OWN_LOOK,
@@ -733,7 +778,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
             return {
               ok: true,
               ...(await gateway.listFiles(
-                c,
+                folder,
                 botId,
                 actor,
                 {
@@ -747,7 +792,13 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
             if (!input) return invalidArguments();
             return {
               ok: true,
-              ...(await gateway.readFile(c, botId, actor, input, approvalId)),
+              ...(await gateway.readFile(
+                folder,
+                botId,
+                actor,
+                input,
+                approvalId,
+              )),
             };
           }
           case "computer_write_file":
@@ -760,7 +811,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
             return {
               ok: true,
               ...(await gateway.writeFile(
-                c,
+                folder,
                 botId,
                 actor,
                 {

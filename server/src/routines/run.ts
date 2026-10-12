@@ -5,6 +5,7 @@ import { type AuditStore, auditRowLost, recordAuditEvent } from "../audit";
 import type { DeploymentAdmission } from "../auth/admission";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import { soloChannelFor } from "../channels/solo-channel";
+import { laneOfBrowser } from "../computer/bot-id";
 import type { ActionActor } from "../computer/gateway";
 import type { Database } from "../db/client";
 import type { lafRoutines } from "../db/schema";
@@ -121,7 +122,12 @@ export type RoutineRunOptions = SettlementOptions & {
   /** See `RoutineServiceOptions` in `service.ts` for each of these. */
   resolveAgents: (actor: AgentActor) => Promise<Record<string, AbstractAgent>>;
   auditStore?: AuditStore;
-  tools?: (botId: string, actor: ActionActor) => Promise<UnattendedToolkit>;
+  tools?: (
+    botId: string,
+    actor: ActionActor,
+    where?: { browser: string },
+  ) => Promise<UnattendedToolkit>;
+  browser?: { name: string; letGo: (botId: string) => Promise<unknown> };
   runEnded?: (botId: string, runKey: string) => Promise<void>;
   goals?: RoutineGoals;
   lane?: BotLane;
@@ -211,10 +217,22 @@ export function createRoutineRun(options: RoutineRunOptions): RoutineRun {
          * 5-4, `bot-lane.ts`). A routine nearly always browses; its notepad and its goals are read
          * inside the lane so that a run queued behind another reads what that one settled; and its
          * ledger row opens once the lane lets it through. So a conversation that only talks no
-         * longer waits for this run — and this run still waits for a conversation that is browsing.
+         * longer waits for this run.
+         *
+         * IN THE LANE OF THE BROWSER ITS PAGES ARE IN (record §5, "루틴 옮기기"). A routine's pages
+         * are in the deployment's background browser for routines (`ROUTINE_BROWSER`), which this
+         * run opens and throws away, so the lane is that browser's own (`laneOfBrowser`): this
+         * run waits for another routine — of this Bot's as it always did, and of any other Bot's
+         * on the same deployment, whose end would otherwise close the browser under it — and for
+         * nothing in the main browser. A conversation that is browsing and a routine go on at
+         * once, each in its own browser. With no computer there is no browser to name, and the
+         * lane is the Bot's as before.
          */
+        const lane = options.browser
+          ? laneOfBrowser(options.browser.name)
+          : row.agentId;
         await (options.lane
-          ? options.lane.run(row.agentId, () =>
+          ? options.lane.run(lane, () =>
               executeNow(options, row, stopping.signal, meter, scheduledFor),
             )
           : executeNow(options, row, stopping.signal, meter, scheduledFor));
@@ -489,7 +507,11 @@ async function askTheBot(
         options.now,
       );
       const noted = withNotepad(
-        await options.tools(row.agentId, actor),
+        await options.tools(
+          row.agentId,
+          actor,
+          options.browser ? { browser: options.browser.name } : undefined,
+        ),
         notepad,
       );
       /*
@@ -545,6 +567,15 @@ async function askTheBot(
         await options
           .runEnded?.(row.agentId, runKeyOf(runId))
           .catch(() => undefined);
+        /*
+         * AND ITS BROWSER IS LET GO OF, after the computer was told the run is over — the values
+         * it held are released in the browser they were typed into, and then that browser is
+         * closed and its profile thrown away. Asked whether or not this run ever opened one: a
+         * run that only read mail opened nothing, and letting go of nothing is an answer, not a
+         * failure. Never a reason for the run to fail either; a browser nobody let go of is
+         * closed by the computer when it has sat unused (`agent-computer/src/browsers.ts`).
+         */
+        await options.browser?.letGo(row.agentId).catch(() => undefined);
       }
       /*
        * A run that stopped because a person is needed is not a failure — the Bot did its job,
