@@ -21,7 +21,7 @@ import { liveScreen, type StreamData } from "../src/live-screen";
 import { log } from "../src/log";
 import { watchPage } from "../src/page-watch";
 import { createProfiles } from "../src/profiles";
-import { soleBrowser } from "../src/browsers";
+import { BACKGROUND_TAB_LIMITS, soleBrowser } from "../src/browsers";
 import { computerFetch } from "../src/routes";
 import type { Screencast } from "../src/screencast";
 import { createSessions } from "../src/sessions";
@@ -29,6 +29,7 @@ import { holdsTab } from "../src/tab-cap";
 import { tabLost } from "../src/tab-loss";
 import {
   createTabs,
+  type TabLimits,
   IDLE_CLOSE_MS,
   STRAY_GRACE_MS,
   TAB_CAP,
@@ -314,7 +315,11 @@ describe("a Bot's tabs, counted without a browser", () => {
     }) as unknown as FakeTab;
   }
 
-  function counting(holds: (page: Page) => boolean = () => false) {
+  function counting(
+    holds: (page: Page) => boolean = () => false,
+    /** The browser's limits: the main one's unless a case names a background browser's. */
+    limits?: TabLimits,
+  ) {
     const open: FakeTab[] = [];
     const lost: [string, TabLost][] = [];
     const clock = { now: 0 };
@@ -322,17 +327,21 @@ describe("a Bot's tabs, counted without a browser", () => {
     const reporting = new WeakSet<Page>();
     /** A browser that does not answer the question at all: short of memory, or wedged. */
     const silent = { browser: false };
-    const tabs = createTabs({
-      pages: () => open,
-      now: () => clock.now,
-      onPage: () => undefined,
-      onLost: (botId, how) => lost.push([botId, how]),
-      holds: (_botId, page) => holds(page),
-      reportsToOpener: async (page) => {
-        if (silent.browser) throw new Error("Target.getTargetInfo: no answer");
-        return reporting.has(page);
+    const tabs = createTabs(
+      {
+        pages: () => open,
+        now: () => clock.now,
+        onPage: () => undefined,
+        onLost: (botId, how) => lost.push([botId, how]),
+        holds: (_botId, page) => holds(page),
+        reportsToOpener: async (page) => {
+          if (silent.browser)
+            throw new Error("Target.getTargetInfo: no answer");
+          return reporting.has(page);
+        },
       },
-    });
+      limits,
+    );
     /** A Bot's first tab, as `profiles.page` hands one. */
     const first = (botId: string, address: string): FakeTab => {
       const made = tab(address);
@@ -396,6 +405,54 @@ describe("a Bot's tabs, counted without a browser", () => {
 
   const linesOf = (event: string) =>
     (warned ? warnLines(warned) : []).filter((line) => line.event === event);
+
+  /*
+   * A BACKGROUND BROWSER HOLDS FEWER (`BACKGROUND_TAB_LIMITS`, `browsers.ts`): it is open beside
+   * a main browser that may be as full as a Bot can make it, and what is measured leaves room for
+   * two tabs there and no chain past them. The main browser's six are as they were.
+   */
+  test("in a background browser a Bot holds two: the third closes the one used longest ago, a window's window closes the one before it, and nothing opens past two", async () => {
+    warned = spyOn(console, "warn").mockImplementation(() => undefined);
+    const every = { held: false };
+    const { tabs, first, opens, opensWindow, open } = counting(
+      () => every.held,
+      BACKGROUND_TAB_LIMITS,
+    );
+    const hub = first("bot", "https://news.example/list");
+    const one = await opens(hub, "https://news.example/item/1");
+    expect(tabs.pagesOf("bot")).toEqual([hub, one]);
+    tabs.touch("bot", hub);
+    const two = await opens(hub, "https://news.example/item/2");
+    // Two, and the one the Bot used longest ago — not the hub it went back to — went for it.
+    expect(one.isClosed()).toBe(true);
+    expect(tabs.pagesOf("bot")).toEqual([hub, two]);
+
+    // A chain of windows: each closes the one before it, with no room past the two.
+    const window1 = await opensWindow(two, "https://pay.example/1");
+    expect(hub.isClosed()).toBe(true);
+    const window2 = await opensWindow(window1, "https://pay.example/2");
+    expect(two.isClosed()).toBe(true);
+    expect(tabs.pagesOf("bot")).toEqual([window1, window2]);
+    expect(linesOf("tab_ceiling_closed")).toEqual([
+      expect.objectContaining({ bot: "bot", tabs: 3, ceiling: 2 }),
+    ]);
+
+    // Everything held: the tab that opens is not taken, so two is the most it ever holds.
+    every.held = true;
+    const refused = await opens(window2, "https://pay.example/3");
+    expect(refused.isClosed()).toBe(true);
+    expect(tabs.pagesOf("bot")).toEqual([window1, window2]);
+    expect(open.filter((page) => !page.isClosed())).toHaveLength(2);
+  });
+
+  test("the main browser's number is still six", async () => {
+    const { tabs, full, opens } = counting();
+    const { hub } = await full("bot", "https://shop.example");
+    expect(tabs.pagesOf("bot")).toHaveLength(TAB_CAP);
+    await opens(hub, "https://shop.example/item/more");
+    expect(tabs.pagesOf("bot")).toHaveLength(TAB_CAP);
+    expect(TAB_CAP).toBeGreaterThan(BACKGROUND_TAB_LIMITS.cap);
+  });
 
   test("the tab used longest ago is the one closed, a Bot's number is its own, and nobody is told a tab was lost", async () => {
     warned = spyOn(console, "warn").mockImplementation(() => undefined);
