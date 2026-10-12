@@ -105,14 +105,26 @@ describe("the Bot the app opens on", () => {
 });
 
 describe("a Bot's conversation", () => {
-  test("is its oldest one-Bot channel, the one the server's create resolves to", () => {
+  test("is its one-Bot channel that says main, whatever its age", () => {
     const channels = [
-      channel("newer", ["a"], "2026-09-10T00:00:00Z"),
-      channel("oldest", ["a"], "2026-09-01T00:00:00Z"),
-      channel("room", ["a", "b"], "2026-08-01T00:00:00Z"),
-      channel("other", ["b"], "2026-07-01T00:00:00Z"),
+      {
+        ...channel("newer", ["a"], "2026-09-10T00:00:00Z"),
+        kind: "main" as const,
+      },
+      {
+        ...channel("oldest", ["a"], "2026-09-01T00:00:00Z"),
+        kind: "project" as const,
+      },
+      {
+        ...channel("room", ["a", "b"], "2026-08-01T00:00:00Z"),
+        kind: "main" as const,
+      },
+      {
+        ...channel("other", ["b"], "2026-07-01T00:00:00Z"),
+        kind: "main" as const,
+      },
     ];
-    expect(conversationOf("a", channels)?.id).toBe("oldest");
+    expect(conversationOf("a", channels)?.id).toBe("newer");
   });
 
   test("is none before its first message", () => {
@@ -154,12 +166,30 @@ describe("a Bot's conversation", () => {
     ).toBeUndefined();
   });
 
-  test("a server from before the column says nothing, and the rule answers: the oldest", () => {
+  /*
+   * THE PREVIOUS API, FOR THE LENGTH OF A CONTAINER SWAP: `docker compose up -d` replaces `web`
+   * and `server` one after the other, so this app can be answered once by a server from before
+   * `channels.kind`, which says nothing of any conversation. The guess stays for that window and
+   * goes with the release after the first `:stable` past 2026-10-10 (`conversationOf`).
+   */
+  test("a server from before the column says nothing of any, and the oldest answers for the swap", () => {
     expect(
       conversationOf("a", [
         channel("newer", ["a"], "2026-09-10T00:00:00Z"),
         channel("oldest", ["a"], "2026-09-01T00:00:00Z"),
       ])?.id,
     ).toBe("oldest");
+  });
+
+  test("one that says nothing beside others that do is not taken for the main one", () => {
+    expect(
+      conversationOf("a", [
+        channel("unsaid", ["a"], "2026-08-01T00:00:00Z"),
+        {
+          ...channel("project", ["a"], "2026-09-01T00:00:00Z"),
+          kind: "project" as const,
+        },
+      ]),
+    ).toBeUndefined();
   });
 });

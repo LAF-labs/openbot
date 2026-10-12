@@ -88,6 +88,7 @@ function server(
             agentIds: ["bot-1"],
             threadId: "t1",
             active: true,
+            kind: "main",
             lastMessage: "다 했어요",
             lastMessageAt: new Date().toISOString(),
             lastMessageAgentId: "bot-1",
@@ -107,7 +108,7 @@ function server(
     }
     if (url === "/api/routines") return json({ routines: [] });
     if (url === "/api/feed") {
-      return json({ posts: [], next: null, unseen: 0, routines: [] });
+      return json({ posts: [], next: null, routines: [] });
     }
     if (url.startsWith("/api/computers/")) return json({ requested: false });
     return json({}, 404);

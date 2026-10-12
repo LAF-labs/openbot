@@ -157,7 +157,6 @@ function FeedPosts({
                   ...current,
                   pages: current.pages.map((page) => ({
                     ...page,
-                    unseen: 0,
                     posts: page.posts.map((post) => ({ ...post, seen: true })),
                   })),
                 }

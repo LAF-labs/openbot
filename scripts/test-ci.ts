@@ -2997,11 +2997,20 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * row of its own in the section it names; and feedback past the export's cap is left out and said
  * so. 4522 and 4 is 4526.
  *
- * RAISED 2026-10-11 FOR WHAT A DELEGATED RUN HANDS BACK, `server` by six (to 4532), all in
+ * RAISED 2026-10-11 WITH THE SMALL CLEANUPS, `app` by seven (to 2446) and `server` by two (to 4528).
+ * Five in the new `when.test.ts`: four instants pinned to the date-and-minute form 만든 것 and 소식
+ * spelled before they shared it, and nothing for a time that is not one; one in
+ * `attachments.test.ts`, a file into a project being deleted told the conversation is gone; one in
+ * `my-bots.test.ts`, a conversation that says nothing beside ones that do is not the main one. One
+ * in `day-epochs.test.ts`: a delegated run's context is a thread of its own, dropped by its own id;
+ * one in `conversation-deleting.integration.test.ts`: a deletion forgets the browsing and the
+ * thinking context with the conversation's.
+ *
+ * RAISED 2026-10-11 FOR WHAT A DELEGATED RUN HANDS BACK, `server` by six (to 4534), all in
  * `turn-engine.integration.test.ts`: a run that ends without an answer hands nothing back through
  * the engine — not what it said on the way — and five on the reading itself (the last reply where
  * it asks for nothing, nothing where it is empty, nothing where it is another call, nothing where
- * there was no reply, and its words trimmed). 4526 and 6 is 4532.
+ * there was no reply, and its words trimmed). 4528 and 6 is 4534.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -3031,8 +3040,8 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4532, roots: ["server"] },
-  { name: "app", floor: 2439, roots: ["app"] },
+  { name: "server", floor: 4534, roots: ["server"] },
+  { name: "app", floor: 2446, roots: ["app"] },
   {
     name: "agent-computer",
     /*

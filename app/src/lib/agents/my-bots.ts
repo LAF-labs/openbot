@@ -114,6 +114,22 @@ export function primaryBot(
 /**
  * A Bot's conversation: its MAIN one, as the server's `create` resolves to
  * (`channels/conversations.ts`, `channels/solo-channel.ts`). Undefined before its first message.
+ *
+ * WHAT A CONVERSATION IS, IS WHAT THE SERVER SAYS (2026-10-10, `channels.kind`). The oldest one
+ * was the rule; a project is another conversation with the same Bot and may one day be the older
+ * of the two. Where the server says and none is `main`, the Bot has no main conversation — the
+ * oldest project is not offered in its place, and neither is one that says nothing beside others
+ * that do.
+ *
+ * ONLY A SERVER FROM BEFORE THE COLUMN, which says nothing of any of them, is still answered by
+ * the oldest. Not a server that exists: both images ride one tag (`images.yml`), but
+ * `docker compose up -d` swaps the two containers one after the other and `web` waits on nothing
+ * (`docker-compose.yml`), so for the length of that swap this app can be served over the previous
+ * API — `docs/laf/deploying.md` names the same window for the sign-in buttons. Without the guess,
+ * every Bot on the screen that swap lands on has no conversation until the roster is fetched
+ * again. DELETE THIS GUESS once no release a deployment can be upgrading from answers without
+ * `kind`: the first `:stable` after 2026-10-10 (migration 0064) is the last one that can meet
+ * such an API, so the release after that one takes the guess and its test out.
  */
 export function conversationOf(
   agentId: string,
@@ -136,12 +152,5 @@ export function conversationOf(
       main = channel;
     }
   }
-  /*
-   * WHAT A CONVERSATION SAYS IT IS, WHERE THE SERVER SAYS (2026-10-10, `channels.kind`). The
-   * oldest one was the rule; a project is another conversation with the same Bot and may one
-   * day be the older of the two. Where the server says and none is `main`, the Bot has no main
-   * conversation — the oldest project is not offered in its place. Only a server from before
-   * the column, which says nothing of any of them, is answered by the rule.
-   */
   return isSaid ? main : oldest;
 }

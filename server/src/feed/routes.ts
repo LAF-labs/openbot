@@ -6,7 +6,7 @@ import { FeedPostNotFound, type FeedStore } from "./store";
 /**
  * 소식's doors (muse-shape plan §3.2, phase 7), every one the person's own, behind their session:
  *
- *   GET  /api/feed?cursor=      the posts, newest first, with the unseen count and the 소식 routines
+ *   GET  /api/feed?cursor=      the posts, newest first, and the 소식 routines
  *   GET  /api/feed/unseen       the count alone, for the sidebar's row and the phone's tab
  *   POST /api/feed/seen         {ids}: the page showed these
  *   POST /api/feed/:id/like     {liked}: 좋아요 on or off

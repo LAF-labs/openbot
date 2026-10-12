@@ -41,10 +41,14 @@ export type FeedRoutine = {
   dailyTimeZone: string | null;
 };
 
+/**
+ * A page of posts. The unseen count is not on it: it has its own door (`GET /api/feed/unseen`),
+ * which is the one the sidebar's row, the phone's tab and 홈's card read, and a count on the page
+ * was computed on every page of posts for nobody.
+ */
 export type FeedPage = {
   posts: FeedPost[];
   next: string | null;
-  unseen: number;
   /** The person's 소식 routines — one per Bot — for the page's first card. */
   routines: FeedRoutine[];
 };

@@ -53,13 +53,16 @@
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { matchedRoutes } from "hono/route";
+import { olderCopyNameOf } from "../../../shared/file-scope";
+import { DELEGATED_MODES } from "../../../shared/tools/delegate";
+import { REMOVED_PROJECT_RESULT } from "../../../shared/tools/projects";
 import type { AuditStore } from "../audit";
 import type { Database } from "../db/client";
 import {
   agentMemories,
+  channelAgents,
   channelMemberships,
   channels,
-  channelAgents,
   channelThreads,
   lafAttachments,
   lafConversationContexts,
@@ -67,11 +70,27 @@ import {
   lafThreadMessages,
   lafThreadRuns,
 } from "../db/schema";
-import { olderCopyNameOf } from "../../../shared/file-scope";
-import { REMOVED_PROJECT_RESULT } from "../../../shared/tools/projects";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
+import { delegatedThreadOf } from "../turns/engine";
 import { conversationsOf } from "./conversations-of";
+
+/**
+ * The contexts a conversation holds: its own, and one per kind of work it hands to a run of its
+ * own (`turns/engine.ts` `delegatedThreadOf`). The store keeps a context for a delegated run's
+ * thread as for any other — never written, read by nothing once the run has ended, and holding the
+ * deleted project's pages for the six hours until the unkept sweep — so a deletion drops them at
+ * the same moment. The kinds are read from where `delegate` declares them (`DELEGATED_MODES`), so
+ * a kind added there is dropped here without a second list; dropping a thread the store never saw
+ * is nothing.
+ */
+export function contextsOf(threadId: string): string[] {
+  const modes = new Set(Object.values(DELEGATED_MODES));
+  return [
+    threadId,
+    ...[...modes].map((mode) => delegatedThreadOf(threadId, mode)),
+  ];
+}
 
 /** What a write door answers while its conversation is being deleted. A fact; the surface says it. */
 export const PROJECT_DELETING = "laf:project_deleting";
@@ -371,8 +390,11 @@ export function createProjectDeletion(dependencies: {
       log.warn("project_deletion_turn_not_ended", { channel: channelId });
       return null;
     }
-    // After the turn: its end is the last thing that keeps the conversation's context.
-    for (const threadId of threadIds) await dropContext?.(threadId);
+    // After the turn: its end is the last thing that keeps the conversation's context — and its
+    // delegated runs' (`contextsOf`).
+    for (const threadId of threadIds) {
+      for (const context of contextsOf(threadId)) await dropContext?.(context);
+    }
     // And then its files: the turn's writes have landed, and the doors refuse new ones.
     if (removeFolder) {
       const bots = await database

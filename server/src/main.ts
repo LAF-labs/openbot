@@ -1037,6 +1037,7 @@ const turnEngine = createTurnEngine({
 const projectDeletion = createProjectDeletion({
   database,
   stopThread: (threadId) => turnEngine.stopThread(threadId),
+  // Asked once per context the conversation holds, its delegated runs' included (`contextsOf`).
   dropContext: (threadId) => conversations.drop(threadId),
   /*
    * The project's folder, on the computer of each Bot in it — as the person, who alone may name a
