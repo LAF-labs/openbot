@@ -3074,6 +3074,17 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * past; two more words a Bot would look with find the tool first; and none of `eval:memory-days`'
  * facts is in the header, the label or the description.
  *
+ * RAISED 2026-10-12 FOR ROUTINES IN A BROWSER OF THEIR OWN, `server` by twelve (to 4613), all in
+ * files that were there: five in `unattended-facts.test.ts` on which browser a run's calls are for
+ * (its pages in the one it was given, opened once at the first of them; its folder in none; no
+ * room answered and not carried out in the main one, and asked again at the next call; a try that
+ * threw asked again; given none, the main one), five in `routine-notepad.integration.test.ts` on
+ * the run (its tools built for that browser and the browser let go of after the run is told over;
+ * a letting-go that failed is not the run's failure; a conversation holding the main browser does
+ * not hold a routine up; another Bot's routine waits until the first has let the browser go; with
+ * no browser the Bot's lane as before), and two in `computer-browsers.test.ts` on the name and
+ * the lane. 4601 and 12 is 4613.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -3102,7 +3113,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4601, roots: ["server"] },
+  { name: "server", floor: 4613, roots: ["server"] },
   { name: "app", floor: 2446, roots: ["app"] },
   {
     name: "agent-computer",
