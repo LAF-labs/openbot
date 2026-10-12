@@ -24,11 +24,13 @@ import {
   withoutPlaceholderLines,
 } from "../src/context/day-close";
 import {
+  clearlyAnotherNumber,
   createSummaryScrubber,
   isDated,
   koreanAmount,
   lineCarries,
   numbersIn,
+  oldSubstringCarries,
   scrubByRule,
 } from "../src/context/forget-scrub";
 import type { JevAsker } from "../src/context/vendor/fast-jev-compaction/index";
@@ -185,10 +187,10 @@ describe("the number clause on a dated line", () => {
    * The clause took any 3+-digit run of the fact as a SUBSTRING of the line's digits, so the 300
    * of 300g was found in order 20260300 and in 300 lids, and a unit price in every amount its
    * digits ran through: 168 unrelated dated lines on a run's real summaries, 54 summaries × 12
-   * facts (third review of pull request 196). A number is read as one whole value with its unit
-   * (`numbersIn`). Each row here was dropped by the substring clause and fails with it restored:
-   * the two exceptions of the invariant — the shared digits are part of a longer value on one
-   * side, or the two sides say different recognised units.
+   * facts (third review of pull request 196). Each row here was dropped by the substring clause
+   * and is exempt by construction (`clearlyAnotherNumber`): the shared digits sit inside a longer
+   * run (a), or are followed by a unit of another dimension than the fact's (b). Red with the
+   * exemption removed.
    */
   const STAYS: ReadonlyArray<[fact: string, line: string]> = [
     [JAM, "- 9/15: 20260300번 반품(단순 변심) 접수"],
@@ -199,9 +201,7 @@ describe("the number clause on a dated line", () => {
     [STRAWBERRY, "- 9/14: 병 11,000개 발주"],
     [YUJA, "- 9/14: 정산 118,000원 입금 확인"],
     ["이번 달 매출은 300만 원이다.", "- 9/16: 병뚜껑 300개 입고"],
-    [PHONE, "- 9/14: 계좌 1234-5678-9012 입금"],
     [PHONE, "- 9/14: 주문 20260300번 반품"],
-    ["행사는 2026년 10월 11일에 연다.", "- 9/15: 행사일 2026-12-01 확정"],
     ["딸기잼은 300g 병으로 받는다.", "- 2026-03-00: 병뚜껑 입고"],
   ];
   test.each(STAYS)(
@@ -376,8 +376,8 @@ describe("the number clause on a dated line", () => {
   );
 
   /*
-   * The exceptions of the invariant, on the same facts: the shared digits inside a longer value,
-   * or a different recognised unit, never carry. Red with the substring clause restored.
+   * The exemptions, on the same facts: the shared digits inside a longer run, or followed by a
+   * unit of another dimension, never carry. Red with the exemption removed.
    */
   const EXCEPTIONS: ReadonlyArray<[fact: string, writings: string[]]> = [
     [
@@ -386,13 +386,9 @@ describe("the number clause on a dated line", () => {
     ],
     [
       "딸기잼은 300g 병으로 받는다(오 사장님네 카페 납품분).",
-      ["20260300번", "300개", "300ml", "300원", "300kg", "3000g"],
+      ["20260300번", "300개", "300ml", "300원", "3000g"],
     ],
-    [PHONE, ["01012345678901", "1234-5678-9012", "010-1234-5679"]],
-    [
-      "행사는 2026년 10월 11일에 연다(상세페이지 공지 예정).",
-      ["2026-12-01", "2026년 10월 12일"],
-    ],
+    [PHONE, ["01012345678901"]],
   ];
   test.each(EXCEPTIONS)(
     "a longer value or another unit never meets the fact %#",
@@ -432,19 +428,17 @@ describe("the number clause on a dated line", () => {
     const value = figures.replace(/\D/g, "");
     expect(koreanAmount(words.replace(/원$/, ""))).toBe(BigInt(value));
     expect(numbersIn(words).map((number) => number.value)).toEqual([value]);
-    const forgotten = (amount: string) =>
-      `건물 매입가는 ${amount}이다(은행 대출 포함, 잔금 미정).`;
     expect(
-      lineCarries(`- 9/14: 매입가 ${figures} 확인`, forgotten(words)),
+      lineCarries(`- 9/14: 매입가 ${figures} 확인`, forgottenAmount(words)),
     ).toBe(true);
     expect(
-      lineCarries(`- 9/14: 매입가 ${words} 확인`, forgotten(figures)),
+      lineCarries(`- 9/14: 매입가 ${words} 확인`, forgottenAmount(figures)),
     ).toBe(true);
     // A different value in the same order of magnitude is not it.
     const other = `${(BigInt(value) + 1_000n).toLocaleString("en-US")}원`;
-    expect(lineCarries(`- 9/14: 정산 ${other} 입금`, forgotten(words))).toBe(
-      false,
-    );
+    expect(
+      lineCarries(`- 9/14: 정산 ${other} 입금`, forgottenAmount(words)),
+    ).toBe(false);
   });
 
   /*
@@ -481,6 +475,143 @@ describe("the number clause on a dated line", () => {
       );
     },
   );
+
+  /*
+   * BY CONSTRUCTION the line goes where the first rule carried it and nothing says for sure it
+   * is another number (fourth review of pull request 204): a group of an identifier is not a
+   * longer run (the phone's 1234 in an account, 300 in a list of sizes), a unit of the same
+   * dimension is not another dimension (300kg for 300g), a year followed by a hyphen has no unit
+   * (2026-12-01 for a 2026 date), a counter the table does not know (300그룹, 300조) is in doubt.
+   * These are the over-forgets the construction accepts — keeping what a person asked to forget
+   * is the worse error. Red with the first rule's branch removed.
+   */
+  const BY_CONSTRUCTION: ReadonlyArray<[fact: string, line: string]> = [
+    [PHONE, "- 9/14: 계좌 1234-5678-9012 입금"],
+    [PHONE, "- 9/14: 연락처 010-1234-5679 저장"],
+    ["딸기잼은 300g 병으로 받는다.", "- 9/16: 설탕 300kg 입고"],
+    ["딸기잼은 300g 병으로 받는다.", "- 9/15: 잼 300/500/700g 세 종류 발송"],
+    ["행사는 2026년 10월 11일에 연다.", "- 9/15: 행사일 2026-12-01 확정"],
+    ["단체 예약은 300명이다(10월 행사).", "- 9/15: 손님 300분 예약"],
+    ["참가자는 300조로 나눈다(조별 상품 준비).", "- 9/15: 300조로 나눈다"],
+  ];
+  // The readings only add, so a counter misread can at worst add a carry — and the obvious
+  // counters are guarded so it does not add nonsense: 300조 of people is not 300 trillion won.
+  test("조 as a counter is not read as trillions", () => {
+    expect(
+      lineCarries(
+        "- 9/15: 매출 300,000,000,000,000원 입금",
+        "참가자는 300조로 나눈다(조별 상품 준비).",
+      ),
+    ).toBe(false);
+    expect(numbersIn("300조로 나눈다").map((n) => n.value)).toEqual(["300"]);
+    expect(numbersIn("1조 2억 원").map((n) => n.value)).toEqual([
+      "1000200000000",
+    ]);
+  });
+  test.each(BY_CONSTRUCTION)(
+    "by construction the line goes where nothing says it is another number %#",
+    (fact, line) => {
+      expect(oldSubstringCarries(line, fact)).toBe(true);
+      expect(clearlyAnotherNumber(line, fact)).toBeNull();
+      expect(lineCarries(line, fact)).toBe(true);
+    },
+  );
+
+  /*
+   * Codex's quoted calls, verbatim, from the four reviews of pull request 204 — every one a
+   * line the first rule carried; each is carried, by construction, whatever reading the clause
+   * has that day.
+   */
+  const CODEX_CALLS: ReadonlyArray<[line: string, fact: string]> = [
+    ["- 9/14: 단가 11,000원에는 부가세 포함", "유자 가격은 11,000원이다."],
+    [
+      "- 9/14: 연락처 01012345678 저장",
+      "논산 카페의 딸기 공급 문의 전화번호는 010-1234-5678이다.",
+    ],
+    [
+      "- 9/15: 딸기잼을 300그램 병으로 발송",
+      "단골 오 사장님네 카페는 딸기잼을 300g 병 세 개로 나눠 받는다(전에는 1kg 큰 병이었다).",
+    ],
+    [
+      "- 9/14: 연락처 010 1234-5678 저장",
+      "논산 카페의 딸기 공급 문의 전화번호는 010-1234-5678이다.",
+    ],
+    ["- 9/15: 잼 300g병 발송", "딸기잼은 300g 병으로 받는다."],
+    [
+      "- 9/14: 행사 일정 2026-10-11 확정",
+      "서울 행사 예약일은 2026년 10월 11일이다.",
+    ],
+    ["- 9/14: 연락처 010‑1234‑5678 저장", "전화번호는 010-1234-5678이다."],
+    [
+      "- 9/15: 잼 규격 300/500/700g 제공",
+      "딸기잼은 300g 병으로 받는다(오 사장님네 카페 납품분).",
+    ],
+    [
+      "- 9/14: 참가자 300그룹 확정",
+      "행사 참가자는 청운농원과 한빛상사 인원을 섞어 300조로 나눈다.",
+    ],
+    [
+      "- 9/14: 행사 손님 300명 참석 확정",
+      "서울 행사에는 청운농원과 한빛상사 손님 300분이 참석한다.",
+    ],
+  ];
+  test.each(CODEX_CALLS)("Codex's call %# is carried", (line, fact) => {
+    expect(lineCarries(line, fact)).toBe(true);
+  });
+
+  const forgottenAmount = (amount: string) =>
+    `건물 매입가는 ${amount}이다(은행 대출 포함, 잔금 미정).`;
+
+  /*
+   * THE INVARIANT, as a property over every pair this file holds: a pair the first rule carried
+   * is carried, or `clearlyAnotherNumber` says why, and every why is (a) or (b). The broken
+   * pairs are listed, so a change that loses one names it. The run's real summaries were walked
+   * with the same two functions (0 broken of 21,564 checks).
+   */
+  test("what the first rule carried is carried, or clearly another number, over every pair here", () => {
+    const line = (writing: string) => `- 9/14: 확인 ${writing} 처리`;
+    const pairs: Array<[fact: string, line: string]> = [
+      ...STAYS,
+      ...GOES,
+      ...BY_CONSTRUCTION,
+      ...CODEX_CALLS.map(([said, fact]): [string, string] => [fact, said]),
+      ...WRITINGS.flatMap(([fact, writings]) =>
+        writings.map((writing): [string, string] => [fact, line(writing)]),
+      ),
+      ...EXCEPTIONS.flatMap(([fact, writings]) =>
+        writings.map((writing): [string, string] => [fact, line(writing)]),
+      ),
+      ...AMOUNTS.flatMap(
+        ([words, figures]): Array<[string, string]> => [
+          [forgottenAmount(words), `- 9/14: 매입가 ${figures} 확인`],
+          [forgottenAmount(figures), `- 9/14: 매입가 ${words} 확인`],
+        ],
+      ),
+      ...LIMITS.map(([fact, said]): [string, string] => [fact, said]),
+    ];
+    const broken: string[] = [];
+    let carriedByFirst = 0;
+    let exempt = 0;
+    for (const [fact, said] of pairs) {
+      if (!oldSubstringCarries(said, fact)) continue;
+      carriedByFirst += 1;
+      const why = clearlyAnotherNumber(said, fact);
+      if (why === null) {
+        if (!lineCarries(said, fact)) broken.push(`kept: ${said} | ${fact}`);
+        continue;
+      }
+      exempt += 1;
+      for (const reason of why) {
+        if (reason !== "longer run" && reason !== "other dimension") {
+          broken.push(`why? ${reason}: ${said} | ${fact}`);
+        }
+      }
+    }
+    expect(broken).toEqual([]);
+    expect(pairs.length).toBeGreaterThan(150);
+    expect(carriedByFirst).toBeGreaterThan(60);
+    expect(exempt).toBeGreaterThan(12);
+  });
 
   /*
    * KNOWN LIMITS, pinned as what the clause does today, not as what it should — each one the
