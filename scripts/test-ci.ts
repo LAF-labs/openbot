@@ -3062,6 +3062,12 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * are not carried, five fragments that exempt nothing, and the whole number that still does.
  * The file measures 125 against main's 69; 4528 and 56 is 4584.
  *
+ * MOVED 2026-10-12 BY TWO, `server` 4584 → 4586, when the number clause was reduced to the first
+ * rule and one exemption (Codex's sixth review of pull request 204): the three Unicode-category
+ * grids and the unit-exemption rows went with the fold and the unit table; in came the rows that
+ * now go (300개 for 300g, 300인분), two more of Codex's calls carried and two not, and the
+ * property in both directions. The file measures 127 against main's 69; 4528 and 58 is 4586.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
