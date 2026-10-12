@@ -1,14 +1,12 @@
 /**
  * Starting a conversation: the one a Bot already has, or a new channel with its own thread.
  */
-
-import { eq, sql } from "drizzle-orm";
-import { cutOnGraphemes } from "../../../shared/sound-text";
 import {
   AgentNotFoundError,
   type AgentProfileStore,
 } from "../agents/profile-store";
 import type { AgentActor, AgentProfile } from "../agents/profile-types";
+import { eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
   channelAgents,
@@ -21,6 +19,7 @@ import { conversationsOf } from "./conversations-of";
 import { soloConversationOf } from "./solo-channel";
 import type { ThreadIdentity } from "./thread-identity";
 import type { AgentChannel } from "./types";
+import { cutOnGraphemes } from "../../../shared/sound-text";
 
 const PRIVATE_AGENT_CHANNEL_DESCRIPTION = "Private agent channel.";
 const MAX_CHANNEL_NAME_CODE_POINTS = 120;
