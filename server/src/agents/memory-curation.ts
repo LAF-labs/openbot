@@ -38,7 +38,6 @@ import { redactText } from "../context/judge-redaction";
 import type { JevAsker } from "../context/vendor/fast-jev-compaction/index";
 import type { Database } from "../db/client";
 import { agentMemories } from "../db/schema";
-import { describeFailure } from "../failure-text";
 import { log } from "../log";
 import { recordMemoryReceipt } from "./memory-receipts";
 import { type MemoryEvidenceInput, ownerForgottenRows } from "./memory-store";
@@ -148,6 +147,116 @@ const probability = (
     ? answer.noul
     : 0;
 };
+
+/** An owner message as the judge reads it: the text and when it was first seen (null: unknown). */
+export type JudgedMessage = { id: string; text: string; at: number | null };
+
+/** What the judge said of one claim. */
+export type ClaimVerdict = {
+  /** How sure the judge is that some owner message states the claim, and which one. */
+  support: number;
+  best: JudgedMessage | null;
+  /** The claim restates a line the owner forgot after it was said: dropped whatever the support. */
+  restated: boolean;
+  /** The older lines the claim is a newer statement of, in the order they were given. */
+  replaced: Array<{ id: string; content: string }>;
+  arm: string;
+};
+
+/**
+ * THE JUDGE, ONCE: a claim against the owner's messages, the lines the owner forgot and the older
+ * Bot/night lines it may replace — the hourly pass's questions, and the day's close asking the
+ * same of a candidate BEFORE it is written (`standing-facts.ts`): the night's floor can check that
+ * a quote is the owner's, it cannot tell whether that sentence states the line — a different
+ * person, a dropped negation, a changed value or recurrence, a question rather than a statement
+ * — and a second rule for that would be a second judge (independent review of pull request 208).
+ * Null when the judge could not answer: no decision, nothing dropped, nothing written.
+ */
+export async function judgeClaim(
+  asker: JevAsker,
+  input: {
+    claim: string;
+    messages: readonly JudgedMessage[];
+    forgotten: ReadonlyArray<{ line: string; at: Date }>;
+    older: ReadonlyArray<{ id: string; content: string }>;
+  },
+): Promise<ClaimVerdict | null> {
+  const { claim, messages, forgotten, older } = input;
+  const questions: Record<string, { type: "noul"; instructions: string }> = {};
+  messages.forEach((_, at) => {
+    questions[`m${at}`] = {
+      type: "noul",
+      instructions: `Owner message m${at} in \`owner_messages\` states the fact in \`claim\`, or asks the assistant to keep something that \`claim\` records.`,
+    };
+  });
+  forgotten.forEach((_, at) => {
+    questions[`f${at}`] = {
+      type: "noul",
+      instructions: `\`claim\` states, restates or paraphrases forgotten fact f${at} in \`forgotten\`, which the owner told the assistant to forget.`,
+    };
+  });
+  older.forEach((_, at) => {
+    questions[`o${at}`] = {
+      type: "noul",
+      instructions: `\`claim\` is a newer statement about the same thing as older line o${at} in \`older_lines\` and contradicts or replaces it, so o${at} is no longer true.`,
+    };
+  });
+  let answers: Record<string, unknown>;
+  let arm: string;
+  try {
+    const response = await asker.ask(
+      {
+        claim: redactText(claim),
+        owner_messages: Object.fromEntries(
+          messages.map((message, at) => [
+            `m${at}`,
+            redactText(message.text).slice(0, MESSAGE_CHARS),
+          ]),
+        ),
+        ...(forgotten.length > 0
+          ? {
+              forgotten: Object.fromEntries(
+                forgotten.map((row, at) => [`f${at}`, redactText(row.line)]),
+              ),
+            }
+          : {}),
+        ...(older.length > 0
+          ? {
+              older_lines: Object.fromEntries(
+                older.map((line, at) => [`o${at}`, redactText(line.content)]),
+              ),
+            }
+          : {}),
+      },
+      questions,
+    );
+    answers = response.answers as Record<string, unknown>;
+    arm = /jev/i.test(response.model ?? "") ? "jev" : "model";
+  } catch {
+    return null;
+  }
+  let bestAt = -1;
+  let support = 0;
+  messages.forEach((_, at) => {
+    const p = probability(answers, `m${at}`);
+    if (p > support) {
+      support = p;
+      bestAt = at;
+    }
+  });
+  const best = messages[bestAt] ?? null;
+  // Learned from words said before the owner forgot the fact: the forgetting, undone.
+  const saidAt = best?.at ?? 0;
+  const restated = forgotten.some(
+    (row, at) =>
+      probability(answers, `f${at}`) >= RESTATED_AT &&
+      row.at.getTime() > saidAt,
+  );
+  const replaced = older.filter(
+    (_, at) => probability(answers, `o${at}`) >= SUPERSEDE_AT,
+  );
+  return { support, best, restated, replaced, arm };
+}
 
 export function createMemoryCurator(options: {
   database: Database;
@@ -268,91 +377,20 @@ export function createMemoryCurator(options: {
           const forgotten = forgottenRows.filter(
             (row) => row.at.getTime() > oldest,
           );
-          const questions: Record<
-            string,
-            { type: "noul"; instructions: string }
-          > = {};
-          messages.forEach((_, at) => {
-            questions[`m${at}`] = {
-              type: "noul",
-              instructions: `Owner message m${at} in \`owner_messages\` states the fact in \`claim\`, or asks the assistant to keep something that \`claim\` records.`,
-            };
+          const verdict = await judgeClaim(asker, {
+            claim: row.content,
+            messages,
+            forgotten,
+            older,
           });
-          forgotten.forEach((_, at) => {
-            questions[`f${at}`] = {
-              type: "noul",
-              instructions: `\`claim\` states, restates or paraphrases forgotten fact f${at} in \`forgotten\`, which the owner told the assistant to forget.`,
-            };
-          });
-          older.forEach((_, at) => {
-            questions[`o${at}`] = {
-              type: "noul",
-              instructions: `\`claim\` is a newer statement about the same thing as older line o${at} in \`older_lines\` and contradicts or replaces it, so o${at} is no longer true.`,
-            };
-          });
-
-          let answers: Record<string, unknown>;
-          try {
-            const response = await asker.ask(
-              {
-                claim: redactText(row.content),
-                owner_messages: Object.fromEntries(
-                  messages.map((message, at) => [
-                    `m${at}`,
-                    redactText(message.text).slice(0, MESSAGE_CHARS),
-                  ]),
-                ),
-                ...(forgotten.length > 0
-                  ? {
-                      forgotten: Object.fromEntries(
-                        forgotten.map((row, at) => [
-                          `f${at}`,
-                          redactText(row.line),
-                        ]),
-                      ),
-                    }
-                  : {}),
-                ...(older.length > 0
-                  ? {
-                      older_lines: Object.fromEntries(
-                        older.map((line, at) => [
-                          `o${at}`,
-                          redactText(line.content),
-                        ]),
-                      ),
-                    }
-                  : {}),
-              },
-              questions,
-            );
-            answers = response.answers as Record<string, unknown>;
-            run.arm = /jev/i.test(response.model ?? "") ? "jev" : "model";
-          } catch (error) {
+          if (!verdict) {
             // No judge, no decision: the line waits for the next hour.
-            log.warn("memory_curation_unjudged", {
-              bot: row.agentId,
-              reason: describeFailure(error),
-            });
+            log.warn("memory_curation_unjudged", { bot: row.agentId });
             continue;
           }
+          run.arm = verdict.arm;
           run.checked += 1;
-
-          let best = -1;
-          let support = 0;
-          messages.forEach((_, at) => {
-            const p = probability(answers, `m${at}`);
-            if (p > support) {
-              support = p;
-              best = at;
-            }
-          });
-          // Learned from words said before the owner forgot the fact: the forgetting, undone.
-          const saidAt = messages[best]?.at ?? 0;
-          const restated = forgotten.some(
-            (row, at) =>
-              probability(answers, `f${at}`) >= RESTATED_AT &&
-              row.at.getTime() > saidAt,
-          );
+          const { support, restated } = verdict;
 
           if (restated || support < EVIDENCE_KEEP) {
             await database
@@ -375,10 +413,8 @@ export function createMemoryCurator(options: {
             continue;
           }
 
-          const evidence = messages[best];
-          const replaced = older.filter(
-            (_, at) => probability(answers, `o${at}`) >= SUPERSEDE_AT,
-          );
+          const evidence = verdict.best;
+          const replaced = verdict.replaced;
           await database.transaction(async (tx) => {
             await tx
               .update(agentMemories)

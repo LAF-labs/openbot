@@ -375,6 +375,8 @@ export type DayEpochSetting = {
     threadId: string;
     /** The owner's messages of the span, oldest first: what a fact's evidence is quoted from. */
     owner: readonly OwnerMessage[];
+    /** Whether the conversation is still kept, for the night to read again before it writes. */
+    kept?: () => boolean;
   }) => Promise<unknown>;
   /** The zone a conversation that never said its own is dated in. */
   fallbackTimeZone?: string;
@@ -417,7 +419,9 @@ function ownerMessagesOf(
   return span.flatMap((message) => {
     if (message.role !== "user") return [];
     const text = textOf(message.content).trim();
-    return text ? [{ id: message.id, threadId, text }] : [];
+    const stamp = (message as { lafAt?: unknown }).lafAt;
+    const at = typeof stamp === "string" ? new Date(stamp).getTime() : null;
+    return text ? [{ id: message.id, threadId, text, at }] : [];
   });
 }
 
@@ -1122,6 +1126,8 @@ export function createConversationStore(
             botId: conversation.botId,
             threadId: conversation.threadId,
             owner: ownerMessagesOf(point.span, conversation.threadId),
+            // Read again after the model's minutes: a project dropped meanwhile writes nothing.
+            kept: () => conversation.kept,
           });
         } catch (error) {
           log.warn("standing_failed", {

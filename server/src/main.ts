@@ -688,6 +688,8 @@ const standing = createStandingHook({
   extract: createStandingExtractor(modelCalls.dreamCall, {
     timeoutMs: 90_000,
   }),
+  // The curation's judge decides whether the owner's sentence states the line (`judgeClaim`).
+  asker: modelCalls.memoryAsker,
 });
 
 /**
