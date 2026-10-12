@@ -273,8 +273,6 @@ export function createStandingHook(options: {
       messages: shown.map((message) => message.shown),
       notebook: liveLines,
     });
-    if (facts.length === 0) return counts;
-
     const forgotten = await ownerForgottenLines(
       database,
       botId,
@@ -336,7 +334,8 @@ export function createStandingHook(options: {
         else throw error;
       }
     }
-    // Counts only: never a line, never a quote.
+    // One line a night, counts only — zeros included, so the fleet sees the call ran: never a
+    // line, never a quote.
     log.info("standing_added", { bot: botId, ...counts });
     return counts;
   };
