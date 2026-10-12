@@ -177,20 +177,30 @@ describe("the number clause on a dated line", () => {
   const STRAWBERRY =
     "딸기는 논산 김 사장님네서 1kg에 11,000원에 들여온다(이번 달에 9,500원에서 올랐다).";
   const YUJA = "유자는 청운농원에서 1kg에 18,000원에 들여온다.";
+  const PHONE = "논산 카페의 딸기 공급 문의 전화번호는 010-1234-5678이다.";
 
   /*
    * The clause took any 3+-digit run of the fact as a SUBSTRING of the line's digits, so the 300
    * of 300g was found in order 20260300 and in 300 lids, and a unit price in every amount its
    * digits ran through: 168 unrelated dated lines on a run's real summaries, 54 summaries × 12
-   * facts (third review of pull request 196). A number is read as the whole token it was said in,
-   * unit attached, the way the standing-line arm reads one. Each row here was dropped by the
-   * substring clause and fails with it restored.
+   * facts (third review of pull request 196). A number is read as one whole value with its unit
+   * (`numbersIn`). Each row here was dropped by the substring clause and fails with it restored:
+   * the two exceptions of the invariant — the shared digits are part of a longer value on one
+   * side, or the two sides say different recognised units.
    */
   const STAYS: ReadonlyArray<[fact: string, line: string]> = [
     [JAM, "- 9/15: 20260300번 반품(단순 변심) 접수"],
     [JAM, "- 9/16: 병뚜껑 300개 입고 확인"],
+    [JAM, "- 9/16: 병뚜껑 300 개 입고"],
+    [JAM, "- 9/16: 시럽 300ml 입고"],
     [STRAWBERRY, "- 9/14: 양평 카페 숲 대금 211,000원 입금"],
+    [STRAWBERRY, "- 9/14: 병 11,000개 발주"],
     [YUJA, "- 9/14: 정산 118,000원 입금 확인"],
+    ["이번 달 매출은 300만 원이다.", "- 9/16: 병뚜껑 300개 입고"],
+    [PHONE, "- 9/14: 계좌 1234-5678-9012 입금"],
+    [PHONE, "- 9/14: 주문 20260300번 반품"],
+    ["행사는 2026년 10월 11일에 연다.", "- 9/15: 행사일 2026-12-01 확정"],
+    ["딸기잼은 300g 병으로 받는다.", "- 2026-03-00: 병뚜껑 입고"],
   ];
   test.each(STAYS)(
     "a dated line sharing only a digit string stays %#",
@@ -202,9 +212,6 @@ describe("the number clause on a dated line", () => {
   /*
    * The same number whole still carries the line — on fewer of the fact's words than the ratio
    * asks for, so the number clause alone decides, and each row fails with the clause deleted.
-   * With the unit unsaid on one side the number still counts: a summary writes a run of amounts
-   * as `212,000→429,000원`, a range as `11,000~12,000원`, and the owner writes `9,500 원` with a
-   * space — the whole number equal is the test, not the spelling of the unit.
    */
   const GOES: ReadonlyArray<[fact: string, line: string]> = [
     [JAM, "- 9/15: 딸기잼 300g 병 발송"],
@@ -216,6 +223,11 @@ describe("the number clause on a dated line", () => {
       "- 9/14: 입금 212,000→429,000원 확인",
     ],
     ["딸기잼은 300 g 병으로 받는다.", "- 9/15: 300g 병 3개 발송"],
+    [YUJA, "- 9/14: 유자 매입가 1만8천원/kg로 합의"],
+    [
+      "대성유리는 10만 원 넘게 주문하면 무료배송이다.",
+      "- 9/14: 발주 100,000원 넘겨 배송비 없음",
+    ],
   ];
   test.each(GOES)(
     "a dated line saying the number whole goes %#",
@@ -225,74 +237,167 @@ describe("the number clause on a dated line", () => {
   );
 
   /*
-   * What the substring clause caught and the first whole-token cut missed (Codex, first review of
-   * pull request 204) — every row a line that DOES carry the forgotten fact, so a miss is a
-   * privacy failure on the rule arm. Each is on fewer of the fact's words than the ratio asks
-   * for, so the number clause alone decides; each is red with the piece it names reverted:
-   * - stacked particles: 11,000원에는 strips to 11000원에 with one strip, so a digit-led token is
-   *   stripped until nothing comes off (`numberToken`);
-   * - an identifier written with separators — a phone, a business registration, an account —
-   *   is one value whether or not its hyphens are written (`numberText`); 010.1234.5678 too;
-   * - the same unit in another spelling: 300그램 is 300g, 500킬로 is 500kg (`UNIT_SPELLINGS`,
-   *   the pairs `evals/memory-days-facts.ts` already reads as one);
-   * - and the rest of the class: a measure's suffix (300g짜리, 300g씩, 300g정도), a number glued
-   *   to the word before it (잼300g), full-width digits (３００g, ㎏).
+   * THE INVARIANT, walked (second review of pull request 204): every writing of the same number
+   * the summariser or the owner uses meets the fact — the substring rule met all of these, and
+   * two cuts that compared tokens each missed some (stacked particles, mixed separators, a unit
+   * glued to the next word, a date in 년/월/일). One test per number, a grid of writings each,
+   * on a fact with too many words for the ratio clause, so the number clause alone decides; the
+   * misses are listed, so a change that loses a writing names it. Each piece of the reading is
+   * red with that piece reverted: the separator class narrowed to hyphens; the unit matched
+   * whole instead of at the start of the tail; the 년/월/일 date left unread; the scale words
+   * left unread; a leading-zero identifier needing three groups; the unit table emptied; a digit
+   * run only read after a non-letter; NFKC left out.
    */
-  const PHONE = "논산 카페의 딸기 공급 문의 전화번호는 010-1234-5678이다.";
-  const CAUGHT: ReadonlyArray<[fact: string, line: string]> = [
-    ["유자 가격은 11,000원이다.", "- 9/14: 단가 11,000원에는 부가세 포함"],
-    [PHONE, "- 9/14: 연락처 01012345678 저장"],
-    ["문의 전화번호는 01012345678이다.", "- 9/14: 연락처 010-1234-5678 저장"],
-    [PHONE, "- 9/14: 연락처 010.1234.5678 저장"],
-    [PHONE, "- 9/14: 연락처 010 1234 5678 저장"],
+  const WRITINGS: ReadonlyArray<[fact: string, writings: string[]]> = [
+    [
+      "유자 가격은 11,000원이다(논산 김 사장님네 딸기와 같은 값).",
+      [
+        "11,000원",
+        "11000원",
+        "11,000 원",
+        "11,000원에는",
+        "11,000원으로",
+        "11,000원짜리",
+        "1만1천원",
+        "1만1천 원",
+        "1만 1천원",
+        "11천원",
+        "11,000~12,000원",
+        "11,000-12,000원",
+        "(11,000원)",
+        "단가11,000원",
+        "１１,０００원",
+        "11,000",
+        "₩11,000",
+      ],
+    ],
+    [
+      "딸기잼은 300g 병으로 받는다(오 사장님네 카페 납품분).",
+      [
+        "300g",
+        "300 g",
+        "300G",
+        "300그램",
+        "300그람",
+        "300g병",
+        "300그램병",
+        "300g짜리",
+        "300g씩",
+        "300g정도",
+        "(300g)",
+        "잼300g",
+        "３００g",
+        "300",
+      ],
+    ],
+    [
+      "설탕은 500kg 단위로 들여온다(제당 공장 직거래).",
+      [
+        "500kg",
+        "500 kg",
+        "500킬로",
+        "500키로",
+        "500킬로그램",
+        "500㎏",
+        "500KG",
+      ],
+    ],
+    [
+      PHONE,
+      [
+        "010-1234-5678",
+        "01012345678",
+        "010.1234.5678",
+        "010 1234 5678",
+        "010 1234-5678",
+        "(010) 1234-5678",
+        "010-1234-5678로",
+        "010)1234-5678",
+        "010-12 34-5678",
+      ],
+    ],
     [
       "논산 카페 사업자번호는 123-45-67890이다(세금계산서용).",
-      "- 9/14: 세금계산서에 1234567890 적음",
+      ["123-45-67890", "1234567890", "123 45 67890", "123.45.67890"],
     ],
-    ["유자 가격은 11,000원이다.", "- 9/14: 단가 11,000-12,000원 사이"],
-    ["딸기잼은 300g 병으로 받는다.", "- 9/15: 잼 300그램 병 발송"],
-    ["딸기잼은 300그램 병으로 받는다.", "- 9/15: 잼 300g 병 발송"],
-    ["설탕은 500kg 단위로 들여온다.", "- 9/15: 설탕 500킬로 입고"],
-    ["설탕은 500kg 단위로 들여온다.", "- 9/15: 설탕 500㎏ 입고"],
-    ["딸기잼은 300g 병으로 받는다.", "- 9/15: 잼 300g짜리 병 발송"],
-    ["딸기잼은 300g 병으로 받는다.", "- 9/15: 잼 300g씩 담아 발송"],
-    ["딸기잼은 300g 병으로 받는다.", "- 9/15: 잼 300g정도 담아 발송"],
-    ["딸기잼은 300g 병으로 받는다.", "- 9/15: 잼300g 발송"],
-    ["딸기잼은 300g 병으로 받는다.", "- 9/15: 잼 ３００g 발송"],
+    [
+      "논산 카페 사무실 전화는 02-1234이다(내선 없음).",
+      ["02-1234", "021234", "02)1234", "(02) 1234"],
+    ],
+    [
+      "행사는 2026년 10월 11일에 연다(상세페이지 공지 예정).",
+      [
+        "2026-10-11",
+        "2026.10.11",
+        "2026/10/11",
+        "2026년 10월 11일",
+        "2026년10월11일",
+        "20261011",
+        "2026-10-11에",
+      ],
+    ],
+    [
+      "대성유리는 10만 원 넘게 주문하면 무료배송이다(월말 결제).",
+      [
+        "10만 원",
+        "10만원",
+        "100,000원",
+        "100000원",
+        "10만 원어치",
+        "10만원부터",
+      ],
+    ],
+    [
+      "병뚜껑은 300개씩 들여온다(라벨 인쇄소 통해).",
+      ["300개", "300개씩", "300 개", "300EA", "300ea", "300개입"],
+    ],
   ];
-  test.each(CAUGHT)(
-    "a dated line saying the number in another writing goes %#",
-    (fact, line) => {
-      expect(lineCarries(line, fact)).toBe(true);
+  test.each(WRITINGS)(
+    "every writing of the number meets the fact %#",
+    (fact, writings) => {
+      const missed = writings.filter(
+        (writing) => !lineCarries(`- 9/14: 확인 ${writing} 처리`, fact),
+      );
+      expect(missed).toEqual([]);
     },
   );
 
   /*
-   * The identifier reading must not reopen what the clause closed: a canonical identifier is
-   * one whole token, so it is never a substring of a longer one, and a date or an amount range
-   * is not an identifier. Red with the substring clause restored.
+   * The exceptions of the invariant, on the same facts: the shared digits inside a longer value,
+   * or a different recognised unit, never carry. Red with the substring clause restored.
    */
-  const IDENTIFIER_STAYS: ReadonlyArray<[fact: string, line: string]> = [
-    [PHONE, "- 9/14: 계좌 1234-5678-9012 입금"],
-    [PHONE, "- 9/14: 주문 20260300번 반품"],
-    ["딸기잼은 300g 병으로 받는다.", "- 2026-03-00: 병뚜껑 입고"],
+  const EXCEPTIONS: ReadonlyArray<[fact: string, writings: string[]]> = [
+    [
+      "유자 가격은 11,000원이다(논산 김 사장님네 딸기와 같은 값).",
+      ["211,000원", "1,100,000원", "11,000개", "11,000병", "11,000g"],
+    ],
+    [
+      "딸기잼은 300g 병으로 받는다(오 사장님네 카페 납품분).",
+      ["20260300번", "300개", "300ml", "300원", "300kg", "3000g"],
+    ],
+    [PHONE, ["01012345678901", "1234-5678-9012", "010-1234-5679"]],
+    [
+      "행사는 2026년 10월 11일에 연다(상세페이지 공지 예정).",
+      ["2026-12-01", "2026년 10월 12일"],
+    ],
   ];
-  test.each(IDENTIFIER_STAYS)(
-    "an identifier is one whole value, never a digit string shared %#",
-    (fact, line) => {
-      expect(lineCarries(line, fact)).toBe(false);
+  test.each(EXCEPTIONS)(
+    "a longer value or another unit never meets the fact %#",
+    (fact, writings) => {
+      const carried = writings.filter((writing) =>
+        lineCarries(`- 9/14: 확인 ${writing} 처리`, fact),
+      );
+      expect(carried).toEqual([]);
     },
   );
 
   /*
-   * KNOWN LIMITS of the whole-token clause, pinned as what it does today, not as what it should:
-   * - the same whole price on another product's quote is lost — every one of the 51 unrelated
+   * KNOWN LIMITS, pinned as what the clause does today, not as what it should — each one the
+   * substring rule missed too, so none is a regression:
+   * - the same whole price on another product's quote is lost — every one of the unrelated
    *   dated lines the clause still drops on the run's real summaries is this shape (11,000원 or
    *   9,500원 on another jam's quote), the same limit the standing-line arm pins;
-   * - a bare number beside a spaced unit reads as the number with its unit unsaid, so 300 개 is
-   *   taken for 300g where 300개 is not;
-   * - 300만 원 loses its 만 to the particle strip, so its bare 300 meets 300개 and 300g;
-   * - the number in another writing — 1만8천원, 만팔천 원 — is not found: left to the judge model.
+   * - a number in words (만팔천 원, 삼백 그램) is not a number.
    */
   const LIMITS: ReadonlyArray<[fact: string, line: string, carried: boolean]> =
     [
@@ -301,21 +406,8 @@ describe("the number clause on a dated line", () => {
         "- 9/16: 수원 이 선생님 사과잼 72병(병당 9,500원) 견적",
         true,
       ],
-      [JAM, "- 9/16: 병뚜껑 300 개 입고", true],
-      ["이번 달 매출은 300만 원이다.", "- 9/16: 병뚜껑 300개 입고", true],
-      [YUJA, "- 9/14: 유자 매입가 1만8천원/kg로 합의", false],
       [YUJA, "- 9/14: 유자 단가 kg당 만팔천 원", false],
-      // The class Codex probed, where the writing is not one token's: an amount in 만/천 words,
-      // an identifier of two groups only (`02 1234` is not read as one — three groups make an
-      // identifier, since `9/14 20260300번` is a day and an order), and 개/EA (not equated).
-      ["유자 가격은 11,000원이다.", "- 9/14: 단가 1만1천원 합의", false],
-      ["유자 가격은 11,000원이다.", "- 9/14: 단가 11천원 합의", false],
-      [
-        "논산 카페 사무실 전화는 02-1234이다(내선 없음).",
-        "- 9/14: 사무실 021234 저장",
-        false,
-      ],
-      ["병뚜껑은 300개씩 들여온다.", "- 9/16: 병뚜껑 300EA 입고", false],
+      [JAM, "- 9/15: 잼 삼백 그램 병 발송", false],
     ];
   test.each(LIMITS)(
     "known limit: the number clause on %# reads %s as %p",
