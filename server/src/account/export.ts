@@ -26,6 +26,7 @@ import type { Database } from "../db/client";
 import {
   agentGuidance,
   agentMemories,
+  agentMemoryReceipts,
   agentPreferences,
   agentProfiles,
   agents,
@@ -35,16 +36,23 @@ import {
   channels,
   channelThreads,
   computerStandingApprovals,
+  lafAlimtalkTemplates,
   lafAnswerRatings,
   lafAttachments,
+  lafFeedback,
   lafFeedPosts,
   lafGoalEntries,
   lafGoals,
+  lafNotifications,
+  lafPartnerConnections,
   lafRoutineNotepads,
   lafRoutineRuns,
+  lafRoutineSuggestionDismissals,
   lafRoutines,
   lafSavedLogins,
+  lafSiteConnections,
   lafThreadRuns,
+  mcpUserCredentials,
   skills,
   userRoles,
   users,
@@ -68,6 +76,8 @@ export const EXPORT_LIMITS = {
   auditEvents: 50_000,
   runs: 20_000,
   routineRuns: 20_000,
+  // Each row can carry a diagnostics bundle, and nothing ages them out (`data-lifecycle.md`).
+  feedback: 5_000,
 } as const;
 
 /** Audit rows are read in pages rather than in one statement, for the reason above. */
@@ -227,6 +237,15 @@ export function createAccountExport(database: Database): AccountExport {
         .orderBy(asc(agentGuidance.createdAt)),
     )}`;
 
+    // What the notebook's background work did to their lines — counts, never content.
+    yield `,\n"memoryReceipts":${JSON.stringify(
+      await database
+        .select()
+        .from(agentMemoryReceipts)
+        .where(eq(agentMemoryReceipts.ownerUserId, userId))
+        .orderBy(asc(agentMemoryReceipts.createdAt)),
+    )}`;
+
     /*
      * A channel is theirs if they are in it. There is no owner column — membership is the
      * relationship the product actually has (`channels/routes.ts`), and on a one-person VM that is
@@ -237,6 +256,9 @@ export function createAccountExport(database: Database): AccountExport {
         id: channels.id,
         name: channels.name,
         description: channels.description,
+        // The Bot's main conversation or a project beside it (migration 0064): without this a
+        // file holding several conversations could not say which was which.
+        kind: channels.kind,
         // The last thing said in THEIR conversation with the channel, which is the row their
         // roster reads (`channel_threads`, since migration 0038) — not a channel-wide one.
         lastMessageAt: channelThreads.lastMessageAt,
@@ -508,6 +530,18 @@ export function createAccountExport(database: Database): AccountExport {
         : [],
     )}`;
 
+    // The suggested routines they said 다음에 to: a catalogue key and when.
+    yield `,\n"suggestionDismissals":${JSON.stringify(
+      await database
+        .select({
+          suggestionKey: lafRoutineSuggestionDismissals.suggestionKey,
+          dismissedAt: lafRoutineSuggestionDismissals.dismissedAt,
+        })
+        .from(lafRoutineSuggestionDismissals)
+        .where(eq(lafRoutineSuggestionDismissals.userId, userId))
+        .orderBy(asc(lafRoutineSuggestionDismissals.dismissedAt)),
+    )}`;
+
     const runs = await database
       .select()
       .from(lafThreadRuns)
@@ -533,6 +567,118 @@ export function createAccountExport(database: Database): AccountExport {
             .where(inArray(computerStandingApprovals.botId, botIds))
             .orderBy(asc(computerStandingApprovals.grantedAt))
         : [],
+    )}`;
+
+    /*
+     * THE EIGHT SECTIONS THE REVIEW OF 2026-10-11 FOUND MISSING. Each of these tables names the
+     * person and went with them by cascade, and none was in the file: a table added after this
+     * module was written was a table the download did not know about. `account/tables.ts` is now
+     * the list, and the test holds the database to it.
+     */
+
+    // What was waiting for them — a question, a finished task — and which door carried it.
+    // Thirty days of rows at most (`retention.ts`); the `subject` is facts, as the card draws them.
+    yield `,\n"notifications":${JSON.stringify(
+      await database
+        .select({
+          id: lafNotifications.id,
+          kind: lafNotifications.kind,
+          botId: lafNotifications.botId,
+          approvalId: lafNotifications.approvalId,
+          channelId: lafNotifications.channelId,
+          subject: lafNotifications.subject,
+          createdAt: lafNotifications.createdAt,
+          deliveredVia: lafNotifications.deliveredVia,
+          deliveredAt: lafNotifications.deliveredAt,
+          seenAt: lafNotifications.seenAt,
+        })
+        .from(lafNotifications)
+        .where(eq(lafNotifications.userId, userId))
+        .orderBy(asc(lafNotifications.createdAt)),
+    )}`;
+
+    // Which sites they signed their Bot's browser into, when, and whether the login still held.
+    // Nothing here is the session: that is a cookie on the computer, and no row holds it.
+    yield `,\n"siteConnections":${JSON.stringify(
+      await database
+        .select({
+          siteId: lafSiteConnections.siteId,
+          botId: lafSiteConnections.botId,
+          connectedAt: lafSiteConnections.connectedAt,
+          lastSeenAt: lafSiteConnections.lastSeenAt,
+          needsLogin: lafSiteConnections.needsLogin,
+        })
+        .from(lafSiteConnections)
+        .where(eq(lafSiteConnections.userId, userId))
+        .orderBy(asc(lafSiteConnections.connectedAt)),
+    )}`;
+
+    // What they wrote to the people who run this, with the two facts about the screen they chose
+    // to send and the diagnostics they were shown first — their words, so the whole row.
+    const feedback = await database
+      .select({
+        id: lafFeedback.id,
+        text: lafFeedback.text,
+        route: lafFeedback.route,
+        failureCode: lafFeedback.failureCode,
+        diagnostics: lafFeedback.diagnostics,
+        createdAt: lafFeedback.createdAt,
+      })
+      .from(lafFeedback)
+      .where(eq(lafFeedback.userId, userId))
+      .orderBy(asc(lafFeedback.createdAt))
+      .limit(EXPORT_LIMITS.feedback + 1);
+    if (feedback.length > EXPORT_LIMITS.feedback) truncated.push("feedback");
+    yield `,\n"feedback":${JSON.stringify(feedback.slice(0, EXPORT_LIMITS.feedback))}`;
+
+    // The services they connected their account to: which, with what scope, when, and whether the
+    // last call worked. NOT `credential_id` — a pointer into the vault belongs in no file.
+    yield `,\n"connectedAccounts":${JSON.stringify(
+      await database
+        .select({
+          serverId: mcpUserCredentials.serverId,
+          scope: mcpUserCredentials.scope,
+          connectedAt: mcpUserCredentials.connectedAt,
+          lastOkAt: mcpUserCredentials.lastOkAt,
+          lastFailureAt: mcpUserCredentials.lastFailureAt,
+          lastFailureCode: mcpUserCredentials.lastFailureCode,
+        })
+        .from(mcpUserCredentials)
+        .where(eq(mcpUserCredentials.userId, userId))
+        .orderBy(asc(mcpUserCredentials.connectedAt)),
+    )}`;
+
+    // Their 카카오톡 채널 registration: what they typed and what the vendor said. NOT `account` —
+    // the senderKey decides whose channel a message leaves from and crosses to no browser
+    // (`db/schema/partners.ts`).
+    yield `,\n"partnerConnections":${JSON.stringify(
+      await database
+        .select({
+          provider: lafPartnerConnections.provider,
+          details: lafPartnerConnections.details,
+          status: lafPartnerConnections.status,
+          connectedAt: lafPartnerConnections.connectedAt,
+          updatedAt: lafPartnerConnections.updatedAt,
+        })
+        .from(lafPartnerConnections)
+        .where(eq(lafPartnerConnections.userId, userId))
+        .orderBy(asc(lafPartnerConnections.connectedAt)),
+    )}`;
+
+    // The standing of each template under that registration: 심사 중, 사용 가능, 반려 and why.
+    yield `,\n"alimtalkTemplates":${JSON.stringify(
+      await database
+        .select({
+          code: lafAlimtalkTemplates.code,
+          templateId: lafAlimtalkTemplates.templateId,
+          status: lafAlimtalkTemplates.status,
+          reason: lafAlimtalkTemplates.reason,
+          checkedAt: lafAlimtalkTemplates.checkedAt,
+          createdAt: lafAlimtalkTemplates.createdAt,
+        })
+        .from(lafAlimtalkTemplates)
+        .where(eq(lafAlimtalkTemplates.userId, userId))
+        .orderBy(asc(lafAlimtalkTemplates.createdAt)),
     )}`;
 
     /*

@@ -1,17 +1,20 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, like, sql } from "drizzle-orm";
 import { createAccountDeletion } from "../src/account/deletion";
-import { createAccountExport } from "../src/account/export";
+import { createAccountExport, EXPORT_LIMITS } from "../src/account/export";
 import { pseudonymFor } from "../src/account/pseudonym";
 import { createRetentionJob } from "../src/account/retention";
+import { cascadeAnchors, TABLE_LIFECYCLE } from "../src/account/tables";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import { type AuditEventInput, createAuditStore } from "../src/audit";
 import { createDeploymentAdmission } from "../src/auth/admission";
 import { createSignInAllowlist } from "../src/auth/allowlist";
 import { createDatabase } from "../src/db/client";
 import {
+  agentGuidance,
   agentMemories,
+  agentMemoryReceipts,
   agentPreferences,
   agentProfiles,
   agents,
@@ -22,15 +25,27 @@ import {
   channelThreads,
   computerStandingApprovals,
   credentials,
+  lafAlimtalkTemplates,
   lafAnswerRatings,
   lafAttachments,
+  lafFeedback,
+  lafFeedPosts,
+  lafGoalEntries,
+  lafGoals,
+  lafNotifications,
+  lafPartnerConnections,
   lafRoutineNotepads,
   lafRoutineRuns,
   lafRoutines,
+  lafRoutineSuggestionDismissals,
   lafSavedLogins,
+  lafSiteConnections,
   lafThreadMessages,
   lafThreadRuns,
+  mcpServers,
+  mcpUserCredentials,
   skills,
+  userRoles,
   users,
 } from "../src/db/schema";
 import { appendMessages } from "../src/runner/thread-store";
@@ -75,6 +90,8 @@ type Person = {
   skillId: string;
   runId: string;
   approvalId: string;
+  /** The vault row behind their connected service: never in the file, by id or by value. */
+  vaultId: string;
 };
 
 async function makePerson(label: string): Promise<Person> {
@@ -96,6 +113,7 @@ async function makePerson(label: string): Promise<Person> {
     businessKind: label === "stayer" ? "office" : "food",
     dailyPlaces: label === "stayer" ? ["notion"] : ["baemin-ceo"],
   });
+  await database.insert(userRoles).values({ userId: id, role: "user" });
   await database.insert(agents).values({
     id: botId,
     name: `${label}'s Bot`,
@@ -126,7 +144,12 @@ async function makePerson(label: string): Promise<Person> {
     name: `${label} and the Bot`,
     description: "A private conversation.",
   });
-  await database.insert(channelMemberships).values({ channelId, userId: id });
+  // Read up to a minute of its own, so the membership's row is told from the channel's.
+  await database.insert(channelMemberships).values({
+    channelId,
+    userId: id,
+    lastReadAt: new Date("2026-10-01T01:02:03.000Z"),
+  });
   await database.insert(channelAgents).values({ channelId, agentId: botId });
   await database
     .insert(channelThreads)
@@ -255,12 +278,55 @@ async function makePerson(label: string): Promise<Person> {
     grantedBy: id,
   });
   // A vault row of the shape `retireConnectionsFor` finds: the person's id is the key.
-  await database.insert(credentials).values({
-    kind: "mcp_user_token",
-    provider: `${id}-vendor`,
-    encryptedValue: "not-a-real-secret",
-    keyId: id,
-    metadata: {},
+  const [vault] = await database
+    .insert(credentials)
+    .values({
+      kind: "mcp_user_token",
+      provider: `${id}-vendor`,
+      encryptedValue: "not-a-real-secret",
+      keyId: id,
+      metadata: {},
+    })
+    .returning({ id: credentials.id });
+  if (!vault) throw new Error("the vault row was not made");
+  // The service that token is for, and the row that says this person connected it: what the
+  // export carries as `connectedAccounts` — the service, the scope, the dates — and not the
+  // pointer into the vault.
+  await database.insert(mcpServers).values({
+    id: `${id}-server`,
+    title: `${label}'s calendar`,
+    vendor: "google",
+    url: "https://mcp.example.test/calendar",
+  });
+  await database.insert(mcpUserCredentials).values({
+    serverId: `${id}-server`,
+    userId: id,
+    credentialId: vault.id,
+    scope: `${label}.calendar.read`,
+    lastOkAt: new Date(),
+  });
+  // A goal, its first check-in, and a 소식 the Bot posted: three tables the file carries that
+  // nothing here seeded until the catalogue was held to a row per table.
+  await database.insert(lafGoals).values({
+    id: `${id}-goal`,
+    userId: id,
+    agentId: botId,
+    category: "sales",
+    title: `${label} sells a hundred coffees`,
+    target: "100 cups a day",
+  });
+  await database.insert(lafGoalEntries).values({
+    id: `${id}-goal-entry`,
+    goalId: `${id}-goal`,
+    text: `${label} sold forty so far.`,
+  });
+  await database.insert(lafFeedPosts).values({
+    id: `${id}-post`,
+    userId: id,
+    agentId: botId,
+    topic: "orders",
+    title: `${label}'s morning post`,
+    body: "Three orders came in overnight.",
   });
   await auditStore.insert({
     eventType: "computer.action_allowed",
@@ -268,6 +334,63 @@ async function makePerson(label: string): Promise<Person> {
     targetId: botId,
     actorUserId: id,
     payload: { note: `account-lifecycle ${suite}` },
+  });
+
+  /*
+   * THE EIGHT TABLES THE REVIEW OF 2026-10-11 FOUND WITH NO DECISION: each names the person, each
+   * went by cascade, none was in the file. Seeded for both people so the file is checked for one
+   * and not the other, and the deletion for the cascade actually firing.
+   */
+  await database.insert(agentGuidance).values({
+    id: `${id}-guidance`,
+    agentId: botId,
+    ownerUserId: id,
+    content: `${label} likes short answers.`,
+    day: "2026-10-10",
+  });
+  await database.insert(agentMemoryReceipts).values({
+    id: `${id}-receipt-row`,
+    agentId: botId,
+    ownerUserId: id,
+    job: "dream",
+    checked: 3,
+    confirmed: 1,
+  });
+  await database.insert(lafSiteConnections).values({
+    userId: id,
+    siteId: `${label}-store`,
+    botId,
+  });
+  await database.insert(lafFeedback).values({
+    id: `${id}-feedback`,
+    userId: id,
+    text: `${label} wrote to the operator.`,
+    route: "/settings/account",
+  });
+  await database.insert(lafRoutineSuggestionDismissals).values({
+    userId: id,
+    suggestionKey: `${label}-suggestion`,
+  });
+  await database.insert(lafNotifications).values({
+    id: `${id}-notification`,
+    kind: "approval.waiting",
+    botId,
+    userId: id,
+    channelId,
+    subject: { kind: "browser", intent: "read", host: `${label}.example.test` },
+  });
+  await database.insert(lafPartnerConnections).values({
+    provider: "kakao-alimtalk",
+    userId: id,
+    // The vendor's handle: decides whose channel a message leaves from, so never in the file.
+    account: `${id}-senderkey`,
+    details: { searchId: `@${label}shop` },
+  });
+  await database.insert(lafAlimtalkTemplates).values({
+    userId: id,
+    code: "laf_approval",
+    templateId: `${id}-template`,
+    status: "approved",
   });
 
   return {
@@ -280,6 +403,7 @@ async function makePerson(label: string): Promise<Person> {
     skillId,
     runId,
     approvalId,
+    vaultId: vault.id,
   };
 }
 
@@ -328,6 +452,18 @@ function computerThatRecords() {
   return { client: client as never, wiped, emptied, stopped };
 }
 
+/**
+ * What the real `retireConnectionsFor` does to the rows this file seeds: the `mcp_user_credentials`
+ * rows go before the vault rows they point at, which `deletion.ts` removes by name next and which
+ * the join table references without a cascade (`db/schema/plugins.ts`). A stub that skipped it
+ * would fail the deletion on that key, not on anything under test.
+ */
+async function retireJoinRowsOf(userId: string): Promise<void> {
+  await database
+    .delete(mcpUserCredentials)
+    .where(eq(mcpUserCredentials.userId, userId));
+}
+
 /** An audit store that keeps what it was handed, for the rows written beside the transaction. */
 function trailThatRecords() {
   const rows: AuditEventInput[] = [];
@@ -358,6 +494,9 @@ afterAll(async () => {
       .delete(lafThreadRuns)
       .where(eq(lafThreadRuns.runId, person.runId));
     await database.delete(skills).where(eq(skills.id, person.skillId));
+    await database
+      .delete(mcpServers)
+      .where(eq(mcpServers.id, `${person.id}-server`));
     await database.delete(credentials).where(eq(credentials.keyId, person.id));
     await database.delete(channels).where(eq(channels.id, person.channelId));
     await database.delete(agents).where(eq(agents.id, person.botId));
@@ -455,12 +594,161 @@ describe("the export", () => {
     ).toBe(true);
     expect(document.truncated).toEqual([]);
 
-    // The serialised whole, checked for the two things that must never be in it.
+    // A conversation says what it is: the main one or a project (migration 0064).
+    expect(document.channels).toEqual([
+      expect.objectContaining({ id: leaver.channelId, kind: "main" }),
+    ]);
+
+    // The eight sections that were missing until 2026-10-11, each this person's rows only.
+    expect(document.memoryReceipts).toEqual([
+      expect.objectContaining({ id: `${leaver.id}-receipt-row`, job: "dream" }),
+    ]);
+    expect(document.siteConnections).toEqual([
+      expect.objectContaining({ siteId: "leaver-store", needsLogin: false }),
+    ]);
+    expect(document.feedback).toEqual([
+      expect.objectContaining({
+        id: `${leaver.id}-feedback`,
+        text: "leaver wrote to the operator.",
+      }),
+    ]);
+    expect(document.suggestionDismissals).toEqual([
+      expect.objectContaining({ suggestionKey: "leaver-suggestion" }),
+    ]);
+    expect(document.notifications).toEqual([
+      expect.objectContaining({
+        id: `${leaver.id}-notification`,
+        kind: "approval.waiting",
+      }),
+    ]);
+    // The service they connected: which, with what scope and when — and not the vault pointer.
+    expect(document.connectedAccounts).toEqual([
+      {
+        serverId: `${leaver.id}-server`,
+        scope: "leaver.calendar.read",
+        connectedAt: expect.any(String),
+        lastOkAt: expect.any(String),
+        lastFailureAt: null,
+        lastFailureCode: null,
+      },
+    ]);
+    expect(document.partnerConnections).toEqual([
+      {
+        provider: "kakao-alimtalk",
+        details: { searchId: "@leavershop" },
+        status: "linked",
+        connectedAt: expect.any(String),
+        updatedAt: expect.any(String),
+      },
+    ]);
+    expect(document.alimtalkTemplates).toEqual([
+      expect.objectContaining({ code: "laf_approval", status: "approved" }),
+    ]);
+
+    // The serialised whole, checked for the things that must never be in it.
     const serialised = JSON.stringify(document);
     expect(serialised).not.toContain(stayer.id);
     expect(serialised).not.toContain('"notion"');
     expect(serialised).not.toContain("credentialKeyId");
     expect(serialised).not.toContain("not-a-real-secret");
+    // The vault row behind the connected service: neither its key nor its id is in the file.
+    expect(serialised).not.toContain("credentialId");
+    expect(serialised).not.toContain(leaver.vaultId);
+    // The vendor's senderKey: not the person's to carry around, and not a key of any section.
+    expect(serialised).not.toContain("senderkey");
+    expect(serialised).not.toContain('"account":');
+  });
+
+  /*
+   * EVERY TABLE THE CATALOGUE EXPORTS LEAVES A ROW OF ITS OWN IN THE SECTION IT NAMES. Holding
+   * only that the section's key exists let a table mapped to a section that already existed pass
+   * with `export.ts` never reading it (review, 2026-10-11). So each exported table has a sentinel
+   * here — a value `makePerson` seeded in that table and nowhere else — and the test looks for it
+   * in the section the catalogue names. A table catalogued as exported with no sentinel named is
+   * the first assertion's failure: whoever adds the row to the catalogue seeds its evidence too.
+   */
+  const evidenceOf = (person: Person): Record<string, string> => ({
+    users: person.email,
+    user_roles: '"roles":["user"]',
+    agents: "leaver's Bot",
+    agent_profiles: "Keeps the books.",
+    agent_preferences: person.botId,
+    agent_memories: "leaver closes on Sundays.",
+    agent_guidance: "leaver likes short answers.",
+    agent_memory_receipts: `${person.id}-receipt-row`,
+    channels: "leaver and the Bot",
+    channel_memberships: "2026-10-01T01:02:03.000Z",
+    channel_agents: person.botId,
+    channel_threads: person.threadId,
+    laf_thread_messages: "leaver asked something.",
+    laf_thread_runs: person.runId,
+    laf_attachments: "영수증.jpg",
+    laf_answer_ratings: "leaver thinks the total is off.",
+    laf_routines: "Morning check",
+    laf_routine_runs: "Nothing new.",
+    laf_routine_notepads: "leaver-order-17",
+    laf_routine_suggestion_dismissals: "leaver-suggestion",
+    laf_feed_posts: "leaver's morning post",
+    laf_goals: "leaver sells a hundred coffees",
+    laf_goal_entries: "leaver sold forty so far.",
+    laf_notifications: `${person.id}-notification`,
+    laf_site_connections: "leaver-store",
+    laf_feedback: "leaver wrote to the operator.",
+    laf_saved_logins: "leaver의 네이버",
+    mcp_user_credentials: "leaver.calendar.read",
+    laf_partner_connections: "@leavershop",
+    laf_alimtalk_templates: `${person.id}-template`,
+    skills: `${person.id}-standup`,
+    computer_standing_approvals: person.approvalId,
+    audit_events: "computer.action_allowed",
+  });
+
+  test("every table the catalogue exports leaves a row of its own in the section it names", async () => {
+    const document = await readExport(leaver.id);
+    const evidence = evidenceOf(leaver);
+    const exported = Object.entries(TABLE_LIFECYCLE)
+      .filter(([, lifecycle]) => lifecycle.exported !== null)
+      .map(([table]) => table)
+      .sort();
+    expect(Object.keys(evidence).sort()).toEqual(exported);
+    const missing = exported.filter((table) => {
+      const section = TABLE_LIFECYCLE[table]?.exported as string;
+      return !JSON.stringify(document[section] ?? null).includes(
+        evidence[table] as string,
+      );
+    });
+    expect(missing).toEqual([]);
+  });
+
+  /*
+   * What they wrote to the operator is capped like the runs are: each row can carry a diagnostics
+   * bundle, nothing ages them out, and the export is read whole into one string before it is
+   * written — so a history long enough would take the API process with it. The cap is announced.
+   */
+  test("feedback past the cap is left out, and the file says so", async () => {
+    const extra = Array.from({ length: EXPORT_LIMITS.feedback }, (_, at) => ({
+      id: `${stayer.id}-feedback-${at}`,
+      userId: stayer.id,
+      text: `stayer wrote again, ${at}.`,
+      route: "/settings/account",
+    }));
+    for (let at = 0; at < extra.length; at += 1000) {
+      await database.insert(lafFeedback).values(extra.slice(at, at + 1000));
+    }
+    try {
+      const document = await readExport(stayer.id);
+      expect(document.feedback).toHaveLength(EXPORT_LIMITS.feedback);
+      expect(document.truncated).toEqual(["feedback"]);
+    } finally {
+      await database
+        .delete(lafFeedback)
+        .where(
+          and(
+            eq(lafFeedback.userId, stayer.id),
+            like(lafFeedback.id, `${stayer.id}-feedback-%`),
+          ),
+        );
+    }
   });
 
   test("a weekday routine's days leave as a list, not as the driver's typed array", async () => {
@@ -507,6 +795,62 @@ describe("the export", () => {
   });
 });
 
+/**
+ * THE LIST THAT KEEPS THE NEXT TABLE FROM BEING FORGOTTEN (`account/tables.ts`), held against the
+ * database's own catalogue — the way `NAMES_A_CONVERSATION` is in `conversation-deleting`. Eight
+ * tables had arrived since the export was written with no decision anywhere; this is what makes
+ * the ninth fail here rather than wait for a review.
+ */
+describe("every table in the database has a decision", () => {
+  test("the catalogue names every table, and no table that is not there", async () => {
+    const rows = (await database.execute(sql`
+      select c.relname as name
+      from pg_catalog.pg_class c
+      where c.relnamespace = current_schema()::regnamespace
+        and c.relkind in ('r', 'p')
+    `)) as unknown as Array<{ name: string }>;
+    expect(rows.map((row) => row.name).sort()).toEqual(
+      Object.keys(TABLE_LIFECYCLE).sort(),
+    );
+  });
+
+  test("a table left to the cascade actually cascades, from the person or from what is deleted by name", async () => {
+    // Every ON DELETE CASCADE key in the schema: which table hangs off which.
+    const keys = (await database.execute(sql`
+      select t.relname as child, r.relname as parent
+      from pg_catalog.pg_constraint k
+      join pg_catalog.pg_class t on t.oid = k.conrelid
+      join pg_catalog.pg_class r on r.oid = k.confrelid
+      where k.contype = 'f'
+        and k.confdeltype = 'c'
+        and t.relnamespace = current_schema()::regnamespace
+    `)) as unknown as Array<{ child: string; parent: string }>;
+
+    const reached = cascadeAnchors();
+    const waiting = new Set(
+      Object.entries(TABLE_LIFECYCLE)
+        .filter(([, lifecycle]) => lifecycle.deletion === "cascade")
+        .map(([table]) => table),
+    );
+    // A cascade table is reached once one of its cascading parents is; repeat until nothing moves,
+    // so `laf_goal_entries` is reached through `laf_goals` whichever order the rows came in.
+    let moved = true;
+    while (moved) {
+      moved = false;
+      for (const table of waiting) {
+        if (
+          keys.some((key) => key.child === table && reached.has(key.parent))
+        ) {
+          reached.add(table);
+          waiting.delete(table);
+          moved = true;
+        }
+      }
+    }
+    expect([...waiting]).toEqual([]);
+  });
+});
+
 describe("deletion", () => {
   test("removes the person and leaves the other account alone — its rows and its browser's logins", async () => {
     const retired: Array<{ userId: string; by: string }> = [];
@@ -515,6 +859,7 @@ describe("deletion", () => {
     const deletion = createAccountDeletion({
       database,
       retireConnectionsFor: async (userId, by) => {
+        await retireJoinRowsOf(userId);
         retired.push({ userId, by });
         return { retired: 1 };
       },
@@ -708,6 +1053,84 @@ describe("deletion", () => {
         .where(eq(lafSavedLogins.userId, leaver.id)),
     ).toEqual([]);
 
+    // Every count the catalogue promises the trail is in the tally, by that name.
+    for (const lifecycle of Object.values(TABLE_LIFECYCLE)) {
+      if (lifecycle.counted)
+        expect(result.counts).toHaveProperty(lifecycle.counted);
+    }
+
+    // THE EIGHT TABLES LEFT TO THE CASCADE, SEEN TO HAVE GONE: a schema file's `onDelete` is a
+    // claim about a migration, and this is where the claim is checked against rows.
+    await gone(
+      "guidance",
+      database
+        .select()
+        .from(agentGuidance)
+        .where(eq(agentGuidance.ownerUserId, leaver.id)),
+    );
+    await gone(
+      "memoryReceipts",
+      database
+        .select()
+        .from(agentMemoryReceipts)
+        .where(eq(agentMemoryReceipts.ownerUserId, leaver.id)),
+    );
+    await gone(
+      "siteConnections",
+      database
+        .select()
+        .from(lafSiteConnections)
+        .where(eq(lafSiteConnections.userId, leaver.id)),
+    );
+    await gone(
+      "feedback",
+      database
+        .select()
+        .from(lafFeedback)
+        .where(eq(lafFeedback.userId, leaver.id)),
+    );
+    await gone(
+      "suggestionDismissals",
+      database
+        .select()
+        .from(lafRoutineSuggestionDismissals)
+        .where(eq(lafRoutineSuggestionDismissals.userId, leaver.id)),
+    );
+    await gone(
+      "notifications",
+      database
+        .select()
+        .from(lafNotifications)
+        .where(eq(lafNotifications.userId, leaver.id)),
+    );
+    await gone(
+      "partnerConnections",
+      database
+        .select()
+        .from(lafPartnerConnections)
+        .where(eq(lafPartnerConnections.userId, leaver.id)),
+    );
+    await gone(
+      "alimtalkTemplates",
+      database
+        .select()
+        .from(lafAlimtalkTemplates)
+        .where(eq(lafAlimtalkTemplates.userId, leaver.id)),
+    );
+    // And the stayer's copies of the same did not go with them.
+    expect(
+      await database
+        .select({ id: lafFeedback.id })
+        .from(lafFeedback)
+        .where(eq(lafFeedback.userId, stayer.id)),
+    ).toEqual([{ id: `${stayer.id}-feedback` }]);
+    expect(
+      await database
+        .select({ siteId: lafSiteConnections.siteId })
+        .from(lafSiteConnections)
+        .where(eq(lafSiteConnections.userId, stayer.id)),
+    ).toEqual([{ siteId: "stayer-store" }]);
+
     // THE OTHER ACCOUNT, ROW FOR ROW. This is the assertion the second person exists for.
     expect(
       await database.select().from(users).where(eq(users.id, stayer.id)),
@@ -786,7 +1209,10 @@ describe("deletion", () => {
     const computer = computerThatRecords();
     const deletion = createAccountDeletion({
       database,
-      retireConnectionsFor: async () => ({ retired: 0 }),
+      retireConnectionsFor: async (userId) => {
+        await retireJoinRowsOf(userId);
+        return { retired: 0 };
+      },
       computerClient: computer.client,
       auditStore: trailThatRecords().store,
       admission: admittedOnly(stayer),
@@ -834,7 +1260,10 @@ describe("deletion", () => {
     const computer = computerThatRecords();
     const deletion = createAccountDeletion({
       database,
-      retireConnectionsFor: async () => ({ retired: 0 }),
+      retireConnectionsFor: async (userId) => {
+        await retireJoinRowsOf(userId);
+        return { retired: 0 };
+      },
       computerClient: computer.client,
       auditStore: trailThatRecords().store,
       // `stayer` is still in the database, and is not who this list admits.
@@ -883,7 +1312,10 @@ describe("deletion", () => {
     const computer = computerThatRecords();
     const deletion = createAccountDeletion({
       database,
-      retireConnectionsFor: async () => ({ retired: 0 }),
+      retireConnectionsFor: async (userId) => {
+        await retireJoinRowsOf(userId);
+        return { retired: 0 };
+      },
       computerClient: computer.client,
       auditStore: trailThatRecords().store,
       admission: admittedOnly({ email: `acct-${suite}-nobody@example.test` }),
@@ -910,6 +1342,10 @@ describe("deletion", () => {
     alsoMade.push(busy, stuck);
     const stoppedWhileThere: Array<{ userId: string; rows: number }> = [];
     const stopping = createAccountDeletion({
+      retireConnectionsFor: async (userId) => {
+        await retireJoinRowsOf(userId);
+        return { retired: 0 };
+      },
       database,
       stopWorkFor: async (userId) => {
         const rows = await database
@@ -926,6 +1362,10 @@ describe("deletion", () => {
 
     // A stuck turn does not keep a person in a deployment they asked to leave.
     const failing = createAccountDeletion({
+      retireConnectionsFor: async (userId) => {
+        await retireJoinRowsOf(userId);
+        return { retired: 0 };
+      },
       database,
       stopWorkFor: async () => {
         throw new Error("the turn would not end");

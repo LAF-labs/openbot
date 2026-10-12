@@ -2990,11 +2990,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * (the bare ring 3:1 on every ground a row sits on, the label on a filled destructive at 4.5, the
  * red as words on its resting wash at 4.5). 3 and 6 is 9; 2430 and 9 is 2439.
  *
- * RAISED 2026-10-11 FOR WHAT A DELEGATED RUN HANDS BACK, `server` by six (to 4528), all in
+ * RAISED 2026-10-11 FOR EVERY TABLE HAVING A DECISION, `server` by four (to 4526), all in
+ * `account-lifecycle.integration.test.ts`: the catalogue (`account/tables.ts`) names every table
+ * in `pg_class` and no other; a table left to the cascade reaches the person through
+ * `ON DELETE CASCADE` keys read from `pg_constraint`; every table the catalogue exports leaves a
+ * row of its own in the section it names; and feedback past the export's cap is left out and said
+ * so. 4522 and 4 is 4526.
+ *
+ * RAISED 2026-10-11 FOR WHAT A DELEGATED RUN HANDS BACK, `server` by six (to 4532), all in
  * `turn-engine.integration.test.ts`: a run that ends without an answer hands nothing back through
  * the engine — not what it said on the way — and five on the reading itself (the last reply where
  * it asks for nothing, nothing where it is empty, nothing where it is another call, nothing where
- * there was no reply, and its words trimmed). 4522 and 6 is 4528.
+ * there was no reply, and its words trimmed). 4526 and 6 is 4532.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -3024,7 +3031,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4528, roots: ["server"] },
+  { name: "server", floor: 4532, roots: ["server"] },
   { name: "app", floor: 2439, roots: ["app"] },
   {
     name: "agent-computer",
