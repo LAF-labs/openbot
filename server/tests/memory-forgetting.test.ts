@@ -26,7 +26,9 @@ import {
 import {
   createSummaryScrubber,
   isDated,
+  koreanAmount,
   lineCarries,
+  numbersIn,
   scrubByRule,
 } from "../src/context/forget-scrub";
 import type { JevAsker } from "../src/context/vendor/fast-jev-compaction/index";
@@ -269,6 +271,8 @@ describe("the number clause on a dated line", () => {
         "１１,０００원",
         "11,000",
         "₩11,000",
+        "1만1천원",
+        "만1천원",
       ],
     ],
     [
@@ -314,6 +318,15 @@ describe("the number clause on a dated line", () => {
         "010-1234-5678로",
         "010)1234-5678",
         "010-12 34-5678",
+        "010\u20111234\u20115678",
+        "010–1234–5678",
+        "010—1234—5678",
+        "010−1234−5678",
+        "010－1234－5678",
+        "010\u00a01234\u00a05678",
+        "010\u20091234\u20095678",
+        "010·1234·5678",
+        "010\u30fb1234\u30fb5678",
       ],
     ],
     [
@@ -388,6 +401,84 @@ describe("the number clause on a dated line", () => {
         lineCarries(`- 9/14: 확인 ${writing} 처리`, fact),
       );
       expect(carried).toEqual([]);
+    },
+  );
+
+  /*
+   * Korean scale words are a hierarchy, not a sum of terms: 1억2천만 read as 100002000 met neither
+   * 120,000,000원 nor anything but an unrelated 100,002,000원 (Codex's third review of pull request
+   * 204). Each row is read as a value, and meets its figures both ways — the words forgotten and
+   * the figures in the line, and the figures forgotten and the words in the line. Red with the
+   * groups summed independently again.
+   */
+  const AMOUNTS: ReadonlyArray<[words: string, figures: string]> = [
+    ["1억2천만원", "120,000,000원"],
+    ["1억 2,000만 원", "120,000,000원"],
+    ["1억 2천만 원", "120,000,000원"],
+    ["3천5백만원", "35,000,000원"],
+    ["1,000만 원", "10,000,000원"],
+    ["천만 원", "10,000,000원"],
+    ["1억천만원", "110,000,000원"],
+    ["12만5천원", "125,000원"],
+    ["1만8천원", "18,000원"],
+    ["2천5백원", "2,500원"],
+    ["3백5십원", "350원"],
+    ["10만 원", "100,000원"],
+    ["백만 원", "1,000,000원"],
+    ["1조2억원", "1,000,200,000,000원"],
+    ["1억2천3백만4천5백원", "123,004,500원"],
+  ];
+  test.each(AMOUNTS)("%s is %s, forgotten either way", (words, figures) => {
+    const value = figures.replace(/\D/g, "");
+    expect(koreanAmount(words.replace(/원$/, ""))).toBe(BigInt(value));
+    expect(numbersIn(words).map((number) => number.value)).toEqual([value]);
+    const forgotten = (amount: string) =>
+      `건물 매입가는 ${amount}이다(은행 대출 포함, 잔금 미정).`;
+    expect(
+      lineCarries(`- 9/14: 매입가 ${figures} 확인`, forgotten(words)),
+    ).toBe(true);
+    expect(
+      lineCarries(`- 9/14: 매입가 ${words} 확인`, forgotten(figures)),
+    ).toBe(true);
+    // A different value in the same order of magnitude is not it.
+    const other = `${(BigInt(value) + 1_000n).toLocaleString("en-US")}원`;
+    expect(lineCarries(`- 9/14: 정산 ${other} 입금`, forgotten(words))).toBe(
+      false,
+    );
+  });
+
+  /*
+   * Every separator by its Unicode category, not by a list (the same review): each dash
+   * punctuation mark (\p{Pd}) and the minus sign, each space separator (\p{Zs}) and the middle
+   * dots join the groups of one phone. Red with the normalisation left out.
+   */
+  const codePoints = (test: (char: string) => boolean) => {
+    const found: string[] = [];
+    for (let code = 0x20; code <= 0xffef; code += 1) {
+      const char = String.fromCodePoint(code);
+      if (test(char)) found.push(char);
+    }
+    return found;
+  };
+  const SEPARATOR_CLASSES: ReadonlyArray<[name: string, chars: string[]]> = [
+    [
+      "dash punctuation and the minus sign",
+      codePoints((c) => /[\p{Pd}−]/u.test(c)),
+    ],
+    ["space separators", codePoints((c) => /\p{Zs}/u.test(c))],
+    ["middle dots", ["·", "‧", "・", "ㆍ"]],
+  ];
+  test.each(SEPARATOR_CLASSES)(
+    "every %s joins the groups of one phone",
+    (_name, chars) => {
+      expect(chars.length).toBeGreaterThan(1);
+      const missed = chars.filter(
+        (sep) =>
+          !lineCarries(`- 9/14: 연락처 010${sep}1234${sep}5678 저장`, PHONE),
+      );
+      expect(missed.map((c) => `U+${c.codePointAt(0)?.toString(16)}`)).toEqual(
+        [],
+      );
     },
   );
 

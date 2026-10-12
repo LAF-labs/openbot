@@ -158,13 +158,45 @@ const UNITS: ReadonlyArray<[spelling: string, unit: string]> = (
   ] as Array<[string, string]>
 ).sort((a, b) => b[0].length - a[0].length);
 
-/** What a scale word multiplies by: 1만8천 is 18000. */
-const SCALE: Readonly<Record<string, bigint>> = {
+/**
+ * An amount in Korean scale words as its value. The words are a hierarchy, not a sum of
+ * independent terms (Codex's third review of pull request 204 found 1억2천만 read as 100002000):
+ * the small words 천/백/십 build a group of under ten thousand, and each big word 조/억/만 closes
+ * the group and multiplies it — `1억 2천만` is (1)×억 + (2천)×만, `3천5백만` is (3500)×만, `1만8천`
+ * is (1)×만 + 8천, `2천5백` is 2500. Digits may stand before any word (`1,000만`, `12만5천`) and
+ * a small word may stand alone (`천만` is 1천만); the span starts with a digit, so `만 원` in prose
+ * and `5일 만에` are not amounts.
+ */
+const BIG_WORDS: Readonly<Record<string, bigint>> = {
+  조: 1_000_000_000_000n,
   억: 100_000_000n,
   만: 10_000n,
+};
+const SMALL_WORDS: Readonly<Record<string, bigint>> = {
   천: 1_000n,
   백: 100n,
+  십: 10n,
 };
+export function koreanAmount(span: string): bigint {
+  let total = 0n;
+  let group = 0n;
+  const parts = span.replace(/(\d),(?=\d{3})/g, "$1");
+  for (const part of parts.matchAll(/(\d+)?\s?([조억만천백십])?/g)) {
+    const [, digits, word] = part;
+    if (!digits && !word) continue;
+    const figure = digits ? BigInt(digits) : 1n;
+    const big = word ? BIG_WORDS[word] : undefined;
+    const small = word ? SMALL_WORDS[word] : undefined;
+    if (small !== undefined) group += figure * small;
+    else if (big !== undefined) {
+      // `만 원` and `만1천원` say one 만; `1만8천` says the digits; `3천5백만` the group.
+      const times = group === 0n ? figure : group + (digits ? figure : 0n);
+      total += times * big;
+    } else group += figure;
+    if (big !== undefined) group = 0n;
+  }
+  return total + group;
+}
 
 /** The unit said at the start of what follows a number, one space allowed; "" when none is. */
 function unitAt(trailing: string): string {
@@ -178,9 +210,15 @@ const twoDigits = (part: string) => part.padStart(2, "0").slice(-2);
 
 export function numbersIn(text: string): SaidNumber[] {
   const said: SaidNumber[] = [];
+  // Every dash (\p{Pd}, the minus sign) is a hyphen, every space (\p{Zs}) a space and a middle
+  // dot a dot before anything is read: the summariser and the owner write a phone with a
+  // non-breaking hyphen, an en dash or 010·1234·5678 (Codex's third review of pull request 204).
   let rest = text
+    .replace(/[\u00b7\u2027\u30fb\u318d\uff65]/g, ".")
     .normalize("NFKC")
     .toLowerCase()
+    .replace(/[\p{Pd}\u2212]/gu, "-")
+    .replace(/\p{Zs}/gu, " ")
     .replace(/(\d),(?=\d{3})/g, "$1");
   // Each reading takes its span out of the text so a later one never reads it again.
   const take = (
@@ -215,13 +253,17 @@ export function numbersIn(text: string): SaidNumber[] {
     }),
   );
   // An amount in scale words.
-  take(/\d+(?:\s?[억만천백](?:\s?\d+)?)+/g, (match, trailing) => {
-    let value = 0n;
-    for (const part of match[0].matchAll(/(\d+)\s?([억만천백])?/g)) {
-      value += BigInt(part[1] ?? "0") * (SCALE[part[2] ?? ""] ?? 1n);
-    }
-    return { value: value.toString(), unit: unitAt(trailing) };
-  });
+  // Said in words alone — 천만 원, 백만 원 — only with two words or a unit after it, since `5일
+  // 만에` is not ten thousand of anything.
+  take(
+    /\d+(?:\s?[조억만천백십](?:\s?\d+)?)+|(?<!\p{L})[조억만천백십](?:\s?\d+)?(?:\s?[조억만천백십](?:\s?\d+)?)*/gu,
+    (match, trailing) => {
+      const unit = unitAt(trailing);
+      const words = match[0].match(/[조억만천백십]/g)?.length ?? 0;
+      if (!/\d/.test(match[0]) && words < 2 && unit === "") return null;
+      return { value: koreanAmount(match[0]).toString(), unit };
+    },
+  );
   // Every other run of digits, as written.
   take(/\d+/g, (match, trailing) => ({
     value: match[0],
