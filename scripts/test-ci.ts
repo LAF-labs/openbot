@@ -2978,6 +2978,12 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `notebook-jump.test.tsx`: the line is reached by its id once drawn, marked and given the
  * keyboard; a line forgotten since marks nothing. 1 and 2 is 3; 2421 and 3 is 2424.
  *
+ * RAISED 2026-10-11 WITH THE DEV SERVER'S RUNTIME, `app` by six (to 2430), all in the new
+ * `vite-dev-runtime.test.ts`: Node is never refused, Bun 1.3 is and the sentence names the
+ * version and both ways out, a Bun from the fix on is not and a prerelease of the floor is, the
+ * floor is read to its patch, the config's plugin list carries the check, and its hook refuses
+ * `serve` and lets a build through. 2424 and 6 is 2430.
+ *
  * RAISED 2026-10-11 FOR WHAT A DELEGATED RUN HANDS BACK, `server` by six (to 4528), all in
  * `turn-engine.integration.test.ts`: a run that ends without an answer hands nothing back through
  * the engine — not what it said on the way — and five on the reading itself (the last reply where
@@ -3013,7 +3019,7 @@ const GROUPS: readonly {
   processes?: number;
 }[] = [
   { name: "server", floor: 4528, roots: ["server"] },
-  { name: "app", floor: 2424, roots: ["app"] },
+  { name: "app", floor: 2430, roots: ["app"] },
   {
     name: "agent-computer",
     /*
