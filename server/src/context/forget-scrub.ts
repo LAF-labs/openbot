@@ -74,219 +74,115 @@ export function distinctiveWords(fact: string): string[] {
 }
 
 /**
- * THE NUMBER CLAUSE, BY CONSTRUCTION. The first rule took any 3+-digit run of the fact as a
- * substring of the line's digits, so forgetting a jam sold in 300g jars dropped every line with
- * order 20260300 or 300 lids in it — 168 unrelated dated lines on a run's real summaries (third
- * review of pull request 196). Four cuts of a reading that compared tokens, then canonical
- * numbers, each lost a writing of the same number the summariser uses, and a reading that only
- * added carries newly deleted unrelated lines (a value carries no kind, no sign) — the five
- * reviews of pull request 204. A parser of Korean numbers always has one more reading. So the
- * clause is exactly the first rule with two exemptions that can be checked, and nothing else:
+ * THE NUMBER CLAUSE. The first rule took any 3+-digit run of the fact as a substring of the line's
+ * digits, so forgetting a jam sold in 300g jars dropped every line with order 20260300 or 300
+ * lids in it — 168 unrelated dated lines on a run's real summaries (third review of pull request
+ * 196). Six reviews of pull request 204 then found the next case in whichever part was cleverest:
+ * a reading of Korean numbers that compared tokens, then values; a fold of the text; a table of
+ * units. So the clause is the first rule and ONE exemption, nothing else:
  *
- *   carried = oldSubstringCarries (as written, or folded) AND NOT clearlyAnotherNumber
+ *   carried = oldSubstringCarries(line, fact) AND NOT everyOccurrenceIsInsideALongerNumber
  *
- *   - `oldSubstringCarries` is the first rule, as it was on main, kept whole as a function — on
- *     the text as written and on the text folded (`fold`: full-width digits, every dash, every
- *     space, the middle dots, thousands commas and spaces), which is formatting and can only
- *     find more;
- *   - `clearlyAnotherNumber` exempts a line only when EVERY place a number of the fact's occurs
- *     in it is positively something else: (a) inside a longer run of digits with nothing between
- *     them (the 300 in 20260300; not the 300 in 300/500/700, not a group of an identifier), or
- *     (b) followed by a recognised unit of a DIFFERENT DIMENSION than the one after the fact's
- *     number (300개 for 300g; not 300분 for 300명, since 분 counts people too; not 300kg for 300g).
- *     A number of the fact's that is only a fragment of a larger one as written (the 000 of
- *     11.000원) exempts nothing. An unrecognised or absent unit on either side, or anything in
- *     doubt, is not exempt: the line goes, since keeping what a person asked to forget is the
- *     worse error, as the head of this file says.
- *
- * THE INVARIANT, exact and in both directions: a pair the first rule carried is carried unless
- * `clearlyAnotherNumber` says why, and the why is (a) or (b); a pair the clause carries is one
- * the first rule carried, as written or folded. `memory-forgetting.test.ts` asserts both over
- * every pair it holds and over Codex's quoted calls; the run's real summaries were walked with
- * the same functions. Amounts in Korean scale words (1만8천원 for 18,000원) and the same number
- * written as a value in two forms are NOT read here: five reviews found a reading of them
- * missing a kind, a sign or a spelling each time; they are left to the judge model, and to a
- * follow-up designed with a notion of kind. Muse documents "forget" as removing the named thing
- * and what is related to it; the dimensions are where relatedness can be told for sure.
+ * THE RULE, to hold in one's head: a 3+-digit run of the fact's keeps a line out only if
+ *   (i)  every place it occurs in the line's digits — the line as the first rule reads it, a
+ *        thousands comma inside a number stripped — is directly flanked by another digit, with
+ *        nothing between: the 300 of 20260300. Any other character beside it — a space, a
+ *        hyphen, a dot, a slash, a bracket, a unit — and the line goes (300/500/700g, 300개);
+ *   (ii) the run stands alone in the fact: scanning outward from it over characters that are
+ *        not letters, no other digit is reached before a letter or the end of the text. 300g,
+ *        2026년, 20261011이다 stand alone; the 000 of 11 000원, the 1234 of (02) 1234 and of
+ *        010-1234-5678, the 300 of 300/500/700g do not, and such a run keeps nothing out.
+ * When in doubt the line goes: keeping what a person asked to forget is the worse error, as the
+ * head of this file says. The line and the fact are read exactly as the first rule reads them —
+ * no fold, no unit — so the clause can never keep out a line the first rule did not, and a line
+ * it keeps out is one the first rule took for a longer number. Measured on the run's real
+ * summaries: 168 → 65 unrelated dated lines. What this rule does NOT do, left to the judge model
+ * and to a follow-up designed with a notion of kind and sign: tell 300g from 300개 (a unit
+ * table), read 1만8천원 as 18,000원 (scale words), fold full-width digits or Unicode dashes.
  */
-/**
- * What a unit measures. A fact's 300g and a line's 300개 are different things; 300분 and 300명
- * may be the same people, and 300kg and 300g are the same dimension said in another unit.
- * Spellings are matched longest first at the start of what follows a number, one space allowed.
- */
-const DIMENSIONS: ReadonlyArray<[spellings: string[], dimensions: string[]]> = [
-  [
-    [
-      "kg",
-      "mg",
-      "g",
-      "t",
-      "톤",
-      "킬로그램",
-      "밀리그램",
-      "그램",
-      "그람",
-      "킬로",
-      "키로",
-    ],
-    ["weight"],
-  ],
-  [["ml", "cc", "l", "밀리리터", "밀리", "리터"], ["volume"]],
-  [
-    ["mm", "cm", "km", "m", "밀리미터", "센티미터", "센티", "미터", "킬로미터"],
-    ["length"],
-  ],
-  [
-    [
-      "원",
-      "₩",
-      "만원",
-      "만 원",
-      "천원",
-      "천 원",
-      "억원",
-      "억 원",
-      "달러",
-      "엔",
-      "유로",
-    ],
-    ["money"],
-  ],
-  [
-    [
-      "개",
-      "ea",
-      "병",
-      "박스",
-      "상자",
-      "장",
-      "건",
-      "통",
-      "봉",
-      "세트",
-      "묶음",
-      "캔",
-      "팩",
-      "줄",
-      "쌍",
-      "켤레",
-      "권",
-      "대",
-      "마리",
-      "송이",
-      "알",
-      "판",
-      "잔",
-    ],
-    ["count"],
-  ],
-  [["명", "인"], ["people"]],
-  [["분"], ["people", "time"]],
-  [["시간", "시", "초", "일", "주", "월", "년", "개월", "분기"], ["time"]],
-  [["%", "퍼센트", "프로"], ["share"]],
-];
-const DIMENSION_SPELLINGS: ReadonlyArray<
-  [spelling: string, dimensions: string[]]
-> = DIMENSIONS.flatMap(([spellings, dimensions]) =>
-  spellings.map((spelling): [string, string[]] => [spelling, dimensions]),
-).sort((a, b) => b[0].length - a[0].length);
 
-/** The dimensions of the unit said at `at` in the text, one space allowed; null when none is. */
-function dimensionsAt(text: string, at: number): string[] | null {
-  const tail = text.startsWith(" ", at) ? text.slice(at + 1) : text.slice(at);
-  const found = DIMENSION_SPELLINGS.find(([spelling]) =>
-    tail.startsWith(spelling),
-  );
-  return found ? found[1] : null;
-}
+/** The fact's numbers as the first rule has them: every run of three digits or more, commas inside a number removed. */
+const factRuns = (fact: string) =>
+  fact.replace(/(\d),(?=\d{3})/g, "$1").match(/\d{3,}/g) ?? [];
+
+/** The line's digits as the first rule reads them: flattened, a thousands comma stripped. */
+const lineDigits = (line: string) =>
+  flat(line).replace(/(\d),(?=\d{3})/g, "$1");
 
 /**
- * A text as digits are read in it — formatting only: full-width folded, every dash a hyphen,
- * every space a space, middle dots dots, lowercased; a thousands comma gone, and a single space
- * before a group of exactly three digits gone too (`11 000원` is 11000원, written the French way;
- * `9/14 20260300번` is a day and an order, and stays two).
- */
-const fold = (text: string) =>
-  text
-    .replace(/[\u00b7\u2027\u30fb\u318d\uff65]/g, ".")
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[\p{Pd}\u2212]/gu, "-")
-    .replace(/\p{Zs}/gu, " ")
-    .replace(/(\d),(?=\d{3})/g, "$1")
-    .replace(/(\d) (?=\d{3}(?!\d))/g, "$1");
-
-/** The fact's numbers as the first rule had them: every run of three digits or more. */
-const digitRuns = (text: string) => text.match(/\d{3,}/g) ?? [];
-
-/**
- * THE FIRST RULE, as it was on main before pull request 204: any 3+-digit run of the fact,
- * commas inside a number removed, as a substring of the line's digits. Kept whole so that what
- * it carried can be shown carried.
+ * THE FIRST RULE, as it was on main before pull request 204: any 3+-digit run of the fact as a
+ * substring of the line's digits. Kept whole so that what it carries can be shown carried.
  */
 export function oldSubstringCarries(line: string, fact: string): boolean {
-  const digits = flat(line).replace(/(\d),(?=\d{3})/g, "$1");
-  return digitRuns(fact.replace(/(\d),(?=\d{3})/g, "$1")).some((run) =>
+  const digits = lineDigits(line);
+  return factRuns(fact).some((run) => digits.includes(run));
+}
+
+/** (i): every place the run occurs in the line's digits has another digit directly beside it. */
+export function flankedEverywhere(line: string, run: string): boolean {
+  const digits = lineDigits(line);
+  let found = false;
+  for (
+    let at = digits.indexOf(run);
+    at >= 0;
+    at = digits.indexOf(run, at + 1)
+  ) {
+    found = true;
+    const before = digits[at - 1] ?? "";
+    const after = digits[at + run.length] ?? "";
+    if (!/\d/.test(before) && !/\d/.test(after)) return false;
+  }
+  return found;
+}
+
+/** (ii): at every place the run is in the fact, no other digit is reached outward before a letter or the end. */
+export function standsAloneInFact(fact: string, run: string): boolean {
+  const text = fact.replace(/(\d),(?=\d{3})/g, "$1");
+  const letter = /\p{L}/u;
+  const digit = /\d/;
+  let found = false;
+  for (const match of text.matchAll(/\d{3,}/g)) {
+    if (match[0] !== run) continue;
+    found = true;
+    for (let at = match.index - 1; at >= 0; at -= 1) {
+      const char = text[at] ?? "";
+      if (letter.test(char)) break;
+      if (digit.test(char)) return false;
+    }
+    for (let at = match.index + run.length; at < text.length; at += 1) {
+      const char = text[at] ?? "";
+      if (letter.test(char)) break;
+      if (digit.test(char)) return false;
+    }
+  }
+  return found;
+}
+
+/**
+ * The one exemption: every number of the fact's that the line holds is, everywhere in the line,
+ * inside a longer number (i), and stands alone in the fact (ii). A run that fails (ii) keeps
+ * nothing out.
+ */
+export function everyOccurrenceIsInsideALongerNumber(
+  line: string,
+  fact: string,
+): boolean {
+  const digits = lineDigits(line);
+  const held = [...new Set(factRuns(fact))].filter((run) =>
     digits.includes(run),
+  );
+  return (
+    held.length > 0 &&
+    held.every(
+      (run) => standsAloneInFact(fact, run) && flankedEverywhere(line, run),
+    )
   );
 }
 
-export type Exemption = "longer run" | "other dimension";
-
-/**
- * Why a line the first rule carried is clearly about another number — one reason per place a
- * number of the fact's occurs in the line, every one of them (a) or (b) — or null when any
- * place is in doubt, and the line goes.
- */
-export function clearlyAnotherNumber(
-  line: string,
-  fact: string,
-): Exemption[] | null {
-  const here = fold(flat(line));
-  const said = fold(flat(fact));
-  const reasons: Exemption[] = [];
-  for (const run of new Set(digitRuns(said))) {
-    if (!here.includes(run)) continue;
-    // A run that is only a fragment of a larger number as the fact wrote it — the 000 of 11.000원,
-    // the 1234 of 010-1234-5678 — is not the fact's whole number, so no place it occurs can be
-    // judged: the line goes.
-    if (
-      new RegExp(`\\d[^\\p{L}\\p{N}]${run}|${run}[^\\p{L}\\p{N}]\\d`, "u").test(
-        said,
-      )
-    ) {
-      return null;
-    }
-    // The dimensions after the fact's own number, at every place the fact says it whole.
-    const factDimensions: Array<string[] | null> = [];
-    for (const match of said.matchAll(/\d{3,}/g)) {
-      if (match[0] === run) {
-        factDimensions.push(dimensionsAt(said, match.index + run.length));
-      }
-    }
-    for (let at = here.indexOf(run); at >= 0; at = here.indexOf(run, at + 1)) {
-      const end = at + run.length;
-      const before = at > 0 ? (here[at - 1] ?? "") : "";
-      const after = here[end] ?? "";
-      if (/\d/.test(before) || /\d/.test(after)) {
-        reasons.push("longer run");
-        continue;
-      }
-      const lineDimensions = dimensionsAt(here, end);
-      const apart =
-        lineDimensions !== null &&
-        factDimensions.length > 0 &&
-        factDimensions.every(
-          (dimensions) =>
-            dimensions !== null &&
-            !dimensions.some((dimension) => lineDimensions.includes(dimension)),
-        );
-      if (!apart) return null;
-      reasons.push("other dimension");
-    }
-  }
-  return reasons.length > 0 ? reasons : null;
-}
+/** The number clause alone, for the property that holds it to the first rule. */
+export const numberClauseCarries = (line: string, fact: string) =>
+  oldSubstringCarries(line, fact) &&
+  !everyOccurrenceIsInsideALongerNumber(line, fact);
 
 /**
  * A dated summary line: `- 9/21: …`, `- 9/14~9/16: …`, `- 2026-09-21: …`, `- 9.21: …`,
@@ -419,7 +315,7 @@ function standingLineCarries(line: string, fact: string): boolean {
 
 /**
  * THE RULE: whether one summary line carries one forgotten fact. The fact word for word, any of
- * its numbers (the number clause, by construction — see the head of that section), or most of
+ * its numbers (the number clause — see the rule at the head of that section), or most of
  * its distinctive words (two at least) in the line — a dated line's test; a standing line is also
  * read as `head: body` (`standingLineCarries`).
  */
@@ -428,10 +324,7 @@ export function lineCarries(line: string, fact: string): boolean {
   const said = flat(fact);
   if (!here || !said) return false;
   if (here.includes(said)) return true;
-  const firstRule =
-    oldSubstringCarries(line, fact) ||
-    oldSubstringCarries(fold(line), fold(fact));
-  if (firstRule && clearlyAnotherNumber(line, fact) === null) return true;
+  if (numberClauseCarries(line, fact)) return true;
   const words = distinctiveWords(fact);
   if (words.length === 0) return false;
   const found = words.filter((word) => here.includes(word)).length;
