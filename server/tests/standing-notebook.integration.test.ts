@@ -103,6 +103,8 @@ async function setup(answer: () => ExtractedFact[]) {
 const SAID = "정산 자료는 매달 5일까지 세무사님한테 넘겨야 해";
 const FACT = "매출 정산 자료: 매달 5일까지 세무사님에게 넘김";
 const LOOKUP = "한일포장 배송 조건 좀 확인해 줘";
+const PRICE_LATER = "유자는 청운농원에서 1kg에 받아, 값은 나중에 알려 줄게";
+const JIEUN = "지은이는 화요일이랑 목요일만 나와";
 
 const said = (threadId: string, ...texts: string[]): OwnerMessage[] =>
   texts.map((text, at) => ({ id: `u${at}`, threadId, text }));
@@ -188,13 +190,17 @@ describe("a standing fact the owner stated", () => {
       { line: page, quote: page },
       // A quote too short to be a statement.
       { line: "한일포장: 선결제", quote: "한일포장" },
+      // The owner's words, but the figure the line states is not among them.
+      { line: "유자: 청운농원 1kg에 18,000원", quote: PRICE_LATER },
+      // The owner's words, about somebody else: the quote does not carry the line.
+      { line: "민수: 토요일 출근", quote: JIEUN },
     ]);
     const counts = await hook({
       botId: bot.id,
       threadId,
-      owner: said(threadId, LOOKUP, SAID),
+      owner: said(threadId, LOOKUP, SAID, PRICE_LATER, JIEUN),
     });
-    expect(counts).toMatchObject({ added: 0, unquoted: 3 });
+    expect(counts).toMatchObject({ added: 0, unquoted: 5 });
     expect(await rowsOf(bot.id)).toEqual([]);
   });
 
