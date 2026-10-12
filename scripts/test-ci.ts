@@ -3031,6 +3031,14 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * four known limits pinned (만/천 words, a two-group identifier, 개 against EA). 16 and 3 is 19,
  * and 4 is 23; 4530 and 23 is 4553.
  *
+ * REBASED 2026-10-12 onto main's 4522 (the one join's tests): 4522 and 15 is 4537, and 23 is 4560.
+ * LOWERED THE SAME NIGHT BY TWO, `server` 4560 → 4558, when the number clause's tests were rewritten
+ * for the value reading (Codex's second review of pull request 204): the thirty-eight rows of the
+ * two cuts became thirty-six — twelve lines that stay, eight that go, nine grids of writings (one
+ * test each, sixty-four writings in all), four grids of exceptions, three known limits — because
+ * sixteen one-row tests folded into the grids. The file measures 105 against main's 69; 4522 and
+ * 36 is 4558.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
