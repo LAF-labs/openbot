@@ -642,6 +642,76 @@ describe("a routine run's end", () => {
   }, 30_000);
 
   /*
+   * ONLY A BROWSER THE RUN OPENED IS LET GO OF (Codex's read). A routine that only read its mail
+   * through a connected service, or only its folder, opened none — and letting go of none used to
+   * be a call to the computer all the same, which on a computer that has hung is the client's
+   * whole timeout with the deployment's one routine lane held for it, every routine, every morning.
+   */
+  test("a run that opened no browser lets go of none, and one that did lets go of it", async () => {
+    const bot = await reviewBot();
+    const letGo: string[] = [];
+    let opened = false;
+    const { service } = deployment(
+      bot,
+      () => says("새 리뷰가 없습니다."),
+      false,
+      {
+        tools: async () => ({
+          tools: [],
+          execute: idle,
+          browserOpened: () => opened,
+        }),
+        browser: {
+          name: "routine",
+          letGo: async (botId) => void letGo.push(botId),
+        },
+      },
+    );
+    const routine = await reviewRoutine(bot, service);
+    await service.runNow(bot.owner, routine.id);
+    expect(letGo).toEqual([]);
+
+    opened = true;
+    await service.runNow(bot.owner, routine.id);
+    expect(letGo).toEqual([bot.botId]);
+  }, 30_000);
+
+  test("a letting-go is given its own time: the run, and the lane, are not held for the computer's", async () => {
+    const bot = await reviewBot();
+    const lane = createBotLane();
+    const given: (AbortSignal | undefined)[] = [];
+    const { service } = deployment(
+      bot,
+      () => says("새 리뷰가 없습니다."),
+      false,
+      {
+        lane,
+        tools: async () => ({
+          tools: [],
+          execute: idle,
+          browserOpened: () => true,
+        }),
+        browser: {
+          name: "routine",
+          letGoMs: 50,
+          // A computer that has hung: the letting-go never answers.
+          letGo: (_botId, within) => {
+            given.push(within);
+            return new Promise(() => undefined);
+          },
+        },
+      },
+    );
+    const routine = await reviewRoutine(bot, service);
+    await service.runNow(bot.owner, routine.id);
+    expect((await service.runs(bot.owner, routine.id))[0]?.ok).toBe(true);
+    // The computer was told to stop waiting too, and the lane is free for the next routine.
+    expect(given.map((signal) => signal?.aborted)).toEqual([true]);
+    const next = await lane.acquire("@routine");
+    next.release();
+  }, 5_000);
+
+  /*
    * AND IT STANDS IN THAT BROWSER'S LANE (`laneOfBrowser`). A conversation holding the main
    * browser does not hold a routine up — the run below would never end if it did. And the lane
    * is the browser's own, not the Bot's in it: the browser is one for the deployment, and a run

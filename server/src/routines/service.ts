@@ -128,8 +128,16 @@ export type RoutineServiceOptions = {
    * and not the main one, and the lane a run stands in is that browser's: routines run one after
    * another — the deployment's, since the browser is the deployment's — and neither wait for nor
    * hold up a conversation that is browsing. Absent — no computer — a run is as it was.
+   *
+   * `letGo` is given the time the run allows it (`within`), and is called only for a run that
+   * opened the browser; `letGoMs` is that time, where a test needs a shorter one than
+   * `routines/run.ts` gives.
    */
-  browser?: { name: string; letGo: (botId: string) => Promise<unknown> };
+  browser?: {
+    name: string;
+    letGo: (botId: string, within: AbortSignal) => Promise<unknown>;
+    letGoMs?: number;
+  };
   /**
    * A run with tools is over, however it ended: told to the gateway, so that a login the run put
    * into a page stops being held and its tab is closed (`computer/gateway/secrets.ts`). Named by

@@ -118,6 +118,40 @@ function withoutAwaitingLine(report: string): string {
 /** A routine run's own name for what is held in the Bot's browser on its account. */
 const runKeyOf = (runId: string) => `routine:${runId}`;
 
+/**
+ * How long a run's browser is given to be let go of before the run leaves without it. Closing a
+ * Chromium and throwing its profile away is seconds; the computer client's own 45 s is for a
+ * computer that has hung, and the lane every routine of the deployment stands in must not wait
+ * that out for a browser the next run lets go of itself before it opens its own.
+ */
+const LET_GO_MS = 15_000;
+
+/**
+ * Let the run's browser go, within the time allowed: the computer is told to stop waiting, and
+ * the run stops waiting whether or not the telling is heard — a letting-go that ignores its time
+ * goes on without the run and is sorted out by the gateway (`handovers.ts`, `release`). Never
+ * throws.
+ */
+async function letGoInTime(
+  browser: NonNullable<RoutineRunOptions["browser"]>,
+  botId: string,
+): Promise<void> {
+  const within = new AbortController();
+  const timer = setTimeout(() => within.abort(), browser.letGoMs ?? LET_GO_MS);
+  try {
+    await Promise.race([
+      browser.letGo(botId, within.signal).catch(() => undefined),
+      new Promise<void>((resolve) =>
+        within.signal.addEventListener("abort", () => resolve(), {
+          once: true,
+        }),
+      ),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export type RoutineRunOptions = SettlementOptions & {
   /** See `RoutineServiceOptions` in `service.ts` for each of these. */
   resolveAgents: (actor: AgentActor) => Promise<Record<string, AbstractAgent>>;
@@ -127,7 +161,11 @@ export type RoutineRunOptions = SettlementOptions & {
     actor: ActionActor,
     where?: { browser: string },
   ) => Promise<UnattendedToolkit>;
-  browser?: { name: string; letGo: (botId: string) => Promise<unknown> };
+  browser?: {
+    name: string;
+    letGo: (botId: string, within: AbortSignal) => Promise<unknown>;
+    letGoMs?: number;
+  };
   runEnded?: (botId: string, runKey: string) => Promise<void>;
   goals?: RoutineGoals;
   lane?: BotLane;
@@ -570,12 +608,17 @@ async function askTheBot(
         /*
          * AND ITS BROWSER IS LET GO OF, after the computer was told the run is over — the values
          * it held are released in the browser they were typed into, and then that browser is
-         * closed and its profile thrown away. Asked whether or not this run ever opened one: a
-         * run that only read mail opened nothing, and letting go of nothing is an answer, not a
-         * failure. Never a reason for the run to fail either; a browser nobody let go of is
-         * closed by the computer when it has sat unused (`agent-computer/src/browsers.ts`).
+         * closed and its profile thrown away. Only where this run may have opened one (Codex's
+         * read): a run that only read mail opened nothing, and asking the computer to let go of
+         * nothing was, on a computer that has hung, the client's whole timeout with the lane
+         * every routine of the deployment stands in held for it. Never a reason for the run to
+         * fail either, and never waited for past its own time (`letGoInTime`): a browser that
+         * was not let go of is let go of by the next run before it opens its own
+         * (`computer/gateway/handovers.ts`, `openBrowser`).
          */
-        await options.browser?.letGo(row.agentId).catch(() => undefined);
+        if (options.browser && toolkit.browserOpened?.() !== false) {
+          await letGoInTime(options.browser, row.agentId);
+        }
       }
       /*
        * A run that stopped because a person is needed is not a failure — the Bot did its job,

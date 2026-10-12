@@ -880,8 +880,8 @@ const routineService = createRoutineService({
         // A routine's pages are in the background browser for routines, not the main one.
         browser: {
           name: ROUTINE_BROWSER,
-          letGo: (botId: string) =>
-            computerGateway.releaseBrowser(botId, ROUTINE_BROWSER),
+          letGo: (botId: string, within: AbortSignal) =>
+            computerGateway.releaseBrowser(botId, ROUTINE_BROWSER, within),
         },
       }
     : {}),

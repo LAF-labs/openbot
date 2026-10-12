@@ -94,6 +94,13 @@ export type UnattendedToolkit = {
    * the rest, because a wrapper that rebuilt `{ tools, execute }` would drop this without a sound.
    */
   withheld?: WithheldTools;
+  /**
+   * Whether this run asked the computer to open the background browser it was given and was not
+   * told no — what its end has to let go of (`routines/run.ts`). Only a toolkit given a browser
+   * says; one that cannot say is let go of all the same, since letting go of nothing is an
+   * answer. Kept by the wrappers above, like `withheld`.
+   */
+  browserOpened?: () => boolean;
 };
 
 export type UnattendedRunOptions = {
@@ -415,21 +422,33 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
      * the person on the days there was no room and as nobody on the others. Only a browser that
      * opened is remembered: the Bot is told to try once more (`laf:browser_failed`), and that try
      * asks the computer again, whether the first was answered no or not answered at all.
+     *
+     * AND WHETHER IT MAY BE HOLDING ONE IS SAID (`browserOpened`): from the moment it asks until
+     * the computer says no. An ask that threw may have opened it — the answer, not the opening,
+     * is what was lost — so the run's end lets go of that one too. The gateway writes the row
+     * for a refusal, which is why it is asked as this run's actor.
      */
     const page = computerIdOf(botId, where?.browser);
     let opening: Promise<boolean> | undefined;
+    let mayHoldBrowser = false;
     const pageReady = (): Promise<boolean> => {
       if (!where || !gateway) return Promise.resolve(true);
-      opening ??= gateway.openBrowser(botId, where.browser).then(
-        (answer) => {
-          if (!answer.opened) opening = undefined;
-          return answer.opened;
-        },
-        (error: unknown) => {
-          opening = undefined;
-          throw error;
-        },
-      );
+      if (!opening) {
+        mayHoldBrowser = true;
+        opening = gateway.openBrowser(botId, where.browser, actor).then(
+          (answer) => {
+            if (!answer.opened) {
+              opening = undefined;
+              mayHoldBrowser = false;
+            }
+            return answer.opened;
+          },
+          (error: unknown) => {
+            opening = undefined;
+            throw error;
+          },
+        );
+      }
       return opening;
     };
     const granted = pluginStore
@@ -861,6 +880,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
       tools,
       execute,
       ...(granted.withheld?.length ? { withheld: granted.withheld } : {}),
+      ...(where && gateway ? { browserOpened: () => mayHoldBrowser } : {}),
     };
   };
 }
