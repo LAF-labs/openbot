@@ -16,16 +16,15 @@ import {
   createDaySummarizer,
   cutOf,
   DAY_SUMMARY_SYSTEM,
+  type DaySummarizer,
   dialogueOf,
   FORGOTTEN_RULE,
-  type DaySummarizer,
   type StampedMessage,
   SUMMARY_MAX_CHARS,
   withoutPlaceholderLines,
 } from "../src/context/day-close";
 import {
   createSummaryScrubber,
-  everyOccurrenceIsInsideALongerNumber,
   flankedEverywhere,
   isDated,
   lineCarries,
@@ -196,7 +195,6 @@ describe("the number clause on a dated line", () => {
     [JAM, "- 9/15: 20260300번 반품(단순 변심) 접수"],
     [STRAWBERRY, "- 9/14: 양평 카페 숲 대금 211,000원 입금"],
     [YUJA, "- 9/14: 정산 118,000원 입금 확인"],
-    ["행사는 2026년 10월 11일에 연다.", "- 9/15: 주문 20261011번 반품"],
     ["딸기잼은 300g 병으로 받는다.", "- 2026-03-00: 병뚜껑 입고"],
   ];
   test.each(STAYS)(
@@ -364,10 +362,6 @@ describe("the number clause on a dated line", () => {
       ["20260300번", "3000g", "1300원", "300,000원"],
     ],
     // The fact's 2026 inside 20261011 is a longer run: the compact date is kept out, by (i).
-    [
-      "행사는 2026년 10월 11일에 연다(상세페이지 공지 예정).",
-      ["20261011", "2026300"],
-    ],
   ];
   test.each(EXCEPTIONS)(
     "a longer value or another unit never meets the fact %#",
@@ -446,6 +440,12 @@ describe("the number clause on a dated line", () => {
     [
       "- 9/15: 식사 300개 준비",
       "서울 행사 식사는 청운농원 손님용 도시락을 300인분 주문한다.",
+    ],
+    // Seventh review: the same date and the same amount written as one long figure.
+    ["- 9/14: 서울 행사일 20261011 확정", "행사는 2026년 10월 11일에 연다."],
+    [
+      "- 9/14: 행사비 3,000,000원 확정",
+      "청운농원 공동 행사 예산은 300만원으로 정했다.",
     ],
   ];
   test.each(CODEX_CALLS)("Codex's call %# is carried", (line, fact) => {

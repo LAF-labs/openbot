@@ -21,8 +21,8 @@
  * cannot answer. The model catches a paraphrase; the rule is the floor.
  */
 
-import type { JevAsker } from "./vendor/fast-jev-compaction/index";
 import { redactText } from "./judge-redaction";
+import type { JevAsker } from "./vendor/fast-jev-compaction/index";
 
 export type ScrubArm = "jev" | "model" | "rule";
 
@@ -90,7 +90,7 @@ export function distinctiveWords(fact: string): string[] {
  *        hyphen, a dot, a slash, a bracket, a unit — and the line goes (300/500/700g, 300개);
  *   (ii) the run stands alone in the fact: scanning outward from it over characters that are
  *        not letters, no other digit is reached before a letter or the end of the text. 300g,
- *        2026년, 20261011이다 stand alone; the 000 of 11 000원, the 1234 of (02) 1234 and of
+ *        20261011이다 stand alone; the 000 of 11 000원, the 1234 of (02) 1234 and of
  *        010-1234-5678, the 300 of 300/500/700g do not, and such a run keeps nothing out.
  * When in doubt the line goes: keeping what a person asked to forget is the worse error, as the
  * head of this file says. The line and the fact are read exactly as the first rule reads them —
@@ -135,7 +135,18 @@ export function flankedEverywhere(line: string, run: string): boolean {
   return found;
 }
 
-/** (ii): at every place the run is in the fact, no other digit is reached outward before a letter or the end. */
+/**
+ * A syllable that carries a number on: the parts of a date and the Korean scale words. `2026년 10월
+ * 11일` is one date and `300만원` one amount, and a summary may write either as one long figure
+ * (`20261011`, `3,000,000원`) — the same thing, not a longer number the run merely sits in (seventh
+ * review of pull request 204). A run beside one of these is not alone, and keeps nothing out.
+ */
+const CARRIES_ON = /[년월일만천백십억조]/;
+
+/**
+ * (ii): at every place the run is in the fact, no other digit is reached outward before a letter or
+ * the end, and the run is not beside a syllable that carries a number on (`CARRIES_ON`).
+ */
 export function standsAloneInFact(fact: string, run: string): boolean {
   const text = fact.replace(/(\d),(?=\d{3})/g, "$1");
   const letter = /\p{L}/u;
@@ -144,6 +155,13 @@ export function standsAloneInFact(fact: string, run: string): boolean {
   for (const match of text.matchAll(/\d{3,}/g)) {
     if (match[0] !== run) continue;
     found = true;
+    const before = text.slice(0, match.index).trimEnd().at(-1) ?? "";
+    const after =
+      text
+        .slice(match.index + run.length)
+        .trimStart()
+        .at(0) ?? "";
+    if (CARRIES_ON.test(before) || CARRIES_ON.test(after)) return false;
     for (let at = match.index - 1; at >= 0; at -= 1) {
       const char = text[at] ?? "";
       if (letter.test(char)) break;
