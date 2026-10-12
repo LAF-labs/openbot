@@ -11,7 +11,9 @@
  * `NAMES_A_CONVERSATION` (`channels/deleting.ts`).
  *
  * `exported`: the section of the export document the table's rows go into, or `null` with a
- *   reason. A section is named here so the test can check it is actually a key of the file.
+ *   reason. A section is named here so the test can look for a row of the table in it: the test
+ *   seeds a value of its own in every exported table and fails when that value is not in the
+ *   section named — a table added here goes with its evidence there.
  * `deletion`:
  *   `deleted`       — removed by name in `deletion.ts`, counted under `counted` in the trail.
  *   `cascade`       — removed by a foreign key as the person, their Bots, their conversations,

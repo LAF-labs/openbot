@@ -76,6 +76,8 @@ export const EXPORT_LIMITS = {
   auditEvents: 50_000,
   runs: 20_000,
   routineRuns: 20_000,
+  // Each row can carry a diagnostics bundle, and nothing ages them out (`data-lifecycle.md`).
+  feedback: 5_000,
 } as const;
 
 /** Audit rows are read in pages rather than in one statement, for the reason above. */
@@ -613,20 +615,21 @@ export function createAccountExport(database: Database): AccountExport {
 
     // What they wrote to the people who run this, with the two facts about the screen they chose
     // to send and the diagnostics they were shown first — their words, so the whole row.
-    yield `,\n"feedback":${JSON.stringify(
-      await database
-        .select({
-          id: lafFeedback.id,
-          text: lafFeedback.text,
-          route: lafFeedback.route,
-          failureCode: lafFeedback.failureCode,
-          diagnostics: lafFeedback.diagnostics,
-          createdAt: lafFeedback.createdAt,
-        })
-        .from(lafFeedback)
-        .where(eq(lafFeedback.userId, userId))
-        .orderBy(asc(lafFeedback.createdAt)),
-    )}`;
+    const feedback = await database
+      .select({
+        id: lafFeedback.id,
+        text: lafFeedback.text,
+        route: lafFeedback.route,
+        failureCode: lafFeedback.failureCode,
+        diagnostics: lafFeedback.diagnostics,
+        createdAt: lafFeedback.createdAt,
+      })
+      .from(lafFeedback)
+      .where(eq(lafFeedback.userId, userId))
+      .orderBy(asc(lafFeedback.createdAt))
+      .limit(EXPORT_LIMITS.feedback + 1);
+    if (feedback.length > EXPORT_LIMITS.feedback) truncated.push("feedback");
+    yield `,\n"feedback":${JSON.stringify(feedback.slice(0, EXPORT_LIMITS.feedback))}`;
 
     // The services they connected their account to: which, with what scope, when, and whether the
     // last call worked. NOT `credential_id` — a pointer into the vault belongs in no file.
