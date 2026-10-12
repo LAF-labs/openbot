@@ -187,16 +187,18 @@ describe("a standing fact the owner stated", () => {
     const { owner, bot, store, hook, threadId, extracted, judge } = await setup(
       () => [{ line: FACT, quote: SAID }],
     );
+    // The quote sits inside a longer message: the message is the evidence, the quote its excerpt.
+    const inside = `세무사님한테 보낼 안부 문자 한 줄 써줘. 참, ${SAID}.`;
     const counts = await hook({
       botId: bot.id,
       threadId,
-      owner: said(threadId, LOOKUP, SAID),
+      owner: said(threadId, LOOKUP, inside),
     });
     expect(counts).toMatchObject({ added: 1, unquoted: 0, unsupported: 0 });
-    expect(extracted[0]).toEqual({ messages: [LOOKUP, SAID], notebook: [] });
+    expect(extracted[0]).toEqual({ messages: [LOOKUP, inside], notebook: [] });
     // The judge read the line against the quoted message and the one before it, before the write.
     expect(judge?.asked).toEqual([
-      { claim: FACT, messages: [LOOKUP, SAID], older: [], forgotten: [] },
+      { claim: FACT, messages: [LOOKUP, inside], older: [], forgotten: [] },
     ]);
     const [row] = await rowsOf(bot.id);
     expect(row).toMatchObject({
