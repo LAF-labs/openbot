@@ -3085,6 +3085,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * no browser the Bot's lane as before), and two in `computer-browsers.test.ts` on the name and
  * the lane. 4601 and 12 is 4613.
  *
+ * RAISED 2026-10-12 FOR CODEX'S FIRST READ OF THE ROUTINES' BROWSER (pull request 210), `server`
+ * by twelve (to 4625), all in files that were there: seven in `computer-browsers.test.ts` — a
+ * run's end lets go of what that run put in and not what another run of the Bot's holds in a
+ * browser of its own; the first open since the server started lets go of the name first; a
+ * letting-go the computer confirmed is not asked again; a browser whose letting-go failed is let
+ * go of before the next run is handed the name, and where it still cannot be the run is refused
+ * the browser with a row; no room is a row of its own; a letting-go reaches the computer with the
+ * caller's time — three in `unattended-facts.test.ts` (the browser is asked for as the run's
+ * actor; the toolkit says whether it opened one; an open that threw counts as opened) and two in
+ * `routine-notepad.integration.test.ts` (a run that opened no browser lets go of none; a
+ * letting-go is given its own time and the lane is not held past it). 4613 and 12 is 4625.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -3113,7 +3125,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4613, roots: ["server"] },
+  { name: "server", floor: 4625, roots: ["server"] },
   { name: "app", floor: 2446, roots: ["app"] },
   {
     name: "agent-computer",
