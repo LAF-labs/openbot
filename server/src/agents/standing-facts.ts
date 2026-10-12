@@ -24,9 +24,10 @@
  * AND the owner's own words it rests on, copied verbatim. The server accepts the fact only when
  * that quote is found whole in ONE owner message of the span (`quotedIn`: compared after the
  * normalisation named there), is long enough to be a statement, holds every figure the line
- * states (the whole-number reading of `forget-scrub.ts`, read and not changed), and carries the
- * line's words (`lineCarries`, the same file). That message is the row's evidence, the fields
- * `remember` fills. A detail the Bot read on a page shares topic words with the owner's lookup
+ * states (the whole-number reading of `forget-scrub.ts`, read and not changed), and supports the
+ * line (`supportedBy`: the message carries the line's words by `lineCarries`, the same file, or
+ * holds two of them with the rest said by the owner elsewhere in the span — a correction said
+ * across two messages). That message is the row's evidence, the fields `remember` fills. A detail the Bot read on a page shares topic words with the owner's lookup
  * request — "한일포장 배송 조건 좀 확인해 줘" — but the request does not contain the page's claim, so
  * no quote the model can produce passes with the page's figure; a fact whose quote is not the
  * owner's is dropped and counted (`unquoted`).
@@ -52,7 +53,11 @@
 import { eq } from "drizzle-orm";
 import { MAX_MEMORY_LENGTH } from "../../../shared/notebook";
 import { askModel, jsonFrom, type ModelCall } from "../computer/model-call";
-import { lineCarries, oldSubstringCarries } from "../context/forget-scrub";
+import {
+  distinctiveWords,
+  lineCarries,
+  oldSubstringCarries,
+} from "../context/forget-scrub";
 import { redactText } from "../context/judge-redaction";
 import type { Database } from "../db/client";
 import { agentProfiles } from "../db/schema";
@@ -208,6 +213,29 @@ export function quotedIn<T extends { text: string }>(
   );
 }
 
+/**
+ * Whether the quoted message supports the line: it carries the line's words (`lineCarries`, the
+ * forget rule — most of its distinctive words, or its figure), OR it holds two of them and the
+ * rest are the owner's words elsewhere in the span. The second arm is for A CORRECTION SAID ACROSS
+ * TWO MESSAGES: the morning names the role ("주말 포장은 민수가 토요일에 나와서 해"), the afternoon
+ * only the change ("아까 민수 토요일에 나온다고 했는데 일요일로 바꿨어"), and a line that keeps the
+ * condition the owner gave, as the instruction asks, holds words of both — measured lost 3 of 3
+ * on `eval:memory-days`' `staff-days/correction` with the first arm alone (2026-10-12). The quote
+ * is still one message's words, verified whole, and the row's evidence; a line about somebody
+ * else, resting on a real sentence about another, shares no two words with it and is refused.
+ */
+export function supportedBy(
+  line: string,
+  message: string,
+  spoken: string,
+): boolean {
+  if (lineCarries(message, line)) return true;
+  const words = distinctiveWords(line);
+  const flat = message.replace(/\s+/g, " ").toLowerCase();
+  const held = words.filter((word) => flat.includes(word)).length;
+  return held >= Math.min(2, words.length) && lineCarries(spoken, line);
+}
+
 /** Whether the floors every `remember` passes would refuse this line (`agents/routes.ts`). */
 export function refusedByFloors(line: string): boolean {
   return (
@@ -285,6 +313,8 @@ export function createStandingHook(options: {
     );
     /** The lines this night accepted so far: a paraphrase of one of them is a duplicate too. */
     const written: string[] = [];
+    /** Every owner message of the span as shown, for the words of a line said across two. */
+    const spoken = shown.map((message) => message.shown).join("\n");
     for (const fact of facts) {
       const line = fact.line.replace(/\s+/g, " ").trim();
       if (!line) continue;
@@ -295,7 +325,7 @@ export function createStandingHook(options: {
       if (
         !said ||
         !figuresQuoted(line, said.shown) ||
-        !lineCarries(said.shown, line)
+        !supportedBy(line, said.shown, spoken)
       ) {
         counts.unquoted += 1;
         continue;

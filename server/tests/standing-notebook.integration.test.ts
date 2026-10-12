@@ -212,6 +212,36 @@ describe("a standing fact the owner stated", () => {
     expect(await rowsOf(b2.id)).toEqual([]);
   });
 
+  test("a correction said across two messages — the role in the morning, the change in the afternoon — is added on the afternoon's quote", async () => {
+    // The exact day of `eval:memory-days`' staff-days/correction, busy arm, as the night showed it.
+    const morning =
+      "주말 출고 체크리스트 항목 좀 뽑아줘. 주말 포장은 민수가 토요일에 나와서 해.";
+    const afternoon =
+      "체크리스트 맨 위에 넣을 한 줄 제목 지어줘. 아, 아까 민수 토요일에 나온다고 했는데 일요일로 바꿨어.";
+    const line = "주말 포장 알바 민수: 일요일 출근";
+    const { bot, hook, threadId } = await setup(() => [
+      { line, quote: "아까 민수 토요일에 나온다고 했는데 일요일로 바꿨어" },
+      // The same shape about somebody the owner never named: refused.
+      {
+        line: "주말 포장 알바 지은: 일요일 출근",
+        quote: "일요일로 바꿨어, 체크리스트",
+      },
+      { line: "포장 알바 지은: 매주 화요일 출근", quote: afternoon },
+    ]);
+    const counts = await hook({
+      botId: bot.id,
+      threadId,
+      owner: said(threadId, morning, "오늘 주문 정리해 줘", afternoon),
+    });
+    expect(counts).toMatchObject({ added: 1, unquoted: 2 });
+    const [row] = await rowsOf(bot.id);
+    expect(row).toMatchObject({
+      content: line,
+      source: "night",
+      evidenceMessageId: "u2",
+    });
+  });
+
   test("a detail the assistant read on a page is dropped: no quote of the owner's holds its figure, and the page's words are not the owner's", async () => {
     const page = "한일포장: 주문 시 선결제, 50,000원 이상 무료배송";
     const { bot, hook, threadId } = await setup(() => [
