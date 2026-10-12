@@ -221,6 +221,115 @@ describe("the accent, the same for everybody", () => {
   });
 });
 
+/*
+ * THE RING ON WHAT HAS NO BORDER, AND THE RED THAT IS A BUTTON (2026-10-11, `ui/focus.ts`,
+ * `ui/button.tsx`). Two leftovers of the accent's arrival were measured in the browser:
+ *
+ *  - a row that is a link — a project in the list, 채팅 · 프로젝트, the Bot's name — had only the
+ *    house ring's 35% halo to show on focus, 1.58:1 on the page; `focusRingBare` is the accent
+ *    solid, and it is the same value as `--app-accent`, so it is measured here as a ring against
+ *    every ground a row sits on (3:1, WCAG 1.4.11), the switch's grey included;
+ *  - 삭제 in a confirm (`destructive-fill`) is the red filled, with white on it in the light and
+ *    the page's near-black in the dark, where white on the coral is 3.0. Both labels at 4.5.
+ *    The tinted `destructive` — 연결 끊기, 멈추기 — keeps the red as words on its own wash.
+ */
+describe("the ring on a bare row, and the red as a fill", () => {
+  const focus = readFileSync(
+    join(import.meta.dir, "../src/components/ui/focus.ts"),
+    "utf8",
+  );
+  const button = readFileSync(
+    join(import.meta.dir, "../src/components/ui/button.tsx"),
+    "utf8",
+  );
+
+  test("the bare ring is solid: no alpha on its colour, and no border it would need to recolour", () => {
+    const bare = /export const focusRingBare =\s*"([^"]+)"/.exec(focus)?.[1];
+    expect(bare).toBeDefined();
+    expect(bare).toContain("focus-visible:ring-ring");
+    expect(bare).not.toMatch(/ring-ring\/\d/);
+    expect(bare).not.toContain("border-ring");
+  });
+
+  /*
+   * The outline variant's own `dark:border-input` sorts after `focus-visible:border-ring` and
+   * wins, as `dark:bg-input/30` wins over `aria-pressed:` — measured 2026-10-11, a focused 취소
+   * in the dark kept its grey border (1.55:1 on the card). The house ring says it again under
+   * `dark:`, as the chosen state does.
+   */
+  test("the house ring recolours the border under dark: too, where the outline variant restates it", () => {
+    const ring = /export const focusRing =\s*"([^"]+)"/.exec(focus)?.[1];
+    expect(ring).toContain("dark:focus-visible:border-ring");
+    expect(button).toContain("dark:border-input");
+  });
+
+  test("the filled destructive declares its dark fill, so nothing is left for a merge to drop", () => {
+    const variant = /"destructive-fill":\s*`([^`]+)`/.exec(button)?.[1];
+    expect(variant).toBeDefined();
+    expect(variant).toContain("bg-destructive ");
+    expect(variant).toContain("dark:bg-destructive ");
+    expect(variant).toContain("dark:text-background");
+  });
+
+  for (const theme of ["light", "dark"] as const) {
+    test(`${theme}: the bare ring stands out 3:1 from every ground a row sits on`, () => {
+      const { fill } = accent(theme);
+      const values = palette(theme);
+      const grounds = {
+        ...surfaces(theme),
+        // The 채팅 · 프로젝트 switch is the grey a chosen row takes; its links sit on it.
+        switch: rgb(
+          values["--sand-fill-ghost-selected"] as string,
+          surfaces(theme).page,
+        ),
+        hover: rgb(
+          values["--sand-fill-ghost-hover"] as string,
+          surfaces(theme).page,
+        ),
+      };
+      const short = Object.entries(grounds)
+        .filter(([, ground]) => contrast(fill, ground) < 3)
+        .map(([name]) => name);
+      expect(short).toEqual([]);
+    });
+
+    test(`${theme}: the label on a filled destructive reads at 4.5:1`, () => {
+      const values = palette(theme);
+      const red = rgb(values["--destructive"] as string);
+      const label =
+        theme === "light"
+          ? ([255, 255, 255] as [number, number, number])
+          : rgb(values["--sand-bg-base"] as string);
+      expect(contrast(red, label)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    /*
+     * The resting wash of the tinted `destructive` button: the share is read from the class the
+     * variant declares (`bg-destructive/10`, `dark:bg-destructive/12`), not restated here — a
+     * constant of its own stayed green when the dark wash went back to the 20% that was 4.19 on
+     * a card (measured 2026-10-11).
+     */
+    test(`${theme}: the red as words on its own wash reads at 4.5:1`, () => {
+      const values = palette(theme);
+      const red = rgb(values["--destructive"] as string);
+      const variant = /\n\s+destructive:\s*"([^"]+)"/.exec(button)?.[1] ?? "";
+      const declared = (
+        theme === "light"
+          ? /(?:^|\s)bg-destructive\/(\d+)/
+          : /(?:^|\s)dark:bg-destructive\/(\d+)/
+      ).exec(variant)?.[1];
+      expect(declared).toBeDefined();
+      const share = Number(declared) / 100;
+      for (const [name, ground] of Object.entries(surfaces(theme))) {
+        expect({
+          name,
+          ok: contrast(red, mix(red, share, ground)) >= 4.5,
+        }).toEqual({ name, ok: true });
+      }
+    });
+  }
+});
+
 describe("the words around the accent", () => {
   for (const theme of ["light", "dark"] as const) {
     test(`${theme}: secondary text reads at 4.5:1 wherever it is drawn`, () => {

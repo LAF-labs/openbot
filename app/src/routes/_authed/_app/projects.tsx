@@ -5,7 +5,7 @@ import { type FormEvent, useState } from "react";
 import { ConfirmDialog } from "@/components/layout/confirm-dialog";
 import { PageSection, PageShell } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
-import { focusRing } from "@/components/ui/focus";
+import { focusRingBare } from "@/components/ui/focus";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMyBots } from "@/lib/agents/my-bots";
@@ -151,7 +151,7 @@ function ProjectsOfBot({
               <Link
                 className={cn(
                   "flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2.5 text-sm transition-colors hover:bg-accent",
-                  focusRing,
+                  focusRingBare,
                 )}
                 data-project={project.id}
                 params={{ channelId: project.id }}

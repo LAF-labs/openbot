@@ -12,7 +12,7 @@ import {
   DailyPlacePickerSkeleton,
 } from "@/components/shop/daily-place-picker";
 import { Button } from "@/components/ui/button";
-import { focusRing } from "@/components/ui/focus";
+import { focusRingBare } from "@/components/ui/focus";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import { connectionsOverviewQueryOptions } from "@/lib/connections/queries";
 import { ensure } from "@/lib/ensure";
@@ -166,7 +166,7 @@ const ShopSettings = () => {
         <p className="mt-4 text-muted-foreground text-sm">
           {t("Picking a place does not connect it.")}{" "}
           <Link
-            className={`underline underline-offset-2 hover:text-foreground ${focusRing}`}
+            className={`underline underline-offset-2 hover:text-foreground ${focusRingBare}`}
             to="/settings/connected-accounts"
           >
             {t("Connect it on Connections")}

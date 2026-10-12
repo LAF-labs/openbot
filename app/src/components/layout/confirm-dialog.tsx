@@ -162,20 +162,18 @@ export function ConfirmDialog({
           {isMoot ? null : (
             <Button
               /*
-               * Filled, not tinted. The `destructive` variant's own background is `destructive/10`,
-               * and on this popover ground that is a pink so pale it reads as unavailable.
-               *
-               * `dark:text-background` rather than white in both themes: the dark palette's red is
-               * a bright coral (#ff5667) and white on it is about 3:1. The near-black ground colour
-               * on that coral is legible, and it is the same trick `--sand-text-on-primary` plays.
+               * Filled, not tinted (`destructive-fill`, `ui/button.tsx`): the `destructive`
+               * variant's own background is `destructive/10`, and on this popover ground that is
+               * a pink so pale it reads as unavailable. The fill was written here by hand until
+               * 2026-10-11, and in the dark the variant's `dark:bg-destructive/20` outlived the
+               * merge — 삭제 was near-black words on a 20% wash.
                */
-              className="bg-destructive text-white hover:bg-[color-mix(in_oklch,var(--destructive),black_12%)] dark:text-background dark:hover:bg-[color-mix(in_oklch,var(--destructive),black_8%)]"
               disabled={isRunning}
               // Keeps the focus it was pressed with while it works, rather than dropping it on the page.
               focusableWhenDisabled
               onClick={() => void handleConfirm()}
               size="sm"
-              variant="destructive"
+              variant="destructive-fill"
             >
               {isRunning
                 ? (pendingLabel ?? t("Deleting…"))

@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { LiveRegion } from "@/components/layout/live-region";
-import { focusRing } from "@/components/ui/focus";
+import { focusRing, focusRingBare } from "@/components/ui/focus";
 import {
   type FirstTask,
   makeMorningReport,
@@ -127,7 +127,7 @@ export const FirstTaskChips = ({
    */
   const connectLink = (task: Extract<FirstTask, { kind: "connect" }>) => (
     <Link
-      className={`self-start text-muted-foreground text-sm underline underline-offset-2 hover:text-foreground ${focusRing}`}
+      className={`self-start text-muted-foreground text-sm underline underline-offset-2 hover:text-foreground ${focusRingBare}`}
       key={`connect:${task.place ?? ""}`}
       onClick={() =>
         /*
@@ -172,7 +172,7 @@ export const FirstTaskChips = ({
     <p className="text-muted-foreground text-xs">
       {t("The weather is Seoul's until you add your place.")}{" "}
       <Link
-        className={`underline underline-offset-2 hover:text-foreground ${focusRing}`}
+        className={`underline underline-offset-2 hover:text-foreground ${focusRingBare}`}
         to="/settings/shop"
       >
         {t("Add it on My shop")}
@@ -225,7 +225,7 @@ export const FirstTaskChips = ({
             {t("The routine is made.")}
             {" · "}
             <Link
-              className={`underline underline-offset-2 hover:text-foreground ${focusRing}`}
+              className={`underline underline-offset-2 hover:text-foreground ${focusRingBare}`}
               to="/routines"
             >
               {t("See it on Routines")}
@@ -234,7 +234,7 @@ export const FirstTaskChips = ({
               <>
                 {" · "}
                 <Link
-                  className={`underline underline-offset-2 hover:text-foreground ${focusRing}`}
+                  className={`underline underline-offset-2 hover:text-foreground ${focusRingBare}`}
                   to="/feed"
                 >
                   {t("See Updates")}

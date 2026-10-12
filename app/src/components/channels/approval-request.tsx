@@ -23,7 +23,7 @@ import {
   chatCardTitle,
   chatCardWaiting,
 } from "@/components/ui/card-surface";
-import { focusRing } from "@/components/ui/focus";
+import { focusRingBare } from "@/components/ui/focus";
 import { touchTall } from "@/components/ui/touch";
 import {
   type AllowanceScope,
@@ -462,7 +462,7 @@ function DecidedLine({
            * administrator's rules page, named and never linked (ux-review-0.5.4 §1.7).
            */
           <Link
-            className={`ms-auto shrink-0 underline underline-offset-2 hover:text-foreground ${focusRing}`}
+            className={`ms-auto shrink-0 underline underline-offset-2 hover:text-foreground ${focusRingBare}`}
             hash="allowances"
             to="/agents"
           >

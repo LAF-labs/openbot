@@ -176,16 +176,17 @@ export const StopAllDialog = ({
         </Button>
         <Button
           /*
-           * Filled, like the confirm that deletes: a stop cannot be taken back either, and the
-           * `destructive` variant's own pale wash reads as a button that cannot be pressed.
+           * Filled, like the confirm that deletes (`destructive-fill`): a stop cannot be taken
+           * back either, and the `destructive` variant's own pale wash reads as a button that
+           * cannot be pressed. The fill was a hand-written className over `destructive` until
+           * 2026-10-11, and in the dark the variant's 20% wash won over it.
            */
-          className="bg-destructive text-white hover:bg-[color-mix(in_oklch,var(--destructive),black_12%)] dark:text-background dark:hover:bg-[color-mix(in_oklch,var(--destructive),black_8%)]"
           disabled={isStopping}
           // Keeps the focus it was pressed with while the stop is out.
           focusableWhenDisabled
           onClick={handleStop}
           size="sm"
-          variant="destructive"
+          variant="destructive-fill"
         >
           {isStopping
             ? t("Stopping…")

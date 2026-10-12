@@ -33,10 +33,31 @@
  * `border-ring` is half the effect. The ring is drawn OUTSIDE the border box, so without recolouring
  * the border the control keeps a grey outline with a blue-grey halo floating off it, which reads as
  * two rings rather than one. Only use this on something that actually has a border to recolour;
- * `focusRingInset` is the answer where there is none.
+ * `focusRingInset` is the answer inside a popup and `focusRingBare` where there is no border.
+ *
+ * AND ONCE MORE UNDER `dark:`, as `selectedWhenPressed` has to be: the outline variant's own
+ * `dark:border-input` is sorted after a single `focus-visible:` and wins, so in the dark a focused
+ * 취소, 로그아웃 or 알림 켜기 kept its grey border and showed the halo alone — MEASURED 2026-10-11
+ * on a card, 1.55:1 for the border and 1.86 for the halo. A class with both variants sorts after
+ * both: 6.12 on the card now, the same as in the light.
  */
 export const focusRing =
-  "outline-hidden focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/35";
+  "outline-hidden focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/35 dark:focus-visible:border-ring";
+
+/**
+ * For something with NO border to recolour — a row that is a link, a word that is a link, a bare
+ * icon button: the project list's rows, the 채팅 · 프로젝트 switch, the Bot's name in the header,
+ * every underlined "바꾸기".
+ *
+ * On these `focusRing` has only its halo to show, and the halo is 35% of the accent: MEASURED
+ * 2026-10-11, 1.58:1 on the page in the light and 1.84 in the dark, 1.54 on the switch's grey —
+ * a hint, which on the keyboard is the only thing saying where you are. So the ring here is
+ * solid, and two pixels: it is the inset ring of a popup row drawn outside instead, since there is
+ * no padding here to clip against and no border to double. The accent is 4.13:1 on the page in
+ * the light and 6.84 in the dark, 3.96 on the switch's grey.
+ */
+export const focusRingBare =
+  "outline-hidden focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
  * For a control FILLED with the accent — the default button, the send button — laid over the house

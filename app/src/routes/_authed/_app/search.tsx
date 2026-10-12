@@ -6,7 +6,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { PageShell } from "@/components/layout/page-shell";
 import { ReadNotice } from "@/components/layout/read-states";
 import { Button } from "@/components/ui/button";
-import { focusRing } from "@/components/ui/focus";
+import { focusRingBare } from "@/components/ui/focus";
 import { Input } from "@/components/ui/input";
 import { useMyBots } from "@/lib/agents/my-bots";
 import { requestJump } from "@/lib/channels/jump";
@@ -212,7 +212,7 @@ function Hit({
     <Link
       className={cn(
         "flex flex-col gap-1 rounded-lg px-2 py-2.5 transition-colors hover:bg-accent",
-        focusRing,
+        focusRingBare,
       )}
       data-search-hit={hit.messageId}
       // Left for the conversation to take when it is drawn: which row to show.

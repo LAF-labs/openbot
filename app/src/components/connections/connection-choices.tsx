@@ -9,7 +9,7 @@ import {
 import { ConnectionRowSkeleton } from "@/components/connections/connection-row";
 import { OauthRow } from "@/components/connections/oauth-row";
 import { SiteRows } from "@/components/connections/site-rows";
-import { focusRing } from "@/components/ui/focus";
+import { focusRing, focusRingBare } from "@/components/ui/focus";
 import { ACCOUNT_FIRST_TASKS } from "@/lib/agents/first-tasks";
 import { agentKeys } from "@/lib/agents/queries";
 import {
@@ -190,7 +190,7 @@ export function ConnectionChoices({
       <p className="mt-2 text-muted-foreground text-xs">
         {t("The connections could not be loaded.")}{" "}
         <Link
-          className={`underline underline-offset-2 ${focusRing}`}
+          className={`underline underline-offset-2 ${focusRingBare}`}
           to="/settings/connected-accounts"
         >
           {t("Open Connections")}

@@ -138,9 +138,21 @@ describe("what the dialog promises", () => {
      * ground than the ghost 취소 beside it, which is how this codebase draws a button that cannot
      * be pressed. Measured on screen before the override; filled after it.
      */
-    expect(SOURCE).toContain("bg-destructive text-white");
+    // The fill is the `destructive-fill` variant of `ui/button.tsx`, not a className written over
+    // `destructive`: that override lost in the dark (the variant's `dark:bg-destructive/20` is a
+    // different group to tailwind-merge and stayed), measured 2026-10-11 at about 1.2:1.
+    expect(SOURCE).toContain('variant="destructive-fill"');
+    expect(SOURCE).not.toContain("bg-destructive text-white");
+    const BUTTON = readFileSync(
+      join(import.meta.dir, "../src/components/ui/button.tsx"),
+      "utf8",
+    );
+    const variant = /"destructive-fill":\s*`([^`]+)`/.exec(BUTTON)?.[1] ?? "";
+    expect(variant).toContain("bg-destructive ");
+    expect(variant).toContain("text-white");
     // Dark's red is a bright coral and white on it is about 3:1, so that theme flips to the ground.
-    expect(SOURCE).toContain("dark:text-background");
+    expect(variant).toContain("dark:bg-destructive ");
+    expect(variant).toContain("dark:text-background");
   });
 
   test("it never builds the Korean sentence itself", () => {
