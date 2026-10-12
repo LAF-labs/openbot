@@ -118,7 +118,7 @@ describe("the server's client against the computer's door", () => {
   });
 
   test("opened through the gateway, a call by that computer's id is answered by that browser", async () => {
-    expect(await gateway.openBrowser(BOT, "run-1")).toEqual({
+    expect(await gateway.openBrowser(BOT, "run-1", ACTOR)).toEqual({
       opened: true,
       open: 1,
       cap: BACKGROUND_BROWSERS,
@@ -141,14 +141,24 @@ describe("the server's client against the computer's door", () => {
 
   test("the computer's own count is what the server is told: room for so many, then no", async () => {
     for (let index = 2; index <= BACKGROUND_BROWSERS; index += 1) {
-      expect((await gateway.openBrowser(BOT, `run-${index}`)).opened).toBe(
-        true,
-      );
+      expect(
+        (await gateway.openBrowser(BOT, `run-${index}`, ACTOR)).opened,
+      ).toBe(true);
     }
-    expect(await gateway.openBrowser(BOT, "one-too-many")).toEqual({
+    expect(await gateway.openBrowser(BOT, "one-too-many", ACTOR)).toEqual({
       opened: false,
+      because: "no_room",
       open: BACKGROUND_BROWSERS,
       cap: BACKGROUND_BROWSERS,
+    });
+    // Refused, and written down as that: which browser, for whom, and how full.
+    expect(rows.at(-1)).toMatchObject({
+      eventType: "computer.browser_refused",
+      targetId: "bot-1@one-too-many",
+      payload: {
+        bot: BOT,
+        reason: `no room: ${BACKGROUND_BROWSERS} of ${BACKGROUND_BROWSERS} open`,
+      },
     });
   });
 
@@ -164,7 +174,9 @@ describe("the server's client against the computer's door", () => {
       gateway.listFiles(computerIdOf(BOT, "run-1"), BOT, ACTOR, {}),
     ).rejects.toThrow(WorkspaceRequestError);
     // And there is room again.
-    expect((await gateway.openBrowser(BOT, "one-too-many")).opened).toBe(true);
+    expect((await gateway.openBrowser(BOT, "one-too-many", ACTOR)).opened).toBe(
+      true,
+    );
   });
 
   test("a name that is not one never leaves the server", async () => {

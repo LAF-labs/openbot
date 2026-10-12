@@ -1052,9 +1052,17 @@ export function createComputerClient(options: ComputerClientOptions) {
         };
       },
 
-      /** Close the background browser this view names. False where none was open under it. */
-      async releaseBrowser(): Promise<{ released: boolean }> {
-        return (await post("/browsers/release", {})) as { released: boolean };
+      /**
+       * Close the background browser this view names. False where none was open under it. The
+       * caller's own time, where it has one, bounds the wait beneath this client's: a run letting
+       * go on its way out of a lane must not hold it for a computer that has hung.
+       */
+      async releaseBrowser(
+        caller?: AbortSignal,
+      ): Promise<{ released: boolean }> {
+        return (await post("/browsers/release", {}, caller)) as {
+          released: boolean;
+        };
       },
 
       /**

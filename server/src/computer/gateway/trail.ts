@@ -328,7 +328,8 @@ export async function writeControlEvent(
     | "computer.secret_requested"
     | "computer.secret_supplied"
     | "computer.stopped"
-    | "computer.reset",
+    | "computer.reset"
+    | "computer.browser_refused",
   entry: {
     botId: string;
     actor: ActionActor;
