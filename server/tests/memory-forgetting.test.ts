@@ -27,9 +27,7 @@ import {
   clearlyAnotherNumber,
   createSummaryScrubber,
   isDated,
-  koreanAmount,
   lineCarries,
-  numbersIn,
   oldSubstringCarries,
   scrubByRule,
 } from "../src/context/forget-scrub";
@@ -225,11 +223,6 @@ describe("the number clause on a dated line", () => {
       "- 9/14: 입금 212,000→429,000원 확인",
     ],
     ["딸기잼은 300 g 병으로 받는다.", "- 9/15: 300g 병 3개 발송"],
-    [YUJA, "- 9/14: 유자 매입가 1만8천원/kg로 합의"],
-    [
-      "대성유리는 10만 원 넘게 주문하면 무료배송이다.",
-      "- 9/14: 발주 100,000원 넘겨 배송비 없음",
-    ],
   ];
   test.each(GOES)(
     "a dated line saying the number whole goes %#",
@@ -239,16 +232,13 @@ describe("the number clause on a dated line", () => {
   );
 
   /*
-   * THE INVARIANT, walked (second review of pull request 204): every writing of the same number
-   * the summariser or the owner uses meets the fact — the substring rule met all of these, and
-   * two cuts that compared tokens each missed some (stacked particles, mixed separators, a unit
-   * glued to the next word, a date in 년/월/일). One test per number, a grid of writings each,
-   * on a fact with too many words for the ratio clause, so the number clause alone decides; the
-   * misses are listed, so a change that loses a writing names it. Each piece of the reading is
-   * red with that piece reverted: the separator class narrowed to hyphens; the unit matched
-   * whole instead of at the start of the tail; the 년/월/일 date left unread; the scale words
-   * left unread; a leading-zero identifier needing three groups; the unit table emptied; a digit
-   * run only read after a non-letter; NFKC left out.
+   * Every writing of the same number the summariser or the owner uses meets the fact — the
+   * first rule met all of these, and cuts that read tokens or values each missed some (stacked
+   * particles, mixed separators, a unit glued to the next word, a date in 년/월/일, a thousands
+   * space). One test per number, a grid of writings each, on a fact with too many words for the
+   * ratio clause, so the number clause alone decides; the misses are listed. Held by the
+   * construction: red with the first rule's branch removed, and the folded writings (full-width
+   * digits) red with the fold left out.
    */
   const WRITINGS: ReadonlyArray<[fact: string, writings: string[]]> = [
     [
@@ -260,10 +250,6 @@ describe("the number clause on a dated line", () => {
         "11,000원에는",
         "11,000원으로",
         "11,000원짜리",
-        "1만1천원",
-        "1만1천 원",
-        "1만 1천원",
-        "11천원",
         "11,000~12,000원",
         "11,000-12,000원",
         "(11,000원)",
@@ -271,8 +257,6 @@ describe("the number clause on a dated line", () => {
         "１１,０００원",
         "11,000",
         "₩11,000",
-        "1만1천원",
-        "만1천원",
       ],
     ],
     [
@@ -345,19 +329,7 @@ describe("the number clause on a dated line", () => {
         "2026/10/11",
         "2026년 10월 11일",
         "2026년10월11일",
-        "20261011",
         "2026-10-11에",
-      ],
-    ],
-    [
-      "대성유리는 10만 원 넘게 주문하면 무료배송이다(월말 결제).",
-      [
-        "10만 원",
-        "10만원",
-        "100,000원",
-        "100000원",
-        "10만 원어치",
-        "10만원부터",
       ],
     ],
     [
@@ -388,7 +360,8 @@ describe("the number clause on a dated line", () => {
       "딸기잼은 300g 병으로 받는다(오 사장님네 카페 납품분).",
       ["20260300번", "300개", "300ml", "300원", "3000g"],
     ],
-    [PHONE, ["01012345678901"]],
+    // The fact's 2026 inside 20261011 is a longer run: the compact date is exempt, by (a).
+    ["행사는 2026년 10월 11일에 연다(상세페이지 공지 예정).", ["20261011"]],
   ];
   test.each(EXCEPTIONS)(
     "a longer value or another unit never meets the fact %#",
@@ -399,47 +372,6 @@ describe("the number clause on a dated line", () => {
       expect(carried).toEqual([]);
     },
   );
-
-  /*
-   * Korean scale words are a hierarchy, not a sum of terms: 1억2천만 read as 100002000 met neither
-   * 120,000,000원 nor anything but an unrelated 100,002,000원 (Codex's third review of pull request
-   * 204). Each row is read as a value, and meets its figures both ways — the words forgotten and
-   * the figures in the line, and the figures forgotten and the words in the line. Red with the
-   * groups summed independently again.
-   */
-  const AMOUNTS: ReadonlyArray<[words: string, figures: string]> = [
-    ["1억2천만원", "120,000,000원"],
-    ["1억 2,000만 원", "120,000,000원"],
-    ["1억 2천만 원", "120,000,000원"],
-    ["3천5백만원", "35,000,000원"],
-    ["1,000만 원", "10,000,000원"],
-    ["천만 원", "10,000,000원"],
-    ["1억천만원", "110,000,000원"],
-    ["12만5천원", "125,000원"],
-    ["1만8천원", "18,000원"],
-    ["2천5백원", "2,500원"],
-    ["3백5십원", "350원"],
-    ["10만 원", "100,000원"],
-    ["백만 원", "1,000,000원"],
-    ["1조2억원", "1,000,200,000,000원"],
-    ["1억2천3백만4천5백원", "123,004,500원"],
-  ];
-  test.each(AMOUNTS)("%s is %s, forgotten either way", (words, figures) => {
-    const value = figures.replace(/\D/g, "");
-    expect(koreanAmount(words.replace(/원$/, ""))).toBe(BigInt(value));
-    expect(numbersIn(words).map((number) => number.value)).toEqual([value]);
-    expect(
-      lineCarries(`- 9/14: 매입가 ${figures} 확인`, forgottenAmount(words)),
-    ).toBe(true);
-    expect(
-      lineCarries(`- 9/14: 매입가 ${words} 확인`, forgottenAmount(figures)),
-    ).toBe(true);
-    // A different value in the same order of magnitude is not it.
-    const other = `${(BigInt(value) + 1_000n).toLocaleString("en-US")}원`;
-    expect(
-      lineCarries(`- 9/14: 정산 ${other} 입금`, forgottenAmount(words)),
-    ).toBe(false);
-  });
 
   /*
    * Every separator by its Unicode category, not by a list (the same review): each dash
@@ -487,6 +419,7 @@ describe("the number clause on a dated line", () => {
    */
   const BY_CONSTRUCTION: ReadonlyArray<[fact: string, line: string]> = [
     [PHONE, "- 9/14: 계좌 1234-5678-9012 입금"],
+    [PHONE, "- 9/14: 연락처 01012345678901 저장"],
     [PHONE, "- 9/14: 연락처 010-1234-5679 저장"],
     ["딸기잼은 300g 병으로 받는다.", "- 9/16: 설탕 300kg 입고"],
     ["딸기잼은 300g 병으로 받는다.", "- 9/15: 잼 300/500/700g 세 종류 발송"],
@@ -494,29 +427,6 @@ describe("the number clause on a dated line", () => {
     ["단체 예약은 300명이다(10월 행사).", "- 9/15: 손님 300분 예약"],
     ["참가자는 300조로 나눈다(조별 상품 준비).", "- 9/15: 300조로 나눈다"],
   ];
-  // The readings only add, so a counter misread can at worst add a carry — and the obvious
-  // counters are guarded so it does not add nonsense: 300조 of people is not 300 trillion won.
-  test("조 as a counter is not read as trillions", () => {
-    expect(
-      lineCarries(
-        "- 9/15: 매출 300,000,000,000,000원 입금",
-        "참가자는 300조로 나눈다(조별 상품 준비).",
-      ),
-    ).toBe(false);
-    expect(numbersIn("300조로 나눈다").map((n) => n.value)).toEqual(["300"]);
-    expect(numbersIn("1조 2억 원").map((n) => n.value)).toEqual([
-      "1000200000000",
-    ]);
-  });
-  test.each(BY_CONSTRUCTION)(
-    "by construction the line goes where nothing says it is another number %#",
-    (fact, line) => {
-      expect(oldSubstringCarries(line, fact)).toBe(true);
-      expect(clearlyAnotherNumber(line, fact)).toBeNull();
-      expect(lineCarries(line, fact)).toBe(true);
-    },
-  );
-
   /*
    * Codex's quoted calls, verbatim, from the four reviews of pull request 204 — every one a
    * line the first rule carried; each is carried, by construction, whatever reading the clause
@@ -554,61 +464,136 @@ describe("the number clause on a dated line", () => {
       "- 9/14: 행사 손님 300명 참석 확정",
       "서울 행사에는 청운농원과 한빛상사 손님 300분이 참석한다.",
     ],
+    ["- 9/14: 단가 11000원 합의", "가격은 11 000원이다(청운농원 유자 매입)."],
   ];
   test.each(CODEX_CALLS)("Codex's call %# is carried", (line, fact) => {
     expect(lineCarries(line, fact)).toBe(true);
   });
 
-  const forgottenAmount = (amount: string) =>
-    `건물 매입가는 ${amount}이다(은행 대출 포함, 잔금 미정).`;
+  /*
+   * Codex's quoted calls from the fifth review that a reading of values newly deleted — a
+   * Korean-scale amount, a sign, a value with no kind — and the first rule never touched: each
+   * NOT carried, since the clause is the first rule and nothing else.
+   */
+  const CODEX_CALLS_NOT_CARRIED: ReadonlyArray<[line: string, fact: string]> = [
+    ["- 9/14: 병뚜껑 3백개 입고", "원료는 300톤 주문한다."],
+    [
+      "- 9/15: 시험 수량을 300만큼 늘림",
+      "목표 매출은 3,000,000원이다(내년 사업 계획).",
+    ],
+    [
+      "- 9/15: 환불액 -3백원 정산",
+      "상품 가격은 300원이다(청운농원 유자 매입).",
+    ],
+    [
+      "- 9/15: 서울 행사일 2026-10-11 확정",
+      "한빛상사 주문번호는 20261011이다(택배 추적용).",
+    ],
+    ["- 9/15: 주문번호 100000 접수", "행사 예산은 10만원이다(내년 사업 계획)."],
+  ];
+  test.each(CODEX_CALLS_NOT_CARRIED)(
+    "Codex's call %# is not carried: the first rule never touched it",
+    (line, fact) => {
+      expect(oldSubstringCarries(line, fact)).toBe(false);
+      expect(lineCarries(line, fact)).toBe(false);
+    },
+  );
 
   /*
-   * THE INVARIANT, as a property over every pair this file holds: a pair the first rule carried
-   * is carried, or `clearlyAnotherNumber` says why, and every why is (a) or (b). The broken
-   * pairs are listed, so a change that loses one names it. The run's real summaries were walked
-   * with the same two functions (0 broken of 21,564 checks).
+   * A number of the fact's that is only a FRAGMENT of a larger one as written — 11 000원 the
+   * French way, 11.000원 the German way, the groups of a phone — exempts nothing: the fact's
+   * 000 inside the line's 11000원 is the fact, not a longer run (fifth review of pull request
+   * 204). Red with the fragment guard and the thousands join removed.
    */
-  test("what the first rule carried is carried, or clearly another number, over every pair here", () => {
+  const FRAGMENTS: ReadonlyArray<[fact: string, line: string]> = [
+    ["가격은 11 000원이다(청운농원 유자 매입).", "- 9/14: 단가 11000원 합의"],
+    [
+      "가격은 11\u00a0000원이다(청운농원 유자 매입).",
+      "- 9/14: 단가 11,000원 합의",
+    ],
+    ["가격은 11.000원이다(청운농원 유자 매입).", "- 9/14: 단가 11000원 합의"],
+    [PHONE, "- 9/14: 연락처 01012345678 저장"],
+    ["주문번호는 2026-0300이다(택배 추적용).", "- 9/15: 20260300번 반품"],
+  ];
+  test.each(FRAGMENTS)(
+    "a fragment of the fact's number exempts nothing %#",
+    (fact, line) => {
+      expect(lineCarries(line, fact)).toBe(true);
+    },
+  );
+  test("a whole number of the fact's inside a longer one of the line's still exempts", () => {
+    expect(
+      lineCarries(
+        "- 9/14: 대금 211,000원 입금",
+        "가격은 11 000원이다(청운농원 유자 매입).",
+      ),
+    ).toBe(false);
+  });
+
+  /*
+   * THE INVARIANT, as a property over every pair this file holds, in both directions: a pair the
+   * first rule carried is carried, or `clearlyAnotherNumber` says why, and every why is (a) or
+   * (b); and a pair the number clause carries is one the first rule carried, as written or
+   * folded — never a new deletion but by formatting. The broken pairs are listed, so a change
+   * that loses one names it. The run's real summaries were walked with the same functions.
+   */
+  test("both directions: what the first rule carried is carried or clearly another number, and nothing else is", () => {
     const line = (writing: string) => `- 9/14: 확인 ${writing} 처리`;
     const pairs: Array<[fact: string, line: string]> = [
       ...STAYS,
       ...GOES,
       ...BY_CONSTRUCTION,
+      ...FRAGMENTS,
       ...CODEX_CALLS.map(([said, fact]): [string, string] => [fact, said]),
+      ...CODEX_CALLS_NOT_CARRIED.map(([said, fact]): [string, string] => [
+        fact,
+        said,
+      ]),
       ...WRITINGS.flatMap(([fact, writings]) =>
         writings.map((writing): [string, string] => [fact, line(writing)]),
       ),
       ...EXCEPTIONS.flatMap(([fact, writings]) =>
         writings.map((writing): [string, string] => [fact, line(writing)]),
       ),
-      ...AMOUNTS.flatMap(
-        ([words, figures]): Array<[string, string]> => [
-          [forgottenAmount(words), `- 9/14: 매입가 ${figures} 확인`],
-          [forgottenAmount(figures), `- 9/14: 매입가 ${words} 확인`],
-        ],
-      ),
       ...LIMITS.map(([fact, said]): [string, string] => [fact, said]),
     ];
+    const folded = (text: string) =>
+      text
+        .replace(/[\u00b7\u2027\u30fb\u318d\uff65]/g, ".")
+        .normalize("NFKC")
+        .replace(/[\p{Pd}\u2212]/gu, "-")
+        .replace(/\p{Zs}/gu, " ")
+        .replace(/(\d) (?=\d{3}(?!\d))/g, "$1");
     const broken: string[] = [];
     let carriedByFirst = 0;
     let exempt = 0;
     for (const [fact, said] of pairs) {
-      if (!oldSubstringCarries(said, fact)) continue;
-      carriedByFirst += 1;
-      const why = clearlyAnotherNumber(said, fact);
-      if (why === null) {
-        if (!lineCarries(said, fact)) broken.push(`kept: ${said} | ${fact}`);
-        continue;
-      }
-      exempt += 1;
-      for (const reason of why) {
-        if (reason !== "longer run" && reason !== "other dimension") {
-          broken.push(`why? ${reason}: ${said} | ${fact}`);
+      const first =
+        oldSubstringCarries(said, fact) ||
+        oldSubstringCarries(folded(said), folded(fact));
+      // The number clause alone: a line of few words, so the other clauses say nothing.
+      const numberClause =
+        !/\p{L}{2,}.*\p{L}{2,}.*\p{L}{2,}/u.test(said) &&
+        lineCarries(said, fact);
+      if (first) {
+        carriedByFirst += 1;
+        const why = clearlyAnotherNumber(said, fact);
+        if (why === null) {
+          if (!lineCarries(said, fact)) broken.push(`kept: ${said} | ${fact}`);
+          continue;
         }
+        exempt += 1;
+        for (const reason of why) {
+          if (reason !== "longer run" && reason !== "other dimension") {
+            broken.push(`why? ${reason}: ${said} | ${fact}`);
+          }
+        }
+      } else if (numberClause) {
+        broken.push(`newly carried: ${said} | ${fact}`);
       }
     }
     expect(broken).toEqual([]);
-    expect(pairs.length).toBeGreaterThan(150);
+    expect(pairs.length).toBeGreaterThan(120);
     expect(carriedByFirst).toBeGreaterThan(60);
     expect(exempt).toBeGreaterThan(12);
   });
