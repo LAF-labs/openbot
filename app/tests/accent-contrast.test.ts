@@ -303,12 +303,23 @@ describe("the ring on a bare row, and the red as a fill", () => {
       expect(contrast(red, label)).toBeGreaterThanOrEqual(4.5);
     });
 
-    // The resting wash of the tinted `destructive` button and the focused destructive menu
-    // item: 10% of the red in the light, 12% of the coral in the dark (20% was 4.19 on a card).
+    /*
+     * The resting wash of the tinted `destructive` button: the share is read from the class the
+     * variant declares (`bg-destructive/10`, `dark:bg-destructive/12`), not restated here — a
+     * constant of its own stayed green when the dark wash went back to the 20% that was 4.19 on
+     * a card (measured 2026-10-11).
+     */
     test(`${theme}: the red as words on its own wash reads at 4.5:1`, () => {
       const values = palette(theme);
       const red = rgb(values["--destructive"] as string);
-      const share = theme === "light" ? 0.1 : 0.12;
+      const variant = /\n\s+destructive:\s*"([^"]+)"/.exec(button)?.[1] ?? "";
+      const declared = (
+        theme === "light"
+          ? /(?:^|\s)bg-destructive\/(\d+)/
+          : /(?:^|\s)dark:bg-destructive\/(\d+)/
+      ).exec(variant)?.[1];
+      expect(declared).toBeDefined();
+      const share = Number(declared) / 100;
       for (const [name, ground] of Object.entries(surfaces(theme))) {
         expect({
           name,
