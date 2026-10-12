@@ -74,106 +74,178 @@ export function distinctiveWords(fact: string): string[] {
 }
 
 /**
- * Numbers of three digits or more — a price, a phone number, a count — as the whole token they
- * were said in, unit attached (300g, 9500원, 20260207번), commas inside the number and a particle
- * after it removed. Tokens, not digit runs: the first rule took any 3+-digit run of the fact as a
- * substring of the line's digits, so forgetting a jam sold in 300g jars dropped every line with
- * order 20260300 or 300 lids in it, and forgetting a unit price dropped every line that price's
- * digits ran through — 168 unrelated dated lines on a run's real summaries (third review of pull
- * request 196). Muse documents "forget" as removing the named thing and what is related to it; a
- * shared digit string is not relatedness.
+ * THE NUMBERS A TEXT SAYS, each as one canonical value with the unit said after it, if any. The
+ * first rule took any 3+-digit run of the fact as a substring of the line's digits, so forgetting
+ * a jam sold in 300g jars dropped every line with order 20260300 or 300 lids in it, and a unit
+ * price every line its digits ran through — 168 unrelated dated lines on a run's real summaries
+ * (third review of pull request 196). Muse documents "forget" as removing the named thing and
+ * what is related to it; a shared digit string is not relatedness. Two cuts that read tokens
+ * instead each lost a writing of the same number the summariser uses (`11,000원에는`, `010 1234-
+ * 5678`, `300그램병`, `2026년 10월 11일` — the two reviews of pull request 204), so the clause
+ * compares VALUES, read the same way on both sides:
+ *
+ *   - full-width digits and ㎏ as their plain forms; thousands commas removed;
+ *   - a date with its year, written `2026-10-11`, `2026.10.11`, `2026/10/11` or `2026년 10월
+ *     11일`, is one value, yyyymmdd; a short date or a decimal (`9/14`, `9.21`, `3.5`) is none;
+ *   - an identifier — a phone, a business registration, an account — is one value whatever
+ *     separators it is written with (`010-1234-5678`, `010.1234.5678`, `010 1234 5678`, `(010)
+ *     1234-5678`): three or more digit groups joined by spaces, hyphens, dots, slashes or
+ *     brackets, or two or more when the first group starts with 0, the way a phone does. Three,
+ *     not two, otherwise: `9/14 20260300번` is a day and an order number, 59 times on the run's
+ *     real summaries, and `11,000-12,000원` is a range;
+ *   - an amount in scale words is its value: `1만8천원` is 18000, `10만 원` is 100000, `300만`
+ *     is 3000000 — so 300만 원 never meets 300g;
+ *   - any other run of digits is a value as written, leading zeros kept; a number glued to the
+ *     word before it (잼300g) is found all the same;
+ *   - the unit is the longest recognised spelling at the START of what follows the number, one
+ *     space allowed (`UNITS`): `g병` is g, `그램병` is g, `원에는` is 원, `kg` is never g; a tail
+ *     that no spelling starts — `이다`, `번째` is 번 — is no unit.
+ *
+ * THE INVARIANT (second review of pull request 204): every (line, fact) pair the substring rule
+ * carried is still carried, except where the digit run they share is part of a longer value on
+ * either side (20260300번 for 300g; 2026 for a date) or the two sides say different recognised
+ * units (300개 for 300g, 11,000개 for 11,000원). `memory-forgetting.test.ts` walks a grid of
+ * writings for it; the run's real summaries were walked by hand with the same check.
  */
-function numbersOf(text: string): string[] {
-  return numberTokensOf(text).filter((token) => /^\d{3}/.test(token));
-}
-
-/** The tokens of a text with every digit-led one read as a number (`numberToken`). */
-const numberTokensOf = (text: string) =>
-  tokensOf(numberText(text)).map(numberToken);
+export type SaidNumber = { value: string; unit: string };
 
 /**
- * The text as the number clause reads it, before it is split into tokens (first review of pull
- * request 204): full-width digits and ㎏ as their plain forms; an identifier written in three or
- * more digit groups joined by one separator — a phone (010-1234-5678, 010.1234.5678, 010 1234
- * 5678), a business registration, an account — as one value, since the summariser writes it with
- * or without its separators. Three groups, not two: `9/14 20260300번` is a day and an order
- * number, 59 times on a run's real summaries, and `11,000-12,000원` is a range. A number glued to
- * the word before it (잼300g) is its own token.
+ * Recognised units, every spelling to its one name — the pairs `evals/memory-days-facts.ts`
+ * reads as one fact (kg, ㎏, 킬로, 키로, 킬로그램; g, 그램) and the units a shop's summary says.
+ * Matched longest spelling first, so `kg` is not `g` and `개월` is not `개`.
  */
-const numberText = (text: string) =>
-  text
-    .normalize("NFKC")
-    .replace(/\d+(?:-\d+){2,}/g, (id) => id.replace(/-/g, ""))
-    .replace(/\d+(?:\.\d+){2,}/g, (id) => id.replace(/\./g, ""))
-    .replace(/\d+(?: \d+){2,}/g, (id) => id.replace(/ /g, ""))
-    .replace(/(\p{L})(?=\d)/gu, "$1 ");
+const UNITS: ReadonlyArray<[spelling: string, unit: string]> = (
+  [
+    ["kg", "kg"],
+    ["킬로그램", "kg"],
+    ["킬로", "kg"],
+    ["키로", "kg"],
+    ["mg", "mg"],
+    ["밀리그램", "mg"],
+    ["g", "g"],
+    ["그램", "g"],
+    ["그람", "g"],
+    ["ml", "ml"],
+    ["밀리리터", "ml"],
+    ["밀리", "ml"],
+    ["l", "l"],
+    ["리터", "l"],
+    ["km", "km"],
+    ["킬로미터", "km"],
+    ["mm", "mm"],
+    ["밀리미터", "mm"],
+    ["cm", "cm"],
+    ["센티미터", "cm"],
+    ["센티", "cm"],
+    ["m", "m"],
+    ["미터", "m"],
+    ["원", "원"],
+    ["개월", "개월"],
+    ["개", "개"],
+    ["ea", "개"],
+    ["병", "병"],
+    ["번", "번"],
+    ["박스", "박스"],
+    ["명", "명"],
+    ["일", "일"],
+    ["시", "시"],
+    ["분", "분"],
+    ["월", "월"],
+    ["년", "년"],
+    ["%", "%"],
+    ["퍼센트", "%"],
+    ["프로", "%"],
+  ] as Array<[string, string]>
+).sort((a, b) => b[0].length - a[0].length);
 
-/**
- * Spellings of one unit the owner and the summariser interchange, read as one — the pairs the
- * memory evaluation already reads as the same fact (`evals/memory-days-facts.ts`: kg, ㎏, 킬로,
- * 키로, 킬로그램; g, 그램). 퍼센트 and 프로 read as the bare number, as % does once the tokens are
- * split. Small on purpose: 개 and EA are not here, EA being unseen in what the Bot writes.
- */
-const UNIT_SPELLINGS: ReadonlyMap<string, string> = new Map([
-  ["그램", "g"],
-  ["킬로", "kg"],
-  ["키로", "kg"],
-  ["킬로그램", "kg"],
-  ["밀리리터", "ml"],
-  ["리터", "l"],
-  ["센티", "cm"],
-  ["센티미터", "cm"],
-  ["미터", "m"],
-  ["퍼센트", ""],
-  ["프로", ""],
-]);
-
-/** Said after a measure and not part of it: 300g짜리, 300g씩, 300g정도. */
-const MEASURE_SUFFIX = /(짜리|씩|정도|가량|쯤)$/;
-
-/**
- * A digit-led token as the number it says: the unit in its one spelling, and whatever follows
- * the number stripped until nothing more comes off — `11,000원에는` carries two particles, and one
- * strip left `11000원에`, which met nothing (first review of pull request 204). Any other token is
- * returned as it is.
- */
-function numberToken(token: string): string {
-  if (!/^\d/.test(token)) return token;
-  let said = token;
-  for (;;) {
-    const unit = splitNumber(said)[1];
-    const spelled = UNIT_SPELLINGS.get(unit);
-    if (spelled !== undefined) {
-      said = said.slice(0, said.length - unit.length) + spelled;
-      continue;
-    }
-    const shorter = said.replace(MEASURE_SUFFIX, "").replace(PARTICLE, "");
-    if (shorter === said) return said;
-    said = shorter;
-  }
-}
-
-/**
- * Whether the line says one of the fact's numbers: the same whole token, or the same whole number
- * with the unit unsaid on one side — a summary writes a run of amounts as `212,000→429,000→646,000원`
- * and the owner writes `9,500 원` with a space. Never the same digits in a different unit (300g is
- * not 300개) and never a longer number the digits run through (300g is not 20260300번).
- */
-function saysNumber(lineTokens: ReadonlySet<string>, number: string): boolean {
-  if (lineTokens.has(number)) return true;
-  const [digits, unit] = splitNumber(number);
-  for (const token of lineTokens) {
-    const [tokenDigits, tokenUnit] = splitNumber(token);
-    if (tokenDigits !== digits) continue;
-    if (unit === "" || tokenUnit === "") return true;
-  }
-  return false;
-}
-
-const splitNumber = (token: string): [digits: string, unit: string] => {
-  const match = /^(\d+)(.*)$/.exec(token);
-  return match ? [match[1] ?? "", match[2] ?? ""] : ["", token];
+/** What a scale word multiplies by: 1만8천 is 18000. */
+const SCALE: Readonly<Record<string, bigint>> = {
+  억: 100_000_000n,
+  만: 10_000n,
+  천: 1_000n,
+  백: 100n,
 };
+
+/** The unit said at the start of what follows a number, one space allowed; "" when none is. */
+function unitAt(trailing: string): string {
+  const tail = trailing.startsWith(" ") ? trailing.slice(1) : trailing;
+  const found = UNITS.find(([spelling]) => tail.startsWith(spelling));
+  return found ? found[1] : "";
+}
+
+/** Two digits of a date part: 2026-10-1 and 2026년 10월 01일 are one day. */
+const twoDigits = (part: string) => part.padStart(2, "0").slice(-2);
+
+export function numbersIn(text: string): SaidNumber[] {
+  const said: SaidNumber[] = [];
+  let rest = text
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/(\d),(?=\d{3})/g, "$1");
+  // Each reading takes its span out of the text so a later one never reads it again.
+  const take = (
+    pattern: RegExp,
+    read: (match: RegExpExecArray, trailing: string) => SaidNumber | null,
+  ) => {
+    rest = rest.replace(pattern, (...args) => {
+      const match = args as unknown as RegExpExecArray;
+      const offset = args.at(-2) as number;
+      const whole = args.at(-1) as string;
+      const number = read(match, whole.slice(offset + match[0].length));
+      if (number) said.push(number);
+      return " ";
+    });
+  };
+  // A date with its year, in figures or in 년/월/일.
+  take(
+    /(?<!\d)(\d{4})\s?(?:[-./]|년\s?)(\d{1,2})\s?(?:[-./]|월\s?)(\d{1,2})일?(?!\d)/g,
+    (match) => ({
+      value: `${match[1]}${twoDigits(match[2] ?? "")}${twoDigits(match[3] ?? "")}`,
+      unit: "",
+    }),
+  );
+  // A short date or a decimal says no number of its own.
+  take(/(?<![\d.])\d{1,2}[./]\d{1,2}(?![\d.])/g, () => null);
+  // An identifier: digit groups joined by separators, as one value.
+  take(
+    /(?<!\d)\(?(?:0\d*(?:[\s\-./()]{1,3}\d+)+|\d+(?:[\s\-./()]{1,3}\d+){2,})\)?/g,
+    (match, trailing) => ({
+      value: match[0].replace(/\D/g, ""),
+      unit: unitAt(trailing),
+    }),
+  );
+  // An amount in scale words.
+  take(/\d+(?:\s?[억만천백](?:\s?\d+)?)+/g, (match, trailing) => {
+    let value = 0n;
+    for (const part of match[0].matchAll(/(\d+)\s?([억만천백])?/g)) {
+      value += BigInt(part[1] ?? "0") * (SCALE[part[2] ?? ""] ?? 1n);
+    }
+    return { value: value.toString(), unit: unitAt(trailing) };
+  });
+  // Every other run of digits, as written.
+  take(/\d+/g, (match, trailing) => ({
+    value: match[0],
+    unit: unitAt(trailing),
+  }));
+  return said;
+}
+
+/** The numbers a forgotten fact is found by: three digits or more, as the first rule had it. */
+function numbersOf(fact: string): SaidNumber[] {
+  return numbersIn(fact).filter((number) => number.value.length >= 3);
+}
+
+/**
+ * Whether the line says the fact's number: the same whole value, and not two different recognised
+ * units — the unit unsaid on either side still counts, since a summary writes a run of amounts as
+ * `212,000→429,000→646,000원`.
+ */
+const saysNumber = (line: readonly SaidNumber[], number: SaidNumber) =>
+  line.some(
+    (said) =>
+      said.value === number.value &&
+      !(said.unit && number.unit && said.unit !== number.unit),
+  );
 
 /**
  * A dated summary line: `- 9/21: …`, `- 9/14~9/16: …`, `- 2026-09-21: …`, `- 9.21: …`,
@@ -317,8 +389,8 @@ export function lineCarries(line: string, fact: string): boolean {
   if (here.includes(said)) return true;
   const numbers = numbersOf(fact);
   if (numbers.length > 0) {
-    const tokens = new Set(numberTokensOf(here));
-    if (numbers.some((number) => saysNumber(tokens, number))) return true;
+    const said = numbersIn(here);
+    if (numbers.some((number) => saysNumber(said, number))) return true;
   }
   const words = distinctiveWords(fact);
   if (words.length === 0) return false;
