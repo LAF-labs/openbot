@@ -84,8 +84,11 @@ function night(fail = false) {
     if (fail) throw new Error("standing: refused");
     return {
       added: 0,
+      superseded: 0,
       duplicate: 0,
       unquoted: 0,
+      unsupported: 0,
+      unjudged: 0,
       refused: 0,
       forgotten: 0,
       full: 0,
@@ -202,6 +205,13 @@ describe("whether the quote is the owner's", () => {
       false,
     );
     expect(figuresQuoted("정산: 매달 5일까지", SAID)).toBe(true);
+    // Folded as the lookup folds: a full-width figure in the quote is the figure.
+    expect(
+      figuresQuoted(
+        "유자: 1kg에 18,000원",
+        "유자는 1kg에 １８,０００원에 받아",
+      ),
+    ).toBe(true);
   });
 });
 
@@ -270,7 +280,9 @@ describe("the close and the night", () => {
       id: "d0u2",
       threadId: "thread_sn",
       text: SAID,
+      at: at(0, 40).getTime(),
     });
+    expect(asked[0]?.kept?.()).toBe(true);
     expect(morning.system).toContain(
       "- 9/24: 이 사람이 정산 자료는 매달 5일까지라고 함.",
     );
