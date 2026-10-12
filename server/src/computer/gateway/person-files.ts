@@ -11,13 +11,12 @@
  * What IS recorded is a file leaving: who took which path out of which Bot's folder, and how big.
  * A reader checking that every way out of the folder leaves a row reads this and `uploadFile`.
  */
-
-import { type FileScope, PERSON_SCOPE } from "../../../../shared/file-scope";
 import {
   fileNameOf,
   inlineImageTypeOf,
   isHiddenPath,
 } from "../../../../shared/workspace-files";
+import { type FileScope, PERSON_SCOPE } from "../../../../shared/file-scope";
 import type { AuditStore } from "../../audit";
 import type { ComputerClient } from "../client";
 import type { FileFacts, ListFilesResult } from "../schema";

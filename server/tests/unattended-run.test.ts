@@ -235,11 +235,11 @@ describe("an unattended run", () => {
   });
 });
 
-import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import {
   ActionNeedsApprovalError,
   ActionRefusedError,
 } from "../src/computer/gateway";
+import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import { outcomeOfError } from "../src/runner/unattended";
 import { A_CLICK } from "./support/subjects";
 

@@ -11,9 +11,8 @@
  * control routes, and then asks THIS surface one question — "is the page in front of the browser
  * signed in?" — which is a read plus a predicate out of the shared catalogue.
  */
-
-import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import type { MiddlewareHandler } from "hono";
 import { siteById } from "../../../shared/sites/catalogue";
 import type { AppVariables } from "../auth/guards";
 import { BOT_ID_INVALID, isBotId } from "./bot-id";

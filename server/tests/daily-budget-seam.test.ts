@@ -7,7 +7,7 @@ import {
 } from "../src/channels/turn-failures";
 import { buildAgents, type RunMeter } from "../src/copilot";
 import { runAgentOnce } from "../src/routines/run-once";
-import { runUnattended, type ToolExecutor } from "../src/runner/unattended";
+import { type ToolExecutor, runUnattended } from "../src/runner/unattended";
 import {
   DAILY_BUDGET_REACHED,
   type DailyBudget,

@@ -3,8 +3,8 @@ import { randomUUID } from "node:crypto";
 import type { BaseEvent, Message } from "@ag-ui/client";
 import { eq, inArray } from "drizzle-orm";
 import { isFirstMove } from "../../shared/first-move";
-import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import { COMPUTER_TOOLS } from "../../shared/tools/computer";
+import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import {
   PROJECT_QUERY_READ_ONLY,
   projectQuestionText,

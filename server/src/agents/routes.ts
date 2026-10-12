@@ -1,16 +1,16 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import { isNotebookSlot, MAX_GUIDANCE_LENGTH } from "../../../shared/notebook";
 import type { AppVariables } from "../auth/guards";
 import { describeFailure, NOT_FOUND } from "../failure-text";
 import { log } from "../log";
 import { testAgentConnection } from "./connection-test";
 import { checkAgentEndpoint } from "./endpoint";
+import { isNotebookSlot, MAX_GUIDANCE_LENGTH } from "../../../shared/notebook";
 import {
   type AgentMemoryStore,
   looksLikeAnInstruction,
-  looksLikeASecret,
   looksLikeAStandingOrder,
+  looksLikeASecret,
   looksLikePromptStructure,
   MAX_MEMORY_LENGTH,
   MEMORY_CHARACTER_CAP,

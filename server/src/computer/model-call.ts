@@ -18,9 +18,9 @@
  */
 
 import { jsonObjectOf } from "../../../shared/json-object";
-import { soundText } from "../../../shared/sound-text";
 import { providerStatusFact } from "../failure-text";
 import { log } from "../log";
+import { soundText } from "../../../shared/sound-text";
 
 export type ModelCall = {
   /** Where chat completions are answered. The same endpoint everything else in this deployment uses. */

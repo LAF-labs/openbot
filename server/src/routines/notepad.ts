@@ -4,8 +4,8 @@ import {
   NOTEPAD_MAX_KEYS,
   NOTEPAD_MAX_VALUE_CHARS,
   type NoteProblem,
-  noteProblem,
   notepadBytes,
+  noteProblem,
   type RoutineNote,
 } from "../../../shared/prompt/notepad.ko";
 import { toolResultText } from "../../../shared/prompt/tool-results.ko";

@@ -1,4 +1,3 @@
-import { cutAtCodeUnits } from "../../../shared/sound-text";
 import type { CallPreview } from "../computer/approvals";
 import {
   previewList,
@@ -11,14 +10,15 @@ import {
   asResult,
   countArg,
   failure,
-  type RestConnection,
   readJson,
+  type RestConnection,
   stringArg,
   unknownTool,
   vendorRequest,
 } from "./rest-support";
 import { PluginRefusedError } from "./store";
 import { TIMEOUT_MS } from "./timeouts";
+import { cutAtCodeUnits } from "../../../shared/sound-text";
 
 /**
  * Gmail over its ordinary REST API: search, read, draft, send.

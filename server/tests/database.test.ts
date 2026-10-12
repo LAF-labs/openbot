@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { createDatabase } from "../src/db/client";
 import * as schema from "../src/db/schema";
+import { createDatabase } from "../src/db/client";
 import { TEST_POOL } from "./support/database";
 
 /**

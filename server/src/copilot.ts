@@ -4,7 +4,6 @@ import { CopilotRuntime } from "@copilotkit/runtime/v2";
 import { createCopilotHonoHandler } from "@copilotkit/runtime/v2/hono";
 import { DEEP_EFFORT, FIXED_EFFORT } from "../../shared/fixed-effort";
 import { textOf } from "../../shared/message-content";
-import type { Persona } from "../../shared/persona";
 import {
   type ComposePromptInput,
   contextFactsFor,
@@ -20,21 +19,22 @@ import {
   systemPromptText,
 } from "../../shared/prompt";
 import { HARNESS_VERSION } from "../../shared/prompt/harness";
+import type { Persona } from "../../shared/persona";
 import type { ShopProfile } from "../../shared/shop/catalogue";
 import { isDeferredToolName, openAccountsIn } from "../../shared/tools/bridge";
 import { type WithheldTools, withheldToolsIn } from "../../shared/tools/paused";
 import { readsOnly } from "../../shared/tools/projects";
 import { deviceOf } from "../../shared/whereabouts";
 import type { AgentActor } from "./agents/profile-types";
-import { withAttachments } from "./attachments/for-model";
-import type { AttachmentService } from "./attachments/service";
 import { type AuditStore, auditRowLost, recordAuditEvent } from "./audit";
+import { withAttachments } from "./attachments/for-model";
+import { withFeedQuotes } from "./feed/quote";
+import type { FeedStore } from "./feed/store";
+import type { AttachmentService } from "./attachments/service";
 import type { AgentFetch, StallGuard } from "./channels/stall-guard";
 import type { ResultSpill } from "./computer/spillover";
 import type { ConversationStore } from "./context/conversations";
 import { NOT_FOUND } from "./failure-text";
-import { withFeedQuotes } from "./feed/quote";
-import type { FeedStore } from "./feed/store";
 import { log } from "./log";
 import { type DailyBudget, withDailyBudget } from "./usage/daily-budget";
 import {

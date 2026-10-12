@@ -2,9 +2,9 @@ import { MAX_RESULT_CHARS, type McpCallResult, type McpTool } from "./mcp";
 import {
   asResult,
   failure,
-  type RestConnection,
   readJson,
   readOpening,
+  type RestConnection,
   stringArg,
   unknownTool,
   vendorRequest,

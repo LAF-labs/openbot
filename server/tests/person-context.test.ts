@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { WEATHER_TOOL_NAME } from "../../shared/tools/bridge";
 import { NO_WHEREABOUTS, type Whereabouts } from "../../shared/whereabouts";
 import {
   nameNear,
   promptPersonOf,
   withPersonContext,
 } from "../src/agents/person-context";
+import { WEATHER_TOOL_NAME } from "../../shared/tools/bridge";
 import { buildAgents, type RegisteredAgent } from "../src/copilot";
 
 /**

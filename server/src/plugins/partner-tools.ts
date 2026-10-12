@@ -20,12 +20,11 @@
  * word for them INCLUDES the floor, and {@link partnerToolGuard} is what says so at both places the
  * guard is computed.
  */
-
-import { cutAtCodeUnits } from "../../../shared/sound-text";
 import type { CallPreview } from "../computer/approvals";
 import { MAX_RESULT_CHARS, type McpCallResult, type McpTool } from "./mcp";
 import { PluginRefusedError } from "./store";
 import type { VendorTransport } from "./transport";
+import { cutAtCodeUnits } from "../../../shared/sound-text";
 
 /** One tool a partner connector offers, declaration included. */
 export type PartnerToolSpec = McpTool & {

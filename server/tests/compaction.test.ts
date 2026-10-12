@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { contextFactsFor, systemPromptText } from "../../shared/prompt";
 import {
   applyCompaction,
   attachmentPlan,
@@ -16,6 +15,7 @@ import type {
   JevAsker,
   JevQuestions,
 } from "../src/context/vendor/fast-jev-compaction/index";
+import { contextFactsFor, systemPromptText } from "../../shared/prompt";
 
 /**
  * Compaction as a cache-safe fork (agent-harness-design row 9): decided once at a threshold,

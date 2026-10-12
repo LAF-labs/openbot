@@ -3,11 +3,11 @@ import { join } from "node:path";
 import { skillIndexText } from "../../shared/prompt/skill-index";
 import { SKILL_SLUG_PATTERN } from "../../shared/tools/skills";
 import { offeredTools } from "../src/plugins/built-in-skill-sync";
+import { PUBLIC_DATA_TOOLS } from "../src/plugins/public-data-rest";
 import {
   parseSkillFile,
   readBuiltInSkills,
 } from "../src/plugins/built-in-skills";
-import { PUBLIC_DATA_TOOLS } from "../src/plugins/public-data-rest";
 
 /**
  * The skills the package ships (`tenant/laf/skills/*.md`), read the way the server reads them at

@@ -1,3 +1,4 @@
+import type { GoalStore } from "../goals/store";
 import type { AbstractAgent } from "@ag-ui/client";
 import { and, eq, isNull } from "drizzle-orm";
 import { resolveTimeZone } from "../../../shared/prompt";
@@ -8,7 +9,6 @@ import { DEV_ACTOR } from "../auth/dev-actor";
 import type { ActionActor } from "../computer/gateway";
 import type { Database } from "../db/client";
 import { lafRoutines } from "../db/schema";
-import type { GoalStore } from "../goals/store";
 import { log } from "../log";
 import type { BotLane } from "../runner/bot-lane";
 import type { WorkInFlight } from "../runner/in-flight";

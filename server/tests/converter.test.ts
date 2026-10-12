@@ -3,12 +3,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as XLSX from "xlsx";
-import { isolationProblems } from "../../shared/isolation";
 import { conversionFrom, convertUpload } from "../src/attachments/conversion";
 import {
   converterSettingFor,
   createConverter,
 } from "../src/attachments/converter-client";
+import { isolationProblems } from "../../shared/isolation";
 import { startConverterDaemon } from "../src/attachments/converter-daemon";
 import {
   convertInFreshProcess,

@@ -12,7 +12,6 @@
  */
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
 import { CONNECTION_PROBE_PARAM } from "../../shared/support/connection-check";
-import type { BotOwnerLookup } from "./auth/guards";
 import { ORIGIN_REFUSED, upgradeOriginAllowed } from "./auth/origin";
 import type { UserRole } from "./auth/roles";
 import {
@@ -20,6 +19,7 @@ import {
   type SessionRevocation,
 } from "./auth/session-revocation";
 import { streamBotAccess } from "./auth/stream-access";
+import type { BotOwnerLookup } from "./auth/guards";
 import type { websocket as channelSocket } from "./channels/socket";
 import type { ScreenViewAudit, ScreenViewer } from "./computer/screen-view";
 import type { DeploymentConfig } from "./config";

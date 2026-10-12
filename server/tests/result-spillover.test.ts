@@ -1,9 +1,9 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import type { HttpAgent } from "@ag-ui/client";
 import { spillLine, TOOL_RESULT_CUT } from "../../shared/spillover";
-import { createThreadProjects } from "../src/channels/thread-projects";
 import type { WriteFileInput } from "../src/computer/schema";
 import { createResultSpill } from "../src/computer/spillover";
+import { createThreadProjects } from "../src/channels/thread-projects";
 import { buildAgents } from "../src/copilot";
 import { byConversation, delegatedThreadOf } from "../src/turns/engine";
 

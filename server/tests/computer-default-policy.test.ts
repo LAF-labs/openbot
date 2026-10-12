@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { shippedAskRuleOf } from "../../shared/policy-rules";
 import type { AuditEventInput, AuditStore } from "../src/audit";
 import type { ComputerClient } from "../src/computer/client";
 import {
@@ -17,6 +16,7 @@ import {
   ActionRefusedError,
   createComputerGateway,
 } from "../src/computer/gateway";
+import { shippedAskRuleOf } from "../../shared/policy-rules";
 import { evaluateActionPolicy } from "../src/computer/policy";
 import type { SnapshotElement, SnapshotResult } from "../src/computer/schema";
 

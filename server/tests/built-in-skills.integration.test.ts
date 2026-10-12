@@ -7,11 +7,11 @@ import type { ActionPolicy } from "../src/computer/policy";
 import { createDatabase } from "../src/db/client";
 import { agentProfiles, agents, pluginGrants, skills } from "../src/db/schema";
 import { createBuiltInSkills } from "../src/plugins/built-in-skill-sync";
+import { createPluginRoutes, SKILL_BUILT_IN } from "../src/plugins/routes";
 import {
   BUILT_IN_ORIGIN,
   type BuiltInSkill,
 } from "../src/plugins/built-in-skills";
-import { createPluginRoutes, SKILL_BUILT_IN } from "../src/plugins/routes";
 import { createPluginStore } from "../src/plugins/store";
 import { credentialVaultStub } from "./support/credentials";
 import { TEST_POOL } from "./support/database";

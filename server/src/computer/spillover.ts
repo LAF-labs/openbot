@@ -1,14 +1,14 @@
 import {
+  previewOf,
+  spillPath,
+  TOOL_RESULT_CUT,
+} from "../../../shared/spillover";
+import {
   type FileScope,
   MAIN_SCOPE,
   placedForWrite,
   projectFolder,
 } from "../../../shared/file-scope";
-import {
-  previewOf,
-  spillPath,
-  TOOL_RESULT_CUT,
-} from "../../../shared/spillover";
 import { log } from "../log";
 import type { WriteFileInput, WriteFileResult } from "./schema";
 
