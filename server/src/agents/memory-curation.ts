@@ -55,8 +55,14 @@ export const SUPERSEDE_AT = 0.7;
 const RESTATED_AT = 0.5;
 /** The older lines one check may name as superseded. */
 const OLDER_LINES = 30;
-/** How much of one owner message the judge reads. */
-const MESSAGE_CHARS = 600;
+/**
+ * How much of one owner message the judge reads. The close's night reads no more of a message
+ * than this when it quotes from one (`standing-facts.ts`): a line quoted from beyond the window
+ * would pass the night and be retired an hour later by a judge that cannot see its evidence
+ * (review of pull request 208).
+ */
+export const JUDGE_MESSAGE_CHARS = 600;
+const MESSAGE_CHARS = JUDGE_MESSAGE_CHARS;
 /** Whose lines are checked and may be superseded: the Bot's, and the close's night lines. */
 const JUDGED = new Set(["bot", "night"]);
 

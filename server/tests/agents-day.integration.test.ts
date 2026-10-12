@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import { inArray } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import { UNANSWERED_RESULT } from "../../shared/task-ending";
 import {
   type BotDay,
   createDayReader,
@@ -28,7 +29,6 @@ import {
   lafThreadRuns,
   users,
 } from "../src/db/schema";
-import { UNANSWERED_RESULT } from "../../shared/task-ending";
 import { TEST_POOL } from "./support/database";
 
 const database = createDatabase(
@@ -355,6 +355,25 @@ beforeAll(async () => {
         "사장님 가게는 매주 월요일에 쉰다. 배달은 오후 네 시까지만 받는다.",
       createdAt: at("2026-09-25T02:00:00Z"),
     },
+    // Added by the day's close from the owner's words (`standing-facts.ts`): the Bot's day too,
+    // outside any turn, so it stands on its own row (review of pull request 208).
+    {
+      id: `day-mem-night-${tag}`,
+      agentId: A.bot,
+      ownerUserId: A.user,
+      content: "정산 자료: 매달 5일까지",
+      source: "night",
+      createdAt: at("2026-09-25T02:10:00Z"),
+    },
+    // The owner's own line on 수첩 is not the Bot's day.
+    {
+      id: `day-mem-owner-${tag}`,
+      agentId: A.bot,
+      ownerUserId: A.user,
+      content: "우리 가게 택배는 우체국",
+      source: "owner",
+      createdAt: at("2026-09-25T02:20:00Z"),
+    },
     // Learned while the Coupang turn ran: counted on its row, not a row each; the row names the
     // newer of the two, for 수첩 to land on.
     {
@@ -432,6 +451,7 @@ describe("the Bot's day", () => {
       ),
     ).toEqual([
       "routine:아침 주문 확인:silent",
+      "learned:정산 자료: 매달 5일까지",
       "learned:사장님 가게는 매주 월요일에 쉰다. 배달은 오후 네 시",
       "chat:오늘 날씨 알려 줘",
       "chat:토스에서 앱 다운로드 눌러 봐",
@@ -595,7 +615,7 @@ describe("GET /api/agents/:agentId/day", () => {
     const response = await surface(A.user).request(`/api/agents/${A.bot}/day`);
     expect(response.status).toBe(200);
     const day = (await response.json()) as BotDay;
-    expect(day.items.length).toBe(8);
+    expect(day.items.length).toBe(9);
   });
 
   test("a Bot the person cannot see is not found, the same as the profile says", async () => {
