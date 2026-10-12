@@ -3127,7 +3127,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * the floors; a full 수첩 counted and nothing kept back; the curation judging a night line), less
  * one: `memory-forgetting.test.ts` lost the placeholder tests of the summariser's standing block
  * (two) and gained the extractor's allowlist (one).
- * And one more from the first Codex pass on that rework, 4615 → 4616: two wordings of one fact
+ * And one more from the first Codex pass on that rework, 4615 → 4645: two wordings of one fact
  * in one night are one line, and a quote past the judge's window is not evidence.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
@@ -3158,7 +3158,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4630, roots: ["server"] },
+  { name: "server", floor: 4645, roots: ["server"] },
   { name: "app", floor: 2446, roots: ["app"] },
   {
     name: "agent-computer",
