@@ -3066,7 +3066,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * rule and one exemption (Codex's sixth review of pull request 204): the three Unicode-category
  * grids and the unit-exemption rows went with the fold and the unit table; in came the rows that
  * now go (300개 for 300g, 300인분), two more of Codex's calls carried and two not, and the
- * property in both directions. The file measures 136 against main's 69; 4528 and 67 is 4595.
+ * property in both directions. The file measures 136 against main's 69; main's floor (4534 when this landed) and 67 is 4601.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -3096,7 +3096,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4534, roots: ["server"] },
+  { name: "server", floor: 4601, roots: ["server"] },
   { name: "app", floor: 2446, roots: ["app"] },
   {
     name: "agent-computer",
