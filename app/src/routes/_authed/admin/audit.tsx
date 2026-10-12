@@ -888,6 +888,8 @@ export const DECISIONS: Record<string, string> = {
   "computer.released": "A deleted Bot let go of the computer",
   // Written when deleting a Bot could not reach its browser at all.
   "computer.reset_failed": "The computer could not be reset",
+  // A run asked for a browser of its own and got none: no room, or the last one could not be let go of.
+  "computer.browser_refused": "No browser for the run",
   "computer.stopped": "A person pressed stop",
   // Not "Blocked". Nothing refused this; the Bot did the same thing again and the trail is saying so.
   "computer.action_repeated": "The Bot repeated itself",
@@ -1348,6 +1350,7 @@ export const EVENTS: Record<string, string> = {
   "computer.reset": "The computer",
   "computer.released": "The computer",
   "computer.reset_failed": "The computer",
+  "computer.browser_refused": "A background browser",
   "site.signed_in": "A site's sign-in",
   "site.login_lapsed": "A site's sign-in",
   "computer.policy_loaded": "The boundary",

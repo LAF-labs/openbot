@@ -273,6 +273,14 @@ export const auditEventTypes = [
    * investigator needs.
    */
   "computer.reset_failed",
+  /*
+   * A run asked for a background browser of its own and was handed none (record §5, "루틴
+   * 옮기기"): the computer had no room, or the browser the run before left under the name could
+   * not be let go of. The run's own record says only that a step failed, and the same fact code
+   * (`laf:browser_failed`) is what a browser that fell over mid-call says too; this row is what
+   * tells a capacity refusal from those. Which browser, for which Bot, how full — never a page.
+   */
+  "computer.browser_refused",
   /**
    * A business site's sign-in, as the Bot's own browser found it: begun, and run out.
    *

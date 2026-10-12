@@ -785,6 +785,9 @@ export const ko: Record<string, string> = {
   "The computer could not be reached.": "컴퓨터에 닿지 못했어요.",
   "The computer could not be reset.": "컴퓨터를 초기화하지 못했어요.",
   "The computer could not be reset": "컴퓨터를 초기화하지 못함",
+  // 루틴이 자기 브라우저를 청했는데 받지 못했을 때: 자리가 없거나, 앞 실행의 것을 놓지 못했거나.
+  "No browser for the run": "실행에 줄 브라우저가 없음",
+  "A background browser": "백그라운드 브라우저",
   "The computer was reset": "컴퓨터를 초기화함",
   // 봇을 지웠을 때. 브라우저는 계정의 것이고 로그인은 남는다 — 지운 것은 그 봇의 탭과 운전대뿐이다.
   "A deleted Bot let go of the computer": "지운 봇이 컴퓨터에서 손을 뗌",

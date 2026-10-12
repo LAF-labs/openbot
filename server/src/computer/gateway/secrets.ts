@@ -186,39 +186,42 @@ export function createSecrets(deps: {
   const secretRequests = new Map<string, Requested>();
   const typedInto = new Map<string, TypedInto[]>();
   /**
-   * The Bots a value was put into the browser for, and the runs it was put in for — until the
-   * computer has been told each run is over (`runEnded`).
+   * The runs a value was put into a browser of the Bot's for, and for each of them the browsers
+   * it went into — by Bot, then by run — until the computer has been told that run is over
+   * (`runEnded`).
    *
    * WHOSE RUN, BECAUSE A BOT MAY BE ON TWO. A routine's run ends while the person's conversation
    * is half-way through the site it just signed in to; told of that end, the computer would close
    * the tab the conversation is working in. So an end is passed on only for a run that put a value
    * in — by its conversation, which is what both the ask and the end of a turn name.
    *
+   * AND WHICH BROWSER, BY RUN AND NOT BY BOT (piece 5-3; Codex's read of "루틴 옮기기"). The main
+   * browser was the only one there was; a background browser holds what was put into it in a
+   * session of its own (`agent-computer/src/browsers.ts`), and telling the main one a run is
+   * over lets go of nothing there. The browsers were noted by Bot at first, and an end told every
+   * one of them — which was right while nothing of the Bot's ran in two browsers at once, and
+   * wrong the day a routine moved to a browser of its own: the conversation signed in in the
+   * main one and the routine in its own, and whichever ended first told both, closing the
+   * other's tab under a run half-way through its site and taking its note with it. An end is
+   * told to the browsers that run put a value into, and to no other.
+   *
    * IN THIS PROCESS, LIKE THE REST HERE, AND RELEARNT WHEN IT IS LOST. The computer says for itself
    * that it is holding a value (`ControlState.valuesHeld`), and a server that started again
    * mid-run reads that the next time anybody asks for the control state (`valuesSeen`). Whose run
    * it was is not something the computer knows, so the next run of that Bot's to end ends it.
    */
-  const valueRuns = new Map<string, Set<string>>();
-  /**
-   * WHICH OF THE BOT'S BROWSERS A VALUE WENT INTO (piece 5-3), by Bot. The computer's main browser
-   * was the only one there was; a background browser holds what was put into it in a session of
-   * its own (`agent-computer/src/browsers.ts`), and telling the main one a run is over lets go of
-   * nothing there. So the end of a run is told to each browser that holds something, and a
-   * browser that was stopped, reset or let go of stops being one of them.
-   */
-  const valueHolders = new Map<string, Set<string>>();
+  const valueRuns = new Map<string, Map<string, Set<string>>>();
   const putInFor = (
     botId: string,
     threadId: string | undefined,
     computerId: string = botId,
   ): void => {
-    const runs = valueRuns.get(botId) ?? new Set<string>();
-    runs.add(threadId ?? ANY_RUN);
+    const runs = valueRuns.get(botId) ?? new Map<string, Set<string>>();
+    const key = threadId ?? ANY_RUN;
+    const browsers = runs.get(key) ?? new Set<string>();
+    browsers.add(computerId);
+    runs.set(key, browsers);
     valueRuns.set(botId, runs);
-    const holders = valueHolders.get(botId) ?? new Set<string>();
-    holders.add(computerId);
-    valueHolders.set(botId, holders);
   };
 
   /**
@@ -290,11 +293,13 @@ export function createSecrets(deps: {
    * browser of the Bot's is still held, and its runs stay noted.
    */
   function valuesLetGo(botId: string, computerId: string = botId): void {
-    const holders = valueHolders.get(botId);
-    holders?.delete(computerId);
-    if (!holders || holders.size === 0) {
-      valueHolders.delete(botId);
-      valueRuns.delete(botId);
+    const runs = valueRuns.get(botId);
+    if (runs) {
+      for (const [run, browsers] of runs) {
+        browsers.delete(computerId);
+        if (browsers.size === 0) runs.delete(run);
+      }
+      if (runs.size === 0) valueRuns.delete(botId);
     }
     // What a run was only shown is a page of the main browser's (`shownRuns`).
     if (computerId === botId) shownRuns.delete(botId);
@@ -341,15 +346,25 @@ export function createSecrets(deps: {
     }
     const runs = valueRuns.get(botId);
     if (!runs) return;
-    if (!runs.has(threadId ?? ANY_RUN) && !runs.has(ANY_RUN)) return;
-    // ONLY THE RUNS NOTED BEFORE THE COMPUTER WAS TOLD. A value put in for another run while this
-    // is on its way may reach the computer after it has let go of everything, and that run's note
-    // has to outlive this answer: it is what tells the computer at that run's own end.
-    const ending = [...runs];
+    /*
+     * THIS RUN'S NOTE, AND THE NOTE OF A RUN NOBODY NAMED — a value from before this server
+     * started again (`valuesSeen`), or one put in for no conversation — which the next run of
+     * the Bot's to end ends. ONLY THE BROWSERS NOTED BEFORE THE COMPUTER WAS TOLD: a value put in
+     * for a run while this is on its way may reach the computer after it has let go of
+     * everything, and that note has to outlive this answer — it is what tells the computer at
+     * that run's own end. And only THESE runs' notes: another run of the Bot's that holds a
+     * value in a browser of its own keeps it, and its note, until its own end.
+     */
+    const ending = new Map(
+      [threadId ?? ANY_RUN, ANY_RUN]
+        .filter((run) => runs.has(run))
+        .map((run) => [run, new Set(runs.get(run))] as const),
+    );
+    if (ending.size === 0) return;
     try {
-      // Every browser of the Bot's a value went into; the main one where none was noted — a value
-      // from before this server started again is one the main browser said it holds.
-      for (const computerId of [...(valueHolders.get(botId) ?? [botId])]) {
+      for (const computerId of new Set(
+        [...ending.values()].flatMap((browsers) => [...browsers]),
+      )) {
         const ended = await toldOfTheEnd(botId, computerId);
         if (!ended) {
           log.warn("computer_values_still_held", {
@@ -358,10 +373,13 @@ export function createSecrets(deps: {
           });
           return;
         }
-        valueHolders.get(botId)?.delete(computerId);
+        for (const [run, browsers] of ending) {
+          if (!browsers.has(computerId)) continue;
+          const noted = runs.get(run);
+          noted?.delete(computerId);
+          if (noted?.size === 0) runs.delete(run);
+        }
       }
-      valueHolders.delete(botId);
-      for (const run of ending) runs.delete(run);
       if (runs.size === 0 && valueRuns.get(botId) === runs) {
         valueRuns.delete(botId);
       }

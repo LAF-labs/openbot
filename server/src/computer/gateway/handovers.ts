@@ -18,6 +18,16 @@ import type { Secrets } from "./secrets";
 import type { SnapshotCache } from "./snapshots";
 import { writeControlEvent } from "./trail";
 
+/**
+ * What opening a background browser comes to: one opened, fresh; or none — the computer has no
+ * room, or the one the run before left under the name could not be let go of. Each refusal is a
+ * row (`computer.browser_refused`), and the caller answers the run with the fact.
+ */
+export type BrowserOpened =
+  | { opened: true; open: number; cap: number }
+  | { opened: false; because: "no_room"; open: number; cap: number }
+  | { opened: false; because: "not_let_go" };
+
 export function createHandovers(deps: {
   client: ComputerClient;
   /** The computer, addressed as the Bot that is asking. See `createComputerGateway`. */
@@ -34,6 +44,61 @@ export function createHandovers(deps: {
   snapshots: Pick<SnapshotCache, "forget">;
 }) {
   const { client, as, auditStore, secrets, snapshots } = deps;
+
+  /**
+   * The background browsers this process has let go of — confirmed by the computer — and not
+   * opened since, by name. Nothing is open under such a name.
+   *
+   * A BACKGROUND BROWSER IS OPENED FRESH, OR NOT AT ALL (Codex's read of "루틴 옮기기"). The
+   * computer refreshes a browser already open under a name rather than replacing it, and its idle
+   * rule gives a place away only to a DIFFERENT name (`agent-computer/src/browsers.ts`, `open`,
+   * `unused`) — so a routine's browser whose letting-go never reached the computer, or was not
+   * waited for, was the one the next routine under that name was handed: the last run's tabs,
+   * cookies and sign-ins, under a record that promises a profile thrown away with every run. So
+   * an open lets go of the name first wherever this process has not confirmed a letting-go since
+   * the last open: after one that failed, and at the first open of the name since this server
+   * started, when what an earlier process left on the computer is not known. Letting go of
+   * nothing costs one answer (`released: false`). A letting-go that fails here refuses the open:
+   * the run is answered as it is when there is no room, with a row, and never handed a browser
+   * that is somebody's.
+   *
+   * By name and not by `bot@name`, as the computer holds them: the browser is the deployment's,
+   * and the run another Bot's routine left is as much the next run's to let go of.
+   */
+  const letGoOf = new Set<string>();
+  /**
+   * How many times each name has been opened here: a letting-go marks the name let go of only
+   * where no open has happened since it began, so one that answers late — after the lane moved
+   * on and the next run opened the name — cannot mark that run's browser as gone.
+   */
+  const opens = new Map<string, number>();
+
+  /** What this server keeps about one of the Bot's browsers: forgotten with the browser. */
+  const forget = (botId: string, computerId: string): void => {
+    snapshots.forget(computerId);
+    secrets.forgetTypedInto(computerId);
+    secrets.valuesLetGo(botId, computerId);
+  };
+
+  /**
+   * Let a background browser go: the computer closes it and throws its profile away, and what
+   * this server kept about it — the last page seen there, what was typed where, a value it held
+   * — is forgotten with it, so nothing later is judged against a page that no longer exists.
+   * Throws as the computer does: a letting-go the computer did not confirm leaves the name owed,
+   * and the next open lets go first (`letGoOf`).
+   */
+  const release = async (
+    botId: string,
+    browser: string,
+    within?: AbortSignal,
+  ) => {
+    const computerId = computerIdOf(botId, browser);
+    const began = opens.get(browser) ?? 0;
+    const result = await as(computerId, botId).releaseBrowser(within);
+    if ((opens.get(browser) ?? 0) === began) letGoOf.add(browser);
+    forget(botId, computerId);
+    return result;
+  };
 
   return {
     /**
@@ -123,26 +188,62 @@ export function createHandovers(deps: {
      */
     /**
      * Open a background browser for this Bot, under a name the caller chooses (piece 5-3,
-     * `agent-computer/src/browsers.ts`). `opened: false` is the computer saying it has no room:
-     * an answer, for the caller to wait on or go without. The computer's id to act in it by is
-     * `computerIdOf(botId, browser)`.
+     * `agent-computer/src/browsers.ts`) — fresh, or not at all (`letGoOf`). `opened: false` is an
+     * answer, for the caller to wait on or go without, and a row: the computer has no room, or
+     * the browser the run before left under the name could not be let go of. The row carries
+     * which browser, for whom, and how full — never a page or anything typed. The computer's id
+     * to act in it by is `computerIdOf(botId, browser)`.
      */
-    openBrowser(botId: string, browser: string) {
-      return as(computerIdOf(botId, browser), botId).openBrowser();
+    async openBrowser(
+      botId: string,
+      browser: string,
+      actor: ActionActor,
+    ): Promise<BrowserOpened> {
+      const computerId = computerIdOf(botId, browser);
+      const refused = async (reason: string) => {
+        await writeControlEvent(auditStore, "computer.browser_refused", {
+          botId,
+          actor,
+          computerId,
+          reason,
+        });
+      };
+      if (!letGoOf.has(browser)) {
+        try {
+          await release(botId, browser);
+        } catch {
+          await refused(
+            "the browser from the run before could not be let go of",
+          );
+          return { opened: false, because: "not_let_go" };
+        }
+      }
+      // Whatever an earlier run of this Bot's saw or put in there is gone with its browser.
+      forget(botId, computerId);
+      letGoOf.delete(browser);
+      opens.set(browser, (opens.get(browser) ?? 0) + 1);
+      const answer = await as(computerId, botId).openBrowser();
+      if (!answer.opened) {
+        // Nothing is open under the name: the computer refused to open one.
+        letGoOf.add(browser);
+        await refused(`no room: ${answer.open} of ${answer.cap} open`);
+        return {
+          opened: false,
+          because: "no_room",
+          open: answer.open,
+          cap: answer.cap,
+        };
+      }
+      return { opened: true, open: answer.open, cap: answer.cap };
     },
 
     /**
-     * Let a background browser go: the computer closes it and throws its profile away, and what
-     * this server kept about it — the last page seen there, what was typed where, a value it held
-     * — is forgotten with it, so nothing later is judged against a page that no longer exists.
+     * Let a background browser go. See `release`: the caller's own time, where it has one, bounds
+     * the wait — a routine's run lets go on its way out of the lane every routine of the
+     * deployment stands in (`routines/run.ts`).
      */
-    async releaseBrowser(botId: string, browser: string) {
-      const computerId = computerIdOf(botId, browser);
-      const result = await as(computerId, botId).releaseBrowser();
-      snapshots.forget(computerId);
-      secrets.forgetTypedInto(computerId);
-      secrets.valuesLetGo(botId, computerId);
-      return result;
+    releaseBrowser(botId: string, browser: string, within?: AbortSignal) {
+      return release(botId, browser, within);
     },
 
     async stopComputer(computerId: string, botId: string, actor: ActionActor) {

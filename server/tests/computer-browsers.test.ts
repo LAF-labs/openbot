@@ -206,11 +206,20 @@ const PAGE = (url: string, snapshotId: number): SnapshotResult => ({
   elements: [{ ref: "e9", role: "button", name: "주문하기" }],
 });
 
+/**
+ * What the computer does wrong, when a case says so: a letting-go that does not reach it, or no
+ * room for one more background browser. Set by the case, read at the call.
+ */
+type Trouble = { release?: () => never; full?: boolean };
+
 function computer(pages: Record<string, SnapshotResult>) {
   /** Every call, as `<computer's id>:<what was asked>`. */
   const calls: string[] = [];
   /** Which background browsers answer; one let go of answers as the computer does for a name nobody opened. */
   const open = new Set<string>();
+  const trouble: Trouble = {};
+  /** The caller's own time, as each letting-go was given it. */
+  const bounds: (AbortSignal | undefined)[] = [];
   const view = (botId: string, browser?: string | null) => {
     const id = computerIdOf(botId, browser);
     const there = () => {
@@ -261,11 +270,17 @@ function computer(pages: Record<string, SnapshotResult>) {
       runEnded: said("runEnded", { ended: true, closed: 1 }),
       openBrowser: async () => {
         calls.push(`${id}:openBrowser`);
+        // As the computer answers: a name already open is refreshed, never refused.
+        if (trouble.full && !open.has(id)) {
+          return { opened: false, open: 2, cap: 2 };
+        }
         open.add(id);
         return { opened: true, open: open.size, cap: 2 };
       },
-      releaseBrowser: async () => {
+      releaseBrowser: async (caller?: AbortSignal) => {
         calls.push(`${id}:releaseBrowser`);
+        bounds.push(caller);
+        trouble.release?.();
         return { released: open.delete(id) };
       },
     };
@@ -275,7 +290,9 @@ function computer(pages: Record<string, SnapshotResult>) {
   } as unknown as ComputerClient;
   /** The computer gave the browser's place away, or started again: nothing is open under the id. */
   const vanish = (id: string) => void open.delete(id);
-  return { client, calls, vanish };
+  /** Whether the computer has a browser open under the id. */
+  const isOpen = (id: string) => open.has(id);
+  return { client, calls, vanish, trouble, isOpen, bounds };
 }
 
 const ACTOR = { id: "dev-local-user" };
@@ -290,7 +307,7 @@ function gatewayOn(
   pages: Record<string, SnapshotResult>,
   policy: ActionPolicy = PERMISSIVE,
 ) {
-  const { client, calls, vanish } = computer(pages);
+  const { client, calls, vanish, trouble, isOpen, bounds } = computer(pages);
   const rows: AuditEventInput[] = [];
   const store: AuditStore = { insert: async (event) => void rows.push(event) };
   const approvals = createApprovalRegistry();
@@ -300,8 +317,12 @@ function gatewayOn(
     policy: () => policy,
     approvals,
   });
-  return { gateway, calls, rows, approvals, vanish };
+  return { gateway, calls, rows, approvals, vanish, trouble, isOpen, bounds };
 }
+
+/** The calls of one kind, in order. */
+const only = (calls: string[], what: string) =>
+  calls.filter((call) => call.endsWith(`:${what}`));
 
 const BACKGROUND = computerIdOf("bot-1", "run-7");
 const CLICK = { ref: "e9", snapshotId: 3 };
@@ -309,7 +330,7 @@ const CLICK = { ref: "e9", snapshotId: 3 };
 describe("the gateway", () => {
   test("carries a call out in the browser its computer's id names, and in the main one for the Bot's own id", async () => {
     const { gateway, calls } = gatewayOn({});
-    await gateway.openBrowser("bot-1", "run-7");
+    await gateway.openBrowser("bot-1", "run-7", ACTOR);
     await gateway.snapshot("bot-1", { botId: "bot-1", actor: ACTOR });
     await gateway.click("bot-1", "bot-1", ACTOR, CLICK);
     await gateway.snapshot(BACKGROUND, { botId: "bot-1", actor: ACTOR });
@@ -317,6 +338,8 @@ describe("the gateway", () => {
     await gateway.read(BACKGROUND);
 
     expect(calls).toEqual([
+      // Let go of first: what an earlier process left under the name is not known.
+      "bot-1@run-7:releaseBrowser",
       "bot-1@run-7:openBrowser",
       "bot-1:snapshot",
       "bot-1:click",
@@ -330,7 +353,7 @@ describe("the gateway", () => {
     const { gateway, rows } = gatewayOn({
       "bot-1": PAGE("https://shop.example/cart", 3),
     });
-    await gateway.openBrowser("bot-1", "run-7");
+    await gateway.openBrowser("bot-1", "run-7", ACTOR);
     // Only the main browser has been looked at: `e9` is its 주문하기.
     await gateway.snapshot("bot-1", { botId: "bot-1", actor: ACTOR });
     await gateway.click("bot-1", "bot-1", ACTOR, CLICK);
@@ -370,7 +393,7 @@ describe("the gateway", () => {
       { "bot-1": same, [BACKGROUND]: same },
       ASKS_ABOUT_BUTTONS,
     );
-    await gateway.openBrowser("bot-1", "run-7");
+    await gateway.openBrowser("bot-1", "run-7", ACTOR);
     await gateway.snapshot("bot-1", { botId: "bot-1", actor: ACTOR });
     await gateway.snapshot(BACKGROUND, { botId: "bot-1", actor: ACTOR });
 
@@ -409,7 +432,7 @@ describe("the gateway", () => {
       "bot-1": PAGE("https://shop.example/cart", 3),
       [BACKGROUND]: PAGE("https://shop.example/cart", 3),
     });
-    expect(await gateway.openBrowser("bot-1", "run-7")).toEqual({
+    expect(await gateway.openBrowser("bot-1", "run-7", ACTOR)).toEqual({
       opened: true,
       open: 1,
       cap: 2,
@@ -422,7 +445,7 @@ describe("the gateway", () => {
     expect(calls.at(-1)).toBe("bot-1@run-7:releaseBrowser");
 
     // Opened again under the same name, it is a browser nobody has looked at.
-    await gateway.openBrowser("bot-1", "run-7");
+    await gateway.openBrowser("bot-1", "run-7", ACTOR);
     await gateway.click(BACKGROUND, "bot-1", ACTOR, CLICK);
     await gateway.click("bot-1", "bot-1", ACTOR, CLICK);
     const allowed = rows.filter(
@@ -464,7 +487,7 @@ describe("a value put into a background browser", () => {
 
   test("is let go of by telling that browser the run is over, not the main one", async () => {
     const { gateway, calls } = gatewayOn({ [BACKGROUND]: LOGIN });
-    await gateway.openBrowser("bot-1", "run-7");
+    await gateway.openBrowser("bot-1", "run-7", ACTOR);
     await putIn(gateway, BACKGROUND, "thread-a");
     expect(gateway.holdsValues("bot-1")).toBe(true);
 
@@ -478,7 +501,7 @@ describe("a value put into a background browser", () => {
       "bot-1": LOGIN,
       [BACKGROUND]: LOGIN,
     });
-    await gateway.openBrowser("bot-1", "run-7");
+    await gateway.openBrowser("bot-1", "run-7", ACTOR);
     await putIn(gateway, "bot-1", "thread-a");
     await putIn(gateway, BACKGROUND, "thread-a");
 
@@ -490,9 +513,33 @@ describe("a value put into a background browser", () => {
     expect(gateway.holdsValues("bot-1")).toBe(false);
   });
 
+  /*
+   * TWO RUNS OF ONE BOT, EACH IN A BROWSER OF ITS OWN (Codex's read of "루틴 옮기기"): a routine
+   * signed in in its browser while the conversation is signed in in the main one. Noted by Bot
+   * alone, whichever ended first told every browser of the Bot's — and closed the other run's tab
+   * under it, half-way through its site. An end lets go of what that run put in, and no more.
+   */
+  test("a run's end lets go of what that run put in, and not what another run of the Bot's holds elsewhere", async () => {
+    const { gateway, calls } = gatewayOn({
+      "bot-1": LOGIN,
+      [BACKGROUND]: LOGIN,
+    });
+    await gateway.openBrowser("bot-1", "run-7", ACTOR);
+    await putIn(gateway, "bot-1", "thread-a");
+    await putIn(gateway, BACKGROUND, "routine:run-1");
+
+    await gateway.runEnded("bot-1", "routine:run-1");
+    expect(ends(calls)).toEqual(["bot-1@run-7:runEnded"]);
+    expect(gateway.holdsValues("bot-1")).toBe(true);
+
+    await gateway.runEnded("bot-1", "thread-a");
+    expect(ends(calls)).toEqual(["bot-1@run-7:runEnded", "bot-1:runEnded"]);
+    expect(gateway.holdsValues("bot-1")).toBe(false);
+  });
+
   test("a browser that was let go of holds nothing by being gone, and the run's end does not fail on it", async () => {
     const { gateway, calls } = gatewayOn({ [BACKGROUND]: LOGIN });
-    await gateway.openBrowser("bot-1", "run-7");
+    await gateway.openBrowser("bot-1", "run-7", ACTOR);
     await putIn(gateway, BACKGROUND, "thread-a");
     // Let go of by name: what was held in it went with it.
     await gateway.releaseBrowser("bot-1", "run-7");
@@ -503,7 +550,7 @@ describe("a value put into a background browser", () => {
 
   test("a browser that went away without this server hearing of it holds nothing by being gone", async () => {
     const { gateway, calls, vanish } = gatewayOn({ [BACKGROUND]: LOGIN });
-    await gateway.openBrowser("bot-1", "run-7");
+    await gateway.openBrowser("bot-1", "run-7", ACTOR);
     await putIn(gateway, BACKGROUND, "thread-a");
     // The computer gave its place to another, or started again. This server still notes the value.
     vanish(BACKGROUND);
@@ -521,7 +568,7 @@ describe("a value put into a background browser", () => {
       "bot-1": LOGIN,
       [BACKGROUND]: LOGIN,
     });
-    await gateway.openBrowser("bot-1", "run-7");
+    await gateway.openBrowser("bot-1", "run-7", ACTOR);
     await putIn(gateway, "bot-1", "thread-a");
     await putIn(gateway, BACKGROUND, "thread-a");
 
@@ -531,5 +578,121 @@ describe("a value put into a background browser", () => {
     await gateway.runEnded("bot-1", "thread-a");
     expect(ends(calls)).toEqual(["bot-1@run-7:runEnded"]);
     expect(gateway.holdsValues("bot-1")).toBe(false);
+  });
+});
+
+/*
+ * A BACKGROUND BROWSER IS OPENED FRESH, OR NOT AT ALL (Codex's read of "루틴 옮기기"). The computer
+ * refreshes a browser already open under a name rather than replacing it, and gives an idle place
+ * away only to another name — so a browser whose letting-go never reached the computer was the
+ * one the next run under that name was handed, tabs and sign-ins and all. And a run that is
+ * handed no browser, for whichever reason, leaves a row saying which, and how full.
+ */
+describe("opening a background browser", () => {
+  test("the first open after this server started lets go of the name first: what an earlier process left is not known", async () => {
+    const { gateway, calls } = gatewayOn({});
+    expect(await gateway.openBrowser("bot-1", "run-7", ACTOR)).toEqual({
+      opened: true,
+      open: 1,
+      cap: 2,
+    });
+    expect(calls).toEqual([
+      "bot-1@run-7:releaseBrowser",
+      "bot-1@run-7:openBrowser",
+    ]);
+  });
+
+  test("after a letting-go the computer confirmed, the next open does not ask again", async () => {
+    const { gateway, calls } = gatewayOn({});
+    await gateway.openBrowser("bot-1", "run-7", ACTOR);
+    await gateway.releaseBrowser("bot-1", "run-7");
+    calls.length = 0;
+    await gateway.openBrowser("bot-1", "run-7", ACTOR);
+    expect(calls).toEqual(["bot-1@run-7:openBrowser"]);
+  });
+
+  test("a browser whose letting-go failed is let go of before the next run under the name is handed one", async () => {
+    const { gateway, calls, trouble, isOpen } = gatewayOn({});
+    await gateway.openBrowser("bot-1", "run-7", ACTOR);
+    trouble.release = () => {
+      throw new Error("the computer did not answer");
+    };
+    await expect(gateway.releaseBrowser("bot-1", "run-7")).rejects.toThrow();
+    // The computer still has the last run's browser, with everything in it.
+    expect(isOpen(BACKGROUND)).toBe(true);
+
+    trouble.release = undefined;
+    calls.length = 0;
+    expect(await gateway.openBrowser("bot-1", "run-7", ACTOR)).toEqual({
+      opened: true,
+      open: 1,
+      cap: 2,
+    });
+    expect(calls).toEqual([
+      "bot-1@run-7:releaseBrowser",
+      "bot-1@run-7:openBrowser",
+    ]);
+  });
+
+  test("and where it still cannot be let go of, the run is refused the browser rather than handed the last run's — with a row", async () => {
+    const { gateway, calls, rows, trouble, isOpen } = gatewayOn({});
+    await gateway.openBrowser("bot-1", "run-7", ACTOR);
+    trouble.release = () => {
+      throw new Error("the computer did not answer");
+    };
+    await gateway.releaseBrowser("bot-1", "run-7").catch(() => undefined);
+    calls.length = 0;
+
+    expect(await gateway.openBrowser("bot-1", "run-7", ACTOR)).toEqual({
+      opened: false,
+      because: "not_let_go",
+    });
+    expect(only(calls, "openBrowser")).toEqual([]);
+    expect(isOpen(BACKGROUND)).toBe(true);
+    expect(
+      rows.map((row) => [row.eventType, row.targetId, row.payload]),
+    ).toEqual([
+      [
+        "computer.browser_refused",
+        "bot-1@run-7",
+        {
+          bot: "bot-1",
+          actor: ACTOR.id,
+          reason: "the browser from the run before could not be let go of",
+        },
+      ],
+    ]);
+  });
+
+  test("no room is a row of its own: which browser, for which Bot, how full", async () => {
+    const { gateway, rows, trouble } = gatewayOn({});
+    trouble.full = true;
+    expect(await gateway.openBrowser("bot-1", "run-7", ACTOR)).toEqual({
+      opened: false,
+      because: "no_room",
+      open: 2,
+      cap: 2,
+    });
+    expect(
+      rows.map((row) => [row.eventType, row.targetId, row.payload]),
+    ).toEqual([
+      [
+        "computer.browser_refused",
+        "bot-1@run-7",
+        { bot: "bot-1", actor: ACTOR.id, reason: "no room: 2 of 2 open" },
+      ],
+    ]);
+    // And one that opened leaves no such row.
+    trouble.full = false;
+    await gateway.openBrowser("bot-1", "run-7", ACTOR);
+    expect(rows).toHaveLength(1);
+  });
+
+  test("a letting-go is given the caller's own time, and reaches the computer with it", async () => {
+    const { gateway, bounds } = gatewayOn({});
+    await gateway.openBrowser("bot-1", "run-7", ACTOR);
+    const within = AbortSignal.timeout(5_000);
+    await gateway.releaseBrowser("bot-1", "run-7", within);
+    expect(bounds.at(-1)).toBe(within);
   });
 });
