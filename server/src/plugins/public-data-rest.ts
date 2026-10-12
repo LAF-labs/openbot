@@ -26,6 +26,8 @@
  * `nkoneps.com.response.ResponseError` shape `vendorHeaderOf` reads. `type=json` is 나라장터's word
  * for the format and `dataType=json` is 기업마당's — the other spelling answers XML.
  */
+
+import { cutAtCodeUnits } from "../../../shared/sound-text";
 import type { DeploymentKeyService } from "./deployment-key-runtime";
 import { kstStamp } from "./kst";
 import { type McpCallResult, withoutCredential } from "./mcp";
@@ -34,7 +36,6 @@ import { asResult, countArg, stringArg } from "./rest-support";
 import { PluginRefusedError } from "./store";
 import { TIMEOUT_MS } from "./timeouts";
 import type { VendorTransport } from "./transport";
-import { cutAtCodeUnits } from "../../../shared/sound-text";
 
 /** The catalogue entry these tools live under. Prefixes every tool ref: `public-data/search_bids`. */
 export const PUBLIC_DATA_KEY = "public-data";

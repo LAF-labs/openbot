@@ -16,9 +16,31 @@ import {
   TOOL_RESULT_KO,
   toolResultText,
 } from "../../shared/prompt/tool-results.ko";
+import {
+  deferredToolsText,
+  describedToolNames,
+  OPEN_ACCOUNTS_HEAD,
+  openAccountsIn,
+  searchResultText,
+} from "../../shared/tools/bridge";
+import { COMPUTER_TOOLS } from "../../shared/tools/computer";
+import { DELEGATE } from "../../shared/tools/delegate";
+import {
+  accountStatesIn,
+  withoutAccountStates,
+} from "../../shared/tools/gallery";
+import { LIST_GOALS } from "../../shared/tools/goals";
+import {
+  PAUSED_TOOL_DESCRIPTION,
+  PAUSED_TOOL_PARAMETERS,
+  withheldToolsForwarded,
+  withheldToolsIn,
+  withheldToolsText,
+} from "../../shared/tools/paused";
+import { READ_PROJECTS } from "../../shared/tools/projects";
 import type { AgentActor } from "../src/agents/profile-types";
-import { createApprovalRegistry } from "../src/computer/approvals";
 import type { AuditEventInput } from "../src/audit";
+import { createApprovalRegistry } from "../src/computer/approvals";
 import {
   type ComputerClient,
   ComputerUnavailableError,
@@ -32,38 +54,16 @@ import {
   createComputerGateway,
 } from "../src/computer/gateway";
 import type { ActionPolicy } from "../src/computer/policy";
+import { RoutineError } from "../src/routines/errors";
+import type { RoutineService } from "../src/routines/service";
 import {
   type LoopAgent,
   RunFailed,
   RunStopped,
   runTurnLoop,
 } from "../src/runner/turn-loop";
-import { RoutineError } from "../src/routines/errors";
-import type { RoutineService } from "../src/routines/service";
 import { createChatTools, routineAction } from "../src/turns/chat-tools";
 import { createPersonAnswers } from "../src/turns/people";
-import {
-  deferredToolsText,
-  describedToolNames,
-  OPEN_ACCOUNTS_HEAD,
-  openAccountsIn,
-  searchResultText,
-} from "../../shared/tools/bridge";
-import {
-  accountStatesIn,
-  withoutAccountStates,
-} from "../../shared/tools/gallery";
-import { LIST_GOALS } from "../../shared/tools/goals";
-import { READ_PROJECTS } from "../../shared/tools/projects";
-import {
-  PAUSED_TOOL_DESCRIPTION,
-  PAUSED_TOOL_PARAMETERS,
-  withheldToolsForwarded,
-  withheldToolsIn,
-  withheldToolsText,
-} from "../../shared/tools/paused";
-import { COMPUTER_TOOLS } from "../../shared/tools/computer";
-import { DELEGATE } from "../../shared/tools/delegate";
 import { A_CLICK } from "./support/subjects";
 
 const owner: AgentActor = { id: "owner-1", role: "user" };

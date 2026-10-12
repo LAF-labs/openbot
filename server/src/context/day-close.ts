@@ -230,10 +230,7 @@ export function boundedSummary(text: string, max = SUMMARY_MAX_CHARS): string {
 /**
  * What the hard cut dropped, or null when it did not run: characters, lines, and whether a dated
  * line of the day being closed was among them. Logged by the close (`day_summary_cut`) so the
- * fleet can see the bound reached. Nothing retires a standing line but the owner, and the block
- * sits at the tail the cut reaches last, so a block that has grown to the bound shows up here as
- * yesterday's dated lines going — the sign a cap on the block, the owner's decision, is due
- * (second review of pull request 196).
+ * fleet can see the bound reached.
  */
 export function cutOf(
   whole: string,
@@ -262,21 +259,6 @@ export function cutOf(
 }
 
 /**
- * The tokens of the instruction's one sample line, which the summariser is told never to write. A
- * line that still holds one is the example copied, not a fact about this owner, and it is dropped
- * before the summary is stored (review of pull request 196).
- */
-const PLACEHOLDER_TOKENS = ["<무엇>", "<언제마다", "어떤 조건>"] as const;
-
-/** The summary without any line that is the instruction's placeholder. */
-export function withoutPlaceholderLines(text: string): string {
-  return text
-    .split("\n")
-    .filter((line) => !PLACEHOLDER_TOKENS.some((token) => line.includes(token)))
-    .join("\n");
-}
-
-/**
  * The summariser's instructions. English, like every server-side judge's; the summary itself is in
  * the conversation's language, because the Bot reads it in front of Korean.
  *
@@ -285,23 +267,26 @@ export function withoutPlaceholderLines(text: string): string {
  * a customer's request), what was decided, and what is still open. Measured in `eval:cache`'s
  * `days` case: a fact stated on day 1 asked on day 5.
  *
- * STANDING FACTS ARE NOT EVENTS. Told only "short dated bullet lines", the summariser attached a
- * date to everything, and a fact with no date of its own — a deadline every month, a staff
- * member's weekdays — was flattened into one date ("매주 금요일까지" became "- 9/18: …") or dropped
- * as settled once its date had passed: `eval:memory-days`, 2026-10-11, lost 3 of 36 over a busy
- * week and only the recurring rows, with the summary half its bound. So a standing fact is its own
- * undated line, recurrence words kept, in a block AFTER the dated lines: `boundedSummary` cuts
- * from the head, so the block is what the cut reaches last, where at the head it would be the
- * first thing gone in month two.
+ * DATED LINES ONLY: THE SUMMARY IS THE DAY'S RECORD, NOT A FACT STORE. Told only "short dated
+ * bullet lines", the summariser attaches a date to everything, and a fact with no date of its own
+ * — a deadline every month, a staff member's weekdays — is flattened into one date or dropped as
+ * settled once its date has passed (`eval:memory-days`, 2026-10-11: 3 of 36 over a busy week).
+ * Pull request 196 answered that with an undated block of standing facts inside the summary — a
+ * second standing layer, inside a text the head cut eventually reaches and nothing bounds, which
+ * the person cannot open or correct. The owner chose instead (2026-10-12) one curated sheet the
+ * person can see and edit, with the day's detail kept apart from it: a standing fact the owner
+ * stated goes to 수첩 at the close by a call of its own (`agents/standing-facts.ts`), and the
+ * summary carries dated lines alone. A dated line may still say the owner said something — that
+ * is the day's record — and whatever 수첩 could not take stays where it always was, in the
+ * conversation the Bot searches before saying it does not know.
  */
 export const DAY_SUMMARY_SYSTEM = [
   "You maintain the running summary of one shop assistant's long conversation with the shop owner.",
   "The user message is JSON: `previous` is the summary so far (may be empty), `transcript` is the conversation since, with day headers, and `day` is today.",
   "Write the new summary that replaces both. Rules:",
-  "- Write in Korean, as short bullet lines, oldest first: dated lines (`- 9/21: …`) for what happened, then a short block of standing facts (the rule below). Carry over what `previous` said unless the transcript settled or replaced it.",
+  "- Write in Korean, as short dated bullet lines (`- 9/21: …`), oldest first. Carry over what `previous` said unless the transcript settled or replaced it.",
   "- Call the owner 이 사람 (`- 9/21: 이 사람이 …`), never 사장님 or any other title, whatever the transcript's labels say: the person may be a student or an office worker.",
   "- Keep every concrete fact the owner may ask about later: names of people and suppliers, quantities, prices and amounts, order numbers, dates and times, reasons (a refund reason, a customer's request), promises and deadlines, the owner's preferences and rules.",
-  "- A standing fact is something the owner said that holds until the owner changes or ends it: a deadline that comes round every month or every week, which weekdays someone works, opening hours, a supplier's payment terms, a unit price, a regular customer's preference. Write each on its own undated line, in the owner's own words — the name as the owner said it, weekdays written out, no shorthand — keeping the words that say how often or on what condition it holds, after the dated lines, in the shape `- <무엇>: <언제마다 / 어떤 조건>`, never this placeholder. A date passing does not settle it. When the owner changes it, write only the new value; when the owner says it no longer holds — a person left, a supplier was dropped, a regular stopped — drop the line. Only what the owner said makes a standing fact — a 사장님 line of the transcript, or a line of `previous` that records the owner saying it; a supplier's terms, hours or a price that the assistant read on a page or in a result are never one, however standing they sound — they stay a dated line that says the assistant read them, in `previous` too. When `previous` was written before this rule, its dated lines still hold standing facts the owner stated (a deadline every month, someone's weekdays): take each such fact out of its dated line and write it in the block, once — the dated line keeps the rest of its day — and leave every dated line of something the assistant read as it is.",
   "- Keep details the assistant read on web pages that it did not repeat to the owner, when they could matter later.",
   "- Keep what is still open or waiting. Drop greetings, small talk, and steps of browsing that led nowhere.",
   `- At most ${SUMMARY_MAX_CHARS} characters. When it would be longer, shorten or drop the oldest settled items first; never drop anything from the transcript's last day, or anything still open.`,
@@ -349,7 +334,7 @@ export function createDaySummarizer(
     };
     const answer = await askModel(call, ask);
     if (!answer.ok) throw new Error(`summary: ${answer.because}`);
-    const whole = withoutPlaceholderLines(answer.text);
+    const whole = answer.text;
     const summary = boundedSummary(whole);
     if (!summary) throw new Error("summary: unreadable");
     const cut = cutOf(whole, summary, day);

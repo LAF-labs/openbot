@@ -7,11 +7,11 @@
  * AND the bytes are text.
  */
 import { fileTypeFromBuffer } from "file-type";
-import { UPLOADS_DIRECTORY } from "../../../shared/file-scope";
 import {
   ATTACHMENT_TYPES,
   type AttachmentKind,
 } from "../../../shared/attachments";
+import { UPLOADS_DIRECTORY } from "../../../shared/file-scope";
 
 export type DetectedType = {
   mimeType: string;

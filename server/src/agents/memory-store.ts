@@ -86,7 +86,8 @@ const lineOf = (row: MemoryRow): NotebookLine & { createdAt: Date } => ({
   content: row.content,
   createdAt: row.createdAt,
   slot: isNotebookSlot(row.slot) ? row.slot : null,
-  source: row.source === "owner" ? "owner" : "bot",
+  source:
+    row.source === "owner" ? "owner" : row.source === "night" ? "night" : "bot",
   confirmed: row.source === "owner" || row.confirmedAt !== null,
 });
 
@@ -747,7 +748,7 @@ export function createAgentMemoryStore(
       const evidence =
         options.evidence !== undefined
           ? options.evidence
-          : source === "bot"
+          : source !== "owner"
             ? (hooks.evidenceFor?.(agentId) ?? null)
             : null;
       if (!text || text.length > MAX_MEMORY_LENGTH) return null;
@@ -775,7 +776,8 @@ export function createAgentMemoryStore(
        * forgetting undone by the next turn. Word for word here; a paraphrase is the hourly
        * curation's to catch (`agents/memory-curation.ts`).
        */
-      if (source === "bot") {
+      // The close's night line is held to this too (`standing-facts.ts`): the owner's word on 수첩 wins.
+      if (source !== "owner") {
         const forgotten = await ownerForgottenLines(
           database,
           agentId,

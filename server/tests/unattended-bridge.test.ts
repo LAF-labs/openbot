@@ -1,15 +1,15 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { HttpAgent } from "@ag-ui/client";
 import type { CompletionProvider } from "../../agent-bot/src/index";
+import { CONNECT_CARD, GALLERY_DECISIONS } from "../../shared/tools/gallery";
 import { listTools as gmailTools } from "../src/plugins/gmail-rest";
-import { toolNameFor } from "../src/plugins/store";
 import { PUBLIC_DATA_TOOLS } from "../src/plugins/public-data-rest";
+import { toolNameFor } from "../src/plugins/store";
 import {
   createUnattendedTools,
   runUnattended,
   type UnattendedToolkit,
 } from "../src/runner/unattended";
-import { CONNECT_CARD, GALLERY_DECISIONS } from "../../shared/tools/gallery";
 
 /**
  * A routine reaching a connected service through the bridge, over the real wire.

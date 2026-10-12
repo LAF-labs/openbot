@@ -15,8 +15,8 @@ import {
 import type { ActionPolicy } from "../src/computer/policy";
 import type { SnapshotResult } from "../src/computer/schema";
 import { LoginSealError } from "../src/logins/crypto";
-import { LoginRefused } from "../src/logins/store";
 import type { SavedLogin } from "../src/logins/store";
+import { LoginRefused } from "../src/logins/store";
 
 /**
  * A LOGIN A PERSON SAVED FOR A SITE ANSWERS A REQUEST FOR ITS SIGN-IN'S VALUES (2026-10-10, record

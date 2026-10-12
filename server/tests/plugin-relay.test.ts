@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { loadConfig } from "../src/config";
 import {
-  CATALOGUE,
   authEndpointsFor,
+  CATALOGUE,
   catalogueEntry,
 } from "../src/plugins/catalogue";
 import {

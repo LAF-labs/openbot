@@ -21,7 +21,6 @@
  */
 import type { Tool } from "@ag-ui/client";
 import { askOutcome, PERSON_WAIT_MS } from "../../../shared/person-wait";
-import { secretFieldsOf } from "../../../shared/secret-ask";
 import { isPersona } from "../../../shared/persona";
 import {
   noteCodesOf,
@@ -31,6 +30,7 @@ import {
   TOOL_RESULT_KO,
   toolResultText,
 } from "../../../shared/prompt/tool-results.ko";
+import { secretFieldsOf } from "../../../shared/secret-ask";
 import { CORE_TOOL_NAMES, serverKeyOf } from "../../../shared/tools/bridge";
 import {
   COMPUTER_TOOLS,
@@ -38,17 +38,17 @@ import {
   drivesTheBrowser,
 } from "../../../shared/tools/computer";
 import {
+  type ComputerOutcome,
+  computerReplyOutcome,
+  navigationOutcome,
+} from "../../../shared/tools/computer-reply";
+import {
   CONVERSATION_COMPUTER_TOOLS,
   DELEGATE,
   DELEGATED_MODES,
   type DelegatedMode,
   delegateTargetOf,
 } from "../../../shared/tools/delegate";
-import {
-  type ComputerOutcome,
-  computerReplyOutcome,
-  navigationOutcome,
-} from "../../../shared/tools/computer-reply";
 import {
   type AccountState,
   accountStatesIn,
@@ -64,11 +64,11 @@ import {
   withAccountStates,
 } from "../../../shared/tools/gallery";
 import { isGoalToolName } from "../../../shared/tools/goals";
-import { isProjectToolName } from "../../../shared/tools/projects";
 import {
   PAUSED_TOOL_DESCRIPTION,
   type WithheldTools,
 } from "../../../shared/tools/paused";
+import { isProjectToolName } from "../../../shared/tools/projects";
 import {
   MANAGE_ROUTINE,
   REMEMBER,
@@ -91,6 +91,11 @@ import {
   recordAuditEvent,
 } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
+import type {
+  ProjectAnswer,
+  ProjectAsker,
+  ProjectToolkit,
+} from "../channels/project-tool";
 import type { ComponentStore } from "../components/store";
 import type { ApprovalRegistry } from "../computer/approvals";
 import { STALE_REFS } from "../computer/client";
@@ -104,18 +109,14 @@ import { codeFor, isBadRequest, statusFor } from "../computer/routes";
 import { BOTS_OWN_LOOK, readFileInputOf } from "../computer/schema";
 import { snapshotForModel } from "../computer/snapshot-lines";
 import { describeFailure } from "../failure-text";
-import type {
-  ProjectAnswer,
-  ProjectAsker,
-  ProjectToolkit,
-} from "../channels/project-tool";
 import type { GoalStore } from "../goals/store";
 import { goalApprovals, goalTools } from "../goals/tools";
 import { log } from "../log";
+import { createShownGuard } from "../logins/shown";
+import type { LoginVault } from "../logins/store";
 import { McpServerError } from "../plugins/mcp";
 import type { ConnectionSwitch } from "../plugins/overview-routes";
 import { TOOL_SERVER_FAILED } from "../plugins/routes";
-import { TIMEOUT_MS } from "../plugins/timeouts";
 import {
   BotNotDrivableError,
   CatalogueEntryUnknownError,
@@ -123,11 +124,10 @@ import {
   PluginRefusedError,
   type PluginStore,
 } from "../plugins/store";
+import { TIMEOUT_MS } from "../plugins/timeouts";
 import { RoutineError } from "../routines/errors";
 import type { RoutineSchedule } from "../routines/schedule";
 import type { RoutineService } from "../routines/service";
-import { createShownGuard } from "../logins/shown";
-import type { LoginVault } from "../logins/store";
 import {
   type LoopExecutor,
   type LoopOutcome,

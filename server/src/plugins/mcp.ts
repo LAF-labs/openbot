@@ -1,7 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { TIMEOUT_MS } from "./timeouts";
 import { cutAtCodeUnits } from "../../../shared/sound-text";
+import { TIMEOUT_MS } from "./timeouts";
 
 /**
  * The only place in this deployment that speaks MCP to somebody else's server.

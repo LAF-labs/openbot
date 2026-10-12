@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   mkdir,
   mkdtemp,
-  readdir,
   readFile as readDisk,
+  readdir,
   rm,
   stat,
   writeFile,
@@ -50,8 +50,8 @@ import {
   NOTE,
   PAYROLL,
   RULES,
-  SPELLING_WALK_MS,
   SECRET,
+  SPELLING_WALK_MS,
   spellingsOf,
 } from "./support/path-spellings";
 

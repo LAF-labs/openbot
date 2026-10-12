@@ -3,9 +3,9 @@ import { randomUUID } from "node:crypto";
 import type { AbstractAgent } from "@ag-ui/client";
 import { eq, inArray } from "drizzle-orm";
 import type { AgentActor } from "../src/agents/profile-types";
+import type { AuditEventInput } from "../src/audit";
 import { createDeploymentAdmission } from "../src/auth/admission";
 import { createSignInAllowlist } from "../src/auth/allowlist";
-import type { AuditEventInput } from "../src/audit";
 import { createDatabase } from "../src/db/client";
 import {
   agentProfiles,

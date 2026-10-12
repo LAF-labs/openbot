@@ -16,9 +16,9 @@ import {
   recordAuditEvent,
 } from "../../audit";
 import type { PendingApproval } from "../approvals";
+import type { HighRiskVerdict } from "../high-risk";
 import type { PolicyDecision } from "../policy";
 import type { SnapshotElement } from "../schema";
-import type { HighRiskVerdict } from "../high-risk";
 import type { AllowanceTier } from "../standing-approvals";
 import { originOf, pageForTrail } from "./addresses";
 import type { ActionActor } from "./caller";

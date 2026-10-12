@@ -7,14 +7,15 @@
  * it writes (the trail's rows) and how a call is described (its intent and subject) live beside it,
  * so that this file is the sequence and nothing else.
  */
+
+import { readableName } from "../../../../shared/element-label";
 import { type FileScope, placedForWrite } from "../../../../shared/file-scope";
 import { ACTION_FAILED, type AuditStore } from "../../audit";
 import { describeFailure } from "../../failure-text";
 import { log } from "../../log";
-import { browserOf } from "../bot-id";
 import { type ApprovalRegistry, fingerprintOf } from "../approvals";
 import type { ReviewSubject, ReviewVerdict } from "../auto-review";
-import { readableName } from "../../../../shared/element-label";
+import { browserOf } from "../bot-id";
 import { ComputerUnavailableError, STOPPED } from "../client";
 import {
   type HighRiskCheck,

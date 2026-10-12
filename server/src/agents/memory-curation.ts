@@ -28,7 +28,7 @@
  * job never costs a running conversation its cache. Every run leaves a receipt per Bot
  * (`memory-receipts.ts`), and 오늘 shows the ones that changed something.
  */
-import { and, asc, eq, isNull, lt } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lt } from "drizzle-orm";
 import {
   EVIDENCE_EXCERPT_LENGTH,
   EVIDENCE_KEEP,
@@ -57,6 +57,8 @@ const RESTATED_AT = 0.5;
 const OLDER_LINES = 30;
 /** How much of one owner message the judge reads. */
 const MESSAGE_CHARS = 600;
+/** Whose lines are checked and may be superseded: the Bot's, and the close's night lines. */
+const JUDGED = new Set(["bot", "night"]);
 
 export type CurationRun = {
   agentId: string;
@@ -168,7 +170,8 @@ export function createMemoryCurator(options: {
         .from(agentMemories)
         .where(
           and(
-            eq(agentMemories.source, "bot"),
+            // A line the close wrote at night is judged like the Bot's (`standing-facts.ts`).
+            inArray(agentMemories.source, [...JUDGED]),
             isNull(agentMemories.forgottenAt),
             isNull(agentMemories.confirmedAt),
             isNull(agentMemories.curatedAt),
@@ -240,7 +243,7 @@ export function createMemoryCurator(options: {
               and(
                 eq(agentMemories.agentId, row.agentId),
                 eq(agentMemories.ownerUserId, row.ownerUserId),
-                eq(agentMemories.source, "bot"),
+                inArray(agentMemories.source, [...JUDGED]),
                 isNull(agentMemories.forgottenAt),
                 isNull(agentMemories.confirmedAt),
                 lt(agentMemories.createdAt, row.createdAt),

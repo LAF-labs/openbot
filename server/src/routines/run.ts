@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AbstractAgent, BaseEvent } from "@ag-ui/client";
+import { goalCheckInText } from "../../../shared/prompt/goals.ko";
+import { cutAtCodeUnits } from "../../../shared/sound-text";
 import type { AgentActor } from "../agents/profile-types";
 import { type AuditStore, auditRowLost, recordAuditEvent } from "../audit";
 import type { DeploymentAdmission } from "../auth/admission";
@@ -9,6 +11,7 @@ import { laneOfBrowser } from "../computer/bot-id";
 import type { ActionActor } from "../computer/gateway";
 import type { Database } from "../db/client";
 import type { lafRoutines } from "../db/schema";
+import { withGoal } from "../goals/tools";
 import { log } from "../log";
 import type { BotLane } from "../runner/bot-lane";
 import type { WorkInFlight } from "../runner/in-flight";
@@ -21,20 +24,18 @@ import {
 import { createRunMeter, type RunMeter } from "../telemetry/run-meter";
 import { isSilentAnswer } from "./deliver";
 import {
-  draftOf,
-  type NotepadDraft,
-  readNotepad,
-  withNotepad,
-} from "./notepad";
-import {
   type FeedDraft,
   feedDraftOf,
   reactionsFor,
   recentPostKeys,
   withFeed,
 } from "./feed";
-import { goalCheckInText } from "../../../shared/prompt/goals.ko";
-import { withGoal } from "../goals/tools";
+import {
+  draftOf,
+  type NotepadDraft,
+  readNotepad,
+  withNotepad,
+} from "./notepad";
 import { lastReport } from "./receipts";
 import { runAgentOnce } from "./run-once";
 import { reportRun } from "./run-report";
@@ -44,7 +45,6 @@ import {
   type SettlementOptions,
   settleRun,
 } from "./settlement";
-import { cutAtCodeUnits } from "../../../shared/sound-text";
 
 /**
  * One run of a routine: the Bot asked, the answer settled, the trail told.

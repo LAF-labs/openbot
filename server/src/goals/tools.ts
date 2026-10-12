@@ -22,10 +22,10 @@ import {
 import type { ToolOutcome } from "../runner/turn-loop";
 import type { UnattendedToolkit } from "../runner/unattended";
 import {
-  type GoalPatch,
   GoalNotFound,
-  GoalsFull,
+  type GoalPatch,
   type GoalStore,
+  GoalsFull,
 } from "./store";
 
 /**

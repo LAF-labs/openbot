@@ -31,6 +31,8 @@
  * list and nothing says which query a result answered. A bad argument is HTTP 400 and a bad key 401,
  * both as `{error: {message, type, code}}`. A request with up to five queries is one billed request.
  */
+
+import { cutAtCodeUnits } from "../../../shared/sound-text";
 import { describeFailure } from "../failure-text";
 import type { DeploymentKeyService } from "./deployment-key-runtime";
 import { KST_OFFSET_MS } from "./kst";
@@ -40,7 +42,6 @@ import { asResult } from "./rest-support";
 import { PluginRefusedError } from "./store";
 import { TIMEOUT_MS } from "./timeouts";
 import type { VendorTransport } from "./transport";
-import { cutAtCodeUnits } from "../../../shared/sound-text";
 
 /** The catalogue entry this tool lives under. Prefixes its ref: `web-search/search`. */
 export const WEB_SEARCH_KEY = "web-search";

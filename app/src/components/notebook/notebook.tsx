@@ -739,7 +739,9 @@ function MemoryRow({
   const origin =
     line.source === "owner"
       ? t("You wrote this · {date}", { date: when })
-      : t("Your Bot wrote this in a conversation · {date}", { date: when });
+      : line.source === "night"
+        ? t("Your Bot noted this from what you said · {date}", { date: when })
+        : t("Your Bot wrote this in a conversation · {date}", { date: when });
   const evidence = line.evidence;
 
   return (
@@ -775,7 +777,7 @@ function MemoryRow({
       ) : (
         <p className="text-pretty text-sm">{line.content}</p>
       )}
-      {line.source === "bot" && evidence?.excerpt && !isEditing ? (
+      {line.source !== "owner" && evidence?.excerpt && !isEditing ? (
         <LearnedFrom
           channelId={evidence.channelId}
           excerpt={evidence.excerpt}
@@ -784,7 +786,7 @@ function MemoryRow({
       ) : null}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="text-muted-foreground text-xs">{origin}</span>
-        {line.source === "bot" && line.confirmed ? (
+        {line.source !== "owner" && line.confirmed ? (
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
             {t("You said it is right")}
           </span>

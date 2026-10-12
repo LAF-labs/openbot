@@ -22,8 +22,8 @@ import {
   type FieldWhere,
   NO_SECRET_PENDING,
   STALE_REFS,
-  StaleSnapshotError,
   STOPPED,
+  StaleSnapshotError,
   WorkspaceRequestError,
 } from "../client";
 import { isSecretFieldElement } from "../default-policy";

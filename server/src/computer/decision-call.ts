@@ -36,9 +36,9 @@ import {
   RateLimitError,
   TypeSafeClient,
 } from "@typesafe-ai/sdk";
+import { soundValue } from "../../../shared/sound-text";
 import { log } from "../log";
 import type { NoAnswer } from "./model-call";
-import { soundValue } from "../../../shared/sound-text";
 
 export type DecisionCall = {
   /**

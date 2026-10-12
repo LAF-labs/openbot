@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { withheldMarksIn } from "../../shared/tools/withheld";
 import type { JevAsker } from "../src/context/vendor/fast-jev-compaction/index";
 import {
   findMailSecrets,
@@ -6,7 +7,6 @@ import {
   withholdMailSecrets,
 } from "../src/plugins/mail-secrets";
 import { createWithheldSecrets } from "../src/plugins/withheld-secrets";
-import { withheldMarksIn } from "../../shared/tools/withheld";
 
 /**
  * ONE-TIME CODES AND ACCOUNT LINKS NEVER REACH THE MODEL — synthetic mails, Korean and English.

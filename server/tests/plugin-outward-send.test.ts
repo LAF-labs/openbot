@@ -1,12 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { Message } from "@ag-ui/client";
+import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import type { CallPreview, PendingApproval } from "../src/computer/approvals";
 import { presentable } from "../src/computer/approvals";
-import {
-  type LoopAgent,
-  outcomeOfError,
-  runUnattended,
-} from "../src/runner/unattended";
 import * as cafe24 from "../src/plugins/cafe24-rest";
 import { CATALOGUE, catalogueEntry } from "../src/plugins/catalogue";
 import * as gmail from "../src/plugins/gmail-rest";
@@ -17,7 +13,11 @@ import {
   PluginRefusedError,
 } from "../src/plugins/store";
 import { transportFor } from "../src/plugins/transport";
-import { toolResultText } from "../../shared/prompt/tool-results.ko";
+import {
+  type LoopAgent,
+  outcomeOfError,
+  runUnattended,
+} from "../src/runner/unattended";
 import { stubFetch } from "./support/fetch";
 
 /**

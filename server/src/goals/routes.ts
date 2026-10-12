@@ -2,7 +2,7 @@ import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { isGoalStatus } from "../../../shared/goals";
 import type { AppVariables } from "../auth/guards";
-import { GoalNotFound, GoalsFull, type GoalStore } from "./store";
+import { GoalNotFound, type GoalStore, GoalsFull } from "./store";
 
 /**
  * 목표's doors (muse-shape plan §3.4, phase 9), every one the person's own, behind their session:

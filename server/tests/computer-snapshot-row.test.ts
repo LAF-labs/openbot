@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
+import { Hono } from "hono";
 import type { AuditEventInput, AuditStore } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";
 import type { ComputerClient } from "../src/computer/client";

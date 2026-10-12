@@ -5,9 +5,9 @@ import { CATALOGUE, catalogueEntry } from "../src/plugins/catalogue";
 import * as gmail from "../src/plugins/gmail-rest";
 import * as business from "../src/plugins/google-business-rest";
 import * as calendar from "../src/plugins/google-calendar-rest";
-import { definitionHashOf } from "../src/plugins/laf-contract";
 import * as drive from "../src/plugins/google-drive-rest";
 import * as sheets from "../src/plugins/google-sheets-rest";
+import { definitionHashOf } from "../src/plugins/laf-contract";
 import { transportFor } from "../src/plugins/transport";
 import { stubFetch } from "./support/fetch";
 

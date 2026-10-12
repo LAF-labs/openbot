@@ -61,6 +61,7 @@ import {
   withReminder,
 } from "../../../shared/prompt";
 import { dayLabel } from "../../../shared/prompt/zone";
+import type { OwnerMessage } from "../agents/standing-facts";
 import type { Database } from "../db/client";
 import { lafConversationContexts, lafThreadRuns } from "../db/schema";
 import { describeFailure } from "../failure-text";
@@ -89,6 +90,7 @@ import {
   transcriptOf,
 } from "./day-close";
 import { type SummaryScrubber, scrubByRule } from "./forget-scrub";
+import { textOf } from "./message-text";
 
 type AgentMessage = Parameters<AbstractAgent["run"]>[0]["messages"][number];
 
@@ -363,6 +365,17 @@ export type DayEpochSetting = {
     dialogue: string;
     day: string;
   }) => Promise<void>;
+  /**
+   * The standing facts the owner stated in the span being closed, to 수첩 (`agents/standing-facts.ts`):
+   * a call of its own, apart from the summariser, that only ADDS lines. Its failure never fails
+   * the close.
+   */
+  standing?: (input: {
+    botId: string;
+    threadId: string;
+    /** The owner's messages of the span, oldest first: what a fact's evidence is quoted from. */
+    owner: readonly OwnerMessage[];
+  }) => Promise<unknown>;
   /** The zone a conversation that never said its own is dated in. */
   fallbackTimeZone?: string;
   /** How long since the conversation's last request before a close may be prepared. */
@@ -395,6 +408,18 @@ const CLOSE_RETRY_MS = 30 * 60_000;
  * request).
  */
 const CLOSE_FALLBACK_AFTER = 3;
+
+/** The owner's messages of a span, oldest first, as a standing fact's evidence is quoted from them. */
+function ownerMessagesOf(
+  span: readonly StampedMessage[],
+  threadId: string,
+): OwnerMessage[] {
+  return span.flatMap((message) => {
+    if (message.role !== "user") return [];
+    const text = textOf(message.content).trim();
+    return text ? [{ id: message.id, threadId, text }] : [];
+  });
+}
 
 /** The local day a stamped message was first seen on, or null for a row from before stamps. */
 function dayOf(message: StampedMessage, zone: string): string | null {
@@ -1079,6 +1104,31 @@ export function createConversationStore(
           previous,
           closeDay,
         );
+      }
+      /*
+       * THE STANDING FACTS TO 수첩, before the close can be taken, so the lines it adds are in the
+       * frozen layer of the epoch this close begins. A call of its own over the owner's messages of
+       * the span — not the summariser's: a fact goes to 수첩 without passing through the summary,
+       * and the summary carries dated lines alone. It only adds; nothing is "kept back" in the
+       * summary when 수첩 is full or a line is refused — the fact stays where it always was, in the
+       * conversation, which the Bot searches before saying it does not know (pull request 205). Its
+       * failure is logged and the close goes on: the summary and the dream are not the night's
+       * extraction, and a lost night is tried again by no one — the next day's span is the next
+       * day's. Not for a conversation dropped meanwhile, as the dream below.
+       */
+      if (days.standing && conversation.kept) {
+        try {
+          await days.standing({
+            botId: conversation.botId,
+            threadId: conversation.threadId,
+            owner: ownerMessagesOf(point.span, conversation.threadId),
+          });
+        } catch (error) {
+          log.warn("standing_failed", {
+            bot: conversation.botId,
+            reason: describeFailure(error),
+          });
+        }
       }
       /*
        * THE DREAM, BEFORE THE CLOSE CAN BE TAKEN, so the standing guidance it writes is in the frozen

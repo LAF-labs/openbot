@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
+import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import { createAuditStore } from "../src/audit";
 import { createApprovalRegistry } from "../src/computer/approvals";
 import type { ActionPolicy } from "../src/computer/policy";
@@ -21,7 +22,6 @@ import {
   PluginRefusedError,
 } from "../src/plugins/store";
 import type { VendorTransport } from "../src/plugins/transport";
-import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import { credentialVaultStub } from "./support/credentials";
 import { TEST_POOL } from "./support/database";
 

@@ -34,6 +34,8 @@
  * turn's row, and only one learned outside any turn stands on its own.
  */
 import { and, asc, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
+import type { MiddlewareHandler } from "hono";
+import { Hono } from "hono";
 import {
   BROWSING_TOOL_NAMES,
   type EndingStep,
@@ -42,8 +44,6 @@ import {
   type ResultFacts,
   UNANSWERED_RESULT,
 } from "../../../shared/task-ending";
-import type { MiddlewareHandler } from "hono";
-import { Hono } from "hono";
 import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
 import {

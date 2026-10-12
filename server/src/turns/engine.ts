@@ -20,6 +20,7 @@ import { randomUUID } from "node:crypto";
 import type { BaseEvent, Message, Tool } from "@ag-ui/client";
 import { isFirstMoveEnding } from "../../../shared/first-move";
 import { jsonObjectOf } from "../../../shared/json-object";
+import { toolResultText } from "../../../shared/prompt/tool-results.ko";
 import { streamCutResult } from "../../../shared/stream-cut";
 import { UNANSWERED_RESULT } from "../../../shared/task-ending";
 import { computerTool, drivesTheBrowser } from "../../../shared/tools/computer";
@@ -34,7 +35,6 @@ import {
   projectQuestionText,
   readsOnlyForwarded,
 } from "../../../shared/tools/projects";
-import { toolResultText } from "../../../shared/prompt/tool-results.ko";
 import type { AgentActor } from "../agents/profile-types";
 import {
   classifyTurnFailure,

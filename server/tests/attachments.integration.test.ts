@@ -2,15 +2,15 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import * as XLSX from "xlsx";
-import { createAttachmentService } from "../src/attachments/service";
-import type { WriteFileInput } from "../src/computer/schema";
-import { createDatabase } from "../src/db/client";
-import { agents, channels, lafAttachments, users } from "../src/db/schema";
 import {
   type FileScope,
   MAIN_SCOPE,
   projectScope,
 } from "../../shared/file-scope";
+import { createAttachmentService } from "../src/attachments/service";
+import type { WriteFileInput } from "../src/computer/schema";
+import { createDatabase } from "../src/db/client";
+import { agents, channels, lafAttachments, users } from "../src/db/schema";
 import { TEST_POOL } from "./support/database";
 
 /**

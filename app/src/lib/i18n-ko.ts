@@ -2949,6 +2949,9 @@ export const ko: Record<string, string> = {
   "You wrote this · {date}": "내가 적음 · {date}",
   "Your Bot wrote this in a conversation · {date}":
     "봇이 대화에서 적음 · {date}",
+  // A line the server wrote at the day's close from a standing fact the owner stated.
+  "Your Bot noted this from what you said · {date}":
+    "봇이 내가 한 말을 보고 적음 · {date}",
   "You said it is right": "맞다고 확인함",
   "Over the limit, so your Bot does not read it":
     "자리가 넘쳐서 봇이 읽지 못해요",

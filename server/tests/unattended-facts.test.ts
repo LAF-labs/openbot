@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Message } from "@ag-ui/client";
-import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import { ROUTINE_NEEDS_SAVED_LOGIN_KO } from "../../shared/prompt/mode/routine.ko";
+import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import {
   ActionRefusedError,
   type ComputerGateway,

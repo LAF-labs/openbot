@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { Hono, type MiddlewareHandler } from "hono";
+import { withheldMarksIn } from "../../shared/tools/withheld";
 import { createAuditStore } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";
 import { createApprovalRegistry } from "../src/computer/approvals";
@@ -16,7 +17,6 @@ import {
 } from "../src/db/schema";
 import { createPluginRoutes } from "../src/plugins/routes";
 import { createPluginStore } from "../src/plugins/store";
-import { withheldMarksIn } from "../../shared/tools/withheld";
 import { credentialVaultStub } from "./support/credentials";
 import { TEST_POOL } from "./support/database";
 

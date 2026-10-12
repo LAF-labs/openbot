@@ -5,11 +5,11 @@ import { FILE_PATH_HEADER } from "../../shared/workspace-files";
 import {
   ComputerUnavailableError,
   createComputerClient,
+  ElementNotFoundError,
+  NavigationRefusedError,
   PAGE_TIMEOUT,
   PageLoadFailedError,
   PageLoadTimeoutError,
-  ElementNotFoundError,
-  NavigationRefusedError,
   StaleSnapshotError,
   WorkspaceRefusedError,
   WorkspaceRequestError,

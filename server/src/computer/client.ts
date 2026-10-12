@@ -5,6 +5,12 @@ import {
   PERSONS_LOOK,
 } from "../../../shared/bots-look";
 import {
+  FILE_SCOPE_HEADER,
+  type FileScope,
+  fileScopeHeader,
+} from "../../../shared/file-scope";
+import type { SecretField } from "../../../shared/secret-ask";
+import {
   GEOLOCATION_HEADER,
   geolocationHeaderOf,
   TIME_ZONE_HEADER,
@@ -14,13 +20,7 @@ import {
   HANDOFF_MAX_BYTES,
 } from "../../../shared/workspace-files";
 import type { BrowserWhereabouts } from "../account/whereabouts";
-import {
-  FILE_SCOPE_HEADER,
-  type FileScope,
-  fileScopeHeader,
-} from "../../../shared/file-scope";
 import { BotIdRefusedError, isBotId, isBrowserName } from "./bot-id";
-import type { SecretField } from "../../../shared/secret-ask";
 import type {
   ActionResult,
   BotsLook,

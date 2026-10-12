@@ -16,19 +16,19 @@ import { REPEAT_RULE } from "../../shared/policy-rules";
 import {
   isProductName,
   isRunPath,
-  RUN_PATH_CHARS as WORKBENCH_PATH_CHARS,
   WORKBENCH_LIMITS,
+  RUN_PATH_CHARS as WORKBENCH_PATH_CHARS,
 } from "../../shared/workbench/protocol";
 import type { AuditEventInput, AuditFactCode, AuditStore } from "../src/audit";
 import {
   createApprovalRegistry,
   fingerprintOf,
 } from "../src/computer/approvals";
-import { DEFAULT_ACTION_POLICY } from "../src/computer/default-policy";
 import {
   ComputerUnavailableError,
   WorkspaceRequestError,
 } from "../src/computer/client";
+import { DEFAULT_ACTION_POLICY } from "../src/computer/default-policy";
 import {
   ActionNeedsApprovalError,
   ActionRefusedError,
@@ -75,8 +75,8 @@ import {
   NOTE,
   PAYROLL,
   RULES as PAYROLL_RULES,
-  SPELLING_WALK_MS,
   SECRET,
+  SPELLING_WALK_MS,
 } from "./support/path-spellings";
 import {
   bytes,
