@@ -3129,8 +3129,12 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * (two) and gained the extractor's allowlist (one).
  * And one more from the first Codex pass on that rework, 4615 → 4645: two wordings of one fact
  * in one night are one line, and a quote past the judge's window is not evidence.
- * And one more, 4645 → 4646 on the main this lands on: a correction said across two messages
- * is added on the afternoon's quote.
+ * And five more, 4646 → 4651, when the curation's judge took over support and supersession from
+ * the word-overlap rule (independent review of that rework): a correction written and the old
+ * value retired; another person's days not swallowed; the judge refusing another person, a dropped
+ * negation, a changed recurrence and 10시 read as 10만; the floor alone on the quote's figure and
+ * folded digits; a conversation dropped during the call; two closes at once; the judge down; the
+ * store's night branches; the hour not re-judging a night line.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -3160,7 +3164,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4646, roots: ["server"] },
+  { name: "server", floor: 4651, roots: ["server"] },
   { name: "app", floor: 2446, roots: ["app"] },
   {
     name: "agent-computer",
