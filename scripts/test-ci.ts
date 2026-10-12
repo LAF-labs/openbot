@@ -3056,6 +3056,12 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * read as trillions. Two exception rows and two STAYS rows became by-construction rows. 10 and 7
  * is 17, less the two rows folded, and the property and the 조 test: 4582 and 16 is 4598.
  *
+ * LOWERED 2026-10-12 BY FOURTEEN, `server` 4598 → 4584, when the readings left pull request 204
+ * (Codex's fifth review): the fifteen amounts in scale words, the 조 guard, two GOES rows and a
+ * grid of 10만 원 writings went with the readers they tested; in came Codex's five calls that
+ * are not carried, five fragments that exempt nothing, and the whole number that still does.
+ * The file measures 125 against main's 69; 4528 and 56 is 4584.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
