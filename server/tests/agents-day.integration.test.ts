@@ -355,12 +355,20 @@ beforeAll(async () => {
         "사장님 가게는 매주 월요일에 쉰다. 배달은 오후 네 시까지만 받는다.",
       createdAt: at("2026-09-25T02:00:00Z"),
     },
-    // Learned while the Coupang turn ran: counted on its row, not a row of its own.
+    // Learned while the Coupang turn ran: counted on its row, not a row each; the row names the
+    // newer of the two, for 수첩 to land on.
     {
       id: `day-mem-during-${tag}`,
       agentId: A.bot,
       ownerUserId: A.user,
       content: "쿠팡은 봇을 막는다",
+      createdAt: at("2026-09-25T01:10:12Z"),
+    },
+    {
+      id: `day-mem-during-2-${tag}`,
+      agentId: A.bot,
+      ownerUserId: A.user,
+      content: "쿠팡은 다음에 다시",
       createdAt: at("2026-09-25T01:10:20Z"),
     },
     {
@@ -460,6 +468,7 @@ describe("the Bot's day", () => {
       status: "stopped",
       reason: null,
       learned: 0,
+      memoryId: null,
       label: "예스24에서 책 찾아 줘",
       channelId: A.channel,
       messageId: "call-1",
@@ -472,7 +481,7 @@ describe("the Bot's day", () => {
     ).not.toContain(run("step1"));
   });
 
-  test("a site that refused the Bot is not 끝남, though the ledger says done; what it learned is on its row", async () => {
+  test("a site that refused the Bot is not 끝남, though the ledger says done; what it learned is on its row, the newest by id", async () => {
     const day = await read({ userId: A.user, agentId: A.bot });
     const site = day.items.find(
       (item) => item.kind === "chat" && item.runId === run("site"),
@@ -480,9 +489,11 @@ describe("the Bot's day", () => {
     expect(site).toMatchObject({
       status: "error",
       reason: "laf:site_refused",
-      learned: 1,
+      learned: 2,
+      memoryId: `day-mem-during-2-${tag}`,
     });
     expect(JSON.stringify(day)).not.toContain("쿠팡은 봇을 막는다");
+    expect(JSON.stringify(day)).not.toContain("쿠팡은 다음에 다시");
     // Only the facts cross: never the page it was refused with.
     expect(JSON.stringify(day)).not.toContain("permission");
   });
@@ -519,6 +530,7 @@ describe("the Bot's day", () => {
         channelId: A.channel,
         messageId: null,
         learned: 0,
+        memoryId: null,
       },
       {
         kind: "routine",
@@ -531,6 +543,7 @@ describe("the Bot's day", () => {
         channelId: A.channel,
         messageId: "m-said",
         learned: 0,
+        memoryId: null,
       },
     ]);
   });

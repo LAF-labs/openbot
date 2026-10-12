@@ -2972,6 +2972,12 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * the bounded day in the close taken and in what the summariser is told; a scrub that throws
  * after the summariser answered not counted as its failure).
  *
+ * RAISED 2026-10-11 WITH 오늘'S "기억함" ROW LANDING ON ITS LINE OF 수첩, `app` by three (to 2424).
+ * One in `bot-day.test.tsx`: the remembered row and the turn's "기억함 N" press each go to
+ * 수첩 at the line's id, and the turn's row still opens the conversation. Two in the new
+ * `notebook-jump.test.tsx`: the line is reached by its id once drawn, marked and given the
+ * keyboard; a line forgotten since marks nothing. 1 and 2 is 3; 2421 and 3 is 2424.
+ *
  * RAISED 2026-10-11 FOR WHAT A DELEGATED RUN HANDS BACK, `server` by six (to 4528), all in
  * `turn-engine.integration.test.ts`: a run that ends without an answer hands nothing back through
  * the engine — not what it said on the way — and five on the reading itself (the last reply where
@@ -3007,7 +3013,7 @@ const GROUPS: readonly {
   processes?: number;
 }[] = [
   { name: "server", floor: 4528, roots: ["server"] },
-  { name: "app", floor: 2421, roots: ["app"] },
+  { name: "app", floor: 2424, roots: ["app"] },
   {
     name: "agent-computer",
     /*

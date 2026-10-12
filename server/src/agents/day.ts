@@ -82,6 +82,11 @@ export type BotDayItem =
       reason: string | null;
       /** Facts the Bot remembered during this turn, counted here instead of a row each. */
       learned: number;
+      /**
+       * The newest of those facts, for 수첩 to land on (`#memory-<id>`): the one the person is
+       * likeliest to want to read or fix. Null where it remembered nothing.
+       */
+      memoryId: string | null;
       /** The start of what the person asked. Null for a turn that began before labels existed. */
       label: string | null;
       channelId: string | null;
@@ -104,6 +109,8 @@ export type BotDayItem =
       messageId: string | null;
       /** Facts the Bot remembered during this run. */
       learned: number;
+      /** The newest of them, as on a chat row. */
+      memoryId: string | null;
     }
   | { kind: "learned"; memoryId: string; at: string; head: string }
   /**
@@ -399,20 +406,31 @@ export function createDayReader(options: {
     }
     const learnedAt = memories.map((memory) => memory.createdAt.getTime());
     const counted = new Set<number>();
-    const learnedDuring = (runsOf: readonly RunRow[]): number => {
+    /**
+     * How many facts landed while these runs ran, and the newest of them by id: the row folds them
+     * into "기억함 N", and a press on that lands 수첩 on the last one written.
+     */
+    const learnedDuring = (
+      runsOf: readonly RunRow[],
+    ): { learned: number; memoryId: string | null } => {
       const from = runsOf[0]?.startedAt.getTime() ?? 0;
       const last = runsOf.at(-1);
       const to = runsOf.some((one) => one.status === "running")
         ? Number.POSITIVE_INFINITY
         : (last?.finishedAt ?? last?.startedAt ?? new Date(0)).getTime() +
           LEARNED_SLACK_MS;
-      let count = 0;
-      learnedAt.forEach((when, index) => {
-        if (counted.has(index) || when < from || when > to) return;
+      let learned = 0;
+      let newest: { at: number; id: string } | null = null;
+      for (const [index, when] of learnedAt.entries()) {
+        if (counted.has(index) || when < from || when > to) continue;
         counted.add(index);
-        count += 1;
-      });
-      return count;
+        learned += 1;
+        const id = memories[index]?.id;
+        if (id !== undefined && (newest === null || when >= newest.at)) {
+          newest = { at: when, id };
+        }
+      }
+      return { learned, memoryId: newest?.id ?? null };
     };
 
     const items: BotDayItem[] = [];
@@ -456,7 +474,7 @@ export function createDayReader(options: {
         at: turn.head.startedAt.toISOString(),
         status: ended.status,
         reason: ended.reason,
-        learned: learnedDuring(turn.runs),
+        ...learnedDuring(turn.runs),
         label: turn.head.label,
         channelId: turn.head.threadId
           ? (channelOf.get(turn.head.threadId) ?? null)
@@ -487,7 +505,7 @@ export function createDayReader(options: {
         silent,
         channelId: run.threadId ? (channelOf.get(run.threadId) ?? null) : null,
         messageId: delivered,
-        learned: learnedDuring([run]),
+        ...learnedDuring([run]),
       });
     }
     memories.forEach((memory, index) => {
