@@ -181,6 +181,37 @@ describe("a standing fact the owner stated", () => {
     expect(await rowsOf(bot.id)).toHaveLength(1);
   });
 
+  test("two wordings of one fact in one night are one line; a quote from beyond the judge's window is not evidence", async () => {
+    const { bot, hook, threadId, asked } = await setup(() => [
+      { line: FACT, quote: SAID },
+      { line: "정산 자료: 매달 5일까지 세무사님에게", quote: SAID },
+    ]);
+    const counts = await hook({
+      botId: bot.id,
+      threadId,
+      owner: said(threadId, SAID),
+    });
+    expect(counts).toMatchObject({ added: 1, duplicate: 1 });
+    expect((await rowsOf(bot.id)).map((row) => row.content)).toEqual([FACT]);
+
+    // A statement past the 600 characters the hourly curation's judge reads of a message: the night
+    // reads no further either, so a line is never added only to be retired an hour later as
+    // unsupported (review of pull request 208).
+    const long = `${"주문 확인해 줘. ".repeat(60)}${SAID}`;
+    const {
+      bot: b2,
+      hook: h2,
+      threadId: t2,
+      asked: a2,
+    } = await setup(() => [{ line: FACT, quote: SAID }]);
+    expect(
+      await h2({ botId: b2.id, threadId: t2, owner: said(t2, long) }),
+    ).toMatchObject({ added: 0, unquoted: 1 });
+    expect(a2[0]?.messages[0]?.length).toBe(600);
+    expect(asked).toHaveLength(1);
+    expect(await rowsOf(b2.id)).toEqual([]);
+  });
+
   test("a detail the assistant read on a page is dropped: no quote of the owner's holds its figure, and the page's words are not the owner's", async () => {
     const page = "한일포장: 주문 시 선결제, 50,000원 이상 무료배송";
     const { bot, hook, threadId } = await setup(() => [

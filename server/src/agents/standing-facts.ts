@@ -57,7 +57,7 @@ import { redactText } from "../context/judge-redaction";
 import type { Database } from "../db/client";
 import { agentProfiles } from "../db/schema";
 import { log } from "../log";
-import { excerptOf } from "./memory-curation";
+import { excerptOf, JUDGE_MESSAGE_CHARS } from "./memory-curation";
 import {
   type AgentMemoryStore,
   looksLikeAnInstruction,
@@ -96,8 +96,12 @@ export const MIN_QUOTE_CHARS = 8;
 
 /** How much of the span's owner messages the extractor reads, newest kept: the dream's bound. */
 const OWNER_MAX_CHARS = 24_000;
-/** How much of one owner message is shown and quoted from: a pasted document is not a statement. */
-const MESSAGE_MAX_CHARS = 2_000;
+/**
+ * How much of one owner message is shown and quoted from: exactly what the hourly curation's judge
+ * reads of a message (`memory-curation.ts`), so a night line's evidence is always in front of the
+ * judge an hour later; a pasted document's tail is not a statement either way.
+ */
+const MESSAGE_MAX_CHARS = JUDGE_MESSAGE_CHARS;
 
 /**
  * The extractor's instructions. English, like every server-side judge's; the lines it returns are
@@ -279,7 +283,8 @@ export function createStandingHook(options: {
       ownerUserId,
       200,
     );
-    const written = new Set<string>();
+    /** The lines this night accepted so far: a paraphrase of one of them is a duplicate too. */
+    const written: string[] = [];
     for (const fact of facts) {
       const line = fact.line.replace(/\s+/g, " ").trim();
       if (!line) continue;
@@ -296,8 +301,7 @@ export function createStandingHook(options: {
         continue;
       }
       if (
-        written.has(line) ||
-        liveLines.some((carried) => lineCarries(carried, line))
+        [...liveLines, ...written].some((carried) => lineCarries(carried, line))
       ) {
         counts.duplicate += 1;
         continue;
@@ -326,7 +330,7 @@ export function createStandingHook(options: {
           counts.duplicate += 1;
         } else {
           counts.added += 1;
-          written.add(line);
+          written.push(line);
         }
       } catch (error) {
         if (error instanceof MemoryFullError) counts.full += 1;

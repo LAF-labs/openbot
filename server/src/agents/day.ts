@@ -34,6 +34,8 @@
  * turn's row, and only one learned outside any turn stands on its own.
  */
 import { and, asc, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
+import type { MiddlewareHandler } from "hono";
+import { Hono } from "hono";
 import {
   BROWSING_TOOL_NAMES,
   type EndingStep,
@@ -42,8 +44,6 @@ import {
   type ResultFacts,
   UNANSWERED_RESULT,
 } from "../../../shared/task-ending";
-import type { MiddlewareHandler } from "hono";
-import { Hono } from "hono";
 import type { AppVariables } from "../auth/guards";
 import type { Database } from "../db/client";
 import {
@@ -336,8 +336,9 @@ export function createDayReader(options: {
             eq(agentMemories.agentId, agentId),
             eq(agentMemories.ownerUserId, userId),
             isNull(agentMemories.forgottenAt),
-            // What the Bot learned; a line the owner wrote on 수첩 is not the Bot's day.
-            eq(agentMemories.source, "bot"),
+            // What the Bot learned, in a turn or at the close (`standing-facts.ts`, `night`); a
+            // line the owner wrote on 수첩 is not the Bot's day.
+            inArray(agentMemories.source, ["bot", "night"]),
             gte(agentMemories.createdAt, start),
             lt(agentMemories.createdAt, end),
           ),
