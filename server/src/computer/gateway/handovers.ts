@@ -72,6 +72,21 @@ export function createHandovers(deps: {
    * on and the next run opened the name — cannot mark that run's browser as gone.
    */
   const opens = new Map<string, number>();
+  /**
+   * The open in flight under each name, as a promise that settles either way, on the books from
+   * the moment it is asked for. A letting-go waits for it first (Codex's second read): a run
+   * stopped, or out of time, while its first open was on its way let go of the name before the
+   * open landed — the computer answered "nothing under the name", the name was marked let go of,
+   * and then the open landed and left a browser the next run was handed. Waited for within the
+   * caller's own time, like the letting-go itself.
+   */
+  const opening = new Map<string, Promise<void>>();
+  const abortedOf = (within?: AbortSignal) =>
+    new Promise<void>((resolve) => {
+      if (!within) return;
+      if (within.aborted) resolve();
+      else within.addEventListener("abort", () => resolve(), { once: true });
+    });
 
   /** What this server keeps about one of the Bot's browsers: forgotten with the browser. */
   const forget = (botId: string, computerId: string): void => {
@@ -81,13 +96,13 @@ export function createHandovers(deps: {
   };
 
   /**
-   * Let a background browser go: the computer closes it and throws its profile away, and what
-   * this server kept about it — the last page seen there, what was typed where, a value it held
-   * — is forgotten with it, so nothing later is judged against a page that no longer exists.
-   * Throws as the computer does: a letting-go the computer did not confirm leaves the name owed,
-   * and the next open lets go first (`letGoOf`).
+   * Let the browser go now, waiting for nothing: the computer closes it and throws its profile
+   * away, and what this server kept about it — the last page seen there, what was typed where, a
+   * value it held — is forgotten with it, so nothing later is judged against a page that no
+   * longer exists. Throws as the computer does: a letting-go the computer did not confirm leaves
+   * the name owed, and the next open lets go first (`letGoOf`).
    */
-  const release = async (
+  const releaseNow = async (
     botId: string,
     browser: string,
     within?: AbortSignal,
@@ -98,6 +113,63 @@ export function createHandovers(deps: {
     if ((opens.get(browser) ?? 0) === began) letGoOf.add(browser);
     forget(botId, computerId);
     return result;
+  };
+
+  /** Let the browser go, once an open on its way under the name has landed (`opening`). */
+  const release = async (
+    botId: string,
+    browser: string,
+    within?: AbortSignal,
+  ) => {
+    const pending = opening.get(browser);
+    if (pending) await Promise.race([pending, abortedOf(within)]);
+    return releaseNow(botId, browser, within);
+  };
+
+  /**
+   * Open a background browser for this Bot, fresh or not at all (`letGoOf`): what `openBrowser`
+   * puts on the books and waits for.
+   */
+  const openNow = async (
+    botId: string,
+    browser: string,
+    actor: ActionActor,
+    within?: AbortSignal,
+  ): Promise<BrowserOpened> => {
+    const computerId = computerIdOf(botId, browser);
+    const refused = async (reason: string) => {
+      await writeControlEvent(auditStore, "computer.browser_refused", {
+        botId,
+        actor,
+        computerId,
+        reason,
+      });
+    };
+    if (!letGoOf.has(browser)) {
+      try {
+        await releaseNow(botId, browser, within);
+      } catch {
+        await refused("the browser from the run before could not be let go of");
+        return { opened: false, because: "not_let_go" };
+      }
+    }
+    // Whatever an earlier run of this Bot's saw or put in there is gone with its browser.
+    forget(botId, computerId);
+    letGoOf.delete(browser);
+    opens.set(browser, (opens.get(browser) ?? 0) + 1);
+    const answer = await as(computerId, botId).openBrowser(within);
+    if (!answer.opened) {
+      // Nothing is open under the name: the computer refused to open one.
+      letGoOf.add(browser);
+      await refused(`no room: ${answer.open} of ${answer.cap} open`);
+      return {
+        opened: false,
+        because: "no_room",
+        open: answer.open,
+        cap: answer.cap,
+      };
+    }
+    return { opened: true, open: answer.open, cap: answer.cap };
   };
 
   return {
@@ -198,43 +270,21 @@ export function createHandovers(deps: {
       botId: string,
       browser: string,
       actor: ActionActor,
+      /** The caller's own time: a run that stops, or runs out, cuts the open with it. */
+      within?: AbortSignal,
     ): Promise<BrowserOpened> {
-      const computerId = computerIdOf(botId, browser);
-      const refused = async (reason: string) => {
-        await writeControlEvent(auditStore, "computer.browser_refused", {
-          botId,
-          actor,
-          computerId,
-          reason,
-        });
-      };
-      if (!letGoOf.has(browser)) {
-        try {
-          await release(botId, browser);
-        } catch {
-          await refused(
-            "the browser from the run before could not be let go of",
-          );
-          return { opened: false, because: "not_let_go" };
-        }
-      }
-      // Whatever an earlier run of this Bot's saw or put in there is gone with its browser.
-      forget(botId, computerId);
-      letGoOf.delete(browser);
-      opens.set(browser, (opens.get(browser) ?? 0) + 1);
-      const answer = await as(computerId, botId).openBrowser();
-      if (!answer.opened) {
-        // Nothing is open under the name: the computer refused to open one.
-        letGoOf.add(browser);
-        await refused(`no room: ${answer.open} of ${answer.cap} open`);
-        return {
-          opened: false,
-          because: "no_room",
-          open: answer.open,
-          cap: answer.cap,
-        };
-      }
-      return { opened: true, open: answer.open, cap: answer.cap };
+      // On the books from the first moment, before anything is awaited: a letting-go asked for
+      // while this is on its way — the run's end, after a stop — waits for the whole of it.
+      const attempt = openNow(botId, browser, actor, within);
+      const settled = attempt.then(
+        () => undefined,
+        () => undefined,
+      );
+      opening.set(browser, settled);
+      void settled.then(() => {
+        if (opening.get(browser) === settled) opening.delete(browser);
+      });
+      return attempt;
     },
 
     /**

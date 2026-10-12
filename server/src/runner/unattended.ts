@@ -431,11 +431,13 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
     const page = computerIdOf(botId, where?.browser);
     let opening: Promise<boolean> | undefined;
     let mayHoldBrowser = false;
-    const pageReady = (): Promise<boolean> => {
+    const pageReady = (signal?: AbortSignal): Promise<boolean> => {
       if (!where || !gateway) return Promise.resolve(true);
       if (!opening) {
         mayHoldBrowser = true;
-        opening = gateway.openBrowser(botId, where.browser, actor).then(
+        // With the call's own signal: a run that stops, or runs out of time, while its first open
+        // is on its way cuts the open with it (Codex's second read).
+        opening = gateway.openBrowser(botId, where.browser, actor, signal).then(
           (answer) => {
             if (!answer.opened) {
               opening = undefined;
@@ -573,7 +575,7 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
         // The browser this run's pages are in, and the Bot's own computer for its folder.
         const c = page;
         const folder = botId;
-        if (drivesTheBrowser(name) && !(await pageReady())) {
+        if (drivesTheBrowser(name) && !(await pageReady(call?.signal))) {
           return {
             ok: false,
             code: "laf:browser_failed",

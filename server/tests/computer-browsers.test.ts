@@ -14,6 +14,7 @@ import {
 import {
   BROWSER_HEADER,
   type ComputerClient,
+  ComputerUnavailableError,
   createComputerClient,
   WorkspaceRequestError,
 } from "../src/computer/client";
@@ -171,6 +172,14 @@ describe("the client", () => {
     expect(seen).toEqual([]);
   });
 
+  test("an open the caller had already stopped is not sent", async () => {
+    const { client, seen } = recorded({ opened: true, open: 1, cap: 2 });
+    await expect(
+      client.forBot("bot-1", "run-9").openBrowser(AbortSignal.abort()),
+    ).rejects.toThrow(ComputerUnavailableError);
+    expect(seen).toEqual([]);
+  });
+
   test("opens and lets go of the browser its view names, and hands back the computer's answer", async () => {
     const full = recorded({ opened: false, open: 2, cap: 2 });
     expect(await full.client.forBot("bot-1", "run-9").openBrowser()).toEqual({
@@ -210,7 +219,12 @@ const PAGE = (url: string, snapshotId: number): SnapshotResult => ({
  * What the computer does wrong, when a case says so: a letting-go that does not reach it, or no
  * room for one more background browser. Set by the case, read at the call.
  */
-type Trouble = { release?: () => never; full?: boolean };
+type Trouble = {
+  release?: () => never;
+  full?: boolean;
+  /** An open on its way: the computer answers once this settles. */
+  open?: Promise<void>;
+};
 
 function computer(pages: Record<string, SnapshotResult>) {
   /** Every call, as `<computer's id>:<what was asked>`. */
@@ -268,8 +282,10 @@ function computer(pages: Record<string, SnapshotResult>) {
       }),
       stopComputer: said("stopComputer", { stopped: true, wasRunning: true }),
       runEnded: said("runEnded", { ended: true, closed: 1 }),
-      openBrowser: async () => {
+      openBrowser: async (caller?: AbortSignal) => {
         calls.push(`${id}:openBrowser`);
+        bounds.push(caller);
+        await trouble.open;
         // As the computer answers: a name already open is refreshed, never refused.
         if (trouble.full && !open.has(id)) {
           return { opened: false, open: 2, cap: 2 };
@@ -686,6 +702,43 @@ describe("opening a background browser", () => {
     trouble.full = false;
     await gateway.openBrowser("bot-1", "run-7", ACTOR);
     expect(rows).toHaveLength(1);
+  });
+
+  /*
+   * A RUN STOPPED, OR OUT OF TIME, WHILE ITS FIRST OPEN WAS ON ITS WAY (Codex's second read): the
+   * run's end let go of the name before the open landed — nothing was under it, the name was
+   * marked let go of — and then the open landed and left a browser the next run was handed.
+   */
+  test("a letting-go waits for an open in flight under the name: one that lands late is let go of too, and the name is not marked let go of until it is", async () => {
+    const { gateway, calls, trouble, isOpen } = gatewayOn({});
+    let landed = () => undefined as void;
+    trouble.open = new Promise<void>((resolve) => {
+      landed = resolve;
+    });
+    const opening = gateway.openBrowser("bot-1", "run-7", ACTOR);
+    const releasing = gateway.releaseBrowser("bot-1", "run-7");
+    await Bun.sleep(0);
+    // The letting-go has not been sent: the open is still on its way.
+    expect(only(calls, "releaseBrowser")).toHaveLength(1);
+    expect(calls.at(-1)).toBe("bot-1@run-7:openBrowser");
+
+    landed();
+    expect((await opening).opened).toBe(true);
+    expect(await releasing).toEqual({ released: true });
+    expect(isOpen(BACKGROUND)).toBe(false);
+
+    // Confirmed after the open landed: the next open under the name opens fresh, asking nothing.
+    calls.length = 0;
+    trouble.open = undefined;
+    await gateway.openBrowser("bot-1", "run-7", ACTOR);
+    expect(calls).toEqual(["bot-1@run-7:openBrowser"]);
+  });
+
+  test("an open is given the caller's own time, and reaches the computer with it", async () => {
+    const { gateway, bounds } = gatewayOn({});
+    const within = AbortSignal.timeout(5_000);
+    await gateway.openBrowser("bot-1", "run-7", ACTOR, within);
+    expect(bounds.at(-1)).toBe(within);
   });
 
   test("a letting-go is given the caller's own time, and reaches the computer with it", async () => {
