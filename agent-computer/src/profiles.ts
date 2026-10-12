@@ -86,7 +86,13 @@ import {
   sweepLocks,
   writePointer,
 } from "./profile-dir";
-import { createTabs, IDLE_CLOSE_MS, IDLE_SWEEP_MS, type TabLost } from "./tabs";
+import {
+  createTabs,
+  IDLE_CLOSE_MS,
+  IDLE_SWEEP_MS,
+  type TabLimits,
+  type TabLost,
+} from "./tabs";
 import { samePlace, type Whereabouts } from "./whereabouts";
 import { within } from "./within";
 
@@ -133,6 +139,11 @@ export type ProfileOptions = {
    * Asked when the Bot is over its number of tabs, and a tab that is held is not the one closed.
    */
   holdsTab?: (botId: string, page: Page) => boolean;
+  /**
+   * How many tabs a Bot holds in this browser, and the most it is ever let hold: the main
+   * browser's own where absent (`tabs.ts`), a background browser's fewer (`browsers.ts`).
+   */
+  tabs?: TabLimits;
   /**
    * The browser, the moment it exists and before its first page is handed out.
    *
@@ -255,27 +266,30 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
     cappedOf,
     listRead,
     switchTab,
-  } = createTabs({
-    pages: () => shared?.context.pages() ?? [],
-    now,
-    // Read when a page arrives rather than now, as it always was.
-    onPage: (botId, page) => options.onPage?.(botId, page),
-    onLost: (botId, lost) => options.onTabLost?.(botId, lost),
-    holds: (botId, page) => options.holdsTab?.(botId, page) ?? false,
-    /*
-     * Asked of the browser about the tab, on a session of its own: no line of the page runs, so
-     * no page can say it of itself. A failure is the caller's to read as "not known" (tabs.ts).
-     */
-    reportsToOpener: async (page) => {
-      const session = await page.context().newCDPSession(page);
-      try {
-        const { targetInfo } = await session.send("Target.getTargetInfo");
-        return targetInfo.canAccessOpener;
-      } finally {
-        void session.detach().catch(() => undefined);
-      }
+  } = createTabs(
+    {
+      pages: () => shared?.context.pages() ?? [],
+      now,
+      // Read when a page arrives rather than now, as it always was.
+      onPage: (botId, page) => options.onPage?.(botId, page),
+      onLost: (botId, lost) => options.onTabLost?.(botId, lost),
+      holds: (botId, page) => options.holdsTab?.(botId, page) ?? false,
+      /*
+       * Asked of the browser about the tab, on a session of its own: no line of the page runs, so
+       * no page can say it of itself. A failure is the caller's to read as "not known" (tabs.ts).
+       */
+      reportsToOpener: async (page) => {
+        const session = await page.context().newCDPSession(page);
+        try {
+          const { targetInfo } = await session.send("Target.getTargetInfo");
+          return targetInfo.canAccessOpener;
+        } finally {
+          void session.detach().catch(() => undefined);
+        }
+      },
     },
-  });
+    options.tabs,
+  );
 
   const profileDirectory = (): string =>
     join(root, adoption?.directory ?? DEFAULT_PROFILE_DIR);

@@ -2,7 +2,11 @@ import { serve } from "bun";
 import type { Page } from "playwright";
 import { buildOf } from "../../shared/log";
 import type { Computer } from "./computer";
-import { createBrowsers, sweepBackgroundProfiles } from "./browsers";
+import {
+  BACKGROUND_TAB_LIMITS,
+  createBrowsers,
+  sweepBackgroundProfiles,
+} from "./browsers";
 import { readConfig } from "./config";
 import { deploymentEgress, ignoredEgressVariables } from "./egress";
 import { createEgressGuard, verdictOf } from "./egress-guard";
@@ -162,6 +166,8 @@ const seatAt = (root: string, browser: string | null): Computer => {
     // A Bot's tabs are kept to a number, and the one it used longest ago goes — never one a person
     // has the wheel of or is watching, or one the Bot asked a person for something on.
     holdsTab: (botId, page) => holdsTab(sessions.existing(botId), page),
+    // A background browser holds fewer: it is open beside a main browser that may be full.
+    ...(browser === null ? {} : { tabs: BACKGROUND_TAB_LIMITS }),
     // Before the first page is handed out, so no request this browser ever makes goes unjudged. Once
     // for the browser, not once per Bot: there is one browser.
     onContext: async (context) => {

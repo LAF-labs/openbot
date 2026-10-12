@@ -206,8 +206,20 @@ type TabsBrowser = {
  * Returns its two maps along with what reads and writes them, because `profiles.ts` decides when the
  * browser starts and stops and clears both when it does.
  */
-export function createTabs(browser: TabsBrowser) {
+/**
+ * How many tabs a Bot holds in one browser, and the most it is ever let hold there. The main
+ * browser's are `TAB_CAP` and `TAB_CEILING`; a background browser's are fewer
+ * (`browsers.ts`, `BACKGROUND_TAB_LIMITS`), because it is open BESIDE a main browser that may be
+ * as full as a Bot can make it.
+ */
+export type TabLimits = { cap: number; ceiling: number };
+
+export function createTabs(
+  browser: TabsBrowser,
+  limits: TabLimits = { cap: TAB_CAP, ceiling: TAB_CEILING },
+) {
   const { now } = browser;
+  const { cap, ceiling } = limits;
 
   /**
    * Which Bot each open tab belongs to.
@@ -519,7 +531,7 @@ export function createTabs(browser: TabsBrowser) {
     if (!running) return;
     for (;;) {
       const mine = pagesOf(botId);
-      if (mine.length <= TAB_CAP) return;
+      if (mine.length <= cap) return;
       const on = running.page;
       const reportedTo = new Set(mine.map((page) => openers.get(page)));
       // What may go at all, and of that what nothing reports to.
@@ -527,10 +539,10 @@ export function createTabs(browser: TabsBrowser) {
         (page) => page !== on && !browser.holds(botId, page),
       );
       const free = may.filter((page) => !reportedTo.has(page));
-      const pastCeiling = free.length === 0 && mine.length > TAB_CEILING;
+      const pastCeiling = free.length === 0 && mine.length > ceiling;
       const oldest = oldestOf(pastCeiling ? may : free);
       if (!oldest) {
-        say("tab_cap_exceeded", botId, { tabs: mine.length, cap: TAB_CAP });
+        say("tab_cap_exceeded", botId, { tabs: mine.length, cap });
         return;
       }
       const origin = originOf(oldest.url());
@@ -541,7 +553,7 @@ export function createTabs(browser: TabsBrowser) {
         say("tab_ceiling_closed", botId, {
           origin,
           tabs: mine.length,
-          ceiling: TAB_CEILING,
+          ceiling,
         });
       } else {
         say("tab_capped", botId, { origin, tabs: mine.length });
@@ -602,7 +614,7 @@ export function createTabs(browser: TabsBrowser) {
    */
   const hasRoom = (botId: string): boolean => {
     const mine = pagesOf(botId);
-    if (mine.length < TAB_CEILING) return true;
+    if (mine.length < ceiling) return true;
     const on = live.get(botId)?.page;
     return mine.some((page) => page !== on && !browser.holds(botId, page));
   };
@@ -703,7 +715,7 @@ export function createTabs(browser: TabsBrowser) {
         say("tab_open_refused", botOf, {
           origin,
           tabs: pagesOf(botOf).length,
-          ceiling: TAB_CEILING,
+          ceiling,
         });
         closedFor(running, origin);
         void opened.close().catch(() => undefined);
@@ -722,7 +734,7 @@ export function createTabs(browser: TabsBrowser) {
       // Over its number: the tabs whose answer never came are asked about again, together,
       // before one is chosen to go (`unanswered`).
       const mine = pagesOf(botOf);
-      if (mine.length > TAB_CAP) {
+      if (mine.length > cap) {
         await Promise.all(
           mine
             .filter((page) => page !== opened && unanswered.has(page))

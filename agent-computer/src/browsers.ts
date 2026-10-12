@@ -34,7 +34,7 @@ import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Computer } from "./computer";
-import { IDLE_CLOSE_MS } from "./tabs";
+import { IDLE_CLOSE_MS, type TabLimits } from "./tabs";
 
 /** The header that names the browser a call is for. Absent: the main one. */
 export const BROWSER_HEADER = "x-openbot-browser";
@@ -59,10 +59,28 @@ export const BROWSER_HEADER = "x-openbot-browser";
  * Chromium) all of this is under 2 GiB. A third is never opened: on the heavy pages there is no
  * memory for it, and the process limit (1,024) is half spent at two.
  *
- * WHAT IT DOES NOT BOUND is how many tabs a background browser holds: a Bot's cap there is the same
- * six (`tabs.ts`). Nothing opens one yet; whoever first does should hold it to fewer.
+ * WHAT IT DOES NOT BOUND is how many tabs a background browser holds; that is
+ * `BACKGROUND_TAB_LIMITS` below.
  */
 export const BACKGROUND_BROWSERS = 2;
+
+/**
+ * How many tabs a Bot holds in a background browser, and the most it is ever let hold there.
+ *
+ * FROM THE NUMBERS ABOVE, AND INTERIM UNTIL THE VM IS MEASURED (record §5, "루틴 옮기기"; Codex's
+ * second read of pull request 210). A background browser is open beside the main one, which may
+ * be as full as a Bot can make it: the main browser at six heavy tabs and one background browser
+ * at one is 2.77 GiB of the 3 GiB — 236 MiB left — and a heavy tab is about 172 MiB (ten measured
+ * 1,724 MiB, `tabs.ts`). So beside a full main browser the background browser has room for ONE
+ * more such tab: two in all, and a third is where the kernel takes a renderer. A cap of one would
+ * close a routine's list of results under it at every link that opens a tab, so the cap is two —
+ * and the ceiling is the same two, with no room past it for a chain of windows: a window that
+ * opens a window closes the one before it, and a tab that opens when nothing may go is not taken
+ * (`tabs.ts`, `hasRoom`). A routine signs in with a saved login, not through a popup chain, and
+ * is told of every tab closed for it as any Bot is. The main browser keeps `TAB_CAP` and
+ * `TAB_CEILING`. Nothing but routines opens a background browser today.
+ */
+export const BACKGROUND_TAB_LIMITS: TabLimits = { cap: 2, ceiling: 2 };
 
 /**
  * How long a background browser may go unused before its place is given away: as long as a tab
