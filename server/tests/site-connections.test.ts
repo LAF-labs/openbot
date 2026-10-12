@@ -1,8 +1,8 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, like } from "drizzle-orm";
-import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import type { MiddlewareHandler } from "hono";
 import { siteById } from "../../shared/sites/catalogue";
 import type { AuditEventInput, AuditStore } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";

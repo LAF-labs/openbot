@@ -11,22 +11,22 @@ import {
 import type { AgentActor } from "../src/agents/profile-types";
 import { createApp } from "../src/app";
 import type { AppVariables } from "../src/auth/guards";
+import { ChannelNotFoundError } from "../src/channels/errors";
 import {
   PROJECTS_PER_BOT,
   ProjectLimitError,
 } from "../src/channels/conversations";
-import { ChannelNotFoundError } from "../src/channels/errors";
 import {
   PROJECT_NAME_MAX,
   parseChannelInput,
   parseProjectInput,
 } from "../src/channels/input";
+import { soloConversationOf } from "../src/channels/solo-channel";
 import {
   type ChannelStore,
   createChannelRoutes,
   createChannelStore,
 } from "../src/channels/routes";
-import { soloConversationOf } from "../src/channels/solo-channel";
 import { createThreadIdentity } from "../src/channels/thread-identity";
 import type { AgentChannel } from "../src/channels/types";
 import { loadConfig } from "../src/config";

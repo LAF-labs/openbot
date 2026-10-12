@@ -37,8 +37,8 @@ import type { GuidanceStore } from "./guidance-store";
 import { recordMemoryReceipt } from "./memory-receipts";
 import {
   looksLikeAnInstruction,
-  looksLikeASecret,
   looksLikeAStandingOrder,
+  looksLikeASecret,
 } from "./memory-store";
 
 /** Below this much of the owner's own words in a day, there is no habit to read. */

@@ -43,11 +43,11 @@ import { TOOL_RESULT_CUT } from "../../../shared/spillover";
 import { isDelegated } from "../../../shared/tools/delegate";
 import {
   isProjectReadKind,
+  type ProjectReadKind,
   PROJECT_ANSWER_MAX_CHARS,
   PROJECT_QUESTION_MAX_CHARS,
   PROJECT_SEARCH_HITS,
   PROJECT_TOOLS,
-  type ProjectReadKind,
   READ_PROJECTS,
 } from "../../../shared/tools/projects";
 import { type Ask, askModel, type ModelCall } from "../computer/model-call";

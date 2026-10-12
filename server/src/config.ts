@@ -14,12 +14,6 @@
  * and always have. The four `INTELLIGENCE_*` variables, the mode union and the branch behind them
  * were carried for a deployment shape nobody ever stood up, and are gone — git has them.
  */
-
-import {
-  FIRST_MOVE_KINDS,
-  type FirstMoveKind,
-  isFirstMoveKind,
-} from "../../shared/first-move";
 import {
   DEFAULT_TRUSTED_ORIGIN,
   ownAddressesFrom,
@@ -42,6 +36,11 @@ import {
   type SharedOAuthClient,
   sharedClientsFrom,
 } from "./plugins/shared-clients";
+import {
+  FIRST_MOVE_KINDS,
+  type FirstMoveKind,
+  isFirstMoveKind,
+} from "../../shared/first-move";
 
 /**
  * Where a deployment's value for a variable comes from — which is what the documents are held to.

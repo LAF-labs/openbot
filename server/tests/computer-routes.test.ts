@@ -1,10 +1,10 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
+import type { MiddlewareHandler } from "hono";
 import type { AuditEventInput, AuditStore } from "../src/audit";
 import type { AppVariables } from "../src/auth/guards";
-import { createApprovalRegistry } from "../src/computer/approvals";
 import type { ComputerClient } from "../src/computer/client";
+import { createApprovalRegistry } from "../src/computer/approvals";
 import { createComputerGateway } from "../src/computer/gateway";
 import type { ActionPolicy } from "../src/computer/policy";
 import {

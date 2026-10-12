@@ -14,7 +14,6 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, inArray, sql } from "drizzle-orm";
-import { REMOVED_PROJECT_RESULT } from "../../shared/tools/projects";
 import { createDatabase } from "../src/db/client";
 import {
   agents,
@@ -22,6 +21,7 @@ import {
   lafThreadMessages,
   lafThreadRuns,
 } from "../src/db/schema";
+import { REMOVED_PROJECT_RESULT } from "../../shared/tools/projects";
 import { LafPostgresRunner } from "../src/runner/laf-runner";
 import { createRunLedger } from "../src/runner/run-ledger";
 import {

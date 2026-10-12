@@ -10,12 +10,8 @@ import { join } from "node:path";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
-import {
-  READ_PROJECTS,
-  REMOVED_PROJECT_RESULT,
-} from "../../shared/tools/projects";
-import { createAgentProfileStore } from "../src/agents/profile-store";
 import type { AgentActor } from "../src/agents/profile-types";
+import { createAgentProfileStore } from "../src/agents/profile-store";
 import type { AppVariables } from "../src/auth/guards";
 import {
   anyBeingDeleted,
@@ -42,13 +38,17 @@ import {
   channelMemberships,
   channels,
   channelThreads,
-  lafAttachments,
   lafConversationContexts,
   lafNotifications,
   lafThreadMessages,
   lafThreadRuns,
   users,
+  lafAttachments,
 } from "../src/db/schema";
+import {
+  READ_PROJECTS,
+  REMOVED_PROJECT_RESULT,
+} from "../../shared/tools/projects";
 import { createConversationSearch } from "../src/search/conversations";
 import { TEST_POOL } from "./support/database";
 

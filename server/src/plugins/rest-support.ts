@@ -1,4 +1,3 @@
-import { cutAtCodeUnits } from "../../../shared/sound-text";
 import {
   MAX_RESULT_CHARS,
   type McpCallResult,
@@ -7,6 +6,7 @@ import {
   withoutCredential,
 } from "./mcp";
 import { TIMEOUT_MS } from "./timeouts";
+import { cutAtCodeUnits } from "../../../shared/sound-text";
 
 /**
  * What every REST adapter in this directory does the same way: one request, one result, one refusal.

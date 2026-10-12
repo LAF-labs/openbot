@@ -57,12 +57,12 @@ import { createSignInAllowlist } from "../src/auth/allowlist";
 import type { AuthService } from "../src/auth/guards";
 import { createRoleRepository, lookupBotOwner } from "../src/auth/guards";
 import { createOnboardingStore } from "../src/auth/onboarding";
+import { createProjectDeletion } from "../src/channels/deleting";
 import {
   createSessionRevocation,
   SESSION_REVOKED,
 } from "../src/auth/session-revocation";
 import { streamBotAccess } from "../src/auth/stream-access";
-import { createProjectDeletion } from "../src/channels/deleting";
 import { createChannelEventHub } from "../src/channels/events";
 import { createChannelStore } from "../src/channels/routes";
 import { createThreadIdentity } from "../src/channels/thread-identity";
@@ -100,9 +100,9 @@ import { createPartnerRuntime } from "../src/plugins/partners";
 import { createPluginStore } from "../src/plugins/store";
 import { createRoutineService } from "../src/routines/service";
 import { createSuggestionDismissalStore } from "../src/routines/suggestions";
+import { createConversationSearch } from "../src/search/conversations";
 import { createMessageTimeReader } from "../src/runner/message-times";
 import { createWorkingReader } from "../src/runner/working";
-import { createConversationSearch } from "../src/search/conversations";
 import { createAnswerRatingStore } from "../src/support/answer-ratings";
 import { createDiagnosticsSource } from "../src/support/diagnostics";
 import { createFeedbackStore } from "../src/support/feedback";

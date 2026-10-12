@@ -41,7 +41,6 @@ import {
 import { jsonObjectOf } from "../../../shared/json-object";
 import { settledAttachmentText } from "../../../shared/prompt/attachments.ko";
 import { toolResultText } from "../../../shared/prompt/tool-results.ko";
-import { cutAtCodeUnits } from "../../../shared/sound-text";
 import { redactedInput, redactText, resultExcerpt } from "./judge-redaction";
 import { textOf } from "./message-text";
 import {
@@ -49,9 +48,10 @@ import {
   collectToolCalls,
   compact,
   type JevAsker,
-  type ToolCall,
   type Message as UpstreamMessage,
+  type ToolCall,
 } from "./vendor/fast-jev-compaction/index";
+import { cutAtCodeUnits } from "../../../shared/sound-text";
 
 type AgentMessage = Parameters<AbstractAgent["run"]>[0]["messages"][number];
 

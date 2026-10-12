@@ -7,12 +7,12 @@ import {
   notificationFrame,
 } from "../src/notifications/in-app";
 import { createWebhookAdapter } from "../src/notifications/notify";
+import { solapiSettings } from "../src/plugins/alimtalk/solapi";
 import type {
   EnqueueInput,
   NotificationOutbox,
   NotificationRecord,
 } from "../src/notifications/outbox";
-import { solapiSettings } from "../src/plugins/alimtalk/solapi";
 import type { PartnerConnections } from "../src/plugins/partner-connections";
 import { A_CLICK } from "./support/subjects";
 

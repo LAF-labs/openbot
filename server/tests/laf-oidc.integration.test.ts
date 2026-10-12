@@ -1,11 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { createServer, type Server } from "node:http";
 import {
   createHash,
   generateKeyPairSync,
   randomUUID,
   sign as signRS,
 } from "node:crypto";
-import { createServer, type Server } from "node:http";
 import { eq, inArray, sql } from "drizzle-orm";
 import { createAuth } from "../src/auth";
 import { isSealedToken, openToken } from "../src/auth/token-encryption";

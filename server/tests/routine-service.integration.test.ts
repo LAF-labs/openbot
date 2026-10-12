@@ -25,6 +25,7 @@ import {
   users,
 } from "../src/db/schema";
 import { createRoutineRoutes } from "../src/routines/routes";
+import { createBotLane } from "../src/runner/bot-lane";
 import { nextRunAt } from "../src/routines/schedule";
 import {
   createRoutineService,
@@ -32,7 +33,6 @@ import {
   type RoutineServiceOptions,
 } from "../src/routines/service";
 import { MAX_ROUTINES } from "../src/routines/store";
-import { createBotLane } from "../src/runner/bot-lane";
 import { TEST_POOL } from "./support/database";
 
 /**

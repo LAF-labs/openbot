@@ -22,8 +22,8 @@ import {
   WEB_SEARCH_TOOL_NAME,
 } from "../../shared/tools/bridge";
 import { GOALS_FAMILY } from "../../shared/tools/goals";
-import { NOW_TOOL } from "../../shared/tools/now";
 import { PROJECTS_FAMILY } from "../../shared/tools/projects";
+import { NOW_TOOL } from "../../shared/tools/now";
 import { ALIMTALK_TOOLS } from "../src/plugins/alimtalk/tools";
 import { CATALOGUE } from "../src/plugins/catalogue";
 import { toolNameFor } from "../src/plugins/store";

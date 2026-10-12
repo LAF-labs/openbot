@@ -18,16 +18,16 @@ import {
   IMAGE_MAX_BYTES,
 } from "../../../shared/attachments";
 import {
-  type FileScope,
-  MAIN_SCOPE,
-  placedForWrite,
-} from "../../../shared/file-scope";
-import {
   documentAttachmentText,
   imageAttachmentText,
   PDF_WITHOUT_TEXT,
   SHEET_WITHOUT_ROWS,
 } from "../../../shared/prompt/attachments.ko";
+import {
+  type FileScope,
+  MAIN_SCOPE,
+  placedForWrite,
+} from "../../../shared/file-scope";
 import type { WriteFileInput, WriteFileResult } from "../computer/schema";
 import type { Database } from "../db/client";
 import { lafAttachments } from "../db/schema";

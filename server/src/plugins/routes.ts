@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { SKILL_SLUG_PATTERN, skillSlugOf } from "../../../shared/tools/skills";
+import { BUILT_IN_ORIGIN } from "./built-in-skills";
 import type { AppVariables } from "../auth/guards";
 import {
   ADMIN_REQUIRED,
@@ -9,7 +10,6 @@ import {
   requireAdmin,
   requireBotAccess,
 } from "../auth/guards";
-import { BUILT_IN_ORIGIN } from "./built-in-skills";
 import {
   authEndpointsFor,
   CATALOGUE,

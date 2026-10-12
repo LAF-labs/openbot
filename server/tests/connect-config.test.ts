@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { inArray } from "drizzle-orm";
 import { createDeploymentAdmission } from "../src/auth/admission";
 import { createSignInAllowlist } from "../src/auth/allowlist";
-import { type DeploymentConfig, loadConfig } from "../src/config";
+import { loadConfig, type DeploymentConfig } from "../src/config";
 import { createDatabase } from "../src/db/client";
 import { users } from "../src/db/schema";
 import { connectConfigFor } from "../src/plugins/connect-config";

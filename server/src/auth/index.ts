@@ -1,8 +1,8 @@
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
+import { eq } from "drizzle-orm";
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { genericOAuth } from "better-auth/plugins";
-import { eq } from "drizzle-orm";
 import type { DeploymentConfig } from "../config";
 import type { Database } from "../db/client";
 import {

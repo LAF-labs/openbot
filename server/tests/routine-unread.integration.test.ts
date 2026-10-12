@@ -18,13 +18,13 @@ import {
   users,
 } from "../src/db/schema";
 import { createRoutineService } from "../src/routines/service";
+import { createBotLane } from "../src/runner/bot-lane";
+import { createWorkInFlight } from "../src/runner/in-flight";
 import {
   pauseUnreadRoutines,
   UNREAD_PAUSE_AFTER_MS,
   UNREAD_PAUSE_DELIVERIES,
 } from "../src/routines/unread";
-import { createBotLane } from "../src/runner/bot-lane";
-import { createWorkInFlight } from "../src/runner/in-flight";
 import { TEST_POOL } from "./support/database";
 
 /**

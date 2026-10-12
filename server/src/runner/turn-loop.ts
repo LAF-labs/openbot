@@ -12,8 +12,8 @@
 import { randomUUID } from "node:crypto";
 import type { AbstractAgent, BaseEvent, Message, Tool } from "@ag-ui/client";
 import { jsonObjectOf } from "../../../shared/json-object";
-import { toolResultText } from "../../../shared/prompt/tool-results.ko";
 import { soundText } from "../../../shared/sound-text";
+import { toolResultText } from "../../../shared/prompt/tool-results.ko";
 import { STEP_NOT_REACHED } from "../../../shared/task-ending";
 import { ACTING_COMPUTER_TOOLS, roundEndsAfter } from "./round-stop";
 
