@@ -3116,6 +3116,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * and hold none of the table's numbers, and every value under a name that is not the subject's is
  * part of the fact and not the fact.
  *
+ * RAISED 2026-10-12 WITH THE STANDING FACTS ADDED TO 수첩 BY A CALL OF THEIR OWN, `server` 4601 →
+ * 4615: fifteen in `standing-to-notebook.test.ts` (the quote found whole in one message after
+ * NFKC and whitespace; not found, spread or changed; the eight-character floor; every figure in
+ * the quote; the extractor's call by key, redacted, and an unreadable answer a failure; the close
+ * handing the span's owner messages over and the morning carrying dated lines alone; the night
+ * failing without failing the close; a summary with undated lines carried as text) and
+ * `standing-notebook.integration.test.ts` (a night line with its evidence reaching the prompt and
+ * never written twice; a page's claim dropped on its quote; a forgotten line never written again;
+ * the floors; a full 수첩 counted and nothing kept back; the curation judging a night line), less
+ * one: `memory-forgetting.test.ts` lost the placeholder tests of the summariser's standing block
+ * (two) and gained the extractor's allowlist (one).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
