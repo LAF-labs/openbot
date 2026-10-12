@@ -74,38 +74,40 @@ export function distinctiveWords(fact: string): string[] {
 }
 
 /**
- * THE NUMBERS A TEXT SAYS, each as one canonical value with the unit said after it, if any. The
- * first rule took any 3+-digit run of the fact as a substring of the line's digits, so forgetting
- * a jam sold in 300g jars dropped every line with order 20260300 or 300 lids in it, and a unit
- * price every line its digits ran through — 168 unrelated dated lines on a run's real summaries
- * (third review of pull request 196). Muse documents "forget" as removing the named thing and
- * what is related to it; a shared digit string is not relatedness. Two cuts that read tokens
- * instead each lost a writing of the same number the summariser uses (`11,000원에는`, `010 1234-
- * 5678`, `300그램병`, `2026년 10월 11일` — the two reviews of pull request 204), so the clause
- * compares VALUES, read the same way on both sides:
+ * THE NUMBER CLAUSE, BY CONSTRUCTION. The first rule took any 3+-digit run of the fact as a
+ * substring of the line's digits, so forgetting a jam sold in 300g jars dropped every line with
+ * order 20260300 or 300 lids in it — 168 unrelated dated lines on a run's real summaries (third
+ * review of pull request 196). Four cuts of a reading that compared tokens, then canonical
+ * numbers, each lost a writing of the same number the summariser uses (`11,000원에는`, `010
+ * 1234-5678`, `300그램병`, `2026년 10월 11일`, `1억2천만`, `300/500/700g`, `300분` — the four reviews
+ * of pull request 204): a parser of Korean numbers always has one more reading, and a line it
+ * misreads is a forgotten fact kept. So the clause is built so that what the first rule carried
+ * is carried, with two exemptions that can be checked, and a reading that can only ADD:
  *
- *   - full-width digits and ㎏ as their plain forms; thousands commas removed;
- *   - a date with its year, written `2026-10-11`, `2026.10.11`, `2026/10/11` or `2026년 10월
- *     11일`, is one value, yyyymmdd; a short date or a decimal (`9/14`, `9.21`, `3.5`) is none;
- *   - an identifier — a phone, a business registration, an account — is one value whatever
- *     separators it is written with (`010-1234-5678`, `010.1234.5678`, `010 1234 5678`, `(010)
- *     1234-5678`): three or more digit groups joined by spaces, hyphens, dots, slashes or
- *     brackets, or two or more when the first group starts with 0, the way a phone does. Three,
- *     not two, otherwise: `9/14 20260300번` is a day and an order number, 59 times on the run's
- *     real summaries, and `11,000-12,000원` is a range;
- *   - an amount in scale words is its value: `1만8천원` is 18000, `10만 원` is 100000, `300만`
- *     is 3000000 — so 300만 원 never meets 300g;
- *   - any other run of digits is a value as written, leading zeros kept; a number glued to the
- *     word before it (잼300g) is found all the same;
- *   - the unit is the longest recognised spelling at the START of what follows the number, one
- *     space allowed (`UNITS`): `g병` is g, `그램병` is g, `원에는` is 원, `kg` is never g; a tail
- *     that no spelling starts — `이다`, `번째` is 번 — is no unit.
+ *   carried = (oldSubstringCarries AND NOT clearlyAnotherNumber) OR readingsMeet
  *
- * THE INVARIANT (second review of pull request 204): every (line, fact) pair the substring rule
- * carried is still carried, except where the digit run they share is part of a longer value on
- * either side (20260300번 for 300g; 2026 for a date) or the two sides say different recognised
- * units (300개 for 300g, 11,000개 for 11,000원). `memory-forgetting.test.ts` walks a grid of
- * writings for it; the run's real summaries were walked by hand with the same check.
+ *   - `oldSubstringCarries` is the first rule, as it was, kept as a function so the dated
+ *     differential cannot drift — on the text as written and on the text folded (full-width
+ *     digits, every dash, every space, the middle dots), which can only find more;
+ *   - `clearlyAnotherNumber` exempts a line only when EVERY place a number of the fact's occurs
+ *     in it is positively something else: (a) inside a longer run of digits with nothing between
+ *     them (the 300 in 20260300; not the 300 in 300/500/700, not a group of an identifier), or
+ *     (b) followed by a recognised unit of a DIFFERENT DIMENSION than the one after the fact's
+ *     number (300개 for 300g; not 300분 for 300명, since 분 counts people too; not 300kg for 300g).
+ *     An unrecognised or absent unit on either side, or anything in doubt, is not exempt: the
+ *     line goes, since keeping what a person asked to forget is the worse error, as the head of
+ *     this file says;
+ *   - `readingsMeet` is what the clause adds on top: both sides read as the numbers they say
+ *     (`numbersIn` — an amount in scale words as its value, an identifier as one value whatever
+ *     its separators, a date with its year as one value) and the same whole value met. It never
+ *     takes a carry away, so a reading that goes wrong — 조 as a counter, a numeric list — can at
+ *     worst add one.
+ *
+ * THE INVARIANT, by that construction: every (line, fact) pair the first rule carried is still
+ * carried unless `clearlyAnotherNumber` says why, and the why is (a) or (b). `memory-forgetting
+ * .test.ts` walks it over every pair it holds and over Codex's quoted calls; the run's real
+ * summaries were walked with the same functions. Muse documents "forget" as removing the named
+ * thing and what is related to it; the dimensions are where relatedness can be told for sure.
  */
 export type SaidNumber = { value: string; unit: string };
 
@@ -157,6 +159,174 @@ const UNITS: ReadonlyArray<[spelling: string, unit: string]> = (
     ["프로", "%"],
   ] as Array<[string, string]>
 ).sort((a, b) => b[0].length - a[0].length);
+
+/**
+ * What a unit measures. A fact's 300g and a line's 300개 are different things; 300분 and 300명
+ * may be the same people, and 300kg and 300g are the same dimension said in another unit.
+ * Spellings are matched longest first at the start of what follows a number, one space allowed.
+ */
+const DIMENSIONS: ReadonlyArray<[spellings: string[], dimensions: string[]]> = [
+  [
+    [
+      "kg",
+      "mg",
+      "g",
+      "t",
+      "톤",
+      "킬로그램",
+      "밀리그램",
+      "그램",
+      "그람",
+      "킬로",
+      "키로",
+    ],
+    ["weight"],
+  ],
+  [["ml", "cc", "l", "밀리리터", "밀리", "리터"], ["volume"]],
+  [
+    ["mm", "cm", "km", "m", "밀리미터", "센티미터", "센티", "미터", "킬로미터"],
+    ["length"],
+  ],
+  [
+    [
+      "원",
+      "₩",
+      "만원",
+      "만 원",
+      "천원",
+      "천 원",
+      "억원",
+      "억 원",
+      "달러",
+      "엔",
+      "유로",
+    ],
+    ["money"],
+  ],
+  [
+    [
+      "개",
+      "ea",
+      "병",
+      "박스",
+      "상자",
+      "장",
+      "건",
+      "통",
+      "봉",
+      "세트",
+      "묶음",
+      "캔",
+      "팩",
+      "줄",
+      "쌍",
+      "켤레",
+      "권",
+      "대",
+      "마리",
+      "송이",
+      "알",
+      "판",
+      "잔",
+    ],
+    ["count"],
+  ],
+  [["명", "인"], ["people"]],
+  [["분"], ["people", "time"]],
+  [["시간", "시", "초", "일", "주", "월", "년", "개월", "분기"], ["time"]],
+  [["%", "퍼센트", "프로"], ["share"]],
+];
+const DIMENSION_SPELLINGS: ReadonlyArray<
+  [spelling: string, dimensions: string[]]
+> = DIMENSIONS.flatMap(([spellings, dimensions]) =>
+  spellings.map((spelling): [string, string[]] => [spelling, dimensions]),
+).sort((a, b) => b[0].length - a[0].length);
+
+/** The dimensions of the unit said at `at` in the text, one space allowed; null when none is. */
+function dimensionsAt(text: string, at: number): string[] | null {
+  const tail = text.startsWith(" ", at) ? text.slice(at + 1) : text.slice(at);
+  const found = DIMENSION_SPELLINGS.find(([spelling]) =>
+    tail.startsWith(spelling),
+  );
+  return found ? found[1] : null;
+}
+
+/** The dimensions of a unit by its name, for the readings. */
+const dimensionsOf = (unit: string) =>
+  DIMENSION_SPELLINGS.find(([spelling]) => spelling === unit)?.[1] ?? null;
+
+/** A text as digits are read in it: full-width folded, every dash a hyphen, every space a space,
+ * middle dots dots, thousands commas gone, lowercased. */
+const fold = (text: string) =>
+  text
+    .replace(/[\u00b7\u2027\u30fb\u318d\uff65]/g, ".")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\p{Pd}\u2212]/gu, "-")
+    .replace(/\p{Zs}/gu, " ")
+    .replace(/(\d),(?=\d{3})/g, "$1");
+
+/** The fact's numbers as the first rule had them: every run of three digits or more. */
+const digitRuns = (text: string) => text.match(/\d{3,}/g) ?? [];
+
+/**
+ * THE FIRST RULE, as it was on main before pull request 204: any 3+-digit run of the fact,
+ * commas inside a number removed, as a substring of the line's digits. Kept whole so that what
+ * it carried can be shown carried.
+ */
+export function oldSubstringCarries(line: string, fact: string): boolean {
+  const digits = flat(line).replace(/(\d),(?=\d{3})/g, "$1");
+  return digitRuns(fact.replace(/(\d),(?=\d{3})/g, "$1")).some((run) =>
+    digits.includes(run),
+  );
+}
+
+export type Exemption = "longer run" | "other dimension";
+
+/**
+ * Why a line the first rule carried is clearly about another number — one reason per place a
+ * number of the fact's occurs in the line, every one of them (a) or (b) — or null when any
+ * place is in doubt, and the line goes.
+ */
+export function clearlyAnotherNumber(
+  line: string,
+  fact: string,
+): Exemption[] | null {
+  const here = fold(flat(line));
+  const said = fold(flat(fact));
+  const reasons: Exemption[] = [];
+  for (const run of new Set(digitRuns(said))) {
+    if (!here.includes(run)) continue;
+    // The dimensions after the fact's own number, at every place the fact says it whole.
+    const factDimensions: Array<string[] | null> = [];
+    for (const match of said.matchAll(/\d{3,}/g)) {
+      if (match[0] === run) {
+        factDimensions.push(dimensionsAt(said, match.index + run.length));
+      }
+    }
+    for (let at = here.indexOf(run); at >= 0; at = here.indexOf(run, at + 1)) {
+      const end = at + run.length;
+      const before = at > 0 ? (here[at - 1] ?? "") : "";
+      const after = here[end] ?? "";
+      if (/\d/.test(before) || /\d/.test(after)) {
+        reasons.push("longer run");
+        continue;
+      }
+      const lineDimensions = dimensionsAt(here, end);
+      const apart =
+        lineDimensions !== null &&
+        factDimensions.length > 0 &&
+        factDimensions.every(
+          (dimensions) =>
+            dimensions !== null &&
+            !dimensions.some((dimension) => lineDimensions.includes(dimension)),
+        );
+      if (!apart) return null;
+      reasons.push("other dimension");
+    }
+  }
+  return reasons.length > 0 ? reasons : null;
+}
 
 /**
  * An amount in Korean scale words as its value. The words are a hierarchy, not a sum of
@@ -256,7 +426,7 @@ export function numbersIn(text: string): SaidNumber[] {
   // Said in words alone — 천만 원, 백만 원 — only with two words or a unit after it, since `5일
   // 만에` is not ten thousand of anything.
   take(
-    /\d+(?:\s?[조억만천백십](?:\s?\d+)?)+|(?<!\p{L})[조억만천백십](?:\s?\d+)?(?:\s?[조억만천백십](?:\s?\d+)?)*/gu,
+    /\d+(?:\s?(?:조(?=\s?[\d억만천백원])|[억만천백십])(?:\s?\d+)?)+|(?<!\p{L})(?:조(?=\s?[\d억만천백원])|[억만천백십])(?:\s?\d+)?(?:\s?(?:조(?=\s?[\d억만천백원])|[억만천백십])(?:\s?\d+)?)*/gu,
     (match, trailing) => {
       const unit = unitAt(trailing);
       const words = match[0].match(/[조억만천백십]/g)?.length ?? 0;
@@ -278,16 +448,16 @@ function numbersOf(fact: string): SaidNumber[] {
 }
 
 /**
- * Whether the line says the fact's number: the same whole value, and not two different recognised
- * units — the unit unsaid on either side still counts, since a summary writes a run of amounts as
- * `212,000→429,000→646,000원`.
+ * Whether the line, read, says the fact's number: the same whole value, and not two units of
+ * different dimensions — a unit unsaid on either side still counts.
  */
 const saysNumber = (line: readonly SaidNumber[], number: SaidNumber) =>
-  line.some(
-    (said) =>
-      said.value === number.value &&
-      !(said.unit && number.unit && said.unit !== number.unit),
-  );
+  line.some((said) => {
+    if (said.value !== number.value) return false;
+    const a = dimensionsOf(said.unit);
+    const b = dimensionsOf(number.unit);
+    return !(a && b && !a.some((dimension) => b.includes(dimension)));
+  });
 
 /**
  * A dated summary line: `- 9/21: …`, `- 9/14~9/16: …`, `- 2026-09-21: …`, `- 9.21: …`,
@@ -420,19 +590,23 @@ function standingLineCarries(line: string, fact: string): boolean {
 
 /**
  * THE RULE: whether one summary line carries one forgotten fact. The fact word for word, any of
- * its numbers as a whole token (`saysNumber`), or most of its distinctive words (two at least) in
- * the line — a dated line's test; a standing line is also read as `head: body`
- * (`standingLineCarries`).
+ * its numbers (the number clause, by construction — see the head of that section), or most of
+ * its distinctive words (two at least) in the line — a dated line's test; a standing line is also
+ * read as `head: body` (`standingLineCarries`).
  */
 export function lineCarries(line: string, fact: string): boolean {
   const here = flat(line);
   const said = flat(fact);
   if (!here || !said) return false;
   if (here.includes(said)) return true;
+  const firstRule =
+    oldSubstringCarries(line, fact) ||
+    oldSubstringCarries(fold(line), fold(fact));
+  if (firstRule && clearlyAnotherNumber(line, fact) === null) return true;
   const numbers = numbersOf(fact);
   if (numbers.length > 0) {
-    const said = numbersIn(here);
-    if (numbers.some((number) => saysNumber(said, number))) return true;
+    const read = numbersIn(here);
+    if (numbers.some((number) => saysNumber(read, number))) return true;
   }
   const words = distinctiveWords(fact);
   if (words.length === 0) return false;
