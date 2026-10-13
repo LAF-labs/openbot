@@ -58,10 +58,6 @@ updates:
       # every redirect and writes a row for it (server/src/plugins/mcp.ts).
       - dependency-name: "@modelcontextprotocol/sdk"
         versions: [">= 1.32"]
-      # The MCP SDK requires ^3, so a 5 here is a second copy and the boot's preload guards the
-      # wrong one (server/src/index.ts).
-      - dependency-name: eventsource
-        versions: [">= 4"]
       # 0.6.8 rewrote how composition is handled — the path every Korean keystroke takes — and
       # 0.7 adds a peer package. Lands with a person typing Korean into it.
       - dependency-name: prompt-area

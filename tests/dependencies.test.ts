@@ -90,8 +90,6 @@ const DECIDED: Record<string, Record<string, string>> = {
     "cel-js": "the boundary rules' expression language (computer/policy.ts)",
     "drizzle-kit": "migrations",
     "drizzle-orm": "the database",
-    eventsource:
-      "pre-loaded so the MCP SDK's copy is the one the whole graph sees (index.ts)",
     "file-type":
       "what an upload really is, by its bytes (attachments/files.ts)",
     hono: "the API",
