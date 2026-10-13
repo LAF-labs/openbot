@@ -17,6 +17,10 @@ import {
  * `copilotkit-*.js (@ag-ui/client, @copilotkit/core, @copilotkit/react-core)` — the regression audit
  * A4 measured as 706 kB of an 894 kB first load. What a screen asks for once it is drawn is
  * `first-screen.test.tsx`; this is the graph half, on graphs small enough to read.
+ *
+ * CopilotKit's client left the app on 2026-10-13 (`src/lib/copilot/tool-registry.tsx`) and its
+ * names left the list of what must stay lazy with it. The graphs below keep them as the record of
+ * what was measured: the rule reads a chunk's `heavy` list, whatever is named in it.
  */
 
 const chunk = (
@@ -67,9 +71,7 @@ describe("what counts as belonging behind the boundary", () => {
     // The first run of the check refused a clean build over this one: `main.tsx` imports it, and a
     // stylesheet is not the megabyte of JavaScript the boundary is about.
     expect(
-      lazyOnlyPackageOf(
-        "/r/node_modules/@copilotkit/react-core/dist/v2/index.css",
-      ),
+      lazyOnlyPackageOf("/r/node_modules/streamdown/dist/index.css"),
     ).toBeNull();
     expect(lazyOnlyPackageOf("/r/node_modules/react/index.js")).toBeNull();
   });

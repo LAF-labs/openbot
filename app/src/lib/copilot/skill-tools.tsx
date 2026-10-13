@@ -1,4 +1,4 @@
-import { useFrontendTool } from "@copilotkit/react-core/v2";
+import { useFrontendTool } from "./tool-registry";
 import { normalizeSkillName, SKILL_VIEW } from "@shared/tools/skills";
 import { asStandardSchema } from "@shared/tools/standard-schema";
 import { stepFailureOf } from "@shared/tools/step-result";

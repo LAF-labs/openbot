@@ -1,4 +1,4 @@
-import { useFrontendTool } from "@copilotkit/react-core/v2";
+import { useFrontendTool } from "./tool-registry";
 import { secretAskName, secretFieldsOf } from "@shared/secret-ask";
 import { computerTool } from "@shared/tools/computer";
 import { asStandardSchema } from "@shared/tools/standard-schema";

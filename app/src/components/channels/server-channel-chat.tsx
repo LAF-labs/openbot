@@ -1,6 +1,6 @@
 import type { Message, Tool } from "@ag-ui/core";
 import { Greeting } from "@/components/agents/greeting";
-import { useCopilotKit } from "@copilotkit/react-core/v2";
+import { useCopilotKit } from "@/lib/copilot/tool-registry";
 import { type AttachmentPart, attachmentPartsOf } from "@shared/attachments";
 import { MANAGE_ROUTINE, REMEMBER, UPDATE_PROFILE } from "@shared/tools/self";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -257,9 +257,9 @@ async function readRecord(
  * transcript, tool lines, cards, questions, Stop, 이어서 하기, 다시 시도 and files — drawn from the
  * server's events instead of from an agent running in the page.
  *
- * CopilotKit stays for what it draws: the tool lines and cards are registered renderers, and it is
- * asked which tools this window offers so the turn offers the same ones. Nothing here calls
- * `runAgent`, so no frontend tool's handler ever runs in the page.
+ * The tool lines and cards are registered renderers (`lib/copilot/tool-registry.tsx`), and the
+ * registry is asked which tools this window offers so the turn offers the same ones. No tool's
+ * handler ever runs in the page.
  *
  * History arrives a page at a time (`lib/turns/thread-store.ts`), newest first.
  */

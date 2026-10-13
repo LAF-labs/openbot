@@ -43,7 +43,6 @@ const DECIDED: Record<string, Record<string, string>> = {
   app: {
     "@ag-ui/core": "the AG-UI event and message types the transcript reads",
     "@base-ui/react": "the unstyled primitives under components/ui",
-    "@copilotkit/react-core": "the chat runtime the conversation runs on",
     "@shadcn/react":
       "the message scroller primitive (components/ui/message-scroller.tsx)",
     "@tabler/icons-react": "the icon set",
@@ -148,12 +147,6 @@ const EXCEPTIONS: Record<string, Exception> = {
   "@ag-ui/client@0.0.57": { licence: "MIT", read: "LICENSE" },
   "@ag-ui/encoder@0.0.57": { licence: "MIT", read: "LICENSE" },
   "@ag-ui/proto@0.0.57": { licence: "MIT", read: "LICENSE" },
-  // CopilotKit's two packages without the field; the file is the MIT text
-  // (https://github.com/CopilotKit/CopilotKit/blob/main/LICENSE).
-  "@copilotkit/core@1.67.1": { licence: "MIT", read: "LICENSE" },
-  "@copilotkit/web-inspector@1.67.1": { licence: "MIT", read: "LICENSE" },
-  // Under streamdown's mermaid. No field; the file is the MIT text.
-  "khroma@2.1.0": { licence: "MIT", read: "license" },
   // Browser-support data under browserslist, used at build time by Tailwind and Vite. Attribution
   // only; the data never ships.
   "caniuse-lite@1.0.30001809": { licence: "CC-BY-4.0", read: "LICENSE" },

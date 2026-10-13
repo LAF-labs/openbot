@@ -218,14 +218,18 @@ export default defineConfig({
     /*
      * MEASURED, NOT PICKED: just above the largest chunk this build deliberately produces.
      *
-     * Three chunks clear 500 kB and none of them is ours to shrink — `markdown` at 1,049 kB is one
-     * npm package (Streamdown, with Shiki's core inside it), `copilotkit` at 815 kB is another, and
-     * `emacs-lisp` at 780 kB is a Shiki grammar, one of ~300 that only load when a transcript shows
-     * that language. All three are async: none is fetched before a transcript exists. Leaving the
-     * default 500 meant six warnings on every build, all of them unactionable, which is how a build
-     * teaches people to skim past its warnings. 1100 keeps it a signal — the entry chunk is 331 kB,
-     * so anything that fires this is either a new dependency nobody weighed or the split coming
-     * undone.
+     * Three chunks cleared 500 kB and none of them was ours to shrink — `markdown` at 1,049 kB was
+     * one npm package (Streamdown, with Shiki's core inside it), `copilotkit` at 815 kB another, and
+     * `emacs-lisp` at 780 kB a Shiki grammar, one of ~300 that only load when a transcript shows
+     * that language. All three were async: none was fetched before a transcript existed. Leaving
+     * the default 500 meant six warnings on every build, all of them unactionable, which is how a
+     * build teaches people to skim past its warnings. 1100 keeps it a signal: anything that fires
+     * this is either a new dependency nobody weighed or the split coming undone.
+     *
+     * MEASURED AGAIN 2026-10-13, when CopilotKit's client left the app: it had brought a second,
+     * older Streamdown, and Shiki, Mermaid and KaTeX were that one's. `markdown` is 483 kB now, the
+     * grammars are gone, and the largest chunk is the entry at 564 kB (566 kB the build before).
+     * The limit is left where it was: it was never the entry's to pass under by a hair.
      */
     chunkSizeWarningLimit: 1100,
     rollupOptions: {

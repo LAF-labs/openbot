@@ -1,5 +1,5 @@
 import type { Message } from "@ag-ui/core";
-import { useRenderToolCall } from "@copilotkit/react-core/v2";
+import { useRenderToolCall } from "@/lib/copilot/tool-registry";
 import type { AttachmentPart } from "@shared/attachments";
 import type { FeedQuotePart } from "@shared/feed";
 import { stepFailureOf } from "@shared/tools/step-result";

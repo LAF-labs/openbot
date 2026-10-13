@@ -1,4 +1,4 @@
-import { useFrontendTool } from "@copilotkit/react-core/v2";
+import { useFrontendTool } from "./tool-registry";
 import { stepFailureOf } from "@shared/tools/step-result";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";

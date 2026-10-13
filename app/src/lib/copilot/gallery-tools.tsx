@@ -1,4 +1,4 @@
-import { useFrontendTool, useHumanInTheLoop } from "@copilotkit/react-core/v2";
+import { useFrontendTool, useHumanInTheLoop } from "./tool-registry";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
 import { holdsSomethingToDraw } from "@/components/gallery/gallery-card";
@@ -110,8 +110,8 @@ export function CardCall({
     );
   }
   /*
-   * STILL OUT: drawn from what has arrived so far. The runtime parses the arguments as they stream
-   * (`partialJSONParse`), so a card grows as the Bot writes it — a title, then a figure, then the
+   * STILL OUT: drawn from what has arrived so far. The registry reads the arguments as they stream
+   * (`partial-json.ts`), so a card grows as the Bot writes it — a title, then a figure, then the
    * next — and the renderers take any partial shape (#179). That is the card being written, and it
    * is left as it was.
    */
