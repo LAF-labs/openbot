@@ -10,6 +10,8 @@ import { createAgentProfileStore } from "../src/agents/profile-store";
 import { type AuditEventInput, createAuditStore } from "../src/audit";
 import { createDeploymentAdmission } from "../src/auth/admission";
 import { createSignInAllowlist } from "../src/auth/allowlist";
+import { createApprovalRegistry } from "../src/computer/approvals";
+import { createCredentialStore, encryptSecret } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
 import {
   agentGuidance,
@@ -48,6 +50,7 @@ import {
   userRoles,
   users,
 } from "../src/db/schema";
+import { createPluginStore } from "../src/plugins/store";
 import { appendMessages } from "../src/runner/thread-store";
 import { TEST_POOL } from "./support/database";
 
@@ -1422,6 +1425,94 @@ describe("deletion", () => {
       reset: 0,
       released: 1,
     });
+  });
+
+  /**
+   * The one test here that runs the REAL `retireConnectionsFor`, because what it guards is where
+   * the deletion calls it: the vendor is asked to end each connection with a token that is in the
+   * vault, so the call has to come before the transaction that deletes the vault rows. Every other
+   * test in this file stands a stub in its place and could not see the two swapped.
+   */
+  test("asks the connected service to end the connection before the token is deleted", async () => {
+    const person = await makePerson("revoker");
+    alsoMade.push(person);
+    /** 32 zero bytes in base64: a real AES-256 key length, which `importKey` insists on. */
+    const encryptionKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    const refreshToken = `rt-${person.id}`;
+    // A connection to a service the catalogue knows, beside the fixture's own, whose vendor it
+    // does not know and whose secret was never a real one.
+    await database.insert(credentials).values({
+      kind: "mcp_user_token",
+      provider: "notion",
+      encryptedValue: await encryptSecret(encryptionKey, refreshToken),
+      keyId: person.id,
+      metadata: {},
+    });
+    const store = createPluginStore({
+      database,
+      auditStore,
+      credentials: createCredentialStore(database),
+      encryptionKey,
+      policy: () => ({ deny: [], ask: [], allow: ["true"] }),
+      approvals: createApprovalRegistry(),
+    });
+    const deletion = createAccountDeletion({
+      database,
+      retireConnectionsFor: store.retireConnectionsFor,
+      auditStore,
+    });
+
+    const asked: { url: string; token: string | null }[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: unknown, init?: RequestInit) => {
+      asked.push({
+        url: String(url),
+        token: new URLSearchParams(String(init?.body ?? "")).get("token"),
+      });
+      return new Response(null, { status: 200 });
+    }) as unknown as typeof fetch;
+    let result: Awaited<ReturnType<typeof deletion.delete>>;
+    try {
+      result = await deletion.delete({ userId: person.id, by: person.id });
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+
+    // The vendor heard it, with the token — which by now is in no row of ours.
+    expect(asked).toEqual([
+      { url: "https://mcp.notion.com/token", token: refreshToken },
+    ]);
+    expect(result.deleted).toBe(true);
+    expect(result.counts.connectionsRetired).toBe(2);
+    expect(result.counts.vaultTokens).toBe(2);
+    expect(
+      await database
+        .select({ id: credentials.id })
+        .from(credentials)
+        .where(eq(credentials.keyId, person.id)),
+    ).toEqual([]);
+
+    // One row per connection, each saying what its own vendor answered, under the pseudonym.
+    const rows = await database
+      .select({ payload: auditEvents.payload })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.eventType, "mcp.account_disconnected"),
+          sql`${auditEvents.payload} ->> 'actor' = ${result.pseudonym}`,
+        ),
+      );
+    const said = rows
+      .map((row) => row.payload as Record<string, unknown>)
+      .map((payload) => [payload.server, payload.vendorAnswer])
+      .sort();
+    expect(said).toEqual(
+      [
+        ["notion", "confirmed"],
+        [`${person.id}-vendor`, "not_asked"],
+      ].sort(),
+    );
+    expect(JSON.stringify(rows)).not.toContain(refreshToken);
   });
 
   test("says so rather than throwing when the account is already gone", async () => {
