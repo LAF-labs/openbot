@@ -31,6 +31,7 @@ import {
 import {
   describeFile,
   hasNoOneReading,
+  pageForTrail,
   workspacePathOf,
 } from "../src/computer/gateway/addresses";
 import type { ActionPolicy } from "../src/computer/policy";
@@ -351,6 +352,41 @@ describe("a path in the Bot's folder has one spelling", () => {
         ),
       ).toBe("laf:file_path_refused");
     }
+  });
+});
+
+describe("the trail keeps a page address without its query or fragment", () => {
+  test("a parsed address: origin and path, nothing after", () => {
+    expect(
+      pageForTrail(
+        "https://shop.example.test/oauth/return?code=c0de&state=s#x",
+      ),
+    ).toBe("https://shop.example.test/oauth/return");
+  });
+
+  test.each([
+    ["naver.com/login?id=owner&pw=hunter2", "naver.com/login"],
+    ["naver.com/login#token=t0k3n", "naver.com/login"],
+    ["naver.com/login#frag?pw=hunter2", "naver.com/login"],
+    ["?pw=hunter2", ""],
+    ["naver.com/login", "naver.com/login"],
+  ])(
+    "an address that does not parse is cut at its first `?` or `#` too: %s",
+    (written, kept) => {
+      // The string a model wrote for a navigation goes on the row before the computer refuses it,
+      // and without a scheme `new URL` refuses it here first. The catch branch kept it whole.
+      const page = pageForTrail(written);
+      expect(page).toBe(kept);
+      expect(page).not.toContain("hunter2");
+      expect(page).not.toContain("t0k3n");
+    },
+  );
+
+  test("what does not parse is still bounded to 200 characters, after the cut", () => {
+    const long = `${"a".repeat(300)}?pw=hunter2`;
+    const page = pageForTrail(long);
+    expect(page).toHaveLength(200);
+    expect(page).toBe("a".repeat(200));
   });
 });
 
