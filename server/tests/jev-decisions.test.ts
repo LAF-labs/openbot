@@ -396,6 +396,81 @@ describe("the Jev auto-reviewer: allow or ask, never deny", () => {
     expect(sent).toHaveLength(0);
   });
 
+  /*
+   * THE OWNER'S SENTENCE LEAVES REDACTED, AND SO DOES THE ACTION — through the one rule every
+   * other input to a judge goes through (`context/judge-redaction.ts`). Both sides through the
+   * same rule, so a sentence that names an address still matches the label that names it.
+   */
+  const ADDRESS = "sales@shop.example.test";
+  const NAMING = `${ADDRESS} 으로 보내는 메일은 묻지 말고 보내도 돼`;
+  const TO_THAT_ADDRESS: ReviewSubject = {
+    action: "computer_click",
+    subject: {
+      kind: "browser",
+      intent: "activate",
+      host: "mail.example.test",
+      element: { role: "button", name: `${ADDRESS} 에게 보내기` },
+      reason: "policy_ask",
+    },
+  };
+
+  test("the owner's sentence and the action's label leave redacted, the same way", async () => {
+    const { call, sent } = endpoint(() =>
+      answered({
+        covers: { type: "noul", noul: 0.95 },
+        kind: kind(0.1),
+        named: { type: "noul", noul: 0.95 },
+      }),
+    );
+    const log = quietLog();
+    try {
+      const verdict = await createJevAutoReviewer({ call })(
+        NAMING,
+        TO_THAT_ADDRESS,
+      );
+      expect(verdict?.allowed).toBe(true);
+    } finally {
+      log.restore();
+    }
+    expect(JSON.stringify(sent[0]?.body)).not.toContain(ADDRESS);
+    const state = sent[0]?.body.state as {
+      owner_instruction: string;
+      action: { element: { label: string } };
+    };
+    expect(state.owner_instruction).toBe(
+      "[email] 으로 보내는 메일은 묻지 말고 보내도 돼",
+    );
+    expect(state.action.element.label).toBe("[email] 에게 보내기");
+  });
+
+  test("what the fallback is handed is the same redacted pair", async () => {
+    const { call } = endpoint(() => json({}, 502));
+    const handed: { instruction: string; subject: ReviewSubject }[] = [];
+    const log = quietLog();
+    try {
+      await createJevAutoReviewer({
+        call,
+        fallback: async (instruction, subject) => {
+          handed.push({ instruction, subject });
+          return { allowed: false, reason: "" };
+        },
+      })(NAMING, TO_THAT_ADDRESS);
+    } finally {
+      log.restore();
+    }
+    expect(handed).toHaveLength(1);
+    expect(JSON.stringify(handed)).not.toContain(ADDRESS);
+    expect(handed[0]?.instruction).toBe(
+      "[email] 으로 보내는 메일은 묻지 말고 보내도 돼",
+    );
+    expect(handed[0]?.subject.subject.element?.name).toBe(
+      "[email] 에게 보내기",
+    );
+    // The shape the fallback judges is the one it was always handed.
+    expect(handed[0]?.subject.action).toBe("computer_click");
+    expect(handed[0]?.subject.subject.host).toBe("mail.example.test");
+  });
+
   test("a script's run is judged on the files it names, and on nothing a script says", () => {
     expect(
       actionState({
