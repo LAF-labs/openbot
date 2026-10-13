@@ -185,25 +185,26 @@ green gate counts tests, not what they can catch.
 ## How a change lands
 
 **Nothing is pushed to `main`** (owner, 2026-10-02). A change is a branch
-(`laf/<slug>`) and a pull request against `main`. **Codex reviews work, when it
-is ready to merge** (owner, 2026-10-09): a pull request that changes what runs
-is sent to Codex with `@codex review` on its finished head, not reviewed push by
-push along the way. Codex's findings are claims, checked one by one: fixed where
-they are real, answered on the thread with the evidence where they are not,
-never left unanswered. A push that answers them is reviewed again. It is done
-when Codex reacts 👍 or says nothing needs changing, with the checks green — then
+(`laf/<slug>`) and a pull request against `main`. **Bugbot reviews work, when it
+is ready to merge** (owner, 2026-10-09; the reviewer was Codex until 2026-10-13):
+a pull request that changes what runs is sent to Cursor's Bugbot by commenting
+`bugbot run` on its finished head, not reviewed push by push along the way.
+Bugbot's findings are claims, checked one by one: fixed where they are real,
+answered on the thread with the evidence where they are not, never left
+unanswered. A push that answers them is reviewed again, by asking again. It is
+done when Bugbot's read of that head raises nothing, with the checks green — then
 it is merged by rebase, so each commit keeps its message, and its branch is
 deleted. **Only `main` remains.**
 
 A pull request that only records a direction — a decision record under
-`docs/laf/`, a plan — is not sent to Codex. It is the owner's to read, and it
+`docs/laf/`, a plan — is not sent to Bugbot. It is the owner's to read, and it
 merges once the owner has seen it. The 2026-10-08 record went through
 twenty-three rounds that hardened the design of things nothing yet runs; that
 review belongs to the pull requests that build them, where it can be checked
 against code.
 
 The gate runs before the pull request is opened, not instead of it, and a
-reviewer reads a diff: its 👍 is not "verified by using it", and it is not a
+reviewer reads a diff: its clean read is not "verified by using it", and it is not a
 release. Two rounds on the same point is a disagreement, and disagreements are
 the owner's.
 
@@ -230,17 +231,19 @@ evaluation's classifier, deferred to a follow-up. The same night's #189 and
 what it found came back sorted — blocking, worth fixing, left as it is — before
 anything was changed.
 
-The loop, step by step, is the `codex-pr-review` skill (installed for the owner
-in `~/.claude/skills/`). Codex used to review every push to the pull requests
-the owner's GitHub account opens here, by a setting (chatgpt.com → Codex → 설정 →
-코드 검토) that predated the rule above; the owner switched it off on
-2026-10-11. Nothing is reviewed unasked now: a review happens when `@codex
-review` is written on a finished head, at merge time, and a direction record
-is never sent one.
+How Bugbot is set is in the repository, where a pull request can read it and
+cannot change it for itself (Bugbot takes it from the base branch):
+`.cursor/config/bugbot.yaml` — no drafts, never push by push, thorough, no
+rewritten description, and no fixes pushed by the reviewer — and
+`.cursor/BUGBOT.md`, the rules it reviews by. The one switch that is not there is
+the dashboard's (cursor.com → Bugbot → "run only when mentioned"), and it is on:
+nothing is reviewed unasked. Codex used to review every push to the pull requests
+the owner's GitHub account opens here, by a setting that predated the rule above;
+the owner switched that off on 2026-10-11 and left Codex on 2026-10-13.
 
-`AGENTS.md` is where Codex looks first in the repository, after the pull
-request's own title and body. It holds no rules of its own: it sends the
-reviewer to this file and to the pull request template's checklist, whole. It
+`.cursor/BUGBOT.md` is where Bugbot looks first, and `AGENTS.md` is where any
+other agent does. Neither holds rules of its own: each sends the reviewer to
+this file and to the pull request template's checklist, whole. `AGENTS.md`
 restated them once, and four rounds of review found a dropped exception or a
 missing rule in the restatement each time — a copy is a second place for every
 rule to go stale, and a shorter copy reads as the whole contract. A rule is
