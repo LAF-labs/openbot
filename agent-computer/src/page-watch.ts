@@ -175,6 +175,9 @@ export function watchPage(
       void Promise.resolve(download.delete()).catch(() => undefined);
       return;
     }
+    // A project deleted while this lands: the folder refuses the landing (`removeProject`), and
+    // it is said below as a download that failed, the browser's copy deleted — not kept in a
+    // folder made again for nothing to remove.
     void landDownload(
       download,
       workspace.within(scope),

@@ -403,6 +403,16 @@ export function createWorkspace(
     landing = mine.catch(() => undefined);
     return mine;
   };
+  /*
+   * THE PROJECTS WHOSE FOLDER WAS REMOVED, by id, for as long as this process runs. A download
+   * that was on its way when the project was deleted lands after it (`page-watch.ts`): its
+   * `mkdir` made the folder again, for nothing to ever remove (found by reading, 2026-10-13). The
+   * removal is how deletion tells this process (`removeProject`), so it is what is remembered,
+   * and a landing into a removed project's folder is refused as a download that did not arrive.
+   * In memory, and right to be: one process writes this folder, and a download does not outlive
+   * the browser (`docs/laf/deployment-model.md`). An id is a channel's and is never used again.
+   */
+  const removed = new Set<string>();
 
   /**
    * A path that has to be a file: where it really is, and what the disk says about it.
@@ -498,6 +508,12 @@ export function createWorkspace(
     const name = safeDownloadName(suggested);
     // A project's downloads are its own: in its folder, and gone with it.
     const scope = asking.getStore();
+    if (scope?.kind === "project" && removed.has(scope.id)) {
+      throw new WorkspaceFileError(
+        "The project this download was for has been removed.",
+        "laf:file_not_found",
+      );
+    }
     const downloads =
       scope?.kind === "project"
         ? `${projectFolder(scope.id)}/${DOWNLOADS_DIRECTORY}`
@@ -911,30 +927,38 @@ export function createWorkspace(
       if (!isProjectFolderId(id) || !olderCopies.every(isBareFileName)) {
         throw new WorkspacePathError("That is not a project's id.");
       }
-      const root = await realpath(rootPath);
-      const folder = resolve(root, projectFolder(id));
-      const was = await stat(folder).catch(() => null);
-      await rm(folder, { recursive: true, force: true });
-      for (const name of olderCopies) {
-        const copy = resolve(root, UPLOADS_DIRECTORY, name);
-        /*
-         * The name itself, never where a link leads: `lstat` and `unlink` both stop at a link, so
-         * a link goes and its target stays. A folder under that name is not a copy and stays.
-         *
-         * ONLY "IT IS NOT THERE" IS NOT A FAILURE — the clock asking a second time. Anything else
-         * (the disk refusing, a read-only volume) fails the call, as the folder's removal does:
-         * swallowed, the project's rows would go and the copy would stay with nothing naming it.
-         */
-        const found = await lstat(copy).catch((error: unknown) => {
-          if (isMissing(error)) return null;
-          throw error;
-        });
-        if (!found || found.isDirectory()) continue;
-        await unlink(copy).catch((error: unknown) => {
-          if (!isMissing(error)) throw error;
-        });
-      }
-      return was !== null;
+      /*
+       * IN THE DOWNLOADS' OWN QUEUE, so that a download landing at this moment lands first and
+       * goes with the folder, and one that lands after is refused (`removed`, above): between a
+       * landing's look and its `mkdir` the folder could otherwise be removed and made again.
+       */
+      return oneAtATime(async () => {
+        removed.add(id);
+        const root = await realpath(rootPath);
+        const folder = resolve(root, projectFolder(id));
+        const was = await stat(folder).catch(() => null);
+        await rm(folder, { recursive: true, force: true });
+        for (const name of olderCopies) {
+          const copy = resolve(root, UPLOADS_DIRECTORY, name);
+          /*
+           * The name itself, never where a link leads: `lstat` and `unlink` both stop at a link, so
+           * a link goes and its target stays. A folder under that name is not a copy and stays.
+           *
+           * ONLY "IT IS NOT THERE" IS NOT A FAILURE — the clock asking a second time. Anything else
+           * (the disk refusing, a read-only volume) fails the call, as the folder's removal does:
+           * swallowed, the project's rows would go and the copy would stay with nothing naming it.
+           */
+          const found = await lstat(copy).catch((error: unknown) => {
+            if (isMissing(error)) return null;
+            throw error;
+          });
+          if (!found || found.isDirectory()) continue;
+          await unlink(copy).catch((error: unknown) => {
+            if (!isMissing(error)) throw error;
+          });
+        }
+        return was !== null;
+      });
     },
   };
 
