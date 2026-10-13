@@ -540,9 +540,19 @@ describe("the nightly dream", () => {
       dialogue: DIALOGUE,
       day: "2026-09-26 (토)",
     });
+    /*
+     * WHICH LINES, NOT IN WHICH ORDER. The owner's line is stamped by the database's clock
+     * (`created_at`'s default) and the dream's by this process's (`replaceDream`, a millisecond
+     * apart from its own `Date.now()`), and the list is drawn by that stamp. Written a few
+     * milliseconds apart, the two came back the other way round once under load; with the dream's
+     * clock held at the instant of the owner's row they do every time. A person's edit and the
+     * night's dream are hours apart, so the order is nothing this case can say anything about.
+     */
     expect(
-      (await guidance.list(bot.id, owner.id)).map((line) => line.content),
-    ).toEqual(["한 줄로 답해 줘", "사장님은 존댓말을 쓴다."]);
+      (await guidance.list(bot.id, owner.id))
+        .map((line) => line.content)
+        .sort(),
+    ).toEqual(["사장님은 존댓말을 쓴다.", "한 줄로 답해 줘"]);
   });
 
   /*
