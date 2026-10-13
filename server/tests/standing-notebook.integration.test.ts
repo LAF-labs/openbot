@@ -384,6 +384,75 @@ describe("a standing fact the owner stated", () => {
     });
   });
 
+  test("a fact and its same-day correction in one night's extract: the correction, judged after the fact, retires it", async () => {
+    const change = "정산 자료는 이제 매달 10일까지야";
+    const corrected = "매출 정산 자료: 매달 10일까지 세무사님에게 넘김";
+    const { bot, hook, threadId, judge } = await setup(
+      () => [
+        { line: FACT, quote: SAID },
+        { line: corrected, quote: change },
+      ],
+      judgeOf(({ claim }) => ({
+        support: 0.9,
+        replaces: claim.includes("10일") ? ["5일까지"] : [],
+      })),
+    );
+    const ten = Date.now() - 13 * 60 * 60_000;
+    const counts = await hook({
+      botId: bot.id,
+      threadId,
+      owner: [
+        { id: "u0", threadId, text: SAID, at: ten },
+        { id: "u1", threadId, text: change, at: ten + 5 * 60 * 60_000 },
+      ],
+    });
+    expect(counts).toMatchObject({ added: 2, superseded: 1 });
+    // The line written first tonight is offered to the judge of the later evidence.
+    expect(judge?.asked.map((a) => [a.claim, a.older])).toEqual([
+      [FACT, []],
+      [corrected, [FACT]],
+    ]);
+    const rows = await rowsOf(bot.id);
+    const fresh = rows.find((row) => row.content === corrected);
+    expect(fresh).toMatchObject({ forgottenAt: null });
+    expect(rows.find((row) => row.content === FACT)).toMatchObject({
+      forgetReason: "superseded",
+      replacedBy: fresh?.id,
+    });
+  });
+
+  test("returned in the other order, the facts are still judged in the order of their evidence: the later message's line is never retired by the earlier's", async () => {
+    const change = "정산 자료는 이제 매달 10일까지야";
+    const corrected = "매출 정산 자료: 매달 10일까지 세무사님에게 넘김";
+    const { bot, hook, threadId, judge } = await setup(
+      // The extractor lists the correction first.
+      () => [
+        { line: corrected, quote: change },
+        { line: FACT, quote: SAID },
+      ],
+      // A judge that would retire whatever it is shown.
+      judgeOf(() => ({ support: 0.9, replaces: ["정산"] })),
+    );
+    const ten = Date.now() - 13 * 60 * 60_000;
+    const counts = await hook({
+      botId: bot.id,
+      threadId,
+      owner: [
+        { id: "u0", threadId, text: SAID, at: ten },
+        { id: "u1", threadId, text: change, at: ten + 5 * 60 * 60_000 },
+      ],
+    });
+    expect(counts).toMatchObject({ added: 2, superseded: 1 });
+    expect(judge?.asked.map((a) => [a.claim, a.older])).toEqual([
+      [FACT, []],
+      [corrected, [FACT]],
+    ]);
+    const live = (await rowsOf(bot.id)).filter(
+      (row) => row.forgottenAt === null,
+    );
+    expect(live.map((row) => row.content)).toEqual([corrected]);
+  });
+
   test("the judge refuses what the floor cannot: another person, a dropped negation, a changed recurrence, 10시 read as 10만", async () => {
     const card = "카드 결제는 안 받아";
     const weekly = "기획전 신청은 매주 금요일까지야";
