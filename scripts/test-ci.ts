@@ -3378,8 +3378,7 @@ const workers = (() => {
 })();
 
 /**
- * A worker's own database: the test database's name and its number, the name
- * `server/scripts/test-preload.ts` gives the worker numbered so by `bun test --parallel`.
+ * A worker's own database: the test database's name and its number.
  */
 const workerDatabase = (worker: number) => `${testDatabase}_w${worker}`;
 

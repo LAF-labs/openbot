@@ -173,7 +173,7 @@ import { dailyBudgetFor } from "./usage/daily-budget";
 
 /*
  * The server: the one process a deployment runs (docs/laf/deployment-model.md), started by
- * `index.ts` once `eventsource` has loaded.
+ * `index.ts`.
  *
  * A COMPOSITION ROOT, AND ONLY THAT. It reads the configuration, builds each store and service,
  * hands them to each other, opens the port, and stops. What any of them DOES lives beside the
