@@ -545,6 +545,26 @@ describe("a running deployment's log", () => {
     }
   }, 60_000);
 
+  /*
+   * NOTHING ANSWERS UNDER /api/copilotkit. Its last route — `info`, the roster the app's library
+   * asked for on every mount — went on 2026-10-13 with the library. Asked of the process an operator
+   * starts, because the route was one argument in `main.ts`: an app built in a test never had it,
+   * so only this can see it come back. The API is asked first, so a 404 here is the path's own.
+   */
+  test("answers the path the app's library used to ask as it answers any path nothing is mounted on", async () => {
+    running();
+    const ask = async (path: string) => {
+      const response = await fetch(`${api}${path}`);
+      return [response.status, await response.text()];
+    };
+
+    expect((await fetch(`${api}/api/me`)).status).toBe(200);
+    const nothing = await ask("/api/nothing-is-mounted-here");
+    expect(nothing).toEqual([404, '{"code":"laf:not_found"}']);
+    expect(await ask("/api/copilotkit/info")).toEqual(nothing);
+    expect(await ask("/api/copilotkit")).toEqual(nothing);
+  });
+
   test("says which build, which model and how many tools at boot", async () => {
     const { bot, server } = running();
     const serverBoot = await server.event("boot");

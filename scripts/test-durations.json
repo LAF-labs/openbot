@@ -371,7 +371,6 @@
   "server/tests/conversation-kind-migration.integration.test.ts": 0.4,
   "server/tests/conversation-search.integration.test.ts": 0.3,
   "server/tests/converter.test.ts": 3.37,
-  "server/tests/copilot-guard.test.ts": 0,
   "server/tests/copilot.test.ts": 0.27,
   "server/tests/credentials.test.ts": 0.07,
   "server/tests/daily-budget-routine.integration.test.ts": 0.08,

@@ -100,7 +100,7 @@ import {
   createConversationStore,
 } from "./context/conversations";
 import { createSummaryScrubber } from "./context/forget-scrub";
-import { mountCopilotRuntime, resolveRuntimeAgents } from "./copilot";
+import { resolveRuntimeAgents } from "./copilot";
 import {
   createCredentialAdminService,
   createCredentialStore,
@@ -551,10 +551,7 @@ const auth = config.auth
 sessionRevocation?.onEnded((userId) => {
   channelEvents.closeFor(userId);
 });
-/**
- * Who is asking, for the two doors that read the caller themselves: the roster route under
- * `/api/copilotkit` and the screen socket.
- */
+/** Who is asking, for the one door that reads the caller itself: the screen socket. */
 const actors = createRequestActors({
   devNoAuth: config.devNoAuth,
   auth,
@@ -1127,21 +1124,6 @@ void interruptedReported
   });
 
 /**
- * The one thing the app's CopilotKit client asks the server: which Bots it serves. A route of our
- * own since #230, where CopilotKit's runtime used to answer; see `mountCopilotRuntime`.
- */
-const copilotEndpoint = mountCopilotRuntime(
-  tenantPackage.model,
-  loadAgentsForActor,
-  actors.identify,
-  stallGuard,
-  config.botTimeZone,
-  "/api/copilotkit",
-  resultSpill,
-  runMeter,
-);
-
-/**
  * The row a looked-at screen leaves, from the same trail every other computer row lands in, for the
  * live-screen proxy below.
  */
@@ -1162,7 +1144,6 @@ const app = createApp({
   ),
   packageStatusReader: createPackageStatusReader(database),
   onboarding: createOnboardingStore(database),
-  copilotHandler: copilotEndpoint,
   computerClient,
   computerGateway,
   computerPolicy: policyStore,

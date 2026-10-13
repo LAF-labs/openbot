@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { AbstractAgent, HttpAgent } from "@ag-ui/client";
-import { Hono } from "hono";
 import { DEEP_EFFORT, FIXED_EFFORT } from "../../shared/fixed-effort";
 import { textOf } from "../../shared/message-content";
 import {
@@ -33,7 +32,6 @@ import type { AttachmentService } from "./attachments/service";
 import type { AgentFetch, StallGuard } from "./channels/stall-guard";
 import type { ResultSpill } from "./computer/spillover";
 import type { ConversationStore } from "./context/conversations";
-import { NOT_FOUND } from "./failure-text";
 import { log } from "./log";
 import { type DailyBudget, withDailyBudget } from "./usage/daily-budget";
 import {
@@ -46,8 +44,9 @@ import {
 
 /**
  * The Bots as AG-UI agents, in the one mode this product has. No CopilotKit runtime serves them
- * since 2026-10-13 (#230): the server's own turns and routines run them, and the one route the
- * app's client still asks is at the foot of this file.
+ * since 2026-10-13 (#230): the server's own turns and routines run them, and nothing is mounted
+ * under `/api/copilotkit` — its last route, the roster the app's library asked for, went the same
+ * day with the library.
  *
  * Every Bot is reached over AG-UI as an `HttpAgent`, so anything that speaks the protocol is a Bot
  * with no framework adapter here: LangGraph, Pydantic-AI, CrewAI, Mastra, ADK, or a hand-written
@@ -434,7 +433,7 @@ export type RunMeter = {
 };
 
 /**
- * Build the AG-UI agent map: what the roster route lists and what a turn or a routine runs.
+ * Build the AG-UI agent map: what a turn or a routine runs.
  *
  * Keyed by the registry id, which is what the browser sends as the agent name, so the two cannot
  * drift apart without the lookup failing loudly rather than silently running the wrong Bot.
@@ -864,143 +863,7 @@ export async function resolveRuntimeAgents(
   return buildAgents(registered, model, stallGuard, timeZone, spill, meter);
 }
 
-/** Who is asking. A Bot is its owner's alone, so a run has to know whose turn it is first. */
-export type IdentifyActor = (request: Request) => Promise<AgentActor>;
-
 /** Loads exactly the agents one person may see, already carrying their standing roles. */
 export type LoadAgentsForActor = (
   actor: AgentActor,
 ) => Promise<RegisteredAgent[]>;
-
-/**
- * Build the per-request agent factory.
- *
- * Resolution is per request, not per boot, because who may run a coworker is a property of the
- * person asking: a private coworker must be absent for everybody else, and a role edited a moment
- * ago must apply to the next run without a restart. Both fall out of rebuilding the map here.
- */
-export function createRequestAgents(
-  identifyActor: IdentifyActor,
-  loadAgents: LoadAgentsForActor,
-  model: RuntimeModel,
-  /**
-   * Shared across every request rather than built per run, because it is the thing that has to
-   * outlive one: the sweep that notices a silent stream has to still be running after the request
-   * that opened it has been answered.
-   */
-  stallGuard?: StallGuard,
-  timeZone: string = DEFAULT_TIME_ZONE,
-  spill?: ResultSpill,
-  meter?: RunMeter,
-) {
-  return async ({ request }: { request: Request }) => {
-    const actor = await identifyActor(request);
-    return resolveRuntimeAgents(
-      () => loadAgents(actor),
-      model,
-      stallGuard,
-      timeZone,
-      spill,
-      meter,
-    );
-  };
-}
-
-/**
- * The version the app's CopilotKit client (`@copilotkit/react-core`) is told it is talking to: the
- * runtime's own, from when a runtime answered here. The client keeps it and decides nothing by it.
- */
-const RUNTIME_VERSION = "1.67.1";
-
-/**
- * The CopilotKit endpoint, for the host Hono app to mount.
- *
- * ONE DOOR OF IT IS OPEN: `info`, which the app's CopilotKit client asks before it settles, for the
- * roster its tool registry is built on (`app/src/lib/copilot/provider.tsx`). The answer is the one
- * `@copilotkit/runtime` 1.67.1 gave, key for key, because that client is what reads it — and it is
- * ours now: the runtime was a router, a runner and a telemetry client loaded at every boot to
- * answer this one question, and everything else it served was already refused here.
- *
- * The roster is resolved per request rather than at boot, so a Bot registered while the server is
- * running is on the next answer. Resolving once would mean every new Bot needed a restart, which is
- * not a property you can explain to somebody who just created one.
- *
- * Every other path under the base — a run, a connect, a stop, the thread routes, anything else — is
- * a path nothing is mounted on. They were how a window drove a chat turn, and nothing has opened
- * them since the server took the turn (`turns/engine.ts`) and the window-driven path left the app
- * (2026-10-05). The route is the exact path: the runtime's router read a route off a path's last
- * segments (`/api/copilotkit/x/info` was `info`), and that second entrance left with it.
- */
-export function mountCopilotRuntime(
-  model: RuntimeModel,
-  loadAgents: LoadAgentsForActor,
-  identifyActor: IdentifyActor,
-  /**
-   * The watch on Bot streams. Not optional, unlike the parameter it forwards to: a guard built from
-   * a timeout of zero already watches nothing, so an unconfigured deployment has one to hand and
-   * there is no reason for a caller to have to say `undefined` here to reach `basePath`.
-   */
-  stallGuard: StallGuard,
-  /** The clock every Bot is told about: `config.botTimeZone`. */
-  timeZone: string,
-  basePath = "/api/copilotkit",
-  /** Files long tool results on the Bot's computer. See computer/spillover.ts. */
-  spill?: ResultSpill,
-  /** The trail each run's cost lands on, and a trial's day. The same one every other path is given. */
-  meter?: RunMeter,
-) {
-  const agents = createRequestAgents(
-    identifyActor,
-    loadAgents,
-    model,
-    stallGuard,
-    timeZone,
-    spill,
-    meter,
-  );
-  return (
-    new Hono()
-      .basePath(basePath)
-      .all("/info", async (context) => {
-        const request = context.req.raw;
-        // `all` and the method read here, not `get`: Hono answers a HEAD from a GET route, and a
-        // HEAD was refused here like every other method. No body: the runtime's was a sentence.
-        if (request.method !== "GET") {
-          return new Response(null, { status: 405, headers: { Allow: "GET" } });
-        }
-        // A roster that cannot be read is thrown to the host app, which logs it and answers its
-        // own 500. The runtime caught it, logged nothing, and sent the error's message to the page.
-        const roster = await agents({ request });
-        return new Response(
-          JSON.stringify({
-            version: RUNTIME_VERSION,
-            agents: Object.fromEntries(
-              Object.entries(roster).map(([id, agent]) => [
-                id,
-                {
-                  name: id,
-                  description: agent.description,
-                  className: agent.constructor.name,
-                },
-              ]),
-            ),
-            audioFileTranscriptionEnabled: false,
-            mode: "sse",
-            threadEndpoints: {
-              list: true,
-              inspect: true,
-              mutations: false,
-              realtimeMetadata: false,
-            },
-            suggestions: true,
-            a2uiEnabled: false,
-            openGenerativeUIEnabled: false,
-            telemetryDisabled: true,
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
-      })
-      // The trailing wildcard answers the bare base path too (measured, copilot-guard.test.ts).
-      .all("*", () => Response.json({ code: NOT_FOUND }, { status: 404 }))
-  );
-}

@@ -180,11 +180,11 @@ describe.skipIf(!asked)("a deployment that is up", () => {
     expect(capabilities.status).toBe("ok");
   });
 
-  test("has Bots registered with the runtime", async () => {
-    const info = await json<{ agents: Record<string, unknown> }>(
-      "/api/copilotkit/info",
-    );
-    expect(Object.keys(info.agents).length).toBeGreaterThan(0);
+  // Asked of the roster the app reads. It was `/api/copilotkit/info` until 2026-10-13, the route
+  // the app's library asked on every mount, which went with the library.
+  test("has the Bot this run acts as on its roster", async () => {
+    const { agents } = await json<{ agents: { id: string }[] }>("/api/agents");
+    expect(agents.map((agent) => agent.id)).toContain(BOT);
   });
 
   test("mints thread ids that say which deployment they came from", async () => {

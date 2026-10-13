@@ -1,4 +1,3 @@
-import type { IdentifyActor } from "../copilot";
 import { DEV_ACTOR } from "./dev-actor";
 import type { RoleRepository } from "./guards";
 import type { createAuth } from "./index";
@@ -23,25 +22,14 @@ export type RequestActors = {
    * refuse rather than guess.
    */
   resolveOrNull: (request: Request) => Promise<RequestActor | null>;
-  /** The authorization projection, with the anonymous fallback. See {@link ANONYMOUS_ACTOR}. */
-  identify: IdentifyActor;
 };
 
-/**
- * The authorization projection of the same person: which Bots are theirs is decided from this.
- *
- * THE FALLBACK IS NOT THE GUARD AND NEVER WAS. It used to be justified by `/info` answering an
- * anonymous deployment check; `/api/copilotkit/*` is behind `requireUser` now (app.ts), so no
- * unauthenticated request reaches this at all. What is left is the transient case — a session read
- * or a role lookup failing under an authenticated request — and it is kept here, and only here,
- * because this one runs INSIDE the vendored runtime's agent factory: throwing there took a run
- * down with a 500, while resolving to somebody who owns nothing took it down by name — and for
- * `info`, the one door of the runtime left open since 2026-10-06, it is the same choice: a 500, or
- * a roster with nothing private on it. It grants nothing — no private profile matches, and it is
- * not an administrator — and the place that decides whose data is served refuses instead: the
- * live-screen upgrade, and the thread priming while there was one.
+/*
+ * `identify` — the id-and-role projection, with a fallback to somebody who owns nothing — is gone
+ * (2026-10-13). It ran inside the CopilotKit runtime's agent factory and then behind the roster
+ * route that replaced it (`/api/copilotkit/info`), where a throw was a 500; that route went with
+ * the app's library, and what is left refuses rather than guesses.
  */
-const ANONYMOUS_ACTOR = { id: "", role: "user" } as const;
 
 /*
  * `identifyUser` — the name-and-id projection of the resolver — is gone. Its one caller was the
@@ -51,8 +39,9 @@ const ANONYMOUS_ACTOR = { id: "", role: "user" } as const;
  */
 
 /**
- * Who is asking, for the requests `requireUser` never sees: CopilotKit's runtime, which resolves its
- * agents inside a vendored factory, and the WebSocket upgrade, which Bun hands over before Hono runs.
+ * Who is asking, for the request `requireUser` never sees: the WebSocket upgrade, which Bun hands
+ * over before Hono runs. (CopilotKit's runtime, which resolved its agents inside a vendored
+ * factory, was the other until it left the server on 2026-10-13.)
  */
 export function createRequestActors(input: {
   devNoAuth: boolean;
@@ -60,9 +49,9 @@ export function createRequestActors(input: {
   auth: ReturnType<typeof createAuth> | undefined;
   roles: Pick<RoleRepository, "rolesForUser">;
   /**
-   * The same question `requireUser` asks of every request, asked at the two doors it never sees. The
-   * live-screen upgrade is the one that matters: it is not behind `requireUser`, and it is the socket
-   * a person's keystrokes travel down.
+   * The same question `requireUser` asks of every request, asked at the door it never sees: the
+   * live-screen upgrade is not behind `requireUser`, and it is the socket a person watches their
+   * Bot's screen through.
    */
   admission?: Pick<SessionAdmission, "admits" | "revoke">;
 }): RequestActors {
@@ -96,13 +85,5 @@ export function createRequestActors(input: {
   return {
     resolve,
     resolveOrNull: (request) => resolve(request).catch(() => null),
-    identify: async (request) => {
-      try {
-        const { id, role } = await resolve(request);
-        return { id, role };
-      } catch {
-        return ANONYMOUS_ACTOR;
-      }
-    },
   };
 }

@@ -4,14 +4,15 @@ import { createRequestActors } from "../src/auth/request-actor";
 import type { UserRole } from "../src/auth/roles";
 
 /**
- * Who is asking, for the two doors `requireUser` never sees — the CopilotKit runtime's agent factory
- * and the live-screen upgrade. It was three functions at the top of `main.ts`; the rules are the same
- * rules, and now something other than a booted process can check them.
+ * Who is asking, for the door `requireUser` never sees — the live-screen upgrade (the CopilotKit
+ * runtime's agent factory was the other, until 2026-10-13). It was three functions at the top of
+ * `main.ts`; the rules are the same rules, and now something other than a booted process can check
+ * them.
  */
 
 type Auth = Parameters<typeof createRequestActors>[0]["auth"];
 
-const request = new Request("http://laf.test/api/copilotkit/threads");
+const request = new Request("http://laf.test/api/computer/screen");
 
 const signedIn = (user: {
   id: string;
@@ -80,8 +81,6 @@ describe("who is asking", () => {
       await expect(actors.resolve(request)).rejects.toThrow("CopilotKit run");
       // The doors that decide whose data is served refuse rather than guess.
       expect(await actors.resolveOrNull(request)).toBeNull();
-      // The runtime's factory gets somebody who owns nothing and is not an administrator.
-      expect(await actors.identify(request)).toEqual({ id: "", role: "user" });
     }
   });
 
@@ -103,13 +102,5 @@ describe("who is asking", () => {
     // The live-screen upgrade's door: refused rather than guessed, and revoked all the same.
     expect(await actors.resolveOrNull(request)).toBeNull();
     expect(revoked).toEqual(["u5", "u5"]);
-  });
-
-  test("the runtime's projection carries the id and the role, and nothing else", async () => {
-    expect(
-      await actorsWith(signedIn({ id: "u4", name: "직원" }), ["user"]).identify(
-        request,
-      ),
-    ).toEqual({ id: "u4", role: "user" });
   });
 });
