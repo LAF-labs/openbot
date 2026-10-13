@@ -49,7 +49,6 @@ they are gone.
 | `CAFE24_CLIENT_ID`, `CAFE24_CLIENT_SECRET` | unset       | The fleet's own Cafe24 OAuth application, the same on every VM. Both or neither: a client with no secret fails at the token exchange, which is after somebody has consented. Unset, Cafe24 does not appear on the 연결 screen at all. |
 | `LAF_OAUTH_RELAY_URL`           | unset                  | The fleet's OAuth relay. Vendors are told `<this>/<provider>`, and the relay hands the browser back to `https://<slug>/api/plugins/oauth/callback` — the one address a fleet-wide client can have registered, since no vendor accepts a wildcard. https, except on `localhost`. Unset, every vendor is told this deployment's own callback. |
 | `LAF_PRODUCT_DOMAIN`            | the relay's parent domain | The domain every customer is a name under. The slug is `PUBLIC_ORIGIN`'s label beneath it, and an origin that is not one name under it **refuses to start** — the consent would otherwise die at the relay, after the person had already said yes. |
-| `COPILOTKIT_TELEMETRY_DISABLED` | `true`                 | Set by the server on itself before the runtime loads. Set it to something else deliberately if you want the runtime's telemetry.      |
 
 `BOT_MODEL` is read by `agent-bot`, not by the API server — see [Bot endpoint](#bot-endpoint) below.
 `REVIEW_MODEL` and `BOT_MODEL_EFFORT` are read by nothing directly: they are substituted into the

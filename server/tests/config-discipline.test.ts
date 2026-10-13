@@ -26,17 +26,11 @@ const CONFIG = "server/src/config.ts";
 /**
  * Not configuration, and so not temporary.
  *
- * `telemetry-off.ts` WRITES a variable, for a vendored library, before that library loads: the
- * CopilotKit runtime phones home unless `COPILOTKIT_TELEMETRY_DISABLED` is set, and it has to be set
- * by the first import of the entrypoint or it is too late. Nothing in the server reads it back, and
- * moving it into `config.ts` would make whether telemetry stays off depend on which modules
- * `config.ts` happens to import.
+ * `telemetry-off.ts` was the other entry until 2026-10-13: it wrote `COPILOTKIT_TELEMETRY_DISABLED`
+ * before the CopilotKit runtime loaded, and went once the runtime had (#230) and nothing the server
+ * loads read the variable.
  */
 const PERMANENT: Record<string, { reads: number; why: string }> = {
-  "server/src/telemetry-off.ts": {
-    reads: 1,
-    why: "sets COPILOTKIT_TELEMETRY_DISABLED for the vendored runtime before it loads",
-  },
   "server/src/context/vendor/fast-jev-compaction/client.ts": {
     reads: 1,
     why: "upstream's JevClient defaults its key to TYPESAFE_API_KEY; vendored unchanged and never constructed here — compaction's transport is decision-askers.ts, keyed through config",

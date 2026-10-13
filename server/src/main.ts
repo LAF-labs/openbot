@@ -1,4 +1,3 @@
-import "./telemetry-off";
 import { serve } from "bun";
 import { OLDER_COPIES_PER_CALL, PERSON_SCOPE } from "../../shared/file-scope";
 import { HARNESS_VERSION } from "../../shared/prompt/harness";
