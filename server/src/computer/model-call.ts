@@ -53,6 +53,16 @@ export type ModelUsage = {
    */
   costUsd?: number;
   cachedPromptTokens?: number;
+  /**
+   * The provider answered and did not say what the call used: no `usage` on the reply, or one with
+   * no count in it. The three counts are then zeros that mean "not said", and this is what tells
+   * such a row from a call that used nothing. ZEROS, AS SUCH A ROW ALREADY HELD, and a mark beside
+   * them that no reader looks for: the day's budget and the fleet's report sum `totalTokens`, and
+   * a row of nothing adds nothing to either. Until 2026-10-13 a reply with no `usage` filed no row
+   * at all and one with an empty `usage` filed 0/0/0 unmarked — either way a call the model
+   * answered and nobody could count.
+   */
+  usageUnknown?: true;
 };
 
 /** A count or an amount a provider reported, read as what it is; anything else, absent. */
@@ -186,24 +196,33 @@ export async function askModel(call: ModelCall, ask: Ask): Promise<Answer> {
     const body = (await response.json()) as {
       choices?: Array<{ message?: { content?: unknown } }>;
       usage?: {
-        prompt_tokens?: number;
-        completion_tokens?: number;
-        total_tokens?: number;
+        prompt_tokens?: unknown;
+        completion_tokens?: unknown;
+        total_tokens?: unknown;
         cost?: unknown;
         prompt_tokens_details?: { cached_tokens?: unknown };
       };
     };
-    if (call.onUsage && body.usage) {
+    /*
+     * EVERY CALL THE PROVIDER ANSWERED IS TOLD, WITH OR WITHOUT ITS COUNTS. The row this becomes
+     * is the only place the deployment sees that the call was made (`ModelUsage.usageUnknown`).
+     */
+    if (call.onUsage) {
       try {
-        const cost = reported(body.usage.cost);
-        const cached = reported(
-          body.usage.prompt_tokens_details?.cached_tokens,
-        );
+        const usage = body.usage ?? {};
+        const prompt = reported(usage.prompt_tokens) ?? 0;
+        const completion = reported(usage.completion_tokens) ?? 0;
+        // A reply that counts its two halves and not their sum is still a counted call.
+        const total = reported(usage.total_tokens) ?? prompt + completion;
+        const cost = reported(usage.cost);
+        const cached = reported(usage.prompt_tokens_details?.cached_tokens);
         call.onUsage({
           model: call.model,
-          promptTokens: body.usage.prompt_tokens ?? 0,
-          completionTokens: body.usage.completion_tokens ?? 0,
-          totalTokens: body.usage.total_tokens ?? 0,
+          promptTokens: prompt,
+          completionTokens: completion,
+          totalTokens: total,
+          // No request is made of no tokens: a total of nothing is a total nobody gave.
+          ...(total === 0 ? { usageUnknown: true as const } : {}),
           ...(cost === undefined ? {} : { costUsd: cost }),
           ...(cached === undefined ? {} : { cachedPromptTokens: cached }),
         });
