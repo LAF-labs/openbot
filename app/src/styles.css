@@ -1,6 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
+@import "./shadcn-tailwind.css";
 /* Composer chips/dropdown. Reads the shadcn tokens declared below, so it themes itself. */
 @import "prompt-area/tailwind.css";
 /*

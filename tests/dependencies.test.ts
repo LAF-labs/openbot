@@ -63,7 +63,6 @@ const DECIDED: Record<string, Record<string, string>> = {
     "remark-cjk-friendly":
       "Korean emphasis in markdown without the spaces CommonMark wants",
     "remark-cjk-friendly-gfm-strikethrough": "the same for ~~strikethrough~~",
-    shadcn: "its stylesheet is imported by styles.css",
     streamdown: "renders the Bot's markdown as it streams",
     "tailwind-merge": "resolves conflicting Tailwind classes (lib/utils.ts)",
     "tw-animate-css": "the animation utilities styles.css imports",
