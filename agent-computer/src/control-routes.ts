@@ -350,8 +350,18 @@ export const withdrawSecret: BotRoute = async ({ request, session }) => {
  * A run in which nothing was put in ends nothing, and this is not what starts a browser.
  */
 export const runEnded: BotRoute = async ({ botId, session }, { profiles }) => {
-  // The run is over: what the page hands the browser from here is nobody's to file.
-  delete session.fileScope;
+  /*
+   * WHOSE FILES THE RUN WROTE IS NOT FORGOTTEN HERE (`BotSession.fileScope`). It was, for two days:
+   * "the run is over, what the page hands the browser from here is nobody's to file". But this
+   * route is only called for a run a person's value went into, so the rule was never "a file
+   * that arrives after its run is not kept" — every other run's late file lands in that run's
+   * folder (`routes.ts`) — it was "…unless the run had signed in", which are the runs whose
+   * files a person most wants. And it is not nobody's: a tab lives ten minutes past its last
+   * use (`tabs.ts`), so a file that starts to arrive before any other run has said whose files
+   * it writes was sent by a page this run left open. It lands where the run's files went, as
+   * it does for a run that filled nothing. A project that is removed still forgets
+   * (`file-routes.ts`), and the folder refuses a landing after that.
+   */
   if (!holdsFilled(session)) return json({ ended: true, closed: 0 });
   const tabs = filledTabs(session);
   const open = tabs.filter((tab) => !tab.isClosed()).length;

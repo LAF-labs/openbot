@@ -52,6 +52,8 @@ const HAS_BROWSER = (() => {
 })();
 
 const BOT = "fixture-bot";
+/** A Bot none of whose calls ever says whose files it writes. */
+const UNSAID_BOT = "unsaid-bot";
 const TOKEN = "test-computer-token";
 
 let base = "";
@@ -473,15 +475,85 @@ describe.skipIf(!HAS_BROWSER)("the Bot's browser on a Korean page", () => {
     );
   }, 40_000);
 
-  test("a download nobody's run asked for is not kept, and that is said", async () => {
-    const before = JSON.stringify((await post("/files/list", {})).body);
-    // Told a run is over (as after one a person's value went into): nobody's, until a call says.
-    await post("/run/ended", {});
+  /*
+   * A FILE A PAGE SENDS AFTER ITS RUN WAS TOLD OVER IS STILL THAT RUN'S. The scope was forgotten
+   * at `/run/ended`, which the server sends only for a run a person's value went into: a
+   * signed-in run's late file was dropped as a download that failed, where any other run's
+   * landed in its folder.
+   */
+  test("a file a page sends after its run was told over lands in that run's folder", async () => {
+    const asProject = (path: string, payload: unknown) =>
+      call(path, {
+        method: "POST",
+        body: JSON.stringify(payload),
+        scope: "project:channel_late",
+      });
+    // No call says whose files it writes from here: the page sends the file by itself.
     const unsaid = (path: string, payload: unknown) =>
       call(path, {
         method: "POST",
         body: JSON.stringify(payload),
         scope: null,
+      });
+    await asProject("/navigate", { url: fixture?.url });
+    const shot = (await asProject("/snapshot", {})).body as Awaited<
+      ReturnType<typeof snapshot>
+    >;
+    expect((await unsaid("/run/ended", {})).body).toEqual({
+      ended: true,
+      closed: 0,
+    });
+    const clicked = await unsaid("/click", {
+      ref: refFor(shot.elements, "정산내역 내려받기"),
+      snapshotId: shot.snapshotId,
+    });
+    let note = notesOf(clicked.body).find((entry) =>
+      entry.code.startsWith("laf:download"),
+    );
+    for (let attempt = 0; !note && attempt < 40; attempt += 1) {
+      await Bun.sleep(100);
+      const read = await call("/read", { scope: null });
+      note = notesOf(read.body).find((entry) =>
+        entry.code.startsWith("laf:download"),
+      );
+    }
+    expect(note?.code).toBe("laf:downloaded");
+    expect(note?.path).toBe(`projects/channel_late/downloads/${DOWNLOAD_NAME}`);
+    expect(
+      await readFile(
+        join(
+          workspaceDir,
+          "projects",
+          "channel_late",
+          "downloads",
+          DOWNLOAD_NAME,
+        ),
+        "utf8",
+      ),
+    ).toBe(DOWNLOAD_BODY);
+  }, 40_000);
+
+  test("a download nobody's run asked for is not kept, and that is said", async () => {
+    // Listed through the person's own door, which says nothing about a run's files.
+    const listed = async () =>
+      JSON.stringify(
+        (
+          await call("/files/list", {
+            method: "POST",
+            body: "{}",
+            scope: "person",
+            bot: UNSAID_BOT,
+          })
+        ).body,
+      );
+    const before = await listed();
+    // A Bot none of whose calls has said whose files it writes: nobody's, until a call says.
+    const unsaid = (path: string, payload: unknown) =>
+      call(path, {
+        method: "POST",
+        body: JSON.stringify(payload),
+        scope: null,
+        bot: UNSAID_BOT,
       });
     await unsaid("/navigate", { url: fixture?.url });
     const shot = (await unsaid("/snapshot", {})).body as Awaited<
@@ -496,14 +568,14 @@ describe.skipIf(!HAS_BROWSER)("the Bot's browser on a Korean page", () => {
     );
     for (let attempt = 0; !note && attempt < 40; attempt += 1) {
       await Bun.sleep(100);
-      const read = await call("/read", { scope: null });
+      const read = await call("/read", { scope: null, bot: UNSAID_BOT });
       note = notesOf(read.body).find(
         (entry) => entry.code === "laf:download_failed",
       );
     }
     expect(note?.code).toBe("laf:download_failed");
     // Nothing landed anywhere: put in the main folder on a guess, it would outlive its project.
-    expect(JSON.stringify((await post("/files/list", {})).body)).toBe(before);
+    expect(await listed()).toBe(before);
   }, 40_000);
 
   test("a workspace file can be handed to a file input", async () => {
