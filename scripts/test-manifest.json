@@ -95,6 +95,7 @@
   "app/tests/build-watch.test.ts",
   "app/tests/bundle-graph.test.ts",
   "app/tests/card-lead-colour.test.ts",
+  "app/tests/card-nothing-to-draw.test.ts",
   "app/tests/card-seams.test.tsx",
   "app/tests/channel-events-socket.test.tsx",
   "app/tests/channel-refusals.test.ts",

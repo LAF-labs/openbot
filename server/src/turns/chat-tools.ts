@@ -56,9 +56,11 @@ import {
   CONNECT_CARD,
   connectionAnswer,
   FILE_CARD,
+  fieldsToFill,
   GALLERY_CONFIRMATIONS,
   GALLERY_DECISIONS,
   galleryReads,
+  holdsSomethingToShow,
   isAskable,
   ON_SCREEN,
   withAccountStates,
@@ -91,6 +93,7 @@ import {
   recordAuditEvent,
 } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
+import { SANDBOXED_PREFIX } from "../components/sandboxed";
 import type { ComponentStore } from "../components/store";
 import type { ApprovalRegistry } from "../computer/approvals";
 import { STALE_REFS } from "../computer/client";
@@ -1583,6 +1586,30 @@ export function createChatTools(deps: ChatToolsDeps) {
       }
       if (!decision.allowed) {
         return refuse(String(decision.reason ?? ""), {});
+      }
+      /*
+       * A CARD WITH NOTHING IN IT IS NOT SHOWN, AND THE BOT IS TOLD SO (`holdsSomethingToShow`).
+       * Called with `{}`, a card was answered "on screen": the window drew nothing for it (#189),
+       * the Bot read that its card was up, and the call was listed under 만든 것. Answered as a
+       * call whose arguments do not fit — the envelope every such call gets, so the list of made
+       * things leaves it out as it leaves out any refusal (`agents/made.ts`) — with the names of
+       * the fields the card's schema asks for, off the schema this turn offered the card with.
+       * Names, not a sentence: what belongs in them is the definition's to say.
+       *
+       * The cards this build draws from a call: not a question (asked below, by its own rule),
+       * and not a component a person authored, whose frame is its own and may take nothing.
+       */
+      if (!GALLERY_DECISIONS.has(name) && !name.startsWith(SANDBOXED_PREFIX)) {
+        const declaredAs = tools.find((tool) => tool.name === name)?.parameters;
+        if (!holdsSomethingToShow(declaredAs, args)) {
+          // The fact alone: what the call held, if anything, is not the trail's to keep.
+          await noteRefusal("laf:tool_arguments_invalid", {});
+          const missing = fieldsToFill(declaredAs);
+          return {
+            ...invalidArguments(),
+            ...(missing.length > 0 ? { missing } : {}),
+          };
+        }
       }
       /*
        * THE DATA THE CARD WILL READ, DECIDED BEFORE IT IS DRAWN. A card's own data call
