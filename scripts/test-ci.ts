@@ -3111,7 +3111,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `.cursor/BUGBOT.md` sends Bugbot to CLAUDE.md, and neither is long enough for Bugbot to cut it
  * (30,000 characters a rule). 1710 and 2 is 1712.
  *
- * RAISED 2026-10-11 FOR THE MEMORY WALKS OF WEEKS, `root` from 1705 to 1707, both in
+ * RAISED 2026-10-11 FOR THE MEMORY WALKS OF WEEKS, `root` from 1712 to 1714, both in
  * `tests/eval-memory-days.test.ts`: sixty busy days pair their people differently for seven weeks
  * and hold none of the table's numbers, and every value under a name that is not the subject's is
  * part of the fact and not the fact.
@@ -3173,7 +3173,7 @@ const GROUPS: readonly {
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 1712, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 1714, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
