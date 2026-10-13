@@ -8,6 +8,7 @@ import {
 } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
+import { pseudonymFor } from "../src/account/pseudonym";
 import type { AuditEventInput, AuditStore } from "../src/audit";
 import { createDatabase } from "../src/db/client";
 import {
@@ -562,6 +563,37 @@ describe("disconnecting", () => {
       (event) => event.eventType === "mcp.account_disconnected",
     );
     expect(row?.payload?.vendorRevoked).toBe(false);
+  });
+});
+
+describe("a person removed", () => {
+  test("the channel is retired under their pseudonym, and the row holds their id nowhere", async () => {
+    const userId = await createUser();
+    const { partners } = await connectApproved(userId);
+    auditRows.length = 0;
+
+    expect(await partners.retireFor(userId, pseudonymFor(userId))).toEqual({
+      retired: 1,
+    });
+
+    const row = auditRows.find(
+      (event) => event.eventType === "mcp.account_disconnected",
+    );
+    expect(row?.payload).toMatchObject({
+      actor: pseudonymFor(userId),
+      owner: pseudonymFor(userId),
+      reason: "person_removed",
+    });
+    expect(JSON.stringify(row?.payload)).not.toContain(userId);
+    // Their own disconnect still names them: they are still here to be named.
+    const other = await createUser();
+    const { connect } = await connectApproved(other);
+    auditRows.length = 0;
+    await connect.disconnect(other);
+    expect(
+      auditRows.find((event) => event.eventType === "mcp.account_disconnected")
+        ?.payload?.owner,
+    ).toBe(other);
   });
 });
 

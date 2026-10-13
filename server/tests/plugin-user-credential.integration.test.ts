@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { pseudonymFor } from "../src/account/pseudonym";
 import { createAuditStore } from "../src/audit";
 import { createApprovalRegistry } from "../src/computer/approvals";
 import type { ActionPolicy } from "../src/computer/policy";
@@ -10,7 +11,6 @@ import {
   encryptSecret,
 } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
-import { recentLines } from "../src/log";
 import {
   agents,
   auditEvents,
@@ -20,6 +20,7 @@ import {
   pluginGrants,
   users,
 } from "../src/db/schema";
+import { recentLines } from "../src/log";
 import { revocationRequest } from "../src/plugins/connections";
 import {
   type AccessToken,
@@ -1398,7 +1399,7 @@ describe("retiring every credential one person owns", () => {
     );
     expect(rows.at(-1)).toMatchObject({
       server: serverId,
-      owner: retiree,
+      owner: pseudonymFor(retiree),
       // Not "they disconnected": an administrator removed them, and an auditor asking what happened
       // to their access should see which of the three this was.
       reason: "person_removed",
@@ -1547,7 +1548,7 @@ describe("retiring every credential one person owns", () => {
       expect((await trail("mcp.account_disconnected", by)).at(-1)).toEqual({
         actor: by,
         server: serverId,
-        owner: retiree,
+        owner: pseudonymFor(retiree),
         reason: "person_removed",
         vendorRevoked: revoked,
         vendorAnswer: answer,
@@ -1580,7 +1581,7 @@ describe("retiring every credential one person owns", () => {
     expect((await trail("mcp.account_disconnected", by)).at(-1)).toEqual({
       actor: by,
       server: removableId,
-      owner: retiree,
+      owner: pseudonymFor(retiree),
       reason: "person_removed",
       // Not "the vendor refused": nobody asked it.
       vendorRevoked: false,

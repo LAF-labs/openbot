@@ -1,4 +1,5 @@
 import { and, asc, eq } from "drizzle-orm";
+import { pseudonymFor } from "../account/pseudonym";
 import { recordAuditEvent } from "../audit";
 import { lafAlimtalkTemplates, lafPartnerConnections } from "../db/schema";
 import type { PartnerFamily } from "./catalogue";
@@ -158,7 +159,12 @@ export function createPartnerConnections(context: PartnerContext) {
       payload: {
         actor: input.by,
         server: input.provider,
-        owner: input.userId,
+        // A person being removed is named by their pseudonym, as on the row's actor
+        // (`connections.ts`, the same row for an OAuth connection).
+        owner:
+          input.reason === "person_removed"
+            ? pseudonymFor(input.userId)
+            : input.userId,
         reason: input.reason,
         // Said out loud rather than left to be assumed: this deployment stopped holding the
         // registration and nothing was withdrawn at the vendor.
