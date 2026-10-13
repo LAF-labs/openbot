@@ -242,9 +242,10 @@ the owner's GitHub account opens here, by a setting that predated the rule above
 the owner switched that off on 2026-10-11 and left Codex on 2026-10-13.
 
 `.cursor/BUGBOT.md` is where Bugbot looks first, and `AGENTS.md` is where any
-other agent does. Neither holds rules of its own: each sends the reviewer to
-this file and to the pull request template's checklist, whole. `AGENTS.md`
-restated them once, and four rounds of review found a dropped exception or a
+other agent does. Neither restates a rule of this file: each sends the reviewer
+to it and to the pull request template's checklist, whole, and adds only how a
+review is done — what a finding is, how one is written. `AGENTS.md` restated
+the rules once, and four rounds of review found a dropped exception or a
 missing rule in the restatement each time — a copy is a second place for every
 rule to go stale, and a shorter copy reads as the whole contract. A rule is
 written here, once.
