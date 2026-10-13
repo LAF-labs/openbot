@@ -3159,6 +3159,10 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * every other method on it, the spellings that are not it, no invitation to another origin, and
  * the real handler behind the real guard.
  *
+ * RAISED 2026-10-13 FOR THE REVIEWERS' REDACTION: `server` by one (to 4708), in
+ * `jev-decisions.test.ts` — an action aimed at another address is a different placeholder from the
+ * one the owner's sentence named, and the same address in capitals is the same one. 4707 and 1.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -3187,7 +3191,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4707, roots: ["server"] },
+  { name: "server", floor: 4708, roots: ["server"] },
   { name: "app", floor: 2446, roots: ["app"] },
   {
     name: "agent-computer",
