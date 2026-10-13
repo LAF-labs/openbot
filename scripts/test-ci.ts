@@ -3107,6 +3107,10 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * the one before it and nothing opens past two; the main browser's six are as they were. 4625
  * and 5 is 4630; 618 and 2 is 620.
  *
+ * RAISED 2026-10-13 FOR THE REVIEWER'S RULES: `root` by two (to 1712), in `bugbot-rules.test.ts` —
+ * `.cursor/BUGBOT.md` sends Bugbot to CLAUDE.md, and neither is long enough for Bugbot to cut it
+ * (30,000 characters a rule). 1710 and 2 is 1712.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -3164,7 +3168,7 @@ const GROUPS: readonly {
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 1710, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 1712, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

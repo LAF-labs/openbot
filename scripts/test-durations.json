@@ -573,6 +573,7 @@
   "server/tests/workbench-client.test.ts": 14.66,
   "server/tests/workbench-gateway.test.ts": 17.83,
   "server/tests/workbench-trail.integration.test.ts": 0.07,
+  "tests/bugbot-rules.test.ts": 0,
   "tests/caddyfile.test.ts": 0,
   "tests/clean-checkout.test.ts": 0,
   "tests/compose.test.ts": 0.01,

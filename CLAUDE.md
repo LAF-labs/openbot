@@ -233,9 +233,12 @@ anything was changed.
 
 How Bugbot is set is in the repository, where a pull request can read it and
 cannot change it for itself (Bugbot takes it from the base branch):
-`.cursor/config/bugbot.yaml` — no drafts, never push by push, thorough, no
-rewritten description, and no fixes pushed by the reviewer — and
-`.cursor/BUGBOT.md`, the rules it reviews by. The one switch that is not there is
+`.cursor/config/bugbot.yaml` — no drafts, never push by push, as hard as the
+change is risky, no rewritten description, and no fixes pushed by the
+reviewer — and `.cursor/BUGBOT.md`, the rules it reviews by. Bugbot loads that file and this
+one whole, and cuts a rule at 30,000 characters without saying so; a test holds
+both under it (`tests/bugbot-rules.test.ts`). On the owner's plan it reads only
+pull requests the owner's account opened. The one switch that is not there is
 the dashboard's (cursor.com → Bugbot → "run only when mentioned"), and it is on:
 nothing is reviewed unasked. Codex used to review every push to the pull requests
 the owner's GitHub account opens here, by a setting that predated the rule above;
