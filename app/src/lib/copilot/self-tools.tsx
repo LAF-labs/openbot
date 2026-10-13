@@ -55,10 +55,27 @@ export type RoutineArgs = {
   };
 };
 
-export function SelfTools() {
+/**
+ * A routine call's card, for the Bot the surface in front of the person declares.
+ *
+ * It reads the Bot itself, while it is drawn. The renderer below used to hand it down, closed over
+ * when the tool was registered — the screen's first commit, before any surface has declared, and a
+ * registration is read once (`tool-registry.tsx`) — so it handed down `undefined` for as long as
+ * the screen stayed mounted, and the card looked the routine up among every Bot's: another Bot's
+ * routine by the same name was drawn as this call's, or neither was (`active-bot.tsx`, "a renderer
+ * never hands a Bot down as a prop"). Listing the Bot among the registration's dependencies would
+ * register the tool again once a Bot was declared, and a tool registered again goes to the end of
+ * the list a turn is sent — measured: all seven lists of `tool-list-bytes.test.tsx` moved.
+ */
+function CallRoutineCard(
+  props: Omit<Parameters<typeof RoutineCard>[0], "agentId">,
+) {
   // Which Bot's routines a card may be drawn from.
   const declaredBot = useDeclaredBotId();
+  return <RoutineCard {...props} agentId={declaredBot} />;
+}
 
+export function SelfTools() {
   // A name and a description, and no `effort`: how hard a Bot thinks is fixed since 2026-10-08.
   useFrontendTool({
     name: UPDATE_PROFILE.name,
@@ -117,8 +134,7 @@ export function SelfTools() {
         return line;
       }
       return (
-        <RoutineCard
-          agentId={declaredBot}
+        <CallRoutineCard
           compact={asked?.action === "update"}
           fallback={line}
           names={[asked?.name ?? "", asked?.routineId ?? ""]}

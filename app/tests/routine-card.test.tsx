@@ -8,6 +8,7 @@ import {
 } from "bun:test";
 import {
   routineSavedText,
+  routineUpdatedText,
   toolResultText,
 } from "../../shared/prompt/tool-results.ko";
 import {
@@ -290,6 +291,106 @@ describe("the card in the conversation", () => {
   test("a routine the list no longer holds leaves the line it always drew", async () => {
     const view = await cardScreen({ routineId: "routine_gone" }, [routine()]);
     expect(view.host.textContent).toBe("the line");
+  });
+});
+
+/**
+ * WHOSE ROUTINE A CALL'S CARD IS, WHEN THE TOOL WAS REGISTERED BEFORE THE BOT WAS DECLARED.
+ *
+ * The tools mount with the screen and a surface declares its Bot in an effect, so `manage_routine`
+ * is registered in a commit where no Bot is declared yet — and a registration is read once
+ * (`tool-registry.tsx`). The renderer handed the Bot down from that commit: `undefined`, for as long
+ * as the screen stayed mounted, and the card then looked a routine up among every Bot's. Drawn here
+ * through the real registry, the real declaration and the tools as the provider mounts them, with
+ * an account that holds two Bots (one made before 2026-09-24 may).
+ */
+async function drawnCall(routines: Routine[]) {
+  const { act, createElement } = await import("react");
+  const { QueryClient, QueryClientProvider } = await import(
+    "@tanstack/react-query"
+  );
+  const { ActiveBotProvider, useActiveBot } = await import(
+    "../src/lib/copilot/active-bot"
+  );
+  const { SelfTools } = await import("../src/lib/copilot/self-tools");
+  const { ToolRegistryProvider, useRenderToolCall } = await import(
+    "../src/lib/copilot/tool-registry"
+  );
+  globalThis.fetch = stubFetch(async (input) =>
+    String(input) === "/api/routines"
+      ? json({ routines })
+      : json({ error: "laf:not_stubbed" }, 404),
+  );
+
+  /** The conversation: it says which Bot it is for, and draws the one call it holds. */
+  function Conversation() {
+    useActiveBot(BOT);
+    const draw = useRenderToolCall();
+    return draw({
+      toolCall: {
+        id: "call_edit",
+        type: "function",
+        function: {
+          name: "manage_routine",
+          arguments: JSON.stringify({
+            action: "update",
+            routineId: "주간 매출 요약",
+            schedule: { kind: "daily", time: "08:30", days: [2] },
+          }),
+        },
+      },
+      toolMessage: {
+        content: routineUpdatedText(
+          routine({ dailyTimeZone: "Asia/Seoul" }) as unknown,
+        ),
+      },
+    });
+  }
+
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const view = await mount();
+  await act(async () => {
+    await view.render(
+      createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(
+          ToolRegistryProvider,
+          null,
+          createElement(
+            ActiveBotProvider,
+            null,
+            createElement(SelfTools),
+            createElement(Conversation),
+          ),
+        ),
+      ),
+    );
+  });
+  // The list answers after the line is drawn; a card, if one is coming, replaces the line then.
+  await view.settle(200);
+  return view.host.textContent ?? "";
+}
+
+describe("a routine call drawn in a conversation is its own Bot's", () => {
+  const theirs = routine({
+    id: "routine_other",
+    agentId: "bot-2",
+    dailyDays: [5],
+    dailyLocal: "18:00",
+  });
+
+  test("another Bot's routine by the same name is not drawn as this call's", async () => {
+    // The plain line: this Bot holds no routine by that name any more.
+    expect(await drawnCall([theirs])).toBe("Changed a routine");
+  });
+
+  test("this Bot's routine is drawn, though another Bot has one by the same name", async () => {
+    expect(await drawnCall([theirs, routine({ dailyDays: [2] })])).toMatch(
+      /^Changed a routine · 주간 매출 요약 · now Every Tue at 9:00/,
+    );
   });
 });
 
