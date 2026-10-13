@@ -3159,7 +3159,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * every other method on it, the spellings that are not it, no invitation to another origin, and
  * the real handler behind the real guard.
  *
- * RAISED 2026-10-13 FOR THE REVIEWERS' REDACTION: `server` by one (to 4708), in
+ * RAISED 2026-10-13 FOR THE REVIEWERS' REDACTION: `server` by two (to 4709), in
  * `jev-decisions.test.ts` — an action aimed at another address is a different placeholder from the
  * one the owner's sentence named, and the same address in capitals is the same one. 4707 and 1.
  *
@@ -3191,7 +3191,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4708, roots: ["server"] },
+  { name: "server", floor: 4709, roots: ["server"] },
   { name: "app", floor: 2446, roots: ["app"] },
   {
     name: "agent-computer",
