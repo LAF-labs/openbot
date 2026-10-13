@@ -3208,6 +3208,11 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * server answers the path as it answers any path nothing is mounted on
  * (log-hygiene.integration.test.ts). 4736 less 26, and 1.
  *
+ * RAISED 2026-10-13 FOR WHOSE ROUTINE A CARD IS: `app` by two (to 2534), in `routine-card.test.tsx`
+ * — a routine call drawn through the real registry, under a Bot declared after the tool was
+ * registered: another Bot's routine by the same name is not this call's, and this Bot's is drawn
+ * though another has one by that name. 2532 and 2.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -3237,7 +3242,7 @@ const GROUPS: readonly {
   processes?: number;
 }[] = [
   { name: "server", floor: 4711, roots: ["server"] },
-  { name: "app", floor: 2532, roots: ["app"] },
+  { name: "app", floor: 2534, roots: ["app"] },
   {
     name: "agent-computer",
     /*
