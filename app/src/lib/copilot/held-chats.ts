@@ -1,7 +1,7 @@
 /**
  * The conversations this window is running a turn in, each with the Stop its own button presses.
  *
- * `모두 멈추기` lives in the sidebar, outside the CopilotKit provider each conversation screen mounts
+ * `모두 멈추기` lives in the sidebar, outside the tools' provider each conversation screen mounts
  * for itself, so it cannot reach a conversation's agent — the conversation hands its Stop over
  * instead, for as long as it is mounted. Module state because there is one of these per window, and
  * the conversation that holds a turn is whichever one is on screen.

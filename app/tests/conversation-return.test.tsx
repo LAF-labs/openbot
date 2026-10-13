@@ -237,7 +237,7 @@ describe("words this device kept, on coming back", () => {
  * buttons and, for a secret, no box — under a header saying 도움 필요 — until the Bot's wait ran out.
  *
  * WHICH COMING BACK, measured here on the code before the change. Not from another place: the
- * screen that runs a Bot mounts CopilotKit itself (`channel/$channelId.tsx`), so leaving takes the
+ * screen that runs a Bot mounts the tools itself (`channel/$channelId.tsx`), so leaving takes the
  * renderers with it, they are registered again in the effects of coming back, and by the time a
  * card is drawn the Bot has been declared — the first test below passed before the change and is
  * kept so that stays true. It is the conversation drawn again UNDER A SCREEN THAT STAYED: the

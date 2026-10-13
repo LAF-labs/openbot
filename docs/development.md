@@ -152,7 +152,7 @@ bun run test:smoke
 It drives one journey over HTTP against the running stack, so it covers the joins the rest of the
 suite cannot reach. In order:
 
-1. The deployment answers for itself, has Bots registered with the runtime, and mints thread ids.
+1. The deployment answers for itself, has the run's Bot on its roster, and mints thread ids.
 2. It makes a Bot of its own, serves a Korean shop page from the test process with `Bun.serve`, and
    sends the Bot's browser to it. The page title carries a nonce minted for the run, so "the
    computer really loaded it" is checked rather than assumed.

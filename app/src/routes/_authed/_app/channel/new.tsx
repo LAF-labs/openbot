@@ -57,7 +57,7 @@ export const Route = createFileRoute("/_authed/_app/channel/new")({
   component: ComposeScreen,
 });
 
-/** The transcript's tool renderer needs the CopilotKit context; see `$channelId.tsx` for why it is here. */
+/** The transcript's tool renderer needs the tool registry's context; see `$channelId.tsx` for why it is here. */
 function ComposeScreen() {
   return (
     <CopilotProvider>

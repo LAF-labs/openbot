@@ -540,7 +540,7 @@ describe("the Bot's own calls, as the conversation keeps them", () => {
           refusal:
             drawn?.querySelector('[data-testid="component-refused"]')
               ?.textContent ?? null,
-          /** The card itself: CopilotKit draws an authored card in a sandbox frame. */
+          /** The card itself: an authored card is drawn in a sandbox frame. */
           frames: drawn?.querySelectorAll("iframe").length ?? 0,
         };
       },

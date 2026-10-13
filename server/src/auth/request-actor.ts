@@ -64,16 +64,16 @@ export function createRequestActors(input: {
     });
     const user = session?.user;
     if (!user) {
-      throw new Error("A CopilotKit run requires a signed-in user.");
+      throw new Error("This request requires a signed-in user.");
     }
     if (input.admission && !input.admission.admits(user.email)) {
       // Revoked here too, not only refused: the next request from this person anywhere is told why.
       await input.admission.revoke(user.id, "sign_in_list");
-      throw new Error("A CopilotKit run requires an admitted user.");
+      throw new Error("This request requires an admitted user.");
     }
     const roles = await input.roles.rolesForUser(user.id);
     if (!roles.includes("admin") && !roles.includes("user")) {
-      throw new Error("A CopilotKit run requires an authorized user.");
+      throw new Error("This request requires an authorized user.");
     }
     return {
       id: user.id,

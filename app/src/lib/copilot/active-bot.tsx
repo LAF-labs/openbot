@@ -39,7 +39,7 @@ import {
  * renders, and runs its first effects, before the Bot is declared.
  *
  * SO A RENDERER NEVER HANDS A BOT DOWN AS A PROP. `computer-tools.tsx` did, to the help and the
- * secret card. A renderer is registered once and CopilotKit draws it through a memo that compares
+ * secret card. A renderer is registered once and the registry draws it through a memo that compares
  * the call and nothing else, so the string was read when the card was first drawn and never again.
  * Measured 2026-10-05 through the real route (`conversation-return.test.tsx`): a conversation drawn
  * again under a screen that had stayed — its channel could not be read for a moment, then could —

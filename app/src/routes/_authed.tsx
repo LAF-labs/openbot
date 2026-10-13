@@ -69,11 +69,12 @@ export const Route = createFileRoute("/_authed")({
  * roster went stale and a Bot that finished work while they were reading their own settings told
  * them nothing. Every authenticated screen is inside this route, and one socket is the point.
  *
- * NO COPILOTKIT PROVIDER HERE ANY MORE. It wrapped this Outlet, so its 800 kB — and the transcript
- * renderer it drags in — were a static part of every signed-in screen, Home and Settings included
- * (audit A4, finding 5: 706 kB of a 894 kB first load was these two, on a screen with no
- * transcript). The screens that run a Bot mount it themselves (`lib/copilot/provider.tsx`), and
- * those are route components, which the router splits into chunks fetched on the way there.
+ * NO PROVIDER OF THE BOT'S TOOLS HERE ANY MORE. It was CopilotKit's and wrapped this Outlet, so its
+ * 800 kB — and the transcript renderer the cards drag in — were a static part of every signed-in
+ * screen, Home and Settings included (audit A4, finding 5: 706 kB of a 894 kB first load was these
+ * two, on a screen with no transcript). The screens that run a Bot mount the provider themselves
+ * (`lib/copilot/provider.tsx`, the app's own registry since 2026-10-13), and those are route
+ * components, which the router splits into chunks fetched on the way there.
  */
 function AuthedShell() {
   useChannelEvents();

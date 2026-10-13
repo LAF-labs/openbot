@@ -1175,9 +1175,9 @@ with the next desktop release.
 warnings of Tauri's own tree and the glib entry below. `uuid` is overridden to
 ^11.1.1 in the root `package.json` (GHSA-w5hq-g745-h8pq). It was for
 `@copilotkit/runtime`, which declared ^10; the runtime left the server on
-2026-10-13 and the override stays as a floor: `@ag-ui/client`,
-`@copilotkit/shared` and `mermaid` each still ask for a range that admits
-11.1.0. `esbuild` ≤0.24.2
+2026-10-13 and the override stays as a floor: `@ag-ui/client` still asks
+for a range that admits 11.1.0 (`@copilotkit/shared` and `mermaid` did too,
+until CopilotKit's client left the app the same day). `esbuild` ≤0.24.2
 (GHSA-67mh-4wv8-2f99) stays: it is `drizzle-kit`'s `@esbuild-kit` loader pinned
 at ~0.18, a nested range a root override cannot reach without replacing the
 loader, and the advisory is about esbuild's development server, which nothing
