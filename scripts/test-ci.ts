@@ -3158,6 +3158,13 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * (copilot.test.ts): its answer whole, the roster read on every ask, a roster that cannot be read,
  * every other method on it, the spellings that are not it, no invitation to another origin, and
  * the real handler behind the real guard.
+ * And the app takes fifty-eight, 2446 → 2504, with the tool registry becoming the app's own
+ * (`app/src/lib/copilot/tool-registry.tsx`): the bytes of the tool list a window sends, for seven
+ * sets of grants (tool-list-bytes.test.tsx, 7); the registry's order, its stale registrations, what
+ * outlives a tool, a call drawn while its arguments arrive, and a schema as the turn is sent it
+ * (tool-registry.test.tsx, 16); the reader of arguments still being written, at every prefix of ten
+ * (partial-json.test.ts, 22); and the frame a deployment's own card is drawn in — its one
+ * permission, its document, and no channel to the page (sandbox-frame.test.tsx, 13).
  *
  * RAISED 2026-10-13 FOR THE REVIEWERS' REDACTION: `server` by two (to 4709), in
  * `jev-decisions.test.ts` — an action aimed at another address is a different placeholder from the
