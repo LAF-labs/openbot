@@ -33,9 +33,11 @@ import { toolResultText } from "../shared/prompt/tool-results.ko";
 import { openAccountsIn, WEATHER_TOOL_NAME } from "../shared/tools/bridge";
 import { COMPUTER_TOOLS } from "../shared/tools/computer";
 import { DEEP_EFFORT } from "../shared/fixed-effort";
+import { jsonObjectOf } from "../shared/json-object";
 import {
   DELEGATE,
   DELEGATED_MODES,
+  type DelegatedFacts,
   type DelegateTarget,
   delegateTargetOf,
 } from "../shared/tools/delegate";
@@ -160,6 +162,17 @@ function stubResult(name: string): string {
     return JSON.stringify({ snapshotId: 1, elements: "", count: 0 });
   return JSON.stringify({ ok: true });
 }
+
+/**
+ * What a scripted hand-back (`Scenario.handsBack`) is counted as. Those scenarios are about what
+ * the Bot does with the WORDS that came back; the count beside them is that of an ordinary run —
+ * pages opened, none refused, ended on its own — so the words are all that differs between them.
+ */
+const SCRIPTED_RUN: DelegatedFacts = {
+  steps: 2,
+  stepsFailed: 0,
+  endedAtLimit: false,
+};
 
 /** How many client-loop continuations a scenario may spend before it must have answered. */
 const MAX_TURNS = 4;
@@ -298,6 +311,15 @@ async function runOnce(
    * as the product refuses one.
    */
   const delegated: Delegated[] = [];
+  /**
+   * What the product's server counts of a run it carried out (`DelegatedFacts`,
+   * `server/src/turns/engine.ts`), counted here the same way: a call the harness answered is a
+   * step, one answered `ok: false` did not go through, and a run still asking when its turns ran
+   * out ended at its limit. Handed back beside the answer, as `chat-tools.ts` hands it — the Bot
+   * that delegated reads these, and a pack that left them out would measure a result the product
+   * no longer sends.
+   */
+  const countedOf = new Map<Delegated, DelegatedFacts>();
   const workFor = async (
     to: DelegateTarget,
     task: string,
@@ -328,6 +350,12 @@ async function runOnce(
       events: [],
     };
     const said: string[] = [];
+    const facts: DelegatedFacts = {
+      steps: 0,
+      stepsFailed: 0,
+      endedAtLimit: true,
+    };
+    countedOf.set(run, facts);
     for (let turn = 1; turn <= (scenario.maxTurns ?? MAX_TURNS); turn++) {
       const response = await runAgent(
         {
@@ -356,23 +384,28 @@ async function runOnce(
       // what it says before the step is what a person watching reads.
       if (open.length === 0) {
         run.answer = words;
+        facts.endedAtLimit = false;
         break;
       }
       if (words) said.push(words);
       if (open.some((call) => scenario.waitsOn?.(call))) {
         run.waited = true;
+        facts.endedAtLimit = false;
         break;
       }
       inner.push(...clientMessagesOf(round));
       for (const call of open) {
+        const content =
+          to === "browser"
+            ? ((await scenario.stub?.(call)) ?? stubResult(call.name))
+            : refused("laf:tool_unknown");
+        facts.steps += 1;
+        if (jsonObjectOf(content)?.ok === false) facts.stepsFailed += 1;
         inner.push({
           id: `t_${call.id}`,
           role: "tool",
           toolCallId: call.id,
-          content:
-            to === "browser"
-              ? ((await scenario.stub?.(call)) ?? stubResult(call.name))
-              : refused("laf:tool_unknown"),
+          content,
         });
       }
     }
@@ -413,9 +446,20 @@ async function runOnce(
           };
     delegated.push(run);
     if (run.waited) waiting = true;
-    return run.answer
-      ? JSON.stringify({ ok: true, answer: run.answer })
-      : refused("laf:tool_failed");
+    // The browser's run only, as the product has it. A scripted answer is a run nobody carried
+    // out: it is handed back as one that took its steps and ended on its own (`SCRIPTED_RUN`).
+    const counted =
+      to === "browser" ? (countedOf.get(run) ?? SCRIPTED_RUN) : {};
+    return JSON.stringify(
+      run.answer
+        ? { ok: true, answer: run.answer, ...counted }
+        : {
+            ok: false,
+            code: "laf:tool_failed",
+            reason: toolResultText("laf:tool_failed"),
+            ...counted,
+          },
+    );
   };
 
   for (let turn = 1; turn <= (scenario.maxTurns ?? MAX_TURNS); turn++) {

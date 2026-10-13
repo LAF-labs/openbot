@@ -70,7 +70,7 @@ import {
   withheldToolsText,
 } from "../../shared/tools/paused";
 import { COMPUTER_TOOLS } from "../../shared/tools/computer";
-import { DELEGATE } from "../../shared/tools/delegate";
+import { DELEGATE, type DelegatedFacts } from "../../shared/tools/delegate";
 import { A_CLICK } from "./support/subjects";
 
 const owner: AgentActor = { id: "owner-1", role: "user" };
@@ -4025,9 +4025,12 @@ describe("a conversation that hands its browsing over", () => {
     return { gateway, opened };
   };
   /** A turn that delegates, and what it handed whoever it delegated to. */
+  /** What the server counted of a run that opened one page and answered. */
+  const COUNTED = { steps: 1, stepsFailed: 0, endedAtLimit: false };
   const delegating = async (
     answer: (run: Handed) => Promise<string> | string = () => "21도였어요.",
     declared: Tool[] | null = null,
+    facts: DelegatedFacts = COUNTED,
   ) => {
     const { gateway, opened } = opening();
     const handed: Handed[] = [];
@@ -4046,7 +4049,7 @@ describe("a conversation that hands its browsing over", () => {
         },
         delegate: async (run) => {
           handed.push(run);
-          return { answer: await answer(run), steps: [] };
+          return { answer: await answer(run), steps: [], facts };
         },
       },
       declared,
@@ -4106,7 +4109,7 @@ describe("a conversation that hands its browsing over", () => {
       { to: "browser", task: "  네이버에서 서울 날씨를 찾아 줘.  " },
       made,
     );
-    expect(outcome).toEqual({ ok: true, answer: "21도였어요." });
+    expect(outcome).toEqual({ ok: true, answer: "21도였어요.", ...COUNTED });
     expect(handed).toHaveLength(1);
     const run = handed[0];
     expect(run?.callId).toBe("call-delegate");
@@ -4215,7 +4218,7 @@ describe("a conversation that hands its browsing over", () => {
             { url: "https://example.com" },
             call("call-open"),
           );
-          return { answer: "열었어요.", steps: [] };
+          return { answer: "열었어요.", steps: [], facts: COUNTED };
         },
       },
       null,
@@ -4248,6 +4251,65 @@ describe("a conversation that hands its browsing over", () => {
       code: "laf:tool_arguments_invalid",
     });
     expect(handed).toEqual([]);
+  });
+
+  /*
+   * WHAT THE SERVER COUNTED RIDES BESIDE WHAT THE RUN SAID (2026-10-13). The answer is the run's
+   * own account of itself; the Bot that delegated could not tell "확인했어요" after seven pages
+   * from the same words after none, or a run that stopped at its limit from one that finished.
+   * As fields, in the object the model is handed — the exact bytes, since they are what it reads.
+   */
+  test("the browser's result carries the steps taken, the ones that did not go through, and whether it ended at its limit", async () => {
+    const { toolkit } = await delegating(() => "주문 3건을 확인했어요.", null, {
+      steps: 7,
+      stepsFailed: 2,
+      endedAtLimit: false,
+    });
+    const outcome = await toolkit.execute(DELEGATE.name, TASK, call());
+    expect(outcomeContent(outcome)).toBe(
+      '{"ok":true,"answer":"주문 3건을 확인했어요.","steps":7,"stepsFailed":2,"endedAtLimit":false}',
+    );
+  });
+
+  test("a run that handed nothing back still says what it did: failed, with the count and the limit", async () => {
+    const { toolkit } = await delegating(() => "", null, {
+      steps: 30,
+      stepsFailed: 4,
+      endedAtLimit: true,
+    });
+    const outcome = await toolkit.execute(DELEGATE.name, TASK, call());
+    expect(outcome).toEqual({
+      ok: false,
+      code: "laf:tool_failed",
+      reason: toolResultText("laf:tool_failed"),
+      steps: 30,
+      stepsFailed: 4,
+      endedAtLimit: true,
+    });
+  });
+
+  // It holds no tool: `steps: 0` beside its answer would read as "it did nothing".
+  test("the one handed thinking is counted nothing: its answer alone, and its failure alone", async () => {
+    const thought = await delegating(() => "B안이 12만 원 덜 들어요.");
+    expect(
+      await thought.toolkit.execute(
+        DELEGATE.name,
+        { to: "think", task: "두 안을 비교해 줘." },
+        call(),
+      ),
+    ).toEqual({ ok: true, answer: "B안이 12만 원 덜 들어요." });
+    const silent = await delegating(() => "");
+    expect(
+      await silent.toolkit.execute(
+        DELEGATE.name,
+        { to: "think", task: "두 안을 비교해 줘." },
+        call(),
+      ),
+    ).toEqual({
+      ok: false,
+      code: "laf:tool_failed",
+      reason: toolResultText("laf:tool_failed"),
+    });
   });
 
   test("a run that handed nothing back is a call that failed, never an empty answer", async () => {
@@ -4306,7 +4368,7 @@ describe("a conversation that hands its browsing over", () => {
         ...context,
         delegate: async (run) => {
           handed.push(run);
-          return { answer: "x", steps: [] };
+          return { answer: "x", steps: [], facts: COUNTED };
         },
       },
       null,

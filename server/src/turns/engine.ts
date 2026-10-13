@@ -25,6 +25,7 @@ import { UNANSWERED_RESULT } from "../../../shared/task-ending";
 import { computerTool, drivesTheBrowser } from "../../../shared/tools/computer";
 import {
   DELEGATED_MODES,
+  type DelegatedFacts,
   type DelegatedMode,
   isDelegated,
 } from "../../../shared/tools/delegate";
@@ -883,9 +884,29 @@ export function createTurnEngine(options: TurnEngineOptions) {
           known.add(message.id);
           filed.push({ ...message, lafDelegated: run.callId } as StoredMessage);
         };
+        /*
+         * WHAT THE RUN DID, COUNTED HERE AND HANDED BACK BESIDE WHAT IT SAID (`DelegatedFacts`).
+         * Counted where its calls are carried out, not read off its words: a call that was started
+         * is a step it took, one that came back `ok: false` is a step that did not go through, and
+         * the loop's own "out of steps" answer is the run ending at its limit. A call the loop
+         * answered without starting — the budget round's, a step after a round that ended — is
+         * not a step taken.
+         */
+        const facts: DelegatedFacts = {
+          steps: 0,
+          stepsFailed: 0,
+          endedAtLimit: false,
+        };
         const { steps } = await runTurnLoop(worker, {
           tools: run.tools,
-          execute: run.execute,
+          execute: async (name, args, call) => {
+            facts.steps += 1;
+            const outcome = await run.execute(name, args, call);
+            if (typeof outcome !== "string" && !outcome.ok) {
+              facts.stepsFailed += 1;
+            }
+            return outcome;
+          },
           timeoutMs: Math.max(1, endsAt - Date.now()),
           maxSteps,
           forwardedProps: {
@@ -912,7 +933,13 @@ export function createTurnEngine(options: TurnEngineOptions) {
               meter.observe(event);
             }
           },
-          onToolResult: (message) => {
+          onToolResult: (message, outcome) => {
+            if (
+              typeof outcome !== "string" &&
+              outcome.code === "laf:tool_budget_spent"
+            ) {
+              facts.endedAtLimit = true;
+            }
             filedAt.set(message.id, new Date().toISOString());
             file(message);
             options.hub.event(threadId, turn.id, {
@@ -940,7 +967,7 @@ export function createTurnEngine(options: TurnEngineOptions) {
             await persistNow();
           },
         });
-        return { answer: handedBack(worker.messages), steps };
+        return { answer: handedBack(worker.messages), steps, facts };
       };
 
       /*

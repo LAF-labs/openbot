@@ -41,6 +41,7 @@ import {
   CONVERSATION_COMPUTER_TOOLS,
   DELEGATE,
   DELEGATED_MODES,
+  type DelegatedFacts,
   type DelegatedMode,
   delegateTargetOf,
 } from "../../../shared/tools/delegate";
@@ -267,7 +268,12 @@ export type ChatTurnContext = {
     tools: Tool[];
     execute: LoopExecutor;
     signal: AbortSignal;
-  }) => Promise<{ answer: string; steps: UnattendedStep[] }>;
+  }) => Promise<{
+    answer: string;
+    steps: UnattendedStep[];
+    /** What the run did, as the server counted it while it ran. */
+    facts: DelegatedFacts;
+  }>;
   /**
    * Put a question to a project, as a run over that project's own conversation that reads and
    * does nothing (`engine.ts`, record §3 piece 4-4's second part): `tools` is the list that
@@ -1741,7 +1747,7 @@ export function createChatTools(deps: ChatToolsDeps) {
        * and is refused as one. How hard it thinks is not said here either — the server sends that
        * by the run's mode (`copilot.ts`), to a run a person and a Bot can only start.
        */
-      const { answer } = await run({
+      const { answer, facts } = await run({
         callId: call.id,
         mode: DELEGATED_MODES[to],
         instruction: task,
@@ -1751,7 +1757,16 @@ export function createChatTools(deps: ChatToolsDeps) {
         signal: call.signal,
       });
       if (call.signal.aborted) return refusal("laf:stopped", { stopped: true });
-      return answer ? { ok: true, answer } : refusal("laf:tool_failed");
+      /*
+       * AND WHAT THE SERVER COUNTED, BESIDE WHAT THE RUN SAID (`DelegatedFacts`): the answer is
+       * the run's own account of itself, and these are not. On the failure too — a run that ended
+       * at its limit with nothing to hand back is a different thing to tell a person from one
+       * that took no step. The browser's run only: the one handed thinking holds no tool.
+       */
+      const counted = to === "browser" ? facts : {};
+      return answer
+        ? { ok: true, answer, ...counted }
+        : refusal("laf:tool_failed", counted);
     };
 
     const execute: LoopExecutor = async (name, args, call) => {

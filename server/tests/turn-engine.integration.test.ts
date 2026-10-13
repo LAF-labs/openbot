@@ -257,6 +257,8 @@ function engineWith(
     projectsRead?: NonNullable<ChatToolkit["projectsRead"]>;
     /** How long a question waits for a project's own turn (`TurnEngineOptions.projectAskWaitMs`). */
     projectAskWaitMs?: number;
+    /** How many times a loop may come back asking for tools (`TurnEngineOptions.maxSteps`). */
+    maxSteps?: number;
   } = {},
 ) {
   const hub = createTurnHub({ keepEndedMs: 50 });
@@ -296,6 +298,7 @@ function engineWith(
       ...(options.projectsRead ? { projectsRead: options.projectsRead } : {}),
     }),
     ...(options.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
+    ...(options.maxSteps ? { maxSteps: options.maxSteps } : {}),
     ...(firstMove ? { firstMove } : {}),
     ...(options.now ? { now: options.now } : {}),
     ...(options.admits ? { admits: options.admits } : {}),
@@ -1491,6 +1494,142 @@ describe("a run the turn delegated to", () => {
       "찾아볼게요.",
     );
     expect(handed).toEqual([""]);
+  });
+
+  /*
+   * WHAT THE RUN DID IS COUNTED WHERE ITS CALLS ARE CARRIED OUT (2026-10-13, `DelegatedFacts`).
+   * What it hands back is its own account; the count beside it is the server's.
+   */
+  describe("what the server counted of it", () => {
+    /** A run that opens a page with every reply — `pages` times, or without end — then answers. */
+    const walking = (pages: number, answer: string) => {
+      const agent = {
+        messages: [] as Message[],
+        runs: 0,
+        threadId: undefined as string | undefined,
+        setMessages(messages: Message[]) {
+          agent.messages = [...messages];
+        },
+        addMessage(message: Message) {
+          agent.messages.push(message);
+        },
+        async runAgent(_input: unknown, subscriber?: Subscriber) {
+          agent.runs += 1;
+          const calls = agent.runs <= pages;
+          agent.messages.push({
+            id: `a-${randomUUID()}`,
+            role: "assistant",
+            content: calls ? "" : answer,
+            ...(calls
+              ? {
+                  toolCalls: [
+                    {
+                      id: `page-${agent.runs}`,
+                      type: "function",
+                      function: { name: "computer_navigate", arguments: "{}" },
+                    },
+                  ],
+                }
+              : {}),
+          } as Message);
+          subscriber?.onEvent?.({ event: event("RUN_FINISHED") });
+          subscriber?.onRunFinishedEvent?.();
+          return { result: undefined, newMessages: [] };
+        },
+      };
+      return agent;
+    };
+    /** A turn that hands its work to `worker`, whose calls `carry` answers; what came back. */
+    const counted = async (
+      worker: ReturnType<typeof walking>,
+      carry: (callId: string) => { ok: boolean; code?: string },
+      maxSteps?: number,
+    ) => {
+      const conversation = await aConversation();
+      const main = delegating();
+      const back: unknown[] = [];
+      let resolved = 0;
+      const { engine } = engineWith(
+        main,
+        (context: ChatTurnContext): ChatToolkit["execute"] =>
+          async (name, args, call) => {
+            if (name !== "delegate") return carry(call.id);
+            const handed = await context.delegate?.({
+              callId: call.id,
+              mode: "browse",
+              instruction: String(args.task),
+              tools: [
+                {
+                  name: "computer_navigate",
+                  description: "go",
+                  parameters: {},
+                },
+              ],
+              execute: async (_name, _args, made) => carry(made.id),
+              signal: call.signal,
+            });
+            back.push({ answer: handed?.answer, facts: handed?.facts });
+            return { ok: true, answer: handed?.answer ?? "" };
+          },
+        {
+          resolveAgents: async () => {
+            resolved += 1;
+            return {
+              [BOT]: (resolved === 1 ? main : worker) as unknown as LoopAgent,
+            };
+          },
+          ...(maxSteps ? { maxSteps } : {}),
+        },
+      );
+      const turnId = await send(engine, conversation, "주문 내역 봐줘");
+      await until(async () => (await statusOf(turnId)) === "done");
+      return back;
+    };
+
+    test("every call it started is a step, and one that came back refused is a step that did not go through", async () => {
+      const back = await counted(walking(3, "두 페이지를 봤어요."), (id) =>
+        id === "page-2"
+          ? { ok: false, code: "laf:policy_denied" }
+          : { ok: true },
+      );
+      expect(back).toEqual([
+        {
+          answer: "두 페이지를 봤어요.",
+          facts: { steps: 3, stepsFailed: 1, endedAtLimit: false },
+        },
+      ]);
+    });
+
+    test("a run that answered without a step took none", async () => {
+      const back = await counted(walking(0, "확인했어요."), () => ({
+        ok: true,
+      }));
+      expect(back).toEqual([
+        {
+          answer: "확인했어요.",
+          facts: { steps: 0, stepsFailed: 0, endedAtLimit: false },
+        },
+      ]);
+    });
+
+    /*
+     * Two steps allowed: two pages are opened, the third call is answered "out of steps" without
+     * being started — not a step taken, and not one that failed — and the run, still asking,
+     * hands nothing back.
+     */
+    test("a run that was still asking when its steps ran out ended at its limit, and the calls nobody started are not counted", async () => {
+      const back = await counted(
+        walking(Number.POSITIVE_INFINITY, "never said"),
+        () => ({ ok: true }),
+        2,
+      );
+      expect(back).toEqual([
+        {
+          answer: "",
+          facts: { steps: 2, stepsFailed: 0, endedAtLimit: true },
+        },
+      ]);
+    });
   });
 
   /** A reply of a run's: its words, and the one call it asks for where a call id is given. */
