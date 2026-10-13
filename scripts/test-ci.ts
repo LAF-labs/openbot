@@ -3189,7 +3189,11 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * authored left alone, and the trail's row (chat-tools.test.ts, 8). The app's: the turn's rule
  * for "nothing to show" and the window's for "nothing to draw" held to one answer, card by card
  * over one table of calls (card-nothing-to-draw.test.ts, 15), and the refused empty card left
- * undrawn (question-not-asked.test.ts, 1).
+ * undrawn (question-not-asked.test.ts, 1). And `root` by four (to 1744), for the judge of
+ * `handed-back-could-not-is-said-so` reading "못 들어갔어요" as the could-not it is: the two
+ * replies it failed, and two that must still fail (eval-delegation.test.ts). And `app` by twelve
+ * more (to 2532): each card's declared sentence is the one the turn answers with, card by card —
+ * the quotation's was missing from the turn's table (card-nothing-to-draw.test.ts).
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -3258,7 +3262,7 @@ const GROUPS: readonly {
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 1740, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 1744, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
