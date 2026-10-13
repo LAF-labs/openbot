@@ -64,16 +64,25 @@ updates:
         versions: [">= 0.6.8"]
       # 14.0.0 is the version every animated screen was sampled on, frame by frame; pinned exactly.
       - dependency-name: motion
-      # From 20.12 the app's tests do not finish: it gained `Element.animate()`, and motion's
-      # cancel of one is an unhandled rejection in it (measured on 20.13.2 and 20.14.x, #235).
+      # The test DOM, held where the suite is known to pass. From 20.12 the app's tests do not
+      # finish (it gained `Element.animate()`, and motion's cancel of one is an unhandled rejection
+      # in it — #235), and 20.11.15 failed 902 of them (#237). Moved on purpose, with the suite
+      # watched, not weekly.
       - dependency-name: "@happy-dom/global-registrator"
-        versions: [">= 20.12"]
       # Moves with the browser image, by hand, in one change (agent-computer/Dockerfile): the
       # image's browser directory is named after the build this package expects.
       - dependency-name: playwright
       # The transport between the server and the Bot's service: three packages pinned exactly at
       # one version, moved together with the protocol's tests (1.0 does not compile here).
       - dependency-name: "@ag-ui/*"
+      # The client every turn's model call goes through. A major moves with the evaluation pack run
+      # before and after (`bun run eval:model`), never as a bump: green checks do not measure what a
+      # Bot does with a changed stream.
+      - dependency-name: openai
+        update-types: ["version-update:semver-major"]
+      # Carries the React Compiler's plugin: 8 does not typecheck or pass here (#238).
+      - dependency-name: "@babel/core"
+        update-types: ["version-update:semver-major"]
       # A compiler major is a change of its own: 7 does not typecheck this tree.
       - dependency-name: typescript
         update-types: ["version-update:semver-major"]
