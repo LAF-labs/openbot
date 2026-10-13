@@ -294,8 +294,10 @@ export function createRoutineRun(options: RoutineRunOptions): RoutineRun {
 /**
  * NOBODY THE DEPLOYMENT NO LONGER ADMITS ACTS THROUGH A ROUTINE.
  *
- * A routine runs as its author, on the deployment's one browser — which since 2026-09-16 is signed
- * in as the deployment's person. Somebody struck off the sign-in list lost their sessions and kept
+ * A routine runs as its author, with what is its author's: the logins that person saved, which
+ * it signs in with in the routines' own browser (its pages left the main one, the one signed in as
+ * the deployment's person since 2026-09-16, with "루틴 옮기기"), the Bot's folder, and the
+ * services that person connected. Somebody struck off the sign-in list lost their sessions and kept
  * everything that runs without one: their routines fired on the clock, on "run now" and on the
  * webhook, as late as the audit that measured it (2026-09-16, R1-04). So the author is asked about
  * before anything else happens, through the one answer every unattended path shares
