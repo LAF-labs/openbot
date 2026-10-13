@@ -14,8 +14,8 @@
  *  3. The resolved path must still be inside the root after symlinks are followed. This is the layer
  *     people miss: a symlink placed inside the workspace (by an earlier write, or by a page the Bot
  *     downloaded something from) passes the lexical check and then points anywhere on the filesystem.
- *     For a write, the file may not exist yet, so it is the deepest existing ancestor that gets
- *     resolved, which is the directory the write will actually land in.
+ *     For a write, the file may not exist yet, so what exists of the path is resolved and the rest
+ *     joined under it: the place the write will actually land (`whereAWriteLands`).
  *
  * A factory taking its root as an argument rather than reading the environment, so the confinement
  * can be tested against a temporary directory instead of being taken on trust.
@@ -36,7 +36,14 @@ import {
   unlink,
   writeFile,
 } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import { ATTACHMENT_MAX_BYTES } from "../../shared/attachments";
 import {
   type FileScope,
@@ -331,37 +338,40 @@ export function createWorkspace(
 
     // Layer three. Resolve what exists on disk and check again, because everything above
     // reasons about the path as text and a symlink makes the text a lie.
-    const anchor = forWrite ? dirname(target) : target;
-    let realAnchor: string;
-    try {
-      realAnchor = await realpath(anchor);
-    } catch {
-      if (!forWrite) {
+    if (!forWrite) {
+      let real: string;
+      try {
+        real = await realpath(target);
+      } catch {
         throw new WorkspaceFileError(`There is no file at ${wanted}.`);
       }
-      // The parent directory does not exist yet. Walk up to the nearest one that does and verify it,
-      // so a write into a new subdirectory is allowed but cannot be aimed through a symlink.
-      realAnchor = await nearestExistingAncestor(root, anchor);
+      assertInside(root, real, wanted);
+      // And by where it really is: a link in the folder that leads into another project's folder
+      // is that project's file under a name of this one's.
+      refusedFor(relative(root, real).split(sep).join("/"), "read");
+      return real;
     }
-    assertInside(root, realAnchor, wanted);
-    /*
-     * AND BY WHERE IT REALLY IS. A link in the folder — a script in the workbench can make one —
-     * that points into another project's folder is that project's file under a name of this one's.
-     * As a read whichever it is: what is asked of the place a link leads is only whether it is
-     * somebody else's. (A project's first write has its anchor at `projects/` or the root, which
-     * a project may read and not write, so asking "write" here would refuse every first write.)
-     *
-     * WHAT THAT LEAVES: a link in a project's folder to the Bot's own folder lets that project
-     * write there. Nothing a Bot is offered makes a link — only the workbench could, and it is
-     * offered to nobody — so this is closed when the workbench is: a write whose real anchor is
-     * neither its own folder, `projects/`, nor the root is then refused as a write.
-     */
-    refusedFor(relative(root, realAnchor).split(sep).join("/"), "read");
 
-    // For a write, return the full lexical target. It is already proven contained lexically, and the
-    // deepest existing directory is proven contained after symlinks, so `mkdir -p` can only create the
-    // rest inside the workspace.
-    return forWrite ? target : realAnchor;
+    /*
+     * A WRITE IS JUDGED WHERE IT LANDS, AS A WRITE. Until 2026-10-13 only the directory the write
+     * would be made in was resolved, and the place it led to was asked about as a READ — the
+     * reason given being that a project's first write has `projects/` or the root for its anchor,
+     * which a project may read and not write. Two things walked through that: a link in a
+     * project's folder to the Bot's own folder let that project write there (the Bot's folder is
+     * a project's to read), and a link that was itself the file — `projects/<id>/note.md` leading
+     * to `/etc/…` — was never resolved at all, since only its directory was, and `writeFile`
+     * follows it (measured here, 2026-10-13, in the tests beside this). So the path the write
+     * would really make is composed — what exists resolved through its links, the rest of the
+     * names as written — and THAT is held inside the folder and asked about as a write: a
+     * project's first write composes to its own folder, which it may write.
+     */
+    const lands = await whereAWriteLands(root, target);
+    assertInside(root, lands, wanted);
+    refusedFor(relative(root, lands).split(sep).join("/"), "write");
+
+    // The full lexical target: it is proven contained lexically, and where it lands is proven
+    // contained and the scope's after links, so `mkdir -p` can only create the rest inside both.
+    return target;
   }
 
   const downloadBytes = limits.downloadBytes ?? HANDOFF_MAX_BYTES;
@@ -965,22 +975,31 @@ function assertInside(root: string, candidate: string, shown?: string): void {
   }
 }
 
-/** The closest ancestor of `target` that exists, never above `root`. */
-async function nearestExistingAncestor(
-  root: string,
-  target: string,
-): Promise<string> {
+/**
+ * Where a write to `target` would really put its bytes: the deepest part of the path that exists,
+ * resolved through its links, with the names that do not exist yet joined under it — never above
+ * `root`. A link on the way that leads nowhere is refused: the write would create a file where the
+ * link points, and that place cannot be judged.
+ */
+async function whereAWriteLands(root: string, target: string): Promise<string> {
   let current = target;
+  const toMake: string[] = [];
   for (;;) {
     try {
-      return await realpath(current);
+      const real = await realpath(current);
+      return toMake.length === 0 ? real : resolve(real, ...toMake.reverse());
     } catch {
+      const asNamed = await lstat(current).catch(() => null);
+      if (asNamed?.isSymbolicLink()) {
+        throw new WorkspacePathError("That file path cannot be a file's.");
+      }
       const parent = dirname(current);
       if (parent === current) {
         // Ran out of path without finding anything. Only reachable if the root itself vanished.
         throw new WorkspacePathError("The workspace directory is missing.");
       }
       assertInside(root, parent);
+      toMake.push(basename(current));
       current = parent;
     }
   }
