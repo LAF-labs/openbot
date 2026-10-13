@@ -62,9 +62,12 @@ updates:
       # 0.7 adds a peer package. Lands with a person typing Korean into it.
       - dependency-name: prompt-area
         versions: [">= 0.6.8"]
-      # Under 20.14 the app's tests do not finish.
+      # 14.0.0 is the version every animated screen was sampled on, frame by frame; pinned exactly.
+      - dependency-name: motion
+      # From 20.12 the app's tests do not finish: it gained `Element.animate()`, and motion's
+      # cancel of one is an unhandled rejection in it (measured on 20.13.2 and 20.14.x, #235).
       - dependency-name: "@happy-dom/global-registrator"
-        versions: [">= 20.14"]
+        versions: [">= 20.12"]
       # Moves with the browser image, by hand, in one change (agent-computer/Dockerfile): the
       # image's browser directory is named after the build this package expects.
       - dependency-name: playwright
