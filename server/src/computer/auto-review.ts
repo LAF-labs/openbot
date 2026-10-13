@@ -39,6 +39,7 @@
  *   second verdict, the page's own words echoed back — is a question for the person.
  */
 
+import { redactDeep, redactText } from "../context/judge-redaction";
 import { noAnswerFact } from "../failure-text";
 import { log } from "../log";
 import type { AskSubject } from "./approvals";
@@ -257,7 +258,19 @@ export function createModelAutoReviewer(
     if (!trimmed) return null;
 
     const answer = await askModel(options, {
-      ...reviewPrompt(trimmed, subject),
+      /*
+       * THROUGH THE ONE REDACTION, HERE, WHERE THE SENTENCE LEAVES (`context/judge-redaction.ts`).
+       * The owner's sentence names an address, a phone number, now and then a password, and this
+       * judge is a model somebody else hosts. The Jev reviewer redacted what it sent and what it
+       * handed this one as its fallback (`jev-auto-review.ts`); a deployment with Jev off — the
+       * default — calls this directly, and there the sentence left whole. Done here it holds
+       * whoever calls. Both sides through the same rule, so a sentence naming an address still
+       * matches the label naming it: `[email]` on either side. Redacting twice changes nothing.
+       */
+      ...reviewPrompt(
+        redactText(trimmed),
+        redactDeep(subject) as ReviewSubject,
+      ),
       timeoutMs,
       /*
        * NO CEILING, AND THIS IS THE BUG THAT MADE THE FEATURE A LIE.
