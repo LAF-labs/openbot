@@ -340,6 +340,14 @@ export function createAccountDeletion(
        *
        * Under the pseudonym, so the disconnection rows it writes do not name somebody who is in the
        * middle of ceasing to exist.
+       *
+       * HERE, AHEAD OF THE TRANSACTION, AND IT MUST STAY HERE. It also asks each connected service
+       * to end the connection on its side (owner, 2026-10-13), and it asks with the token — so it
+       * has to run while the vault rows the transaction below deletes still exist. It waits on
+       * other people's servers, which is the second reason it is not inside: all the vendors are
+       * asked at once and given one bound together (`TIMEOUT_MS.token`), so this adds at most that
+       * to a deletion, and no row lock is held while it waits. A vendor that refuses or says
+       * nothing changes nothing below; the row for that connection says which it was.
        */
       const retired = retireConnectionsFor
         ? await retireConnectionsFor(userId, pseudonym)

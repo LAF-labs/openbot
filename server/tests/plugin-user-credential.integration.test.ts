@@ -10,6 +10,7 @@ import {
   encryptSecret,
 } from "../src/credentials";
 import { createDatabase } from "../src/db/client";
+import { recentLines } from "../src/log";
 import {
   agents,
   auditEvents,
@@ -19,6 +20,7 @@ import {
   pluginGrants,
   users,
 } from "../src/db/schema";
+import { revocationRequest } from "../src/plugins/connections";
 import {
   type AccessToken,
   createPluginStore,
@@ -239,7 +241,10 @@ const serverClientId = async (server = serverId) => {
  * seam of its own, and letting it out would send a real deployment's traffic to Notion from a test.
  */
 async function withVendor<T>(
-  reply: () => Response,
+  /** Handed everything asked so far, this request included, so a reply can wait on the others. */
+  reply: (
+    asked: { url: string; form: URLSearchParams }[],
+  ) => Response | Promise<Response>,
   run: (asked: { url: string; form: URLSearchParams }[]) => Promise<T>,
 ): Promise<T> {
   const asked: { url: string; form: URLSearchParams }[] = [];
@@ -249,7 +254,7 @@ async function withVendor<T>(
       url: String(url),
       form: new URLSearchParams(String(init?.body ?? "")),
     });
-    return reply();
+    return await reply(asked);
   }) as unknown as typeof fetch;
   try {
     return await run(asked);
@@ -1280,6 +1285,38 @@ describe("one person disconnecting their own account", () => {
       owner: leaver,
       reason: "person_disconnected",
       vendorRevoked: false,
+      vendorAnswer: "refused",
+    });
+  });
+
+  test("says the vendor confirmed when it did", async () => {
+    await registerDeploymentClient();
+    await store.recordConnection({
+      serverId,
+      userId: leaver,
+      refreshToken: "rt-leaver-confirmed",
+      scope: "read",
+    });
+
+    const asked = await withVendor(
+      () => new Response(null, { status: 200 }),
+      async (asked) => {
+        await store.disconnectAccount({ serverId, userId: leaver });
+        return asked;
+      },
+    );
+
+    // The token the vault held, which only reaches the vendor when it is read BEFORE the row is
+    // revoked here.
+    expect(asked.map((request) => request.form.get("token"))).toEqual([
+      "rt-leaver-confirmed",
+    ]);
+    expect(
+      (await trail("mcp.account_disconnected", leaver)).at(-1),
+    ).toMatchObject({
+      reason: "person_disconnected",
+      vendorRevoked: true,
+      vendorAnswer: "confirmed",
     });
   });
 
@@ -1346,9 +1383,9 @@ describe("retiring every credential one person owns", () => {
       .delete(mcpUserCredentials)
       .where(eq(mcpUserCredentials.userId, retiree));
 
-    const { retired } = await store.retireConnectionsFor(
-      retiree,
-      `admin-${suite}@laf.test`,
+    const { retired } = await withVendor(
+      () => new Response("no", { status: 503 }),
+      () => store.retireConnectionsFor(retiree, `admin-${suite}@laf.test`),
     );
 
     expect(retired).toBe(1);
@@ -1365,8 +1402,10 @@ describe("retiring every credential one person owns", () => {
       // Not "they disconnected": an administrator removed them, and an auditor asking what happened
       // to their access should see which of the three this was.
       reason: "person_removed",
-      // Said plainly rather than implied: the grant at the vendor outlives this.
+      // Said plainly rather than implied: this vendor did not end it, so the grant there outlives
+      // this.
       vendorRevoked: false,
+      vendorAnswer: "refused",
     });
   });
 
@@ -1378,18 +1417,277 @@ describe("retiring every credential one person owns", () => {
       scope: "read",
     });
 
-    expect(
-      (await store.retireConnectionsFor(retiree, "admin@laf.test")).retired,
-    ).toBe(1);
-    // Already revoked is something an administrator can legitimately do twice.
-    expect(
-      (await store.retireConnectionsFor(retiree, "admin@laf.test")).retired,
-    ).toBe(0);
-    // The anonymous actor owns nothing, and must not match rows by being empty.
-    expect(
-      (await store.retireConnectionsFor("", "admin@laf.test")).retired,
-    ).toBe(0);
+    const asked = await withVendor(
+      () => new Response(null, { status: 200 }),
+      async (asked) => {
+        expect(
+          (await store.retireConnectionsFor(retiree, "admin@laf.test")).retired,
+        ).toBe(1);
+        // Already revoked is something an administrator can legitimately do twice.
+        expect(
+          (await store.retireConnectionsFor(retiree, "admin@laf.test")).retired,
+        ).toBe(0);
+        // The anonymous actor owns nothing, and must not match rows by being empty.
+        expect(
+          (await store.retireConnectionsFor("", "admin@laf.test")).retired,
+        ).toBe(0);
+        return asked;
+      },
+    );
+    // Asked once: the second retirement has nothing live left to tell a vendor about.
+    expect(asked).toHaveLength(1);
     expect(await store.connectionsFor(retiree)).toEqual([]);
+  });
+
+  /*
+   * An account being deleted asks each connection's vendor to end it there too (owner,
+   * 2026-10-13), and nothing a vendor does may stop or stall the retirement here. One case per
+   * thing a vendor can do. `BOUND_MS` stands in for the ten seconds production gives, so the
+   * silent vendor costs this file a fraction of a second.
+   */
+  const BOUND_MS = 250;
+  const by = `deleted-${suite}`;
+
+  /** One live grant for the retiree on a server, as a connection leaves it: vault row and join row. */
+  async function grantOn(provider: string, refreshToken: string) {
+    const [credential] = await database
+      .insert(credentials)
+      .values({
+        kind: "mcp_user_token",
+        provider,
+        keyId: retiree,
+        metadata: {},
+        encryptedValue: await encryptSecret(ENCRYPTION_KEY, refreshToken),
+      })
+      .returning({ id: credentials.id });
+    if (!credential) throw new Error("the fixture grant was not stored");
+    return credential.id;
+  }
+
+  /** Every trail row and every log line this process holds, as one string to search. */
+  const everythingWritten = async () =>
+    JSON.stringify({
+      rows: await database
+        .select()
+        .from(auditEvents)
+        .where(sql`${auditEvents.payload} ->> 'owner' = ${retiree}`),
+      lines: recentLines.lines(),
+    });
+
+  test.each([
+    {
+      vendor: "confirms",
+      reply: () => new Response(null, { status: 200 }),
+      answer: "confirmed",
+      revoked: true,
+    },
+    {
+      vendor: "refuses",
+      reply: () => new Response("invalid_token", { status: 400 }),
+      answer: "refused",
+      revoked: false,
+    },
+    {
+      vendor: "redirects",
+      reply: () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: "https://elsewhere.test.invalid/" },
+        }),
+      answer: "refused",
+      revoked: false,
+    },
+    {
+      vendor: "is unreachable",
+      reply: () => {
+        throw new TypeError("fetch failed");
+      },
+      answer: "no_answer",
+      revoked: false,
+    },
+    {
+      vendor: "never answers",
+      // Deaf to the abort signal as well: the bound has to hold without the vendor's help.
+      reply: () => new Promise<Response>(() => {}),
+      answer: "no_answer",
+      revoked: false,
+    },
+  ])(
+    "a vendor that $vendor: the grant is retired here and the row says $answer",
+    async ({ vendor, reply, answer, revoked }) => {
+      await registerDeploymentClient();
+      const refreshToken = `rt-retiree-${vendor.replaceAll(" ", "-")}-${suite}`;
+      await store.recordConnection({
+        serverId,
+        userId: retiree,
+        refreshToken,
+        scope: "read",
+      });
+      const grant = await liveGrant(retiree);
+
+      const started = performance.now();
+      const { asked, retired } = await withVendor(reply, async (asked) => ({
+        asked,
+        ...(await store.retireConnectionsFor(retiree, by, BOUND_MS)),
+      }));
+      const took = performance.now() - started;
+
+      // Asked once, at the address the entry pins, with the token the vault held — which it only
+      // hands over while the row is live, so this is also the order: the vendor first.
+      expect(asked).toHaveLength(1);
+      expect(asked[0]?.url).toBe("https://mcp.notion.com/token");
+      expect(asked[0]?.form.get("token")).toBe(refreshToken);
+
+      // Retired here whatever the vendor did.
+      expect(retired).toBe(1);
+      expect(await revokedAtOf(grant?.id ?? "")).not.toBeNull();
+      expect(await joinRow(retiree)).toBeNull();
+      expect(await liveTokensFor(retiree)).toBe(0);
+
+      expect((await trail("mcp.account_disconnected", by)).at(-1)).toEqual({
+        actor: by,
+        server: serverId,
+        owner: retiree,
+        reason: "person_removed",
+        vendorRevoked: revoked,
+        vendorAnswer: answer,
+      });
+      // What was sent to the vendor is in no row and no log line.
+      expect(await everythingWritten()).not.toContain(refreshToken);
+      // One bound, with room for the database beside three other files; far short of the test's
+      // own five seconds, which is what a deletion held hostage would run into.
+      expect(took).toBeLessThan(BOUND_MS + 2_000);
+    },
+  );
+
+  test("a server with no revocation endpoint is not asked, and is retired all the same", async () => {
+    // A server somebody added by hand: the catalogue does not know it, so nothing names an address
+    // a refresh token may be posted to.
+    const refreshToken = `rt-retiree-custom-${suite}`;
+    const id = await grantOn(removableId, refreshToken);
+
+    const { asked, retired } = await withVendor(
+      () => new Response(null, { status: 200 }),
+      async (asked) => ({
+        asked,
+        ...(await store.retireConnectionsFor(retiree, by, BOUND_MS)),
+      }),
+    );
+
+    expect(asked).toEqual([]);
+    expect(retired).toBe(1);
+    expect(await revokedAtOf(id)).not.toBeNull();
+    expect((await trail("mcp.account_disconnected", by)).at(-1)).toEqual({
+      actor: by,
+      server: removableId,
+      owner: retiree,
+      reason: "person_removed",
+      // Not "the vendor refused": nobody asked it.
+      vendorRevoked: false,
+      vendorAnswer: "not_asked",
+    });
+    expect(await everythingWritten()).not.toContain(refreshToken);
+  });
+
+  /**
+   * The bound is one bound, not one per connection. Shown without a clock: this vendor answers
+   * nobody until all three have asked, so asking them one after another gets silence from the
+   * first and never reaches the third in time.
+   */
+  test("every vendor is asked at once, so three connections wait no longer than one", async () => {
+    await registerDeploymentClient();
+    const servers = [serverId, "canva", "kakao-playmcp"];
+    const tokens = servers.map((server) => `rt-retiree-${server}-${suite}`);
+    for (const [index, server] of servers.entries()) {
+      await grantOn(server, tokens[index] ?? "");
+    }
+
+    const { asked, retired } = await withVendor(
+      async (asked) => {
+        while (asked.length < servers.length) await Bun.sleep(5);
+        return new Response(null, { status: 200 });
+      },
+      async (asked) => ({
+        asked,
+        ...(await store.retireConnectionsFor(retiree, by, BOUND_MS)),
+      }),
+    );
+
+    expect(retired).toBe(3);
+    expect(asked.map((request) => request.url).sort()).toEqual([
+      "https://mcp.canva.com/token",
+      "https://mcp.notion.com/token",
+      "https://playauth.kakao.com/playmcp/oauth2/revoke",
+    ]);
+    expect(asked.map((request) => request.form.get("token")).sort()).toEqual(
+      [...tokens].sort(),
+    );
+    const rows = (await trail("mcp.account_disconnected", by)).slice(-3);
+    expect(rows.map((row) => [row.server, row.vendorAnswer]).sort()).toEqual(
+      servers.map((server) => [server, "confirmed"]).sort(),
+    );
+    expect(await liveTokensFor(retiree)).toBe(0);
+  });
+});
+
+/*
+ * The request itself, for the vendor whose form differs. Cafe24's endpoints are per mall, so the
+ * suite's own connector cannot stand in for it; the request is built by a pure function for exactly
+ * this.
+ */
+describe("the revocation request, per vendor's form", () => {
+  const client = { clientId: "an-app", clientSecret: "its-secret" };
+
+  test("the client goes in the body where the vendor takes it there", () => {
+    const { url, init } = revocationRequest({
+      revokeUrl: "https://vendor.test.invalid/revoke",
+      refreshToken: "rt-form",
+      client,
+    });
+    expect(url).toBe("https://vendor.test.invalid/revoke");
+    expect(init.method).toBe("POST");
+    expect(init.redirect).toBe("manual");
+    expect(Object.fromEntries(init.body as URLSearchParams)).toEqual({
+      token: "rt-form",
+      token_type_hint: "refresh_token",
+      client_id: "an-app",
+      client_secret: "its-secret",
+    });
+    expect(init.headers).toEqual({
+      "content-type": "application/x-www-form-urlencoded",
+    });
+  });
+
+  test("and on the Authorization header for a vendor that authenticates it there", () => {
+    const { init } = revocationRequest({
+      revokeUrl: "https://mall.test.invalid/api/v2/oauth/revoke",
+      refreshToken: "rt-basic",
+      client,
+      tokenAuth: "basic",
+    });
+    // The same client stated once: a header AND body fields would be it stated twice.
+    expect(Object.fromEntries(init.body as URLSearchParams)).toEqual({
+      token: "rt-basic",
+      token_type_hint: "refresh_token",
+      token_hint: "refresh_token",
+    });
+    expect(init.headers).toEqual({
+      "content-type": "application/x-www-form-urlencoded",
+      authorization: `Basic ${Buffer.from("an-app:its-secret").toString("base64")}`,
+    });
+  });
+
+  test("a public client sends its id and no empty secret", () => {
+    const { init } = revocationRequest({
+      revokeUrl: "https://vendor.test.invalid/revoke",
+      refreshToken: "rt-public",
+      client: { clientId: "dyn-public", clientSecret: "" },
+    });
+    expect(Object.fromEntries(init.body as URLSearchParams)).toEqual({
+      token: "rt-public",
+      token_type_hint: "refresh_token",
+      client_id: "dyn-public",
+    });
   });
 });
 

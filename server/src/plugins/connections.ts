@@ -27,6 +27,7 @@ import {
   type ConnectionHealth,
   clientFromVault,
   iso,
+  type OAuthClient,
   type PluginContext,
   PluginRefusedError,
   type StoredClient,
@@ -39,6 +40,77 @@ import { TIMEOUT_MS } from "./timeouts";
  * file only knows where the two kinds of failure come from — the exchange below, and the vendor's
  * answer the call path reports through `recordVendorStatus` — and writes down the verdict.
  */
+
+/**
+ * What a vendor said when it was asked to end one grant on its side.
+ *
+ * Four answers, because the trail is read by whoever has to say what became of somebody's access and
+ * "false" was three different things: the vendor said no, the vendor said nothing, and nobody asked.
+ * Only `confirmed` means the grant is over there; after any of the others the person can still end
+ * it in that service's own settings, which is what the legal text tells them.
+ *
+ *   confirmed  the vendor answered 2xx
+ *   refused    the vendor answered anything else — a redirect included, which is never followed
+ *   no_answer  unreachable, or silent past the bound
+ *   not_asked  there was nothing to send or nowhere to send it: a server the catalogue does not
+ *              know (it names no revocation endpoint), a per-instance host this deployment will
+ *              not post a credential to, or a token the vault could not hand over
+ */
+export type VendorAnswer = "confirmed" | "refused" | "no_answer" | "not_asked";
+
+/**
+ * The one request that tells a vendor a grant is over (RFC 7009), as each vendor here takes it.
+ *
+ * Pure, so the shape that leaves can be asserted without a vendor or a vault. The refresh token is
+ * what is revoked: it is the only token this deployment keeps, and revoking it ends the access
+ * tokens minted from it at every vendor in the catalogue.
+ *
+ * The client goes with it because RFC 7009 lets a vendor demand client authentication, and a public
+ * client's id alone satisfies the ones that do. WHERE it goes is the entry's `tokenAuth`, the same
+ * split the exchange and the code redemption make: Cafe24 authenticates the client on the
+ * `Authorization` header at its revoke endpoint exactly as at its token endpoint, and names the
+ * hint `token_hint`. Until 2026-10-13 this request stated the client in the body for every vendor,
+ * which is the form Cafe24's token endpoint refuses.
+ */
+export function revocationRequest(input: {
+  revokeUrl: string;
+  refreshToken: string;
+  client: OAuthClient | null;
+  tokenAuth?: "basic" | undefined;
+}): { url: string; init: RequestInit } {
+  const { client } = input;
+  const basic =
+    input.tokenAuth === "basic" && !!client && client.clientSecret !== "";
+  const params = new URLSearchParams({
+    token: input.refreshToken,
+    token_type_hint: "refresh_token",
+  });
+  if (basic) params.set("token_hint", "refresh_token");
+  if (client && !basic) {
+    params.set("client_id", client.clientId);
+    if (client.clientSecret) params.set("client_secret", client.clientSecret);
+  }
+  return {
+    url: input.revokeUrl,
+    init: {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        ...(basic && client
+          ? {
+              authorization: `Basic ${Buffer.from(
+                `${client.clientId}:${client.clientSecret}`,
+              ).toString("base64")}`,
+            }
+          : {}),
+      },
+      body: params,
+      // A redirect is a refusal: this request carries somebody's refresh token, and following a
+      // 302 would hand it to whatever address the answer named.
+      redirect: "manual",
+    },
+  };
+}
 
 /**
  * One person's own access to one vendor: the grant they consented to, and the token a call goes out
@@ -623,6 +695,91 @@ export function createConnections(
   }
 
   /**
+   * Ask the vendor to end one grant on its side. The one implementation: a person disconnecting
+   * and an account being deleted both come through here.
+   *
+   * NEVER THROWS AND NEVER WAITS PAST `boundMs`. Whatever calls this is about to retire the
+   * credential here whatever the vendor says, and a vendor that is down, slow or hostile must not
+   * be able to hold a disconnect or a deletion hostage. Asked once: a second try doubles the wait
+   * for an answer the person can get for themselves in the vendor's own settings.
+   *
+   * MUST RUN BEFORE the credential is revoked here. The token it sends is read out of the vault,
+   * and the vault refuses to hand over a revoked one — revoke first and there is nothing left to
+   * tell the vendor with.
+   *
+   * Answers a code and nothing else. The token, the client and the vendor's words stay in here.
+   */
+  async function askVendorToEnd(
+    serverId: string,
+    credentialId: string,
+    boundMs: number = TIMEOUT_MS.token,
+  ): Promise<VendorAnswer> {
+    const entry = catalogueEntry(serverId);
+    if (entry?.auth.kind !== "user-oauth") return "not_asked";
+
+    let request: { url: string; init: RequestInit };
+    try {
+      /*
+       * The address a revocation is sent to, resolved the same way the refresh is: from the entry
+       * AND the row, so a per-instance vendor's revoke endpoint is the mall's own. A row that names
+       * no admissible host leaves nothing to post to.
+       */
+      const [stored] = await database
+        .select({ url: mcpServers.url })
+        .from(mcpServers)
+        .where(eq(mcpServers.id, serverId))
+        .limit(1);
+      const endpoints = authEndpointsFor(entry, stored?.url ?? null);
+      if (!endpoints) return "not_asked";
+      // Read for one purpose and never returned: telling the vendor this grant is over.
+      const refreshToken = await decryptCredentialForUse(
+        encryptionKey,
+        credentials,
+        credentialId,
+      );
+      // The fleet's application first, because for these entries there is no vault client to find.
+      const client =
+        (entry.auth.sharedClient
+          ? context.sharedClient(entry.auth.sharedClient)
+          : null) ?? (await oauthClients.storedOAuthClient(serverId));
+      request = revocationRequest({
+        revokeUrl: endpoints.revokeUrl,
+        refreshToken,
+        client,
+        tokenAuth: entry.auth.tokenAuth,
+      });
+    } catch {
+      return "not_asked";
+    }
+
+    /*
+     * The bound is raced, not only signalled. `AbortSignal` asks the request to stop and a real
+     * `fetch` does; the race is what makes "never waits past the bound" true of this function
+     * rather than of whatever is underneath it.
+     */
+    const signal = AbortSignal.timeout(boundMs);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const silence = new Promise<"no_answer">((resolve) => {
+      timer = setTimeout(() => resolve("no_answer"), boundMs);
+    });
+    const asked = (async (): Promise<VendorAnswer> => {
+      try {
+        const response = await fetch(request.url, { ...request.init, signal });
+        // Only the status is read. The body is the vendor's and is let go unread.
+        void response.body?.cancel().catch(() => {});
+        return response.ok ? "confirmed" : "refused";
+      } catch {
+        return "no_answer";
+      }
+    })();
+    try {
+      return await Promise.race([asked, silence]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
    * Point one person's connection at a new refresh token, revoking the one it replaces.
    *
    * For a person connecting, which is where a new row earns its keep: what they held before this is
@@ -837,66 +994,15 @@ export function createConnections(
         .limit(1);
       if (!held) return { disconnected: false };
 
-      const entry = catalogueEntry(input.serverId);
       /*
-       * The address a revocation is sent to, resolved the same way the refresh is: from the entry
-       * AND the row, so a per-instance vendor's revoke endpoint is the mall's own. A row that names
-       * no admissible host leaves `endpoints` null, and the local half below still runs — a
-       * disconnect must never be held hostage by an address we would not post to anyway.
+       * The vendor first, while the vault will still hand the token over. Whatever it answers,
+       * the local half below runs: the revocation here is what makes the grant unusable BY US, and
+       * the trail says which half happened.
        */
-      const [stored] = await database
-        .select({ url: mcpServers.url })
-        .from(mcpServers)
-        .where(eq(mcpServers.id, input.serverId))
-        .limit(1);
-      const endpoints = entry
-        ? authEndpointsFor(entry, stored?.url ?? null)
-        : null;
-      let vendorRevoked = false;
-      if (entry?.auth.kind === "user-oauth" && endpoints) {
-        /*
-         * Read for one purpose and never returned: telling the vendor this grant is over. The
-         * client goes with it because RFC 7009 lets a vendor demand client authentication, and a
-         * public client's id alone satisfies the ones that do.
-         */
-        try {
-          const refreshToken = await decryptCredentialForUse(
-            encryptionKey,
-            credentials,
-            held.credentialId,
-          );
-          /*
-           * The fleet's application first, because for these entries there is no vault client to
-           * find and RFC 7009 lets a vendor demand the client on a revocation.
-           */
-          const client =
-            (entry.auth.sharedClient
-              ? context.sharedClient(entry.auth.sharedClient)
-              : null) ?? (await oauthClients.storedOAuthClient(input.serverId));
-          const params = new URLSearchParams({
-            token: refreshToken,
-            token_type_hint: "refresh_token",
-          });
-          if (client) {
-            params.set("client_id", client.clientId);
-            if (client.clientSecret) {
-              params.set("client_secret", client.clientSecret);
-            }
-          }
-          const response = await fetch(endpoints.revokeUrl, {
-            method: "POST",
-            headers: { "content-type": "application/x-www-form-urlencoded" },
-            body: params,
-            redirect: "manual",
-            signal: AbortSignal.timeout(TIMEOUT_MS.token),
-          });
-          vendorRevoked = response.ok;
-        } catch {
-          // The vendor being unreachable must not hold somebody's disconnect hostage; the local
-          // revocation below still makes the grant unusable BY US, and the trail says which half
-          // happened.
-        }
-      }
+      const vendorAnswer = await askVendorToEnd(
+        input.serverId,
+        held.credentialId,
+      );
 
       // Tolerant of a credential another path already retired: the join row is still the thing to
       // remove, and a second revoke refusing must not stop that.
@@ -919,7 +1025,8 @@ export function createConnections(
           server: input.serverId,
           owner: input.userId,
           reason: "person_disconnected",
-          vendorRevoked,
+          vendorRevoked: vendorAnswer === "confirmed",
+          vendorAnswer,
         },
       });
       return { disconnected: true };
@@ -935,14 +1042,25 @@ export function createConnections(
      * by nothing, reachable from no screen. `credentials.key_id` holds the user id for an
      * `mcp_user_token`, so the vault can still be asked directly.
      *
-     * NOT vendor-side revocation. That needs the vendor's revoke endpoint per grant and belongs
-     * with disconnect. This is the half that stops us holding the secret; the grant at the vendor
-     * outlives it until somebody revokes it there. Said plainly rather than implied, because the
-     * difference matters to whoever has to answer for it.
+     * AND THE VENDOR IS ASKED TOO (owner, 2026-10-13). Until then this was only the half that
+     * stops us holding the secret, and the grant at the vendor outlived the account until the
+     * person revoked it there. Now each connection's vendor is asked once to end it, through the
+     * same call a disconnect makes ({@link askVendorToEnd}).
+     *
+     * THE ORDER IS THE POINT: every vendor is asked BEFORE anything is revoked here, because the
+     * token a revocation is made with comes out of the vault and a revoked row is not handed over.
+     * Then everything is retired here whatever the vendors said — a vendor cannot keep an account
+     * from being deleted.
+     *
+     * ALL AT ONCE, so what a deletion waits for is one bound and not one per connection: at most
+     * `boundMs` however many connections there are and however many vendors are silent. Each row
+     * says what its own vendor answered, and never more than that — no token, no vendor prose.
      */
     async retireConnectionsFor(
       userId: string,
       by: string,
+      /** How long the vendors get, all of them together. A parameter so a test need not wait it out. */
+      boundMs: number = TIMEOUT_MS.token,
     ): Promise<{ retired: number }> {
       if (!userId) return { retired: 0 };
 
@@ -960,11 +1078,18 @@ export function createConnections(
           ),
         );
 
+      // Already revoked is not a failure. Retiring twice is something an administrator can
+      // legitimately do, and the second time should be quiet rather than an error.
+      const live = owned.filter((credential) => !credential.revokedAt);
+      const answers = await Promise.all(
+        live.map((credential) =>
+          askVendorToEnd(credential.provider, credential.id, boundMs),
+        ),
+      );
+
       let retired = 0;
-      for (const credential of owned) {
-        // Already revoked is not a failure. Retiring twice is something an administrator can
-        // legitimately do, and the second time should be quiet rather than an error.
-        if (credential.revokedAt) continue;
+      for (const [index, credential] of live.entries()) {
+        const vendorAnswer = answers[index] ?? "not_asked";
         await credentials.revoke(credential.id);
         retired += 1;
         await recordAuditEvent(auditStore, {
@@ -976,7 +1101,8 @@ export function createConnections(
             server: credential.provider,
             owner: userId,
             reason: "person_removed",
-            vendorRevoked: false,
+            vendorRevoked: vendorAnswer === "confirmed",
+            vendorAnswer,
           },
         });
       }
