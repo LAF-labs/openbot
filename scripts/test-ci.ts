@@ -3179,6 +3179,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `account-lifecycle.integration.test.ts`: a whole deletion asks before the token is gone.
  * 4709 and 12.
  *
+ * RAISED 2026-10-13 FOR WHAT A BOT IS TOLD HAPPENED: `server` by fourteen (to 4723) and `app` by
+ * sixteen (to 2520). The server's: what `delegate` hands back beside the answer — the bytes a
+ * browser's run comes back as, the same on a run that handed nothing back, and none of it for the
+ * one handed thinking (chat-tools.test.ts, 3); the count itself, taken where the run's calls are
+ * carried out — steps started, steps refused, a run that ended at its limit
+ * (turn-engine.integration.test.ts, 3); and a card called with nothing in it — four empty calls
+ * refused with the fields the schema asks for, two partial ones still shown, a card a person
+ * authored left alone, and the trail's row (chat-tools.test.ts, 8). The app's: the turn's rule
+ * for "nothing to show" and the window's for "nothing to draw" held to one answer, card by card
+ * over one table of calls (card-nothing-to-draw.test.ts, 15), and the refused empty card left
+ * undrawn (question-not-asked.test.ts, 1).
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
