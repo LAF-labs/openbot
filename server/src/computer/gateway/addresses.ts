@@ -45,14 +45,26 @@ export function originOf(url: string): string {
  * A URL is routinely a credential carrier — `?code=…&state=…` on an OAuth return, a password-reset
  * link, a pre-signed file — and the trail is append-only for a year. The path is what a reader
  * needs; the query is where the secrets are.
+ *
+ * AN ADDRESS THAT DOES NOT PARSE IS CUT THE SAME WAY. A navigation's address is the string the
+ * model wrote (`navigation.ts`, `targetUrl`), and the row is written before the computer sees it:
+ * `naver.com/login?pw=…` has no scheme, so `new URL` refuses it, and until 2026-10-13 this branch
+ * kept its first 200 characters whole — the one row in the trail that held a query. What follows
+ * the first `?` or `#` goes here too, whatever else the string is.
  */
 export function pageForTrail(url: string): string {
   try {
     const parsed = new URL(url);
     return `${parsed.origin}${parsed.pathname}`;
   } catch {
-    return url.slice(0, 200);
+    return withoutQueryOrFragment(url).slice(0, 200);
   }
+}
+
+/** The string up to its first `?` or `#`, whichever comes first. */
+function withoutQueryOrFragment(address: string): string {
+  const cut = address.search(/[?#]/);
+  return cut === -1 ? address : address.slice(0, cut);
 }
 
 /**
