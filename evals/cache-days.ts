@@ -37,6 +37,7 @@ import {
   modelAsker,
   withFallback,
 } from "../server/src/computer/decision-askers";
+import { decisionBaseUrlOf } from "../server/src/computer/decision-call";
 import { createCompactor } from "../server/src/context/compaction";
 import { createConversationStore } from "../server/src/context/conversations";
 import {
@@ -264,13 +265,21 @@ export async function measureDays(options: {
       closeSpend += usd;
     }),
   };
+  // Where the judge is reached: the deployment's own endpoint, as the server resolves it, or
+  // nowhere — the key handed to it is the endpoint's, and goes to no other company.
+  const judgeBase = decisionBaseUrlOf(options.baseUrl);
+  if (!judgeBase) {
+    throw new Error(
+      "Jev is reached through OpenRouter: OPENAI_BASE_URL must be OpenRouter's.",
+    );
+  }
   // The production compactor: Jev, the server model behind it, the rule below both.
   const compactor = createCompactor({
     mode: "decisions",
     asker: withFallback(
       jevAsker(
         {
-          baseUrl: "https://openrouter.ai/api",
+          baseUrl: judgeBase,
           model: process.env.EVAL_JEV_MODEL ?? "typesafe/jev-1.13-20260917",
           apiKey,
           onUsage: (usage) => {

@@ -33,6 +33,7 @@ import {
   liveProvider,
 } from "../agent-bot/src/provider";
 import { jevAsker, modelAsker } from "../server/src/computer/decision-askers";
+import { decisionBaseUrlOf } from "../server/src/computer/decision-call";
 import {
   type Compactor,
   createCompactor,
@@ -78,6 +79,15 @@ const CHOSEN = (process.env.EVAL_ARMS ?? ALL_ARMS.join(","))
 
 if (!KEY || !MODEL) {
   console.error("Needs OPENAI_API_KEY and BOT_MODEL.");
+  process.exit(1);
+}
+// Where the judge is reached: the deployment's own endpoint, as the server resolves it, or nowhere
+// — the key handed to it is the endpoint's, and goes to no other company.
+const JEV_BASE = decisionBaseUrlOf(BASE);
+if (!JEV_BASE) {
+  console.error(
+    "Needs an OpenRouter OPENAI_BASE_URL: Jev is reached through OpenRouter.",
+  );
   process.exit(1);
 }
 
@@ -172,7 +182,7 @@ const standIn = modelAsker(
   { timeoutMs: 120_000 },
 );
 const jev = jevAsker(
-  { baseUrl: "https://openrouter.ai/api", model: JEV_MODEL, apiKey },
+  { baseUrl: JEV_BASE, model: JEV_MODEL, apiKey },
   { timeoutMs: 20_000, purpose: "eval-compaction" },
 );
 

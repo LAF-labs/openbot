@@ -610,6 +610,7 @@
   "tests/eval-first-move.test.ts",
   "tests/eval-from-failures.test.ts",
   "tests/eval-grounded.test.ts",
+  "tests/eval-judge-endpoint.test.ts",
   "tests/eval-lib.test.ts",
   "tests/eval-memory-days.test.ts",
   "tests/eval-morning-briefing.test.ts",
