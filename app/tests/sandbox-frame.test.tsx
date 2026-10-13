@@ -309,6 +309,15 @@ describe("what is not drawn", () => {
         jsFunctions: "",
       }),
     ).toBeNull();
+    // With CSS too: the spelling is judged before the CSS is put in.
+    for (const html of [
+      "<HEAD></HEAD><p>x</p>",
+      '<head lang="ko"></head><p>x</p>',
+    ]) {
+      expect(
+        sandboxDocument({ html: [html], css: "p{}", jsFunctions: "" }),
+      ).toBeNull();
+    }
     const { view, frame } = await drawn({ html: "<HEAD></HEAD><p>x</p>" });
     expect(frame).toBeNull();
     // The card's own space is kept: the box, with nothing in it.

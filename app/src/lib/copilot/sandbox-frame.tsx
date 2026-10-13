@@ -97,6 +97,13 @@ export function sandboxDocument(content: {
 }): string | null {
   const html = content.html.join("");
   if (!html) return null;
+  /*
+   * A head the author spelt any other way — `<HEAD>`, `<head lang="ko">` — is not drawn, with or
+   * without CSS: decided on the author's HTML, before anything is added to it. Decided after the
+   * CSS went in, `<HEAD>` with CSS had no lowercase closer to find, was given a second head in
+   * front, and drew (review of #234) — where the frame this replaces showed nothing.
+   */
+  if (/<head[\s>]/i.test(html) && !html.includes("<head>")) return null;
   let page = html;
   if (content.css) {
     const style = `<style>${content.css}</style>`;
