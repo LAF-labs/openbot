@@ -355,7 +355,10 @@ describe("licences", () => {
       refused.push(`${name}@${version}: ${licence ?? "no license field"}`);
     }
     expect(refused).toEqual([]);
-    expect(store.size).toBeGreaterThan(500);
+    // That the store was read at all, not how big it should be: 470 packages on a Mac on
+    // 2026-10-13, once CopilotKit's client had left the app and taken 211 names with it (the bound
+    // was 500 against the store before that).
+    expect(store.size).toBeGreaterThan(400);
   });
 
   test("every exception names a package the lock holds and a file that says what it claims", () => {
