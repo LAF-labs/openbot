@@ -224,6 +224,8 @@ const PAGE = (url: string, snapshotId: number): SnapshotResult => ({
  */
 type Trouble = {
   release?: () => never;
+  /** The computer says it holds a value: one put in before this server started again. */
+  held?: boolean;
   full?: boolean;
   /** An open on its way: the computer answers once this settles. */
   open?: Promise<void>;
@@ -278,11 +280,16 @@ function computer(pages: Record<string, SnapshotResult>) {
         };
       },
       supplySecret: said("supplySecret", { characters: 7 }),
-      control: said("control", {
-        holder: "bot",
-        since: "2026-10-10T00:00:00.000Z",
-        requested: false,
-      }),
+      control: async () => {
+        there();
+        calls.push(`${id}:control`);
+        return {
+          holder: "bot",
+          since: "2026-10-10T00:00:00.000Z",
+          requested: false,
+          ...(trouble.held ? { valuesHeld: true } : {}),
+        };
+      },
       stopComputer: said("stopComputer", { stopped: true, wasRunning: true }),
       runEnded: said("runEnded", { ended: true, closed: 1 }),
       openBrowser: async (caller?: AbortSignal) => {
@@ -554,6 +561,43 @@ describe("a value put into a background browser", () => {
     await gateway.runEnded("bot-1", "thread-a");
     expect(ends(calls)).toEqual(["bot-1@run-7:runEnded", "bot-1:runEnded"]);
     expect(gateway.holdsValues("bot-1")).toBe(false);
+  });
+
+  /*
+   * A NOTE NOBODY NAMED IS THE MAIN BROWSER'S (review of #210, C1). This server started again in
+   * the middle of a conversation's sign-in and learnt from the computer that a value is held;
+   * whose run it was it cannot know, so "the next run of the Bot's to end ends it". A routine is
+   * such a run — and its pages are in a browser of its own, so its end told the main browser a
+   * run was over and the computer closed the tab the conversation was working in.
+   */
+  test("a run in a browser of its own does not end the main browser's unnamed note; a run in the main one does", async () => {
+    const { gateway, calls, trouble } = gatewayOn({ "bot-1": LOGIN });
+    trouble.held = true;
+    await gateway.control("bot-1");
+    expect(gateway.holdsValues("bot-1")).toBe(true);
+
+    await gateway.runEnded("bot-1", "routine:run-1", { browser: "run-7" });
+    expect(ends(calls)).toEqual([]);
+    expect(gateway.holdsValues("bot-1")).toBe(true);
+
+    await gateway.runEnded("bot-1", "thread-a");
+    expect(ends(calls)).toEqual(["bot-1:runEnded"]);
+    expect(gateway.holdsValues("bot-1")).toBe(false);
+  });
+
+  test("and it still ends what it put into its own browser, with the main one's unnamed note left standing", async () => {
+    const { gateway, calls, trouble } = gatewayOn({
+      "bot-1": LOGIN,
+      [BACKGROUND]: LOGIN,
+    });
+    trouble.held = true;
+    await gateway.control("bot-1");
+    await gateway.openBrowser("bot-1", "run-7", ACTOR);
+    await putIn(gateway, BACKGROUND, "routine:run-1");
+
+    await gateway.runEnded("bot-1", "routine:run-1", { browser: "run-7" });
+    expect(ends(calls)).toEqual(["bot-1@run-7:runEnded"]);
+    expect(gateway.holdsValues("bot-1")).toBe(true);
   });
 
   test("a browser that was let go of holds nothing by being gone, and the run's end does not fail on it", async () => {
