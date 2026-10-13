@@ -9,8 +9,9 @@ import {
 /**
  * THE PREVIEW HAS TO FAIL THE WAY A CONVERSATION FAILS.
  *
- * `@jetbrains/websandbox` gives the preview iframe `sandbox="allow-scripts"` and nothing else —
- * measured on the running page, the attribute reads exactly that — so the document has an opaque
+ * The preview's frame (`src/lib/copilot/sandbox-frame.tsx`, and `@jetbrains/websandbox`'s before
+ * 2026-10-13) is given `sandbox="allow-scripts"` and nothing else — measured on the running page,
+ * the attribute reads exactly that; `sandbox-frame.test.tsx` holds it — so the document has an opaque
  * origin and `window.localStorage` THROWS rather than returning null. A component written against
  * browser storage therefore stops drawing halfway with nothing on screen to say why, and the only
  * evidence was a line in a console the author was not looking at.
