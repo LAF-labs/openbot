@@ -178,10 +178,15 @@ describe("a server that answers with fifty megabytes", () => {
      * THE ASSERTION THAT MATTERS. Read whole and trimmed afterwards, this grew the process by the
      * size of the answer: +250 MB measured for 50 MB, the SDK parsing a string it then threw away.
      * Refused as the bytes cross the line, it grows by the cap plus what the runtime had already
-     * pulled off a loopback socket before the abort landed: +29 MB measured. The bound is set
-     * well under the answer, so a cap that only trimmed AFTER reading cannot pass it.
+     * pulled off a loopback socket before the abort landed: +29 MB measured alone.
+     *
+     * The number read is the whole process's, and the process is shared with whichever files the
+     * gate put beside this one: twice in CI (2026-10-12 on #198, 2026-10-13 on main) it read
+     * +59 MB with the cap working, and failed a bound of 50. The bound is 120: twice what a
+     * neighbour has been seen to add, and under half of what reading the answer whole costs, so
+     * a cap that only trimmed AFTER reading still cannot pass it.
      */
-    expect(after - before).toBeLessThan(50);
+    expect(after - before).toBeLessThan(120);
   });
 
   test("the trail records it as this deployment's refusal, with the code", async () => {
