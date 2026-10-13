@@ -37,7 +37,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",
-    "@happy-dom/global-registrator": "^20.11.2",
+    "@happy-dom/global-registrator": "^20.11.15",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/router-plugin": "^1.168.42",
     "@types/babel__core": "^7.20.5",
