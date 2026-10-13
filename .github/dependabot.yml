@@ -72,6 +72,12 @@ updates:
       # Moves with the browser image, by hand, in one change (agent-computer/Dockerfile): the
       # image's browser directory is named after the build this package expects.
       - dependency-name: playwright
+      # The transport between the server and the Bot's service: three packages pinned exactly at
+      # one version, moved together with the protocol's tests (1.0 does not compile here).
+      - dependency-name: "@ag-ui/*"
+      # A compiler major is a change of its own: 7 does not typecheck this tree.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
       # One upgrade, not two, and the React Compiler rides on the plugin: checked in a browser.
       - dependency-name: vite
         update-types: ["version-update:semver-major"]
@@ -111,7 +117,7 @@ updates:
       # The computer's base is the release Playwright's own image is built on (noble), so the
       # browser meets the libraries it was built against. Moves when theirs does.
       - dependency-name: ubuntu
-        versions: [">= 25"]
+        versions: ["> 24.04"]
     commit-message:
       prefix: "build(deps)"
 
