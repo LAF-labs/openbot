@@ -1,4 +1,4 @@
-import type { Hono as HonoApp, MiddlewareHandler } from "hono";
+import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { buildOf } from "../../shared/log";
 import { type ConsentStore, LEGAL_VERSION } from "./account/consent";
