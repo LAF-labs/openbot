@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   chmod,
+  copyFile,
   mkdir,
   mkdtemp,
   readdir,
@@ -16,7 +17,8 @@ import {
   PERSON_SCOPE,
   projectScope,
 } from "../../shared/file-scope";
-import { createWorkspace } from "../src/workspace";
+import { landDownload } from "../src/page-watch";
+import { createWorkspace, DEFAULT_WORKSPACE_LIMITS } from "../src/workspace";
 
 /**
  * A PROJECT'S FOLDER, ON A REAL DISK (record §3, piece 4-2's second part).
@@ -386,6 +388,88 @@ describe("a download", () => {
     expect(await readFile(join(root, "downloads", "정산.csv"), "utf8")).toBe(
       "for main",
     );
+  });
+
+  /*
+   * A DOWNLOAD THAT LANDS AFTER ITS PROJECT WAS REMOVED IS DROPPED. It was on its way when the
+   * person deleted the project; landing, its `mkdir` made the folder again, for nothing to ever
+   * remove. The removal is how deletion reaches this process, so the folder remembers it.
+   */
+  test("landing after its project was removed is dropped, and the folder is not made again", async () => {
+    const ws = createWorkspace(root);
+    const landed = join(base, "landed-late");
+    await writeFile(landed, "late");
+    expect(await ws.removeProject("channel_a")).toBe(true);
+
+    expect(
+      await refused(() => ws.within(A).saveDownload("정산.csv", landed)),
+    ).toBe("laf:file_not_found");
+    expect(await readdir(join(root, "projects"))).toEqual(["channel_b"]);
+
+    // And as the page's watcher says it: a failed download, the browser's copy deleted.
+    const asked: string[] = [];
+    const told: unknown[] = [];
+    const failures: unknown[] = [];
+    await landDownload(
+      {
+        suggestedFilename: () => "정산.csv",
+        path: async () => {
+          asked.push("path");
+          return landed;
+        },
+        cancel: async () => {
+          asked.push("cancel");
+        },
+        delete: async () => {
+          asked.push("delete");
+        },
+      },
+      ws.within(A),
+      (entry) => told.push(entry),
+      (reason) => failures.push(reason),
+      () => () => undefined,
+    );
+    expect(told).toEqual([{ code: "laf:download_failed" }]);
+    expect(failures).toHaveLength(1);
+    expect(asked).toEqual(["path", "delete"]);
+    expect(await readdir(join(root, "projects"))).toEqual(["channel_b"]);
+    // The other project's downloads still land.
+    await ws.within(B).saveDownload("정산.csv", landed);
+    expect(
+      await readFile(
+        join(root, "projects", "channel_b", "downloads", "정산.csv"),
+        "utf8",
+      ),
+    ).toBe("late");
+  });
+
+  test("a landing in flight when the removal is asked lands first, and goes with the folder", async () => {
+    // Between a landing's look and its `mkdir` the folder could be removed and made again; so the
+    // removal waits in the landings' own queue. Held in the middle of its copy, released once the
+    // removal has been asked.
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const ws = createWorkspace(root, {
+      ...DEFAULT_WORKSPACE_LIMITS,
+      copyLanded: async (from, to) => {
+        await held;
+        await copyFile(from, to);
+      },
+    });
+    const landed = join(base, "landed-held");
+    await writeFile(landed, "held");
+
+    const landing = ws.within(A).saveDownload("정산.csv", landed);
+    const removal = ws.removeProject("channel_a");
+    release();
+    expect(await landing).toEqual({
+      path: "projects/channel_a/downloads/정산.csv",
+      bytes: 4,
+    });
+    expect(await removal).toBe(true);
+    expect(await readdir(join(root, "projects"))).toEqual(["channel_b"]);
   });
 });
 
