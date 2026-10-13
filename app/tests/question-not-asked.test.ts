@@ -77,7 +77,39 @@ describe("a question card the server refused for having nothing in it", () => {
     }
   });
 
-  test("only a question: any other call refused for its arguments keeps its line", () => {
+  /*
+   * AND A CARD CALLED WITH NOTHING IN IT (2026-10-13). The server refuses it as it refuses an
+   * empty question, with the fields it would have needed; drawn, that refusal is a "did not
+   * work" line above the card the Bot drew next — where nothing stood before (#189).
+   */
+  test("a card refused for having nothing in it is not drawn either, and the one the Bot calls again is", () => {
+    const refused = JSON.stringify({
+      ok: false,
+      code: "laf:tool_arguments_invalid",
+      reason: "호출 인자가 그 툴의 정의와 맞지 않는다",
+      missing: ["title", "metrics"],
+    });
+    expect(
+      drawn([
+        ...asked("m-1", "showMetrics", {}, refused),
+        ...asked("m-2", "showMetrics", { title: "이번 달" }, "on screen"),
+      ]),
+    ).toEqual(["showMetrics"]);
+    // Still out, or ended any other way, it keeps its place: only the empty call goes.
+    expect(drawn(asked("m-3", "showMetrics", {}))).toEqual(["showMetrics"]);
+    expect(
+      drawn(
+        asked(
+          "m-4",
+          "showMetrics",
+          { title: "이번 달" },
+          JSON.stringify({ ok: false, code: "laf:component_withheld" }),
+        ),
+      ),
+    ).toEqual(["showMetrics"]);
+  });
+
+  test("only a question or a card: any other call refused for its arguments keeps its line", () => {
     expect(drawn(asked("c-1", "manage_routine", {}, REFUSED))).toEqual([
       "manage_routine",
     ]);
