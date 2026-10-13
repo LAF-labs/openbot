@@ -3217,8 +3217,12 @@ const GROUPS: readonly {
      * six ways, and a download landing after its project was removed, two — and three in
      * `workspace.test.ts`, a write through a link that is itself the file. 620 and 8 is 628, and
      * 3 is 631.
+     *
+     * RAISED 2026-10-13 FOR A FILE THAT ARRIVES AFTER ITS RUN WAS TOLD OVER, from 631 to 632: one
+     * in `korean-sites.test.ts`, a real download landing in the folder of the run whose page
+     * sent it.
      */
-    floor: 631,
+    floor: 632,
     roots: ["agent-computer"],
     processes: 1,
   },
