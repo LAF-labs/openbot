@@ -107,7 +107,8 @@ jobs:
       # AND WITH IT, RUN FROM THE ROOT, IT DID — for at least four weeks. `bunx playwright` at the
       # root is not this repository's Playwright: nothing at the root depends on it, so bunx fetched
       # the newest one published (1.63.0, whose Chromium is build 1243) while the suites run on the
-      # one `agent-computer` pins (1.62.1, build 1234) and look for THAT build. Measured 2026-10-02
+      # one `agent-computer` pins (1.62.1, build 1234 that day; 1.64.0, build 1248 since
+      # 2026-10-13) and look for THAT build. Measured 2026-10-02
       # on the run for dd0d1173: "Chrome for Testing 153… (playwright chromium v1243) downloaded",
       # then 92 of agent-computer's 386 tests skipped, among them every one that drives a browser;
       # the same in a run of 2026-09-05, with 14. Green, and a skip counts toward the floor.
