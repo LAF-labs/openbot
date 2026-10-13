@@ -3154,7 +3154,7 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * permissive, none naming a licence file the package lacks; a package the store lacks only ever
  * another platform's binary; and nothing fetched from outside the registry but the one named.
  * 1714 and 17 is 1731.
- * And the server takes seventeen, 4666 → 4683, with the info route under /api/copilotkit becoming the server's own
+ * And the server takes seventeen, 4680 → 4697, with the info route under /api/copilotkit becoming the server's own
  * (copilot.test.ts): its answer whole, the roster read on every ask, a roster that cannot be read,
  * every other method on it, the spellings that are not it, no invitation to another origin, and
  * the real handler behind the real guard.
@@ -3187,7 +3187,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4680, roots: ["server"] },
+  { name: "server", floor: 4697, roots: ["server"] },
   { name: "app", floor: 2446, roots: ["app"] },
   {
     name: "agent-computer",
