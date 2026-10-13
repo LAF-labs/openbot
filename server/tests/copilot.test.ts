@@ -361,12 +361,6 @@ describe("the composed prompt", () => {
 });
 
 describe("what reaches the endpoint", () => {
-  const profile = {
-    id: "agent_expense",
-    name: "Expense Manager",
-    roleDescription: "Review receipts.",
-  };
-
   test("sends exactly one prompt message, first, however the thread was replayed", async () => {
     await using endpoint = fakeAgUiEndpoint();
     const agents = buildAgents([remoteAgent(endpoint.url)], model);
