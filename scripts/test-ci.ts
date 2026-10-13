@@ -3171,6 +3171,14 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * one the owner's sentence named, the same address in capitals is the same one, and a pair that
  * has been through the redaction comes back as it was. 4707 and 2.
  *
+ * RAISED 2026-10-13 FOR ASKING THE VENDOR AT DELETION: `server` by twelve (to 4721). Eleven in
+ * `plugin-user-credential.integration.test.ts` — a disconnect the vendor confirmed says so; a
+ * retirement against a vendor that confirms, refuses, redirects, is unreachable, or never answers
+ * (five), each retired here with the row saying which; a server with no revocation endpoint is not
+ * asked; three vendors asked at once; and the request's three forms. One in
+ * `account-lifecycle.integration.test.ts`: a whole deletion asks before the token is gone.
+ * 4709 and 12.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -3199,7 +3207,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4709, roots: ["server"] },
+  { name: "server", floor: 4721, roots: ["server"] },
   { name: "app", floor: 2504, roots: ["app"] },
   {
     name: "agent-computer",
