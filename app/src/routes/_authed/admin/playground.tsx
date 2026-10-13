@@ -1,4 +1,4 @@
-import { OpenGenerativeUIActivityRenderer } from "@copilotkit/react-core/v2";
+import { OpenGenerativeUIActivityRenderer } from "@/lib/copilot/sandbox-frame";
 import type { SandboxedRecord } from "@shared/sandboxed";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
@@ -28,7 +28,7 @@ export const Route = createFileRoute("/_authed/admin/playground")({
   component: PlaygroundScreen,
 });
 
-/** The preview renders through CopilotKit; see `channel/$channelId.tsx` for why the provider is here. */
+/** The preview is drawn by the frame a conversation draws a card in; see `channel/$channelId.tsx` for why the provider is here. */
 function PlaygroundScreen() {
   return (
     <CopilotProvider>
@@ -540,14 +540,13 @@ export const SANDBOX_ERROR = "laf:sandbox-error";
 /**
  * WHY A COMPONENT THAT TOUCHES STORAGE DIES SILENTLY, AND WHERE THE AUTHOR FINDS OUT.
  *
- * The preview runs in `@jetbrains/websandbox`, which sets the iframe's `sandbox` attribute to
- * `allow-scripts` and NOTHING else (`lib/websandbox.ts`: `frame.sandbox = 'allow-scripts ' +
- * sandboxAdditionalAttributes`, and the renderer passes the empty default — measured on the running
- * page, the attribute reads exactly `"allow-scripts "`). A document sandboxed without
+ * The preview runs in the frame a conversation draws a card in (`lib/copilot/sandbox-frame.tsx`),
+ * whose `sandbox` attribute is `allow-scripts` and NOTHING else (measured on the running page; it
+ * was `@jetbrains/websandbox`'s frame until 2026-10-13, with the same one permission). A document
+ * sandboxed without
  * `allow-same-origin` has an opaque origin, so `window.localStorage` does not return null: reading
  * the property THROWS `SecurityError: … the document is sandboxed and lacks the 'allow-same-origin'
- * flag`. The same is true of `sessionStorage`, `document.cookie` and IndexedDB, and CopilotKit tells
- * the model as much in the tool description it ships.
+ * flag`. The same is true of `sessionStorage`, `document.cookie` and IndexedDB.
  *
  * The throw lands inside an iframe that is cross-origin to this page, so nothing here could see it:
  * the preview simply stopped drawing halfway and the only evidence was a line in the browser

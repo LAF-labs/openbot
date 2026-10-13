@@ -39,10 +39,12 @@ import {
  * that Bot and the places to change how it works; an account from before, with several, gets a
  * short list of them and nothing else that behaves as if there were several.
  *
- * AND THE RUNTIME STAYS WHERE A BOT IS RUN. MEASURED 2026-09-10 (audit A4, finding 5): every signed-in
- * screen statically loaded the CopilotKit runtime because the provider wrapped `_authed`'s outlet.
- * Home is a conversation now, so it starts the runtime — which is the point; the screens that are not
- * a conversation still ask nothing of it.
+ * AND THE BOT'S TOOLS STAY WHERE A BOT IS RUN. MEASURED 2026-09-10 (audit A4, finding 5): every
+ * signed-in screen statically loaded the CopilotKit runtime because the provider wrapped `_authed`'s
+ * outlet. Home is a conversation now, so it registers the tools — which is the point; the screens
+ * that are not a conversation still register nothing. (The registry is the app's own since
+ * 2026-10-13, and asks the server nothing: the `/api/copilotkit/info` call CopilotKit's client made
+ * on every mount is gone, and a conversation is held to that below.)
  */
 
 beforeAll(async () => {
@@ -245,7 +247,7 @@ describe("the first run", () => {
 });
 
 describe("home", () => {
-  test("is the conversation with the Bot, which is where the runtime starts", async () => {
+  test("is the conversation with the Bot, which is where its tools are registered — with nothing asked of a runtime", async () => {
     const channelId = "channel_first-screen";
     const server = turnServer({ channelId });
     const view = await mountApp({
@@ -266,14 +268,23 @@ describe("home", () => {
       () => view.router.state.location.pathname === `/channel/${channelId}`,
       "the Bot's conversation",
     );
+    // The gallery announcing its catalogue is the registry's tools mounting.
     await view.waitFor(
       () =>
         view.requests.some(
-          (request) => request.pathname === "/api/copilotkit/info",
+          (request) =>
+            request.method === "PUT" &&
+            request.pathname === "/api/components/catalogue",
         ),
-      "the conversation to start the runtime",
+      "the conversation to register its tools",
       8000,
     );
+    await view.settle(100);
+    expect(
+      view.requests
+        .filter((request) => request.pathname.startsWith("/api/copilotkit"))
+        .map((request) => request.path),
+    ).toEqual([]);
   });
 
   /*

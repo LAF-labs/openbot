@@ -91,8 +91,7 @@ const beyondTheApp = (requests: ApiRequest[]) =>
         !request.pathname.endsWith("/notebook") &&
         request.pathname !== "/api/components/catalogue") ||
       request.pathname.startsWith("/api/turns") ||
-      (request.pathname.startsWith("/api/copilotkit") &&
-        request.pathname !== "/api/copilotkit/info"),
+      request.pathname.startsWith("/api/copilotkit"),
   );
 
 async function composeScreen(options: {

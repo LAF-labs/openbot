@@ -45,7 +45,10 @@ export function staticClosure(
 
 /**
  * The packages that must stay behind a lazy boundary: the transcript renderer (Streamdown, with
- * Shiki's core and its markdown parsers) and the CopilotKit runtime client.
+ * Shiki's core and its markdown parsers), and AG-UI's client — the app reads that protocol's types
+ * and runs none of it, so its arriving in any chunk at all is a value import nobody weighed.
+ * (CopilotKit's client was on this list until 2026-10-13, when the registry it was kept for became
+ * the app's own: `lib/copilot/tool-registry.tsx`.)
  */
 export const LAZY_ONLY_PACKAGES = [
   "streamdown",
@@ -54,9 +57,6 @@ export const LAZY_ONLY_PACKAGES = [
   "shiki",
   "remark-cjk-friendly",
   "remark-cjk-friendly-gfm-strikethrough",
-  "@copilotkit/react-core",
-  "@copilotkit/core",
-  "@copilotkit/runtime-client-gql",
   "@ag-ui/client",
 ] as const;
 

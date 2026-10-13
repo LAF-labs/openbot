@@ -1,4 +1,4 @@
-import { useFrontendTool } from "@copilotkit/react-core/v2";
+import { useFrontendTool } from "./tool-registry";
 import { TOOL_RESULT_KO, toolResultText } from "@shared/prompt/tool-results.ko";
 import { MANAGE_ROUTINE, REMEMBER, UPDATE_PROFILE } from "@shared/tools/self";
 import { asStandardSchema } from "@shared/tools/standard-schema";

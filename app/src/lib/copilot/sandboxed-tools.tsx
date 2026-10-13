@@ -1,7 +1,5 @@
-import {
-  OpenGenerativeUIActivityRenderer,
-  useFrontendTool,
-} from "@copilotkit/react-core/v2";
+import { OpenGenerativeUIActivityRenderer } from "./sandbox-frame";
+import { useFrontendTool } from "./tool-registry";
 import type { PublishedSandboxed } from "@shared/sandboxed";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback } from "react";
@@ -22,7 +20,7 @@ import { publishedSandboxedQueryOptions } from "@/lib/sandboxed/queries";
 
 /**
  * Browser-authored components use the same component grants as compiled gallery components, but
- * render published runtime markup in the SDK sandbox.
+ * render published runtime markup in a sandboxed frame (`sandbox-frame.tsx`).
  */
 export function SandboxedTools() {
   /*

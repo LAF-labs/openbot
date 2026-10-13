@@ -1,4 +1,4 @@
-import { useRenderTool } from "@copilotkit/react-core/v2";
+import { useRenderTool } from "./tool-registry";
 import { NOW_TOOL } from "@shared/tools/now";
 import { asStandardSchema } from "@shared/tools/standard-schema";
 import { stepFailureOf } from "@shared/tools/step-result";

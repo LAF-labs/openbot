@@ -181,11 +181,6 @@ function shellAnswer(
     });
   }
   if (pathname === "/api/admin/audit-events") return json({ events: [] });
-  // CopilotKit asks the runtime what it serves before it will settle; a 404 here is logged as an
-  // error on every mount. A version and no agents is a runtime with nothing to say.
-  if (pathname === "/api/copilotkit/info") {
-    return json({ version: "0.0.0-test", agents: {} });
-  }
   // The gallery announces its catalogue on mount; an empty answer means nothing was added.
   if (pathname === "/api/components/catalogue") return json({ added: [] });
   return undefined;

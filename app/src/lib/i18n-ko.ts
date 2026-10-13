@@ -502,6 +502,8 @@ export const ko: Record<string, string> = {
   "Draft not published": "초안 — 미게시",
   "Draft saved, not yet published": "초안 저장됨 — 아직 게시 전",
   Drawing: "그리는 중",
+  // What a screen reader calls the frame a deployment's own card is drawn in.
+  Card: "카드",
   "The one browser your Bots share, and the profile it keeps. That profile is what makes them still signed in tomorrow, and resetting it signs every one of them out.":
     "봇들이 함께 쓰는 브라우저 하나와 그 프로필. 프로필이 있어서 봇들이 내일도 로그인 상태로 남아요 — 초기화하면 봇 전부가 로그아웃돼요.",
   Edit: "수정",

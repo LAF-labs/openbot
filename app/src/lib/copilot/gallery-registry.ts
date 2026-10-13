@@ -1,4 +1,4 @@
-import type { useFrontendTool } from "@copilotkit/react-core/v2";
+import type { useFrontendTool } from "./tool-registry";
 import type { ReactElement } from "react";
 
 /**
@@ -6,7 +6,7 @@ import type { ReactElement } from "react";
  * grants, and published descriptions after first announcement.
  */
 
-/** The schema type the SDK itself accepts, so a component never needs a cast to register. */
+/** The schema type registration itself accepts, so a component never needs a cast to register. */
 export type ToolParameters = Parameters<
   typeof useFrontendTool
 >[0]["parameters"];

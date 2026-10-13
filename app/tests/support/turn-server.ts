@@ -400,16 +400,6 @@ export function turnServer(options: {
     if (pathname === "/api/sandboxed/published") {
       return json({ components: [] });
     }
-    // What the provider asks before it settles: the runtime's roster, as a running server answers it.
-    if (pathname === "/api/copilotkit/info") {
-      return json({
-        version: "1.67.1",
-        agents: {
-          [BOT_ID]: { name: BOT_ID, description: "", className: "Fe" },
-        },
-        mode: "sse",
-      });
-    }
     if (pathname === `${door}/history`) {
       historyReads += 1;
       // Any whole number is a cursor, as the route reads it; anything else is the newest page.
