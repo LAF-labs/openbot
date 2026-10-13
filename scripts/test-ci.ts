@@ -3218,7 +3218,7 @@ const GROUPS: readonly {
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 1731, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 1740, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
