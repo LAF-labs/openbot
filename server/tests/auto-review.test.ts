@@ -458,6 +458,64 @@ describe("a page that writes to the judge", () => {
 });
 
 /**
+ * WHAT LEAVES FOR THE DEPLOYMENT'S OWN MODEL, where Jev is off and this reviewer is asked directly
+ * (`server-model-calls.ts`). The owner's sentence is their own words and names what they name; it
+ * goes through the redaction every other judge's input does, and the action beside it does too, so
+ * the two still read as the same thing.
+ */
+describe("what the model reviewer sends, asked directly", () => {
+  const ADDRESS = "sales@shop.example.test";
+  const NAMING = `${ADDRESS} 으로 보내는 메일은 묻지 말고 보내도 돼. 비밀번호: hunter2-example 010-1234-5678`;
+  const click = (name: string): ReviewSubject => ({
+    action: "computer_click",
+    subject: {
+      kind: "browser",
+      intent: "activate",
+      host: "mail.example.test",
+      element: { role: "button", name },
+      reason: "policy_ask",
+    },
+  });
+
+  test("the owner's sentence leaves with the address, the number and the password taken out", async () => {
+    const { reviewer, seen } = reviewerSaying(
+      '{"verdict":"ask","reason":"no"}',
+    );
+    await reviewer(NAMING, click(`Send to ${ADDRESS}`));
+    const sent = JSON.stringify(seen[0]);
+    expect(sent).not.toContain(ADDRESS);
+    expect(sent).not.toContain("hunter2-example");
+    expect(sent).not.toContain("010-1234-5678");
+    expect(between(userOf(seen[0]), OWNER_INSTRUCTION)).toBe(
+      "[email] 으로 보내는 메일은 묻지 말고 보내도 돼. 비밀번호: [secret] [phone]",
+    );
+  });
+
+  test("and the label that names the same address is masked the same way, so the two still match", async () => {
+    // A judge that allows only where the sentence and the label name the same thing, as written.
+    const matching = (body: SentBody) => {
+      const user = userOf(body);
+      const owner = between(user, OWNER_INSTRUCTION) ?? "";
+      const data = between(user, PAGE_DATA) ?? "";
+      const named = /^(\S+) 으로/.exec(owner)?.[1] ?? "\u0000";
+      return data.includes(`Send to ${named}`)
+        ? '{"verdict":"allow","reason":"Same address."}'
+        : '{"verdict":"ask","reason":"Different address."}';
+    };
+    const { reviewer } = reviewerSaying(matching);
+    expect(await reviewer(NAMING, click(`Send to ${ADDRESS}`))).toEqual({
+      allowed: true,
+      reason: "Same address.",
+    });
+    // And the judge can still tell an action the sentence does not name.
+    expect(await reviewer(NAMING, click("Send to everyone"))).toEqual({
+      allowed: false,
+      reason: "Different address.",
+    });
+  });
+});
+
+/**
  * THE SAME, THROUGH THE GATEWAY: the label comes off the server's own snapshot, as it does in
  * production, and a pass is a click that reaches the computer without anybody being asked.
  */
