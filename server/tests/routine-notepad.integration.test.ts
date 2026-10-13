@@ -712,6 +712,53 @@ describe("a routine run's end", () => {
   }, 5_000);
 
   /*
+   * AND SO IS THE TELLING (review of #210, C4): a run that had filled a login said its run was
+   * over to a computer that had hung, and waited the computer client's whole timeout inside the
+   * lane every routine of the deployment stands in. It is told which browser the run's pages
+   * were in, given the time the letting-go is given, and the browser is let go of after it all
+   * the same.
+   */
+  test("the telling is given the run's browser and its own time: the lane is not held for a computer that has hung", async () => {
+    const bot = await reviewBot();
+    const lane = createBotLane();
+    const told: { browser?: string; within?: AbortSignal }[] = [];
+    const order: string[] = [];
+    const { service } = deployment(
+      bot,
+      () => says("새 리뷰가 없습니다."),
+      false,
+      {
+        lane,
+        tools: async () => ({
+          tools: [],
+          execute: idle,
+          browserOpened: () => true,
+        }),
+        // A computer that has hung: the telling never answers.
+        runEnded: (_botId, _runKey, where) => {
+          told.push({ ...where });
+          order.push("told over");
+          return new Promise(() => undefined);
+        },
+        browser: {
+          name: "routine",
+          letGoMs: 50,
+          letGo: async () => void order.push("let go"),
+        },
+      },
+    );
+    const routine = await reviewRoutine(bot, service);
+    await service.runNow(bot.owner, routine.id);
+    expect((await service.runs(bot.owner, routine.id))[0]?.ok).toBe(true);
+    expect(told.map((where) => where.browser)).toEqual(["routine"]);
+    // The computer was told to stop waiting, the browser was let go of after, and the lane is free.
+    expect(told.map((where) => where.within?.aborted)).toEqual([true]);
+    expect(order).toEqual(["told over", "let go"]);
+    const next = await lane.acquire("@routine");
+    next.release();
+  }, 5_000);
+
+  /*
    * AND IT STANDS IN THAT BROWSER'S LANE (`laneOfBrowser`). A conversation holding the main
    * browser does not hold a routine up — the run below would never end if it did. And the lane
    * is the browser's own, not the Bot's in it: the browser is one for the deployment, and a run

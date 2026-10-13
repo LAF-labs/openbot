@@ -183,6 +183,20 @@ describe("the client", () => {
     expect(seen).toEqual([]);
   });
 
+  test("a run's end the caller had already stopped waiting to say is not sent: its own time bounds the telling", async () => {
+    const { client, seen } = recorded({ ended: true, closed: 0 });
+    await expect(
+      client.forBot("bot-1", "run-9").runEnded(AbortSignal.abort()),
+    ).rejects.toThrow(STOPPED);
+    expect(seen).toEqual([]);
+    // And said in time, it is sent as it always was.
+    expect(await client.forBot("bot-1", "run-9").runEnded()).toEqual({
+      ended: true,
+      closed: 0,
+    });
+    expect(seen.map((one) => one.path)).toEqual(["/run/ended"]);
+  });
+
   test("opens and lets go of the browser its view names, and hands back the computer's answer", async () => {
     const full = recorded({ opened: false, open: 2, cap: 2 });
     expect(await full.client.forBot("bot-1", "run-9").openBrowser()).toEqual({
@@ -226,6 +240,8 @@ type Trouble = {
   release?: () => never;
   /** The computer says it holds a value: one put in before this server started again. */
   held?: boolean;
+  /** A telling that the run is over which never answers, until the caller's own time is up. */
+  hung?: boolean;
   full?: boolean;
   /** An open on its way: the computer answers once this settles. */
   open?: Promise<void>;
@@ -291,7 +307,19 @@ function computer(pages: Record<string, SnapshotResult>) {
         };
       },
       stopComputer: said("stopComputer", { stopped: true, wasRunning: true }),
-      runEnded: said("runEnded", { ended: true, closed: 1 }),
+      runEnded: async (caller?: AbortSignal) => {
+        there();
+        calls.push(`${id}:runEnded`);
+        bounds.push(caller);
+        if (trouble.hung) {
+          // As the client does: nothing answers until the caller stops waiting.
+          await new Promise<void>((resolve) =>
+            caller?.addEventListener("abort", () => resolve(), { once: true }),
+          );
+          throw new ComputerUnavailableError(STOPPED);
+        }
+        return { ended: true, closed: 1 };
+      },
       openBrowser: async (caller?: AbortSignal) => {
         calls.push(`${id}:openBrowser`);
         bounds.push(caller);
@@ -598,6 +626,35 @@ describe("a value put into a background browser", () => {
     await gateway.runEnded("bot-1", "routine:run-1", { browser: "run-7" });
     expect(ends(calls)).toEqual(["bot-1@run-7:runEnded"]);
     expect(gateway.holdsValues("bot-1")).toBe(true);
+  });
+
+  /*
+   * THE TELLING IS GIVEN THE CALLER'S OWN TIME (C4). A routine says its run is over on its way
+   * out of the lane every routine of the deployment stands in; told to a computer that has hung,
+   * that was the client's whole timeout with the lane held for it.
+   */
+  test("the telling reaches the computer with the caller's own time, and one cut short leaves the note standing", async () => {
+    const { gateway, calls, trouble, bounds } = gatewayOn({
+      [BACKGROUND]: LOGIN,
+    });
+    await gateway.openBrowser("bot-1", "run-7", ACTOR);
+    await putIn(gateway, BACKGROUND, "routine:run-1");
+    trouble.hung = true;
+    const leaving = new AbortController();
+    const told = gateway.runEnded("bot-1", "routine:run-1", {
+      browser: "run-7",
+      within: leaving.signal,
+    });
+    await Bun.sleep(0);
+    expect(bounds.at(-1)).toBe(leaving.signal);
+    leaving.abort();
+    // Never throws, and returns once the caller stopped waiting.
+    await told;
+    expect(ends(calls)).toEqual(["bot-1@run-7:runEnded"]);
+    // Not heard: the value is still noted as held, until the browser itself is let go of.
+    expect(gateway.holdsValues("bot-1")).toBe(true);
+    await gateway.releaseBrowser("bot-1", "run-7");
+    expect(gateway.holdsValues("bot-1")).toBe(false);
   });
 
   test("a browser that was let go of holds nothing by being gone, and the run's end does not fail on it", async () => {
