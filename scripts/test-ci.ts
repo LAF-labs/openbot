@@ -3195,6 +3195,10 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * more (to 2532): each card's declared sentence is the one the turn answers with, card by card —
  * the quotation's was missing from the turn's table (card-nothing-to-draw.test.ts).
  *
+ * RAISED 2026-10-13 FOR THE RETIREMENT ROWS: `server` by one (to 4736), in `partner-alimtalk.test.ts`
+ * — a person removed has their channel retired under their pseudonym, and the row holds their id
+ * nowhere. 4735 and 1.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -3223,7 +3227,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4735, roots: ["server"] },
+  { name: "server", floor: 4736, roots: ["server"] },
   { name: "app", floor: 2532, roots: ["app"] },
   {
     name: "agent-computer",

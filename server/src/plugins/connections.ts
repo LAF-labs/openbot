@@ -1,4 +1,5 @@
 import { and, asc, eq } from "drizzle-orm";
+import { pseudonymFor } from "../account/pseudonym";
 import { recordAuditEvent } from "../audit";
 import {
   CredentialUnavailableError,
@@ -1099,7 +1100,13 @@ export function createConnections(
           payload: {
             actor: by,
             server: credential.provider,
-            owner: userId,
+            /*
+             * UNDER THE PSEUDONYM, as the row's actor is at a deletion (owner, 2026-10-13). This
+             * said the raw account id, on a row whose `actor` beside it is that account's
+             * pseudonym: one row that tied the two together for anyone reading the trail in the
+             * year it is kept, which is the one thing pseudonymising the trail is for.
+             */
+            owner: pseudonymFor(userId),
             reason: "person_removed",
             vendorRevoked: vendorAnswer === "confirmed",
             vendorAnswer,

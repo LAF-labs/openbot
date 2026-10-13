@@ -38,8 +38,8 @@ import {
   lafPartnerConnections,
   lafRoutineNotepads,
   lafRoutineRuns,
-  lafRoutines,
   lafRoutineSuggestionDismissals,
+  lafRoutines,
   lafSavedLogins,
   lafSiteConnections,
   lafThreadMessages,
@@ -1513,6 +1513,22 @@ describe("deletion", () => {
       ].sort(),
     );
     expect(JSON.stringify(rows)).not.toContain(refreshToken);
+    // And whose connections they were is the pseudonym too: no row puts the account's own id
+    // beside the name it was given in the trail.
+    expect(
+      rows.map((row) => (row.payload as Record<string, unknown>).owner),
+    ).toEqual([result.pseudonym, result.pseudonym]);
+    expect(
+      await database
+        .select({ id: auditEvents.id })
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.eventType, "mcp.account_disconnected"),
+            sql`${auditEvents.payload} ->> 'owner' = ${person.id}`,
+          ),
+        ),
+    ).toEqual([]);
   });
 
   test("says so rather than throwing when the account is already gone", async () => {
