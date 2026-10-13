@@ -41,6 +41,42 @@ updates:
       development:
         dependency-type: development
         update-types: [minor, patch]
+    # Versions that were tried and left, each for a reason found by running it (#214, #219,
+    # 2026-10-13). An ignore stops the weekly proposal, never a security update. A line comes out
+    # in the change that makes its version work.
+    ignore:
+      # Pinned exactly. 1.77 does not compile against the server's agent map, and what the app
+      # still uses of it is being replaced with code of our own.
+      - dependency-name: "@copilotkit/*"
+      # 1.7 moves the OAuth client's exports and the shape of its authorisation parameters:
+      # sign-in source changes, to be made with sign-in exercised, not as a version bump.
+      - dependency-name: better-auth
+        versions: [">= 1.7"]
+      - dependency-name: "@better-auth/drizzle-adapter"
+        versions: [">= 1.7"]
+      # 1.32's client transports follow same-origin redirects themselves; the server refuses
+      # every redirect and writes a row for it (server/src/plugins/mcp.ts).
+      - dependency-name: "@modelcontextprotocol/sdk"
+        versions: [">= 1.32"]
+      # The MCP SDK requires ^3, so a 5 here is a second copy and the boot's preload guards the
+      # wrong one (server/src/index.ts).
+      - dependency-name: eventsource
+        versions: [">= 4"]
+      # 0.6.8 rewrote how composition is handled — the path every Korean keystroke takes — and
+      # 0.7 adds a peer package. Lands with a person typing Korean into it.
+      - dependency-name: prompt-area
+        versions: [">= 0.6.8"]
+      # Under 20.14 the app's tests do not finish.
+      - dependency-name: "@happy-dom/global-registrator"
+        versions: [">= 20.14"]
+      # Moves with the browser image, by hand, in one change (agent-computer/Dockerfile): the
+      # image's browser directory is named after the build this package expects.
+      - dependency-name: playwright
+      # One upgrade, not two, and the React Compiler rides on the plugin: checked in a browser.
+      - dependency-name: vite
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@vitejs/plugin-react"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(deps-dev)"
@@ -66,6 +102,16 @@ updates:
     groups:
       base-images:
         patterns: ["*"]
+    ignore:
+      # The images run what the gate ran. Under Bun 1.4 two of the workbench's tests fail (#219):
+      # 1.4.1 keeps a unix-socket connection alive, and the daemon's client must not go on
+      # talking to a process that is gone. Comes out with the fix, and CI's Bun moves with it.
+      - dependency-name: oven/bun
+        versions: [">= 1.4"]
+      # The computer's base is the release Playwright's own image is built on (noble), so the
+      # browser meets the libraries it was built against. Moves when theirs does.
+      - dependency-name: ubuntu
+        versions: [">= 25"]
     commit-message:
       prefix: "build(deps)"
 
