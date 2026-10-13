@@ -171,6 +171,82 @@ export function isAskable(
 }
 
 /**
+ * A value with something in it: not blank, not a number that is no number — and a list or an object
+ * only when something inside it is.
+ */
+function holdsSomething(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value === "boolean") return true;
+  if (Array.isArray(value)) return value.some(holdsSomething);
+  if (typeof value === "object") {
+    return Object.values(value).some(holdsSomething);
+  }
+  return false;
+}
+
+/** The fields a card's declared schema names, or null where it names none. */
+function namedFields(parameters: unknown): string[] | null {
+  const properties =
+    parameters && typeof parameters === "object"
+      ? (parameters as { properties?: unknown }).properties
+      : undefined;
+  return properties && typeof properties === "object"
+    ? Object.keys(properties)
+    : null;
+}
+
+/**
+ * WHETHER A CARD'S CALL HOLDS ANYTHING THE CARD CAN SHOW — asked by the turn before it tells the
+ * Bot the card is on screen (`component`, `server/src/turns/chat-tools.ts`).
+ *
+ * The cards stand behind the bridge, and a call made from what a Bot remembers of a schema can
+ * arrive as `{}` (2026-10-11: a key-figures card and a progress card in one sitting). The turn
+ * answered "on screen" all the same, the Bot read that its card was up, and the empty call was
+ * listed under 만든 것. The window has drawn nothing for such a call since #189
+ * (`holdsSomethingToDraw`, `app/src/components/gallery/gallery-card.tsx`); this is the same rule
+ * on the side that answers the Bot, so what it is told and what the person sees are one account.
+ *
+ * THE WINDOW'S RULE, NOT THE SCHEMA'S, and for the window's reason: the schema carries bounds the
+ * renderers do not need (a seventh figure is drawn), and a card the person watched grow must not
+ * be answered "not shown". So: an object, with at least one of the fields the declared schema
+ * names holding something — a word, a figure, a flag, or a row that itself holds one. The window
+ * reads the names off its zod object and this reads them off the JSON Schema the window sent for
+ * the same card; `app/tests/card-nothing-to-draw.test.ts` holds the two to one answer on one
+ * table of calls, card by card.
+ */
+export function holdsSomethingToShow(
+  parameters: unknown,
+  args: unknown,
+): boolean {
+  if (args === null || typeof args !== "object" || Array.isArray(args)) {
+    return false;
+  }
+  const given = args as Record<string, unknown>;
+  const named = namedFields(parameters) ?? Object.keys(given);
+  return named.some(
+    (key) => Object.hasOwn(given, key) && holdsSomething(given[key]),
+  );
+}
+
+/**
+ * The fields a call with nothing to show would have had to carry: the ones the schema requires,
+ * every one of them empty in such a call — or, where it requires none, the ones it names. Names
+ * only, off the schema the Bot can look up; never a value, and never a sentence.
+ */
+export function fieldsToFill(parameters: unknown): string[] {
+  const required =
+    parameters && typeof parameters === "object"
+      ? (parameters as { required?: unknown }).required
+      : undefined;
+  const asked = Array.isArray(required)
+    ? required.filter((key): key is string => typeof key === "string")
+    : [];
+  return asked.length > 0 ? asked : (namedFields(parameters) ?? []);
+}
+
+/**
  * How a connect card's wait came out. Facts, as codes; the sentence a Bot reads for each is in
  * `shared/prompt/tool-results.ko.ts`, and the words a person reads are the card's own.
  */

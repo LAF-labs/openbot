@@ -34,13 +34,18 @@ import {
 import type { ActionPolicy } from "../src/computer/policy";
 import {
   type LoopAgent,
+  outcomeContent,
   RunFailed,
   RunStopped,
   runTurnLoop,
 } from "../src/runner/turn-loop";
 import { RoutineError } from "../src/routines/errors";
 import type { RoutineService } from "../src/routines/service";
-import { createChatTools, routineAction } from "../src/turns/chat-tools";
+import {
+  type ChatToolsDeps,
+  createChatTools,
+  routineAction,
+} from "../src/turns/chat-tools";
 import { createPersonAnswers } from "../src/turns/people";
 import {
   deferredToolsText,
@@ -51,6 +56,8 @@ import {
 } from "../../shared/tools/bridge";
 import {
   accountStatesIn,
+  GALLERY_CONFIRMATIONS,
+  ON_SCREEN,
   withoutAccountStates,
 } from "../../shared/tools/gallery";
 import { LIST_GOALS } from "../../shared/tools/goals";
@@ -1792,9 +1799,13 @@ describe("a card the Bot asks the person with", () => {
       people: createPersonAnswers(),
       components,
     })(context, [tool("showBarChart")]);
-    expect(await toolkit.execute("showBarChart", {}, call())).toBe(
-      "The bar chart is now on screen for the person.",
-    );
+    expect(
+      await toolkit.execute(
+        "showBarChart",
+        { title: "월별 매출", points: [{ label: "1월", value: 12 }] },
+        call(),
+      ),
+    ).toBe("The bar chart is now on screen for the person.");
   });
 });
 
@@ -1806,6 +1817,126 @@ describe("a card the Bot asks the person with", () => {
  * and the turn goes on with the connection's tools offered in it. What ends the wait is either a
  * window's answer or this turn's own look at 연결; what the Bot is told is always the look.
  */
+/*
+ * A CARD CALLED WITH NOTHING IN IT (2026-10-13). The Bot's first call of a key-figures card
+ * arrived as `{}` (2026-10-11); the turn answered "on screen", the window drew nothing (#189), and
+ * the empty call was listed under 만든 것. The turn now asks the window's own question of the call
+ * before it answers (`holdsSomethingToShow`).
+ */
+describe("a card called with nothing in it", () => {
+  /** A key-figures card as a window declares it: the JSON Schema of its zod object. */
+  const figures: Tool = {
+    name: "showMetrics",
+    description: "figures",
+    parameters: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        metrics: { type: "array", items: { type: "object" } },
+        caption: { type: "string" },
+      },
+      required: ["title", "metrics"],
+    },
+  };
+  /** One a person authored: its frame is its own, and it may take nothing. */
+  const authored: Tool = {
+    name: "custom_clock",
+    description: "a clock",
+    parameters: { type: "object", properties: { zone: { type: "string" } } },
+  };
+  const cards = {
+    listForAgent: async () =>
+      [figures, authored].map((card) => ({
+        name: card.name,
+        title: card.name,
+        kind: "card",
+        description: "d",
+      })),
+    decide: async () => ({ allowed: true as const, description: "d" }),
+    mayCall: async () => true,
+  };
+  const turn = (auditStore?: ChatToolsDeps["auditStore"]) =>
+    createChatTools({
+      people: createPersonAnswers(),
+      components: cards,
+      ...(auditStore ? { auditStore } : {}),
+    })(context, [figures, authored]);
+
+  test.each([
+    ["{}", {}],
+    ["a blank title and no figures", { title: "  ", metrics: [] }],
+    ["a field the card does not show", { extra: "x" }],
+    ["one figure with nothing in it", { metrics: [{}] }],
+  ])(
+    "%s is refused, with the fields its schema asks for — the bytes the Bot reads",
+    async (_, args) => {
+      const toolkit = await turn();
+      const outcome = await toolkit.execute("showMetrics", args, call("empty"));
+      expect(outcomeContent(outcome)).toBe(
+        JSON.stringify({
+          ok: false,
+          code: "laf:tool_arguments_invalid",
+          reason: toolResultText("laf:tool_arguments_invalid"),
+          missing: ["title", "metrics"],
+        }),
+      );
+    },
+  );
+
+  // The window's rule, not the schema's: a card the person watched being written stays shown.
+  test.each([
+    ["a title alone, short of what the schema requires", { title: "이번 달" }],
+    [
+      "seven figures, one more than the schema allows",
+      {
+        title: "이번 달",
+        metrics: Array.from({ length: 7 }, (_, at) => ({
+          label: `지표 ${at + 1}`,
+          value: `${at + 1}건`,
+        })),
+      },
+    ],
+  ])("%s is still shown", async (_, args) => {
+    const toolkit = await turn();
+    expect(await toolkit.execute("showMetrics", args, call("drawn"))).toBe(
+      GALLERY_CONFIRMATIONS.showMetrics as string,
+    );
+  });
+
+  test("a card a person authored is not asked: called with nothing, it is on screen", async () => {
+    const toolkit = await turn();
+    expect(await toolkit.execute("custom_clock", {}, call("clock"))).toBe(
+      ON_SCREEN,
+    );
+  });
+
+  test("leaves a row in the trail: which card, whose Bot, the fact — and nothing of the call", async () => {
+    const rows: Record<string, unknown>[] = [];
+    const toolkit = await turn({
+      insert: async (event) => {
+        rows.push(event as unknown as Record<string, unknown>);
+      },
+    });
+    await toolkit.execute(
+      "showMetrics",
+      { extra: "비밀번호는 hunter2" },
+      call("empty-2"),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      eventType: "component.refused",
+      targetType: "component",
+      targetId: "showMetrics",
+      payload: {
+        actor: "owner-1",
+        bot: "bot-1",
+        reason: "laf:tool_arguments_invalid",
+      },
+    });
+    expect(JSON.stringify(rows)).not.toContain("hunter2");
+  });
+});
+
 describe("a connect card the turn waits on", () => {
   const connectCards = {
     listForAgent: async () => [
