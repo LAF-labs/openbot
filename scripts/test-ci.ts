@@ -3187,7 +3187,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4697, roots: ["server"] },
+  { name: "server", floor: 4707, roots: ["server"] },
   { name: "app", floor: 2446, roots: ["app"] },
   {
     name: "agent-computer",
