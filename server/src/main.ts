@@ -551,7 +551,10 @@ const auth = config.auth
 sessionRevocation?.onEnded((userId) => {
   channelEvents.closeFor(userId);
 });
-/** Who is asking, for the two doors `requireUser` never sees: the runtime and the screen socket. */
+/**
+ * Who is asking, for the two doors that read the caller themselves: the roster route under
+ * `/api/copilotkit` and the screen socket.
+ */
 const actors = createRequestActors({
   devNoAuth: config.devNoAuth,
   auth,
@@ -1119,7 +1122,10 @@ void interruptedReported
     if (count > 0) log.info("project_deletions_finished_at_boot", { count });
   });
 
-/** The runtime, for the one door of it the app asks: which Bots it serves. See `mountCopilotRuntime`. */
+/**
+ * The one thing the app's CopilotKit client asks the server: which Bots it serves. A route of our
+ * own since #230, where CopilotKit's runtime used to answer; see `mountCopilotRuntime`.
+ */
 const copilotEndpoint = mountCopilotRuntime(
   tenantPackage.model,
   loadAgentsForActor,

@@ -45,7 +45,9 @@ import {
 } from "./usage/model-usage";
 
 /**
- * The CopilotKit runtime, in the one mode this product has.
+ * The Bots as AG-UI agents, in the one mode this product has. No CopilotKit runtime serves them
+ * since 2026-10-13 (#230): the server's own turns and routines run them, and the one route the
+ * app's client still asks is at the foot of this file.
  *
  * Every Bot is reached over AG-UI as an `HttpAgent`, so anything that speaks the protocol is a Bot
  * with no framework adapter here: LangGraph, Pydantic-AI, CrewAI, Mastra, ADK, or a hand-written
@@ -86,8 +88,8 @@ type RegisteredRemoteAgent = {
 
 /**
  * A coworker the caller may see but may not run: its profile was deleted while a channel it worked
- * in still exists. It is registered so the runtime can restore that thread and the person can read
- * what was said; every run is refused here, without contacting the endpoint.
+ * in still exists. It is registered so the roster still names it and the person can read what was
+ * said; every run is refused here, without contacting the endpoint.
  */
 type RegisteredUnavailableAgent = {
   id: string;
@@ -432,7 +434,7 @@ export type RunMeter = {
 };
 
 /**
- * Build the AG-UI agent map the runtime serves.
+ * Build the AG-UI agent map: what the roster route lists and what a turn or a routine runs.
  *
  * Keyed by the registry id, which is what the browser sends as the agent name, so the two cannot
  * drift apart without the lookup failing loudly rather than silently running the wrong Bot.
@@ -871,7 +873,7 @@ export type LoadAgentsForActor = (
 ) => Promise<RegisteredAgent[]>;
 
 /**
- * Build the runtime's per-request agent factory.
+ * Build the per-request agent factory.
  *
  * Resolution is per request, not per boot, because who may run a coworker is a property of the
  * person asking: a private coworker must be absent for everybody else, and a role edited a moment
