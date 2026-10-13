@@ -159,16 +159,6 @@ export type CreateAppOptions = {
   packageStatusReader?: PackageStatusReader;
   /** Whether this person has made their first Bot yet. Absent means nobody is ever asked to. */
   onboarding?: OnboardingStore;
-  /**
-   * The CopilotKit endpoint, already built by the caller.
-   *
-   * Our own route since #230 (`mountCopilotRuntime`). Passed in rather than constructed here
-   * because it was once CopilotKit's runtime, which this module could not import: the runtime
-   * pulled in `eventsource`, which Bun could not `require()` from a test, so importing it at module
-   * scope broke every server test that touches createApp even though none of them use CopilotKit.
-   * The roster it answers with is still the caller's to build.
-   */
-  copilotHandler?: HonoApp;
   /** Absent when no computer is configured, and the routes are then not mounted at all. */
   computerClient?: ComputerClient;
   /** The only path to an acting call: policy decision, then audit row, then the action. */
@@ -470,7 +460,6 @@ export function createApp({
   credentialService,
   packageStatusReader,
   onboarding,
-  copilotHandler,
   computerClient,
   computerGateway,
   computerPolicy,
@@ -970,34 +959,6 @@ export function createApp({
     }
     return context.json({ package: await packageStatusReader.active() });
   });
-  // The CopilotKit endpoint — our own route since #230, where a runtime used to answer — behind the
-  // same session guard as every other API route. Mounted last so its catch-all under
-  // /api/copilotkit cannot shadow a LAF Agent route declared above.
-  if (copilotHandler) {
-    /*
-     * THE GUARD, AS A MIDDLEWARE, BECAUSE THE MOUNT CANNOT CARRY ONE.
-     *
-     * The comment above said "behind the same session guard as every other API route" and there was
-     * no guard: every other route names `requireUser` in its own declaration, and `app.route` takes
-     * no middleware — so the runtime, alone in this file, was mounted with nothing in front of it.
-     * MEASURED on a deployment with authentication configured, no cookie sent:
-     * `GET /api/copilotkit/threads` answered 200 with every thread in the deployment,
-     * `/threads/<id>/messages` answered 200 with the conversation, and `/api/me` beside them
-     * answered 401.
-     *
-     * Registered before the mount, because Hono runs middleware in registration order and one added
-     * after the route it is meant to guard never runs. The trailing wildcard covers the bare
-     * `/api/copilotkit` as well — measured against this Hono, rather than assumed.
-     */
-    app.use("/api/copilotkit/*", requireUser);
-    // Mounted at the ROOT with the handler carrying its own basePath. Mounting it at
-    // "/api/copilotkit" as well double-prefixes it: Hono strips the prefix before the handler sees
-    // the path, so every route lands at /api/copilotkit/api/copilotkit/* and /info 404s. The client
-    // reports that as "Runtime info request failed with status 404" and every run fails before it
-    // starts, with nothing at all in the server log.
-    app.route("/", copilotHandler);
-  }
-
   // The Bot computer. Acting on a page needs the gateway and the policy it enforces, so all
   // three arrive together or the routes are not mounted: a computer whose actions were ungoverned is
   // not a reduced feature, it is the one shape of this feature that must not exist.

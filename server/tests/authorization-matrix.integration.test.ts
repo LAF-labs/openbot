@@ -26,9 +26,8 @@
  *
  * The stores behind the routes are the real ones on the test database wherever the constructor
  * takes a database; the computer is a fake that answers everything, because the question here is
- * who may reach it, not what it does. Nothing under `/api/copilotkit` is mounted: the runtime
- * cannot be imported from a test (see `createApp`), and its guard has its own file
- * (`copilot-guard.test.ts`).
+ * who may reach it, not what it does. Nothing under `/api/copilotkit` is mounted, here or anywhere:
+ * its last route went on 2026-10-13 (`log-hygiene.integration.test.ts` asks a booted server).
  *
  * Bodies name A's Bot wherever a body names a Bot, so the colleague column presses on the
  * body-borne doors (`routines`, `components/:name/call`, `plugins/grants`,
@@ -311,7 +310,6 @@ function deployment() {
     ),
     packageStatusReader: createPackageStatusReader(database),
     onboarding: createOnboardingStore(database),
-    // No `copilotHandler`: the CopilotKit runtime is not importable from a test. See the file comment.
     computerClient: client,
     computerGateway: gateway,
     computerPolicy: createPolicyStore(PERMISSIVE),

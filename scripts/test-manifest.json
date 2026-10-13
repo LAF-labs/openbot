@@ -386,7 +386,6 @@
   "server/tests/conversation-search.integration.test.ts",
   "server/tests/conversations-of.integration.test.ts",
   "server/tests/converter.test.ts",
-  "server/tests/copilot-guard.test.ts",
   "server/tests/copilot.test.ts",
   "server/tests/credentials.test.ts",
   "server/tests/daily-budget-routine.integration.test.ts",
