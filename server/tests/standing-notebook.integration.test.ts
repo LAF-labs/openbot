@@ -527,6 +527,47 @@ describe("a standing fact the owner stated", () => {
     expect(await rowsOf(bot.id)).toHaveLength(1);
   });
 
+  test("one fact returned twice in one night is one line, counted added once and duplicate once", async () => {
+    // The live lines are read again before each write, so the second copy meets the first.
+    const { bot, hook, threadId, judge } = await setup(() => [
+      { line: FACT, quote: SAID },
+      { line: FACT, quote: SAID },
+    ]);
+    const counts = await hook({
+      botId: bot.id,
+      threadId,
+      owner: said(threadId, SAID),
+    });
+    expect(counts).toMatchObject({ added: 1, duplicate: 1 });
+    expect(judge?.asked.map((a) => a.claim)).toEqual([FACT]);
+    expect(await rowsOf(bot.id)).toHaveLength(1);
+  });
+
+  test("a quote past the judge's window is not evidence: the extractor is shown no more of a message than the judge reads", async () => {
+    const errands = "택배 송장 번호 다시 확인해 줘. ".repeat(40);
+    const { bot, hook, threadId, extracted } = await setup(() => [
+      { line: FACT, quote: SAID },
+    ]);
+    // The statement after 700 characters of errands: past what the judge would read of it.
+    const late = await hook({
+      botId: bot.id,
+      threadId,
+      owner: said(threadId, `${errands}${SAID}`),
+    });
+    expect(late).toMatchObject({ added: 0, unquoted: 1 });
+    expect(extracted[0]?.messages[0]?.includes(SAID)).toBe(false);
+    expect(await rowsOf(bot.id)).toEqual([]);
+    // The same statement at the head of the same errands: shown, quoted, written.
+    const early = await hook({
+      botId: bot.id,
+      threadId,
+      owner: said(threadId, `${SAID}. ${errands}`),
+    });
+    expect(early).toMatchObject({ added: 1, unquoted: 0 });
+    expect(extracted[1]?.messages[0]?.includes(SAID)).toBe(true);
+    expect(await rowsOf(bot.id)).toHaveLength(1);
+  });
+
   test("the judge down, or absent, writes nothing that night, and the close is not failed", async () => {
     const failing: JevAsker = {
       async ask() {
