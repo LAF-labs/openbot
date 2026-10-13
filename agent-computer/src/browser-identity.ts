@@ -46,7 +46,7 @@ export function botTimeZone(
  * the first launch compares this against what the browser actually reports and takes the browser's
  * answer for every launch after it.
  */
-export const PINNED_CHROMIUM_VERSION = "151.0.7922.34";
+export const PINNED_CHROMIUM_VERSION = "156.0.8078.4";
 
 /**
  * What the page sees us as: the string the browser would send, without the word that says nobody is

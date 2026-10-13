@@ -498,7 +498,8 @@ services:
     # Chromium's sandbox on Linux is user namespaces, and Docker's default seccomp profile refuses
     # them to an unprivileged process — which is why this image ran the browser as root with
     # `--no-sandbox` until 2026-09-13. This is Playwright's published profile for exactly this
-    # (`utils/docker/seccomp_profile.json` at v1.62.1, the same JSON): Docker's default plus the user
+    # (`utils/docker/seccomp_profile.json` at v1.62.1, and byte-for-byte the same file at v1.64.0,
+    # compared 2026-10-13 when the image moved): Docker's default plus the user
     # namespace syscalls. Measured on Ubuntu 24.04 aarch64 with `apparmor_restrict_unprivileged_userns=1`
     # and Docker 29.8, as `pwuser`: without it Chromium exits with "No usable sandbox!"; with it every
     # renderer runs in a user, PID and network namespace of its own. No AppArmor change is needed.
