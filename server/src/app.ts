@@ -162,9 +162,11 @@ export type CreateAppOptions = {
   /**
    * The CopilotKit endpoint, already built by the caller.
    *
-   * Passed in rather than constructed here so this module never imports the runtime. The runtime
-   * pulls in `eventsource`, which Bun cannot `require()` from a test, so importing it at module
+   * Our own route since #230 (`mountCopilotRuntime`). Passed in rather than constructed here
+   * because it was once CopilotKit's runtime, which this module could not import: the runtime
+   * pulled in `eventsource`, which Bun could not `require()` from a test, so importing it at module
    * scope broke every server test that touches createApp even though none of them use CopilotKit.
+   * The roster it answers with is still the caller's to build.
    */
   copilotHandler?: HonoApp;
   /** Absent when no computer is configured, and the routes are then not mounted at all. */
@@ -968,8 +970,9 @@ export function createApp({
     }
     return context.json({ package: await packageStatusReader.active() });
   });
-  // The CopilotKit runtime, behind the same session guard as every other API route. Mounted last so
-  // its own routing under /api/copilotkit cannot shadow a LAF Agent route declared above.
+  // The CopilotKit endpoint — our own route since #230, where a runtime used to answer — behind the
+  // same session guard as every other API route. Mounted last so its catch-all under
+  // /api/copilotkit cannot shadow a LAF Agent route declared above.
   if (copilotHandler) {
     /*
      * THE GUARD, AS A MIDDLEWARE, BECAUSE THE MOUNT CANNOT CARRY ONE.
