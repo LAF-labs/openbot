@@ -1644,6 +1644,78 @@ describe("a run the turn delegated to", () => {
     expect(made[1]?.runs).toBe(1);
     expect(engine.busy(conversation.threadId)).toBe(false);
   });
+
+  test("a project's deletion stops the run its turn delegated to, and a page that comes back late starts nothing", async () => {
+    /*
+     * A delegated run is no turn of its own: it is listed nowhere, and `stopThread` finds only the
+     * turn that started it. What stops it is the turn's stop reaching it through the call it was
+     * started by. Left running, it would ask its model again in `<thread>.browse` after the
+     * deletion had dropped that conversation's context, and the store would make it anew.
+     */
+    const conversation = await aConversation();
+    let reached: () => void = () => {};
+    const working = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    /** The delegated run's own call: the page it is waiting on, and the signal it was handed. */
+    let pageSignal: AbortSignal | undefined;
+    let pageCameBack: (outcome: { ok: true; title: string }) => void = () => {};
+    let streamsCut = 0;
+    const main = delegating();
+    const made: ReturnType<typeof scriptedBot>[] = [];
+    const { engine } = engineWith(
+      main,
+      (context: ChatTurnContext): ChatToolkit["execute"] =>
+        async (name, args, call) => {
+          if (name === "delegate") {
+            const handed = await context.delegate?.({
+              callId: call.id,
+              mode: "browse",
+              instruction: String(args.task),
+              tools: [],
+              execute: (_name, _args, page) =>
+                new Promise((resolve) => {
+                  pageSignal = page?.signal;
+                  pageCameBack = resolve;
+                  reached();
+                }),
+              signal: call.signal,
+            });
+            return { ok: true, answer: handed?.answer ?? "" };
+          }
+          return { ok: true };
+        },
+      {
+        resolveAgents: async () => {
+          const next =
+            made.length === 0
+              ? main
+              : Object.assign(browsing(), {
+                  abortRun: () => {
+                    streamsCut += 1;
+                  },
+                });
+          made.push(next);
+          return { [BOT]: next as unknown as LoopAgent };
+        },
+      },
+    );
+    const turnId = await send(engine, conversation, "서울 날씨 찾아줘");
+    await working;
+    await engine.stopThread(conversation.threadId);
+    expect(await statusOf(turnId)).toBe("stopped");
+    // The run in the conversation of its own, not the turn's Bot.
+    expect(made[1]?.threadId).toBe(
+      delegatedThreadOf(conversation.threadId, "browse"),
+    );
+    // Its call was cut and its model told to stop, by the time the deletion goes on.
+    expect(pageSignal?.aborted).toBe(true);
+    expect(streamsCut).toBe(1);
+    // And the page that answers after all is nobody's next step: its model is not asked again.
+    pageCameBack({ ok: true, title: "네이버" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(made[1]?.runs).toBe(1);
+  });
 });
 
 /*
