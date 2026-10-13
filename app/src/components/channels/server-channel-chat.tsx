@@ -392,15 +392,13 @@ export function ServerChannelChat({
   }, [toolsSettled]);
 
   /** The tools this window would have offered the Bot, for the turn to offer the same. */
-  const declaredTools = async (): Promise<Tool[] | null> => {
+  const declaredTools = async (): Promise<Tool[]> => {
     const deadline = Date.now() + SEND_WITHOUT_GRANTS_AFTER_MS;
     while (!settled.current && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    const core = copilotkit as unknown as {
-      buildFrontendTools?: (agentId?: string) => Tool[];
-    };
-    return core.buildFrontendTools?.(runtimeAgentId) ?? null;
+    // The registry is the app's own, so the list is always there to ask for: no cast, no "if any".
+    return copilotkit.buildFrontendTools(runtimeAgentId);
   };
 
   /**
