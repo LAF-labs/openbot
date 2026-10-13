@@ -321,6 +321,29 @@ describe("escaping the workspace", () => {
     );
   });
 
+  test("refuses to write THROUGH a symlinked file that points outside", async () => {
+    // Only the directory of a write was resolved until 2026-10-13; a link that is itself the file
+    // sits in a directory that is inside, and `writeFile` follows the link.
+    await symlink(join(outside, "secret.txt"), join(root, "innocent.txt"));
+    await expect(workspace().write("innocent.txt", "x")).rejects.toThrow(
+      WorkspacePathError,
+    );
+    await expect(
+      workspace().write("innocent.txt", "x", { append: true }),
+    ).rejects.toThrow(WorkspacePathError);
+    expect(await readFile(join(outside, "secret.txt"), "utf8")).toBe(
+      "a private key",
+    );
+  });
+
+  test("refuses to write THROUGH a dangling symlink, which would make the file where it points", async () => {
+    await symlink(join(outside, "planted.txt"), join(root, "dangling.txt"));
+    await expect(workspace().write("dangling.txt", "x")).rejects.toThrow(
+      WorkspacePathError,
+    );
+    expect(await readdir(outside)).toEqual(["secret.txt"]);
+  });
+
   test("a symlink pointing back INSIDE the workspace still works", async () => {
     // The guard must confine, not merely forbid symlinks: refusing every link would be easier and
     // would break legitimate use.
@@ -625,18 +648,25 @@ describe("bytes put where nothing is", () => {
     await symlink(join(outside, "secret.txt"), join(root, "innocent.txt"));
     await symlink(join(outside, "not-there.txt"), join(root, "dangling.txt"));
 
-    for (const path of [
-      "uploads/2026-10-06-1a2b3c4d-매출.csv",
-      "reports",
-      "innocent.txt",
-      "dangling.txt",
+    // A file and a folder are taken. A link out and a link to nowhere are not places in the folder
+    // a write may name (since 2026-10-13, when a write began to be judged where it lands) — the
+    // refusal comes first, and `wx` would have refused either anyway.
+    for (const [path, code] of [
+      ["uploads/2026-10-06-1a2b3c4d-매출.csv", "laf:file_exists"],
+      ["reports", "laf:file_exists"],
+      ["innocent.txt", "laf:file_path_refused"],
+      ["dangling.txt", "laf:file_path_refused"],
     ]) {
       const { body } = pieces(BINARY);
       const refused = await ws.put(path, body).catch((error: unknown) => error);
       expect({
         path,
-        code: refused instanceof WorkspaceFileError ? refused.code : refused,
-      }).toEqual({ path, code: "laf:file_exists" });
+        code:
+          refused instanceof WorkspaceFileError ||
+          refused instanceof WorkspacePathError
+            ? refused.code
+            : refused,
+      }).toEqual({ path, code });
     }
 
     expect(

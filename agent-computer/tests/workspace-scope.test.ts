@@ -231,6 +231,124 @@ describe("a project", () => {
   });
 });
 
+/*
+ * A WRITE IS JUDGED WHERE IT LANDS, AS A WRITE. The place a link in a project's folder leads was
+ * asked about as a read, and the Bot's own folder is a project's to read — so a link there let the
+ * project write into it; and a link that was itself the file was never resolved for a write at
+ * all. Each way in, for a read and for a write, against the Bot's folder and against the outside.
+ */
+describe("a link in a project's folder, followed for a write", () => {
+  let outside: string;
+
+  beforeEach(async () => {
+    outside = join(base, "outside");
+    await mkdir(outside, { recursive: true });
+    await writeFile(join(outside, "secret.txt"), "a private key");
+  });
+
+  test("to a file of the Bot's own: read, as the folder is a project's to read — and not written", async () => {
+    await symlink(
+      join(root, "notes.md"),
+      join(root, "projects", "channel_a", "own.md"),
+    );
+    const ws = createWorkspace(root).within(A);
+    expect((await ws.read("projects/channel_a/own.md")).text).toBe(
+      "the Bot's own",
+    );
+    expect(
+      await refused(() => ws.write("projects/channel_a/own.md", "A's words")),
+    ).toBe("laf:file_path_refused");
+    expect(await readFile(join(root, "notes.md"), "utf8")).toBe(
+      "the Bot's own",
+    );
+  });
+
+  test("to the Bot's folder itself: listed and read, and nothing is made in it", async () => {
+    await symlink(root, join(root, "projects", "channel_a", "home"));
+    const ws = createWorkspace(root).within(A);
+    expect((await ws.read("projects/channel_a/home/notes.md")).text).toBe(
+      "the Bot's own",
+    );
+    expect(
+      await refused(() =>
+        ws.write("projects/channel_a/home/new.md", "A's words"),
+      ),
+    ).toBe("laf:file_path_refused");
+    expect(
+      await refused(() =>
+        ws.write("projects/channel_a/home/deeper/new.md", "A's words"),
+      ),
+    ).toBe("laf:file_path_refused");
+    expect(
+      await refused(() =>
+        ws.put("projects/channel_a/home/put.md", bytesOf("A's bytes")),
+      ),
+    ).toBe("laf:file_path_refused");
+    expect((await readdir(root)).sort()).toEqual(["notes.md", "projects"]);
+  });
+
+  test("to a file outside the folder: neither read nor written", async () => {
+    await symlink(
+      join(outside, "secret.txt"),
+      join(root, "projects", "channel_a", "out.md"),
+    );
+    const ws = createWorkspace(root).within(A);
+    for (const [way, work] of READS(ws, "projects/channel_a/out.md")) {
+      expect(`${way} · ${await refused(work)}`).toBe(
+        `${way} · laf:file_path_refused`,
+      );
+    }
+    expect(
+      await refused(() => ws.write("projects/channel_a/out.md", "A's words")),
+    ).toBe("laf:file_path_refused");
+    expect(await readFile(join(outside, "secret.txt"), "utf8")).toBe(
+      "a private key",
+    );
+  });
+
+  test("to a folder outside: nothing is written under it", async () => {
+    await symlink(outside, join(root, "projects", "channel_a", "escape"));
+    const ws = createWorkspace(root).within(A);
+    expect(
+      await refused(() =>
+        ws.write("projects/channel_a/escape/owned.md", "A's words"),
+      ),
+    ).toBe("laf:file_path_refused");
+    expect(await readdir(outside)).toEqual(["secret.txt"]);
+  });
+
+  test("that leads nowhere: a write would make the file where it points, so it is refused", async () => {
+    await symlink(
+      join(outside, "made-by-a-write.txt"),
+      join(root, "projects", "channel_a", "dangling.md"),
+    );
+    const ws = createWorkspace(root).within(A);
+    expect(
+      await refused(() =>
+        ws.write("projects/channel_a/dangling.md", "A's words"),
+      ),
+    ).toBe("laf:file_path_refused");
+    expect(await readdir(outside)).toEqual(["secret.txt"]);
+  });
+
+  test("a project's first write, with no folder yet, still lands in its own", async () => {
+    // The anchor of such a write is `projects/`, which a project may read and not write: judged
+    // where it lands rather than at its anchor, the write is the project's own.
+    const ws = createWorkspace(root).within(projectScope("channel_c"));
+    await ws.write("projects/channel_c/first.md", "C's");
+    expect(
+      await readFile(join(root, "projects", "channel_c", "first.md"), "utf8"),
+    ).toBe("C's");
+    await ws.put("projects/channel_c/deep/er/put.md", bytesOf("C's bytes"));
+    expect(
+      await readFile(
+        join(root, "projects", "channel_c", "deep", "er", "put.md"),
+        "utf8",
+      ),
+    ).toBe("C's bytes");
+  });
+});
+
 describe("a download", () => {
   test("lands in the folder of the scope that was asking, two at once each in its own", async () => {
     const landedA = join(base, "landed-a");

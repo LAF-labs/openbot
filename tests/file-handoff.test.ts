@@ -439,11 +439,15 @@ describe("the server's own file calls, against the real folder", () => {
     ]);
     expect(await bot.fileBytes("made/once.bin")).toEqual(BINARY);
 
-    // A file the person's Bot already had, and a link that leads out of the folder.
-    for (const taken of ["보고서/9월 정산내역 (2).csv", "innocent.txt"]) {
+    // A file the person's Bot already had is taken; a link that leads out of the folder is no
+    // place a write may name (since 2026-10-13 a write is judged where it lands). Untouched both.
+    for (const [taken, code] of [
+      ["보고서/9월 정산내역 (2).csv", "laf:file_exists"],
+      ["innocent.txt", "laf:file_path_refused"],
+    ]) {
       expect(
         (await failureOf(bot.putFile(taken, new Uint8Array([9])))).message,
-      ).toBe("laf:file_exists");
+      ).toBe(code);
     }
     expect(
       await readFile(join(root, "보고서/9월 정산내역 (2).csv"), "utf8"),
