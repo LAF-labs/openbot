@@ -342,10 +342,13 @@ OKLCH 밝기만 옮겨 4.6:1을 넘기는 방법이 그때 썼던 것이다.
 ## 9. `dark` 클래스는 `<html>`에만 붙인다
 
 `lib/theme.ts`의 `toggleRootClass("dark", …)`가 하는 그대로다. 중첩된 `.dark`는 **안 된다**:
-`shadcn/tailwind.css`가 자기 `.dark` 블록에서 `--popover`·`--accent`·`--border`를 oklch 기본값
-으로 직접 선언하고, 우리 매핑은 `:root`에 있다. 루트에서는 우리 `:root`가 뒤에 와서 이기지만,
-**중첩된 요소에서는 그 요소에 직접 걸린 shadcn `.dark`가 상속을 이긴다.** 다크 섬 하나가
-조용히 shadcn 기본 회색으로 그려진다. (2026-09-06 실측.)
+`styles.css`가 들여오는 `prompt-area/tailwind.css`가 자기 `.dark` 블록에서
+`--popover`·`--accent`·`--border`를 oklch 기본값으로 직접 선언하고, 우리 매핑은 `:root`에 있다.
+루트에서는 우리 `:root`가 뒤에 와서 이기지만, **중첩된 요소에서는 그 요소에 직접 걸린 그
+`.dark`가 상속을 이긴다.** 다크 섬 하나가 조용히 기본 회색으로 그려진다. (2026-09-06 실측,
+2026-10-13 다시 실측: 밝은 루트 안의 `.dark` 요소에서 `--sand-bg-elevated`는 `#1b1c20`인데
+`--popover`는 `oklch(0.205 0 0)`이다. 이 절은 그 블록을 `shadcn/tailwind.css`의 것이라고
+적었었다. 그 파일은 `app/src/shadcn-tailwind.css`로 들여온 일부이고 `.dark` 블록이 없다.)
 
 ## 10. 페이지 머리글, 셀렉트의 갈매기, 그리고 `nativeButton`
 

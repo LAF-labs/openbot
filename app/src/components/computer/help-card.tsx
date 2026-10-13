@@ -71,7 +71,7 @@ export function HelpCard({
   /*
    * WHOSE COMPUTER, READ HERE AND NOT HANDED IN. The card was given its Bot by the renderer that
    * draws it, as `botId={bot.current}` — the holder a surface fills in an effect. That renderer is
-   * registered once for as long as the screen is mounted, and CopilotKit draws it through a memo
+   * registered once for as long as the screen is mounted, and the registry draws it through a memo
    * that compares the call and nothing else, so the holder was read when the card was first drawn
    * and never again. Whenever the conversation was drawn afresh under a screen that had stayed —
    * the channel could not be read for a moment and then could — its cards were in the first commit,

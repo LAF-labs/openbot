@@ -109,8 +109,9 @@ const NO_MARKS: ThreadMarks = { times: {}, speakers: {} };
 /**
  * When each message in a channel was first seen, and which Bot said it.
  *
- * A separate request from the transcript, because the transcript does not come from us — it comes
- * out of CopilotKit's agent, whose message shape is a fixed whitelist that drops any field we add.
+ * A separate request from the transcript, because the transcript is AG-UI's messages, whose shape
+ * is fixed and carries no field we add (CopilotKit's agent, which handed them over while a window
+ * drove the turn, dropped any we did).
  * Fetched once when a channel opens; messages that arrive after that are stamped on arrival by the
  * browser, which is the same clock to within a round trip.
  */

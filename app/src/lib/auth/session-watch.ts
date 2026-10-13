@@ -9,9 +9,9 @@
  * should be at the door, with where they were carried through it.
  *
  * There is no shared HTTP client to hook (audit finding 11 — a `lib/http.ts` would be the place),
- * so this wraps `fetch` itself, once, at boot. Every request in the app goes through it, CopilotKit's
- * runtime calls included, and none of the hundred call sites needs to learn a convention. It changes
- * nothing about any response: it looks at the status and lets it go.
+ * so this wraps `fetch` itself, once, at boot. Every request in the app goes through it, and none
+ * of the hundred call sites needs to learn a convention. It changes nothing about any response: it
+ * looks at the status and lets it go.
  */
 
 export const sessionState = new EventTarget();

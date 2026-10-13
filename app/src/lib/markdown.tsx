@@ -28,7 +28,7 @@ export const markdownComponents = {
  * Streamdown is a megabyte with Shiki's core inside it, and the build keeps it out of the first
  * screen only as long as nothing on the way to that screen imports it statically. The transcript
  * and the help and legal pages are route components — split by the router into chunks fetched on
- * the way there — so they may import it directly. A tool renderer registered by the CopilotKit
+ * the way there — so they may import it directly. A tool renderer registered under the tools'
  * provider is not: `import { Streamdown }` in `plugin-tools.tsx` put the whole renderer back into
  * every signed-in screen's first load (audit A4, finding 5), which is why this exists.
  *

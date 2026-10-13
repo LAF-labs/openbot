@@ -9,7 +9,7 @@ import { TEST_POOL } from "./support/database";
  * What an operator's log actually contains after a whole turn, and what it must not.
  *
  * The other tests in this area prove the logger's shape and the source's discipline. Neither can
- * see what a running deployment writes: the CopilotKit runtime, the OpenAI client, Drizzle and Bun
+ * see what a running deployment writes: the AG-UI client, the OpenAI client, Drizzle and Bun
  * itself all print on their own account, and a `console.error("…", error)` somewhere nobody
  * grepped prints the error object whole. So this starts the two processes an operator reads —
  * the API server and `agent-bot` — as subprocesses, points the Bot service at a fake provider

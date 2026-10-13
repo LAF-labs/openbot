@@ -21,8 +21,8 @@ import { t } from "@/lib/i18n";
  * and this window made the click through `/api/computers/…` and started the next run with the
  * result — waiting on the person's 허용 or on the wheel coming back where the call needed one. The
  * server carries the calls out since v0.5.7 (`server/src/turns/chat-tools.ts`), and the window that
- * did was removed 2026-10-05; nothing calls a frontend tool's handler any more, and CopilotKit does
- * not need one to list a tool or draw its line.
+ * did was removed 2026-10-05; nothing calls a frontend tool's handler any more, and the registry
+ * takes none (`tool-registry.tsx`): it lists a tool and draws its line.
  *
  * TWO READERS, TWO LANGUAGES, ONE FACT. What a tool hands back carries a `code`; the sentence the
  * MODEL reads comes from `shared/prompt/tool-results.ko.ts`, and the words a PERSON reads on the

@@ -1,9 +1,10 @@
 /**
  * A card the Bot put on screen to ask the person something, answered to the turn the server owns.
  *
- * A decision card (`components/gallery/decisions.tsx`) is handed a `respond` only while CopilotKit
- * is carrying its call out in this window — which, with the turn on the server, it never is. The
- * server waits for the answer instead (`server/src/turns/people.ts`) and says which cards it is
+ * A decision card (`components/gallery/decisions.tsx`) was handed a `respond` by CopilotKit only
+ * while its call was being carried out in this window — which, with the turn on the server, it
+ * never was; the app's own registry hands none (`lib/copilot/tool-registry.tsx`). The server
+ * waits for the answer instead (`server/src/turns/people.ts`) and says which cards it is
  * waiting on; this hands those cards a `respond` that goes to it, from whichever window the person
  * presses it in.
  */
@@ -70,8 +71,8 @@ export function useAnswerOnItsWay(
 
 /**
  * A decision card, answerable while the turn waits on its call: the server holds the wait
- * (`server/src/turns/people.ts`) and this hands the card the `respond` CopilotKit never will —
- * CopilotKit gives one only to a call it is carrying out in this window, which it no longer does.
+ * (`server/src/turns/people.ts`) and this hands the card the `respond` the registry never does —
+ * one was for a call carried out in this window, and no call is.
  * And where the person's own words are on their way to it, the card shows them and takes no press
  * meanwhile (`useAnswerOnItsWay`).
  *

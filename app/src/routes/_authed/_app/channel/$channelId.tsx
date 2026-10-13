@@ -85,12 +85,14 @@ export const Route = createFileRoute("/_authed/_app/channel/$channelId")({
 });
 
 /**
- * THE COPILOTKIT PROVIDER LIVES ON THE SCREENS THAT RUN A BOT, NOT ON EVERY SCREEN.
+ * THE BOT'S TOOLS AND THEIR CARDS LIVE ON THE SCREENS THAT RUN A BOT, NOT ON EVERY SCREEN.
  *
- * It used to wrap `_authed`'s Outlet, which made its 800 kB — and the transcript renderer it
- * drags in — a static part of Home, Settings and every admin page (audit A4, finding 5). A route
- * component is split into a chunk of its own by the router, so from here the runtime is fetched on
- * the way to a conversation and not before. The compose screen and the playground do the same.
+ * Their provider was CopilotKit's until 2026-10-13; the registry under it is the app's own now
+ * (`lib/copilot/provider.tsx`). It used to wrap `_authed`'s Outlet, which made CopilotKit's 800 kB
+ * — and the transcript renderer the cards drag in — a static part of Home, Settings and every
+ * admin page (audit A4, finding 5). A route component is split into a chunk of its own by the
+ * router, so from here the tools and their cards are fetched on the way to a conversation and not
+ * before. The compose screen and the playground do the same.
  */
 function ChannelScreen() {
   return (

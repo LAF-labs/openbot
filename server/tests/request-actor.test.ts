@@ -78,7 +78,9 @@ describe("who is asking", () => {
       actorsWith(undefined, ["user"]),
       actorsWith(signedIn({ id: "stranger" }), []),
     ]) {
-      await expect(actors.resolve(request)).rejects.toThrow("CopilotKit run");
+      await expect(actors.resolve(request)).rejects.toThrow(
+        "This request requires",
+      );
       // The doors that decide whose data is served refuse rather than guess.
       expect(await actors.resolveOrNull(request)).toBeNull();
     }
@@ -98,7 +100,9 @@ describe("who is asking", () => {
         },
       },
     });
-    await expect(actors.resolve(request)).rejects.toThrow("CopilotKit run");
+    await expect(actors.resolve(request)).rejects.toThrow(
+      "requires an admitted user",
+    );
     // The live-screen upgrade's door: refused rather than guessed, and revoked all the same.
     expect(await actors.resolveOrNull(request)).toBeNull();
     expect(revoked).toEqual(["u5", "u5"]);

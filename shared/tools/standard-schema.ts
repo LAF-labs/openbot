@@ -5,9 +5,10 @@
  * `Tool.parameters`로 그대로 넘기고, 그 값은 와이어에 JSON으로 실린다 — 그래서 스키마 객체에
  * 여분의 필드가 붙어 있으면 모델이 그 쓰레기를 같이 읽는다.
  *
- * 브라우저 쪽 `useFrontendTool`은 Standard Schema를 받는다. CopilotKit이 그것으로 하는 일은
- * 딱 하나, JSON 스키마로 되돌리는 것뿐이다(`@copilotkit/shared`의 `schemaToJsonSchema`: 먼저
- * `~standard.jsonSchema`, 없으면 `toJSONSchema()`, 없으면 zod 변환기 — 확인함). 검증에는 쓰지
+ * 브라우저 쪽 `useFrontendTool`은 Standard Schema를 받는다. 앱의 등록부가 그것으로 하는 일은
+ * 딱 하나, JSON 스키마로 되돌리는 것뿐이다(`app/src/lib/copilot/tool-schema.ts`: 먼저
+ * `~standard.jsonSchema`, 없으면 `toJSONSchema()`, 둘 다 없으면 거절 — 2026-10-13까지는
+ * `@copilotkit/shared`의 `schemaToJsonSchema`가 같은 순서로 했다). 검증에는 쓰지
  * 않는다(`validate` 호출 지점 없음, 확인함). 그러니 여기서 필요한 것은 `toJSONSchema()`를 가진
  * 얇은 껍데기 하나이고, 원본 스키마는 손대지 않은 채로 남는다.
  *

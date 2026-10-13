@@ -89,8 +89,8 @@ this repository: DNS, the cloud's ingress rules, and the host's own firewall.
 Bun everywhere. Postgres 17 (plain `postgres:17` since migration 0024 dropped the one
 unread `vector` column and the extension with it; 0065 adds `pg_trgm`, which that image
 ships, for searching conversations). Hono (server), React 19 + Vite (app),
-Drizzle, Tailwind 4, Biome, TanStack Router/Query, CopilotKit's React client /
-AG-UI, Playwright (the Bot's browser).
+Drizzle, Tailwind 4, Biome, TanStack Router/Query, AG-UI, Playwright (the Bot's
+browser).
 
 ```
 app/              React SPA
@@ -426,13 +426,13 @@ or keep the value in state; the clock read while rendering — `useNow()`, which
 is also the only cure for `new Date()`, since the check cannot see that one.
 
 A component that compiles can still behave differently, and the ceiling cannot
-see it. CopilotKit changes its message array in place while it streams, so a
-compiled component handed that array stopped showing the reply after its first
-chunk: the window-driven chat (`ChannelChat`, removed 2026-10-05 — a turn is the
-server's now, and the window only watches it) said `"use no memo"` and handed
-down a copy for that reason. Anything handed an array that is changed in place
-needs the same. And `bun test` never compiles, so a compiled component is only
-ever seen in the browser.
+see it. CopilotKit (gone 2026-10-13) changed its message array in place while it
+streamed, so a compiled component handed that array stopped showing the reply
+after its first chunk: the window-driven chat (`ChannelChat`, removed
+2026-10-05 — a turn is the server's now, and the window only watches it) said
+`"use no memo"` and handed down a copy for that reason. Anything handed an array
+that is changed in place needs the same. And `bun test` never compiles, so a
+compiled component is only ever seen in the browser.
 
 ## Conventions
 

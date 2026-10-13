@@ -141,7 +141,7 @@ export type DeviceClock = { timeZone?: string; locale?: string };
 /**
  * `forwardedProps.device`, checked.
  *
- * Sent by the app on every chat run (`CopilotKitProvider`'s `properties`). A routine sends none —
+ * Sent by the app with every message (`device`, `server-channel-chat.tsx`). A routine sends none —
  * there is no device at seven in the morning — and an unusable zone is dropped rather than trusted,
  * so the run falls back to the zone the person's last session saved.
  */
