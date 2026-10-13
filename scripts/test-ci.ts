@@ -3138,6 +3138,10 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * And two more, 4651 → 4653, from the mutation pass before this landed, which found two lines no
  * test guarded: one fact returned twice in one night is counted added once (the live lines are
  * read again before each write), and a quote past the judge's window is not evidence.
+ * And two more, 4653 → 4655, from Bugbot's read of 7561be80: only a line older than the
+ * evidence may be retired by it (a correction the Bot wrote after the quoted message stands; a
+ * message from before stamps retires nothing), and a conversation dropped while the judge was
+ * reading writes nothing more.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -3167,7 +3171,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4653, roots: ["server"] },
+  { name: "server", floor: 4655, roots: ["server"] },
   { name: "app", floor: 2446, roots: ["app"] },
   {
     name: "agent-computer",
