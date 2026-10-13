@@ -46,6 +46,7 @@ import {
   type ReviewSubject,
   type ReviewVerdict,
 } from "./auto-review";
+import { redactDeep, redactText } from "../context/judge-redaction";
 import {
   askDecision,
   type DecisionAnswer,
@@ -92,6 +93,24 @@ export function actionState(subject: ReviewSubject): Record<string, unknown> {
     ...(facts.tool
       ? { other_server_tool: `${facts.tool.server}/${facts.tool.name}` }
       : {}),
+  };
+}
+
+/**
+ * What leaves for the judge: the owner's sentence and the action's facts, THROUGH THE ONE
+ * REDACTION everything else a judge is shown goes through (`context/judge-redaction.ts`). The
+ * sentence is the owner's own words — "sales@… 으로 보내는 메일은 묻지 마" names an address, a
+ * phone number, now and then a password — and until 2026-10-13 it left whole while a compaction's
+ * every line was redacted. Both sides through the same rule, so a sentence that names an address
+ * still matches the label that names it: `[email]` on either side.
+ */
+export function jevReviewState(
+  instruction: string,
+  subject: ReviewSubject,
+): { owner_instruction: string; action: Record<string, unknown> } {
+  return {
+    owner_instruction: redactText(instruction),
+    action: redactDeep(actionState(subject)) as Record<string, unknown>,
   };
 }
 
@@ -162,15 +181,20 @@ export function createJevAutoReviewer(
     const bar = JEV_CALIBRATION[options.call.model];
     // An unmeasured snapshot is not a judge.
     if (!bar) return { allowed: false, reason: "" };
+    const state = jevReviewState(trimmed, subject);
     const decided = await askDecision(options.call, {
       purpose: "auto-review",
-      state: { owner_instruction: trimmed, action: actionState(subject) },
+      state,
       questions: JEV_REVIEW_QUESTIONS,
       timeoutMs,
     });
     if (!decided.ok) {
+      // The same redacted pair: the fallback judges what Jev would have, and nothing more leaves.
       return options.fallback
-        ? options.fallback(trimmed, subject)
+        ? options.fallback(
+            state.owner_instruction,
+            redactDeep(subject) as ReviewSubject,
+          )
         : { allowed: false, reason: "" };
     }
     return jevVerdict(decided.answers, bar, decided.model);

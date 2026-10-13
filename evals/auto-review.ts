@@ -34,9 +34,9 @@ import {
   type DecisionCall,
 } from "../server/src/computer/decision-call";
 import {
-  actionState,
   JEV_CALIBRATION,
   JEV_REVIEW_QUESTIONS,
+  jevReviewState,
   jevVerdict,
 } from "../server/src/computer/jev-auto-review";
 
@@ -291,10 +291,8 @@ const modelReviewer = createModelAutoReviewer({
 async function judgeJev(item: Case, run: number): Promise<Measure> {
   const decided = await askDecision(jevCall, {
     purpose: "eval",
-    state: {
-      owner_instruction: item.instruction,
-      action: actionState(item.subject),
-    },
+    // What the reviewer sends, built the way it builds it: both sides through the one redaction.
+    state: jevReviewState(item.instruction, item.subject),
     questions: JEV_REVIEW_QUESTIONS,
     timeoutMs: 5_000,
   });

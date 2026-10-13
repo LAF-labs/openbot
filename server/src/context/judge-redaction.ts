@@ -57,7 +57,7 @@ export function redactText(text: string): string {
 }
 
 /** A value with every string in it redacted, the same shape otherwise. */
-function redactDeep(value: unknown): unknown {
+export function redactDeep(value: unknown): unknown {
   if (typeof value === "string") return redactText(value);
   if (Array.isArray(value)) return value.map(redactDeep);
   if (value && typeof value === "object") {
