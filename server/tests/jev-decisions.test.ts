@@ -439,9 +439,9 @@ describe("the Jev auto-reviewer: allow or ask, never deny", () => {
       action: { element: { label: string } };
     };
     expect(state.owner_instruction).toBe(
-      "[email 1] 으로 보내는 메일은 묻지 말고 보내도 돼",
+      "[email#1] 으로 보내는 메일은 묻지 말고 보내도 돼",
     );
-    expect(state.action.element.label).toBe("[email 1] 에게 보내기");
+    expect(state.action.element.label).toBe("[email#1] 에게 보내기");
   });
 
   test("an action aimed at another address does not read as the one the sentence named", () => {
@@ -456,10 +456,10 @@ describe("the Jev auto-reviewer: allow or ask, never deny", () => {
       },
     });
     expect(other.owner_instruction).toBe(
-      "[email 1] 으로 보내는 메일은 묻지 말고 보내도 돼",
+      "[email#1] 으로 보내는 메일은 묻지 말고 보내도 돼",
     );
     expect((other.action.element as { label: string }).label).toBe(
-      "[email 2] 에게 보내기",
+      "[email#2] 에게 보내기",
     );
     // And the same address spelt in capitals is still the same address.
     const same = jevReviewState(NAMING, {
@@ -473,8 +473,28 @@ describe("the Jev auto-reviewer: allow or ask, never deny", () => {
       },
     });
     expect((same.action.element as { label: string }).label).toBe(
-      "[email 1] 에게 보내기",
+      "[email#1] 에게 보내기",
     );
+  });
+
+  test("a pair that has been through the redaction comes back as it was, a password written inline included", () => {
+    const sentence = `${ADDRESS} 으로 보내. 비밀번호: hunter2-example, 다른 비밀번호: other-one-example`;
+    const once = jevReviewState(sentence, TO_THAT_ADDRESS);
+    expect(once.owner_instruction).toBe(
+      "[email#1] 으로 보내. 비밀번호: [secret#1] 다른 비밀번호: [secret#2]",
+    );
+    const twice = jevReviewState(once.owner_instruction, {
+      ...TO_THAT_ADDRESS,
+      subject: {
+        ...TO_THAT_ADDRESS.subject,
+        element: {
+          role: "button",
+          name: (once.action.element as { label: string }).label,
+        },
+      },
+    });
+    expect(twice.owner_instruction).toBe(once.owner_instruction);
+    expect(twice.action).toEqual(once.action);
   });
 
   test("what the fallback is handed is the same redacted pair", async () => {
@@ -495,10 +515,10 @@ describe("the Jev auto-reviewer: allow or ask, never deny", () => {
     expect(handed).toHaveLength(1);
     expect(JSON.stringify(handed)).not.toContain(ADDRESS);
     expect(handed[0]?.instruction).toBe(
-      "[email 1] 으로 보내는 메일은 묻지 말고 보내도 돼",
+      "[email#1] 으로 보내는 메일은 묻지 말고 보내도 돼",
     );
     expect(handed[0]?.subject.subject.element?.name).toBe(
-      "[email 1] 에게 보내기",
+      "[email#1] 에게 보내기",
     );
     // The shape the fallback judges is the one it was always handed.
     expect(handed[0]?.subject.action).toBe("computer_click");

@@ -67,8 +67,8 @@ function sameValueKey(kind: string, value: string): string {
 
 /**
  * A redaction that keeps WHICH value stood where, for a judge that has to say whether two texts
- * are about the same thing: the first address it meets is `[email 1]`, a different one
- * `[email 2]`, and the first again is `[email 1]` wherever it comes back — in the owner's sentence
+ * are about the same thing: the first address it meets is `[email#1]`, a different one
+ * `[email#2]`, and the first again is `[email#1]` wherever it comes back — in the owner's sentence
  * or in the action it is held against. One of these is made per judgement and both sides go
  * through it.
  *
@@ -92,7 +92,7 @@ export function matchingRedaction(): {
     const key = sameValueKey(kind, value);
     const at = ofKind.get(key) ?? ofKind.size + 1;
     ofKind.set(key, at);
-    return `[${kind} ${at}]`;
+    return `[${kind}#${at}]`;
   };
   const text = (input: string): string => {
     let out = input;
@@ -106,6 +106,11 @@ export function matchingRedaction(): {
           ? "bearer"
           : 0;
       out = out.replace(pattern, (match: string, ...groups: unknown[]) => {
+        // Already one of ours: text that went through a redaction comes back as it was. The
+        // placeholder is one word with no space in it so the rules that take "the next word"
+        // (a password written inline) meet it whole and can leave it (review of #232: with a
+        // space in it, a second pass took `[secret` and left ` 1]`).
+        if (/^(?:Bearer\s+)?\[[a-z-]+#\d+\]$/i.test(match)) return match;
         const lead =
           kept === 1
             ? String(groups[0] ?? "")
@@ -113,7 +118,9 @@ export function matchingRedaction(): {
               ? (/^Bearer\s+/i.exec(match)?.[0] ?? "")
               : "";
         const head = kept === "bearer" ? "Bearer " : lead;
-        return `${head}${numbered(kind, match.slice(lead.length))}`;
+        const value = match.slice(lead.length);
+        if (/^\[[a-z-]+#\d+\]$/.test(value)) return match;
+        return `${head}${numbered(kind, value)}`;
       });
     }
     return out;
