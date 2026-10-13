@@ -142,12 +142,12 @@ export type RoutineServiceOptions = {
    * A run with tools is over, however it ended: told to the gateway, so that a login the run put
    * into a page stops being held and its tab is closed (`computer/gateway/secrets.ts`). Named by
    * the run's own key, not a conversation's — a routine is in none. `where`: the browser of its
-   * own the run's pages were in (`routines/run.ts`).
+   * own the run's pages were in, and the time the run has to say so in (`routines/run.ts`).
    */
   runEnded?: (
     botId: string,
     runKey: string,
-    where?: { browser: string },
+    where?: { browser: string; within: AbortSignal },
   ) => Promise<void>;
   /**
    * 목표: a run of a routine linked to a goal is told which goal it checks and offered

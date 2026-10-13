@@ -894,11 +894,11 @@ const routineService = createRoutineService({
   tools: unattendedTools,
   ...(computerGateway
     ? {
-        // With the browser the run's pages were in.
+        // With the browser the run's pages were in and the time it has, where it says them.
         runEnded: (
           botId: string,
           runKey: string,
-          where?: { browser: string },
+          where?: { browser: string; within: AbortSignal },
         ) => computerGateway.runEnded(botId, runKey, where),
         // A routine's pages are in the background browser for routines, not the main one.
         browser: {

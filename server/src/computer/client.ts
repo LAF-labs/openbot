@@ -1026,10 +1026,15 @@ export function createComputerClient(options: ComputerClientOptions) {
       /**
        * Say that the run this Bot was on is over. The computer closes the tabs a person's value
        * went into and stops holding it (`agent-computer/src/control-routes.ts`, `runEnded`):
-       * `ended` is false when a tab would not close, and everything is as it was.
+       * `ended` is false when a tab would not close, and everything is as it was. The caller's
+       * own time, where it has one, bounds the wait beneath this client's, as it does a
+       * letting-go: a run saying so on its way out of a lane must not hold it for a computer
+       * that has hung.
        */
-      async runEnded(): Promise<{ ended: boolean; closed: number }> {
-        return (await post("/run/ended", {})) as {
+      async runEnded(
+        caller?: AbortSignal,
+      ): Promise<{ ended: boolean; closed: number }> {
+        return (await post("/run/ended", {}, caller)) as {
           ended: boolean;
           closed: number;
         };

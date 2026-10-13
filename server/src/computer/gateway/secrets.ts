@@ -319,9 +319,10 @@ export function createSecrets(deps: {
   async function toldOfTheEnd(
     botId: string,
     computerId: string,
+    within?: AbortSignal,
   ): Promise<boolean> {
     try {
-      return (await as(computerId, botId).runEnded()).ended;
+      return (await as(computerId, botId).runEnded(within)).ended;
     } catch (error) {
       if (computerId !== botId && error instanceof WorkspaceRequestError) {
         return true;
@@ -345,11 +346,15 @@ export function createSecrets(deps: {
    * conversation's sign-in, the first routine to finish told the MAIN browser a run was over, and
    * the computer closed the tab the conversation was working in. So such a run ends an unnamed
    * note only in its own browser, and the main one's waits for a run that is in the main one.
+   *
+   * `where.within`: the caller's own time, where the caller is on its way out of a lane and the
+   * computer may have hung (`routines/run.ts`). A telling cut short is one that was not heard:
+   * the note stays.
    */
   async function runEnded(
     botId: string,
     threadId?: string,
-    where?: { browser?: string },
+    where?: { browser?: string; within?: AbortSignal },
   ): Promise<void> {
     // What this run was only shown is this server's note alone: let go of here, and the computer
     // is told nothing on its account (`shownRuns`).
@@ -394,7 +399,7 @@ export function createSecrets(deps: {
       for (const computerId of new Set(
         [...ending.values()].flatMap((browsers) => [...browsers]),
       )) {
-        const ended = await toldOfTheEnd(botId, computerId);
+        const ended = await toldOfTheEnd(botId, computerId, where?.within);
         if (!ended) {
           log.warn("computer_values_still_held", {
             bot: botId,

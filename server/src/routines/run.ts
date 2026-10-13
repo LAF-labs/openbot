@@ -119,28 +119,32 @@ function withoutAwaitingLine(report: string): string {
 const runKeyOf = (runId: string) => `routine:${runId}`;
 
 /**
- * How long a run's browser is given to be let go of before the run leaves without it. Closing a
- * Chromium and throwing its profile away is seconds; the computer client's own 45 s is for a
- * computer that has hung, and the lane every routine of the deployment stands in must not wait
- * that out for a browser the next run lets go of itself before it opens its own.
+ * How long a run in a browser of its own is given, on its way out of the lane, for each of the
+ * two things it says to the computer there: that the run is over, and that its browser is let go
+ * of. Closing a tab, or a Chromium, and throwing its profile away is seconds; the computer
+ * client's own 45 s is one deadline for every call there is, a page's slow load among them, and
+ * is what a computer that has hung costs. The lane every routine of the deployment stands in
+ * must not wait that out, for either: what the telling does — close the tabs a value went into —
+ * the letting-go does to the whole browser, and a browser that was not let go of is let go of by
+ * the next run before it opens its own.
  */
 const LET_GO_MS = 15_000;
 
 /**
- * Let the run's browser go, within the time allowed: the computer is told to stop waiting, and
- * the run stops waiting whether or not the telling is heard — a letting-go that ignores its time
- * goes on without the run and is sorted out by the gateway (`handovers.ts`, `release`). Never
- * throws.
+ * Something said to the computer on the run's way out, within the time allowed: the computer is
+ * told to stop waiting, and the run stops waiting whether or not the telling is heard — one that
+ * ignores its time goes on without the run and is sorted out by the gateway (`handovers.ts`,
+ * `release`; `secrets.ts`, `runEnded`). Never throws.
  */
-async function letGoInTime(
-  browser: NonNullable<RoutineRunOptions["browser"]>,
-  botId: string,
+async function inTime(
+  ms: number,
+  said: (within: AbortSignal) => Promise<unknown>,
 ): Promise<void> {
   const within = new AbortController();
-  const timer = setTimeout(() => within.abort(), browser.letGoMs ?? LET_GO_MS);
+  const timer = setTimeout(() => within.abort(), ms);
   try {
     await Promise.race([
-      browser.letGo(botId, within.signal).catch(() => undefined),
+      said(within.signal).catch(() => undefined),
       new Promise<void>((resolve) =>
         within.signal.addEventListener("abort", () => resolve(), {
           once: true,
@@ -169,8 +173,8 @@ export type RoutineRunOptions = SettlementOptions & {
   runEnded?: (
     botId: string,
     runKey: string,
-    /** The browser of its own the run's pages were in. */
-    where?: { browser: string },
+    /** The browser of its own the run's pages were in, and the time it has to say so in. */
+    where?: { browser: string; within: AbortSignal },
   ) => Promise<void>;
   goals?: RoutineGoals;
   lane?: BotLane;
@@ -606,15 +610,29 @@ async function askTheBot(
          * is closed then (`computer/gateway/secrets.ts`, `runEnded`); a run that failed half-way
          * through a sign-in is exactly the one whose tab must not be left for the next to find.
          * Never a reason for the run to fail: the gateway keeps its note and tells again.
+         *
+         * INSIDE THE LANE, AND FOR NO LONGER THAN THE LETTING-GO BELOW (review of #210, C4). It
+         * was waited for as long as the computer's client waits for anything — 45 s, on a
+         * computer that has hung, for a run that had filled a login, with every routine of the
+         * deployment behind it. It cannot be said after the lane instead: the next routine of
+         * this Bot's opens a browser under the same name, and a telling still on its way would
+         * close the tab THAT run signed in on. So it stays here, and is given the time the
+         * letting-go is given: a telling cut short loses nothing the letting-go does not do to
+         * the whole browser. In the main browser — no browser of its own — nothing is let go
+         * of after it, and it is waited for as it was.
          */
-        await options
-          .runEnded?.(
-            row.agentId,
-            runKeyOf(runId),
-            // Which browser the run's pages were in: what an unnamed note is ended by.
-            options.browser ? { browser: options.browser.name } : undefined,
-          )
-          .catch(() => undefined);
+        const browser = options.browser;
+        const told = options.runEnded;
+        if (told && browser) {
+          await inTime(browser.letGoMs ?? LET_GO_MS, (within) =>
+            told(row.agentId, runKeyOf(runId), {
+              browser: browser.name,
+              within,
+            }),
+          );
+        } else {
+          await told?.(row.agentId, runKeyOf(runId)).catch(() => undefined);
+        }
         /*
          * AND ITS BROWSER IS LET GO OF, after the computer was told the run is over — the values
          * it held are released in the browser they were typed into, and then that browser is
@@ -622,12 +640,14 @@ async function askTheBot(
          * read): a run that only read mail opened nothing, and asking the computer to let go of
          * nothing was, on a computer that has hung, the client's whole timeout with the lane
          * every routine of the deployment stands in held for it. Never a reason for the run to
-         * fail either, and never waited for past its own time (`letGoInTime`): a browser that
+         * fail either, and never waited for past its own time (`inTime`): a browser that
          * was not let go of is let go of by the next run before it opens its own
          * (`computer/gateway/handovers.ts`, `openBrowser`).
          */
-        if (options.browser && toolkit.browserOpened?.() !== false) {
-          await letGoInTime(options.browser, row.agentId);
+        if (browser && toolkit.browserOpened?.() !== false) {
+          await inTime(browser.letGoMs ?? LET_GO_MS, (within) =>
+            browser.letGo(row.agentId, within),
+          );
         }
       }
       /*
