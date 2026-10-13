@@ -58,9 +58,10 @@ export type BotSession = {
   control: Control;
   /**
    * Whose files the last run in this browser writes: said on its calls (`routes.ts`) and standing
-   * until another run's call says otherwise. Forgotten when this side is told a run is over
-   * (`control-routes.ts`, `runEnded`) or the project it names is removed. Where a download lands.
-   * Absent — nothing has said since the process started, or since either of those — nothing lands.
+   * until another run's call says otherwise — past that run's end, so a file its page sends late
+   * is still filed as its own (`control-routes.ts`, `runEnded`). Forgotten when the project it
+   * names is removed. Where a download lands. Absent — nothing has said since the process
+   * started, or since that project went — nothing lands.
    */
   fileScope?: FileScope;
   /**

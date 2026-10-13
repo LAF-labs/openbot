@@ -216,10 +216,10 @@ export function computerFetch(browsers: Browsers) {
          *
          * REMEMBERED FOR THE BROWSER, because a download lands when the page says so and not when
          * a call does: it goes where the last run to say so writes (`page-watch.ts`). Until
-         * another call says otherwise — the server tells this side a run is over only when a
-         * person's value was put in (`/run/ended`), so most runs' scope stands until the next
-         * run's first call, and a file its page sends late is still that run's. The person's own
-         * door holds no browser.
+         * another call says otherwise: a run's scope stands until the next run's first call —
+         * whether or not this side was told the run is over, which the server says only after
+         * a person's value was put in (`/run/ended`) — and a file its page sends late is still
+         * that run's. The person's own door holds no browser.
          */
         const said = request.headers.get(FILE_SCOPE_HEADER);
         const scope = fileScopeOf(said);
