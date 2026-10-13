@@ -1,8 +1,7 @@
-// First, as in `main.ts`: the last describe below builds the runtime, which announces itself and
-// phones home unless it is told not to before it loads.
-import "../src/telemetry-off";
 import { describe, expect, spyOn, test } from "bun:test";
 import { HttpAgent } from "@ag-ui/client";
+import { createApp } from "../src/app";
+import { loadConfig } from "../src/config";
 import { BASE_KO, staticPrompt } from "../../shared/prompt";
 import {
   buildAgents,
@@ -13,6 +12,7 @@ import {
   resolveRuntimeAgents,
 } from "../src/copilot";
 import { withheldToolsText } from "../../shared/tools/paused";
+import { testEnvironment } from "./support/environment";
 import { botPromptMessage } from "./support/prompt";
 
 // Every agent row now joins its profile, so the row a coworker is built from always names it.
@@ -930,25 +930,29 @@ describe("a remote Bot's run", () => {
 });
 
 /**
- * ONE DOOR OF THE RUNTIME IS OPEN.
+ * ONE DOOR OF THE ENDPOINT IS OPEN.
  *
  * The app's CopilotKit client asks `info` before it settles, for the roster its tool registry is
- * built on. Everything else the runtime's own router knows was how a window drove a chat turn; the
+ * built on. Everything else a CopilotKit runtime serves was how a window drove a chat turn; the
  * server runs the turn (`turns/engine.ts`), nothing opens those doors, and since 2026-10-06 each is
  * answered as a path nothing is mounted on.
  *
  * Asserted by NAME, and on the real handler, because the failure this guards against is a family of
- * routes: a rule that closed `run` and left `connect` would look exactly as green. The spellings at
- * the end are the router's own reading of a path — a route is its last segments — which is why the
- * doors are closed on the route it resolved and not by a pattern in front of it.
+ * routes: a rule that closed `run` and left `connect` would look exactly as green. The list is the
+ * router of `@copilotkit/runtime` 1.67.1, which answered here until 2026-10-13 and read a route off
+ * a path's last segments — the spellings at its end. The route is ours now and is the exact path.
  */
 describe("the runtime's doors", () => {
-  function runtime() {
+  function runtime(
+    roster: Parameters<typeof mountCopilotRuntime>[1] = async () => [
+      remoteAgent("http://coworker.internal/ag-ui"),
+    ],
+  ) {
     /** Every request a Bot's endpoint was sent. A closed door must reach none. */
     const contacted: string[] = [];
     const handler = mountCopilotRuntime(
       model,
-      async () => [remoteAgent("http://coworker.internal/ag-ui")],
+      roster,
       async () => ({ id: "user-7", role: "user" as const }),
       {
         watch: () => async (url) => {
@@ -969,7 +973,7 @@ describe("the runtime's doors", () => {
   ) =>
     handler.request(`http://laf.test${path}`, {
       method,
-      ...(method === "GET" || method === "DELETE"
+      ...(method === "GET" || method === "DELETE" || method === "HEAD"
         ? {}
         : {
             headers: { "content-type": "application/json" },
@@ -984,6 +988,13 @@ describe("the runtime's doors", () => {
             }),
           }),
     });
+
+  /** What a response is, whole: its status, every header it carries, and its bytes. */
+  const whole = async (response: Response) => ({
+    status: response.status,
+    headers: Object.fromEntries(response.headers.entries()),
+    body: await response.text(),
+  });
 
   const CLOSED: [string, string][] = [
     ["POST", "/api/copilotkit/agent/agent_expense/run"],
@@ -1003,7 +1014,7 @@ describe("the runtime's doors", () => {
     ["GET", "/api/copilotkit/inspector-metadata"],
     ["GET", "/api/copilotkit/cpk-debug-events"],
     ["POST", "/api/copilotkit/annotate"],
-    // The router reads a route off a path's last segments: these are a run and a thread list too.
+    // The router read a route off a path's last segments: these were a run and a thread list too.
     ["POST", "/api/copilotkit//x/agent/agent_expense/run"],
     ["GET", "/api/copilotkit/anything/threads"],
   ];
@@ -1024,7 +1035,59 @@ describe("the runtime's doors", () => {
     expect(contacted).toEqual([]);
   });
 
-  test("every other route the runtime knows is a path nothing is mounted on, and reaches no Bot", async () => {
+  /**
+   * THE ANSWER, BYTE FOR BYTE: what `@copilotkit/runtime` 1.67.1 sent for the same roster, recorded
+   * from the running server before the route became ours. The app's client is that version's, and
+   * it reads this by key. `className` is the class of the agent a run would be handed — the name
+   * `@ag-ui/client` gives its `HttpAgent` in the build it ships, read here and not spelled.
+   */
+  test("info's answer is the one the app's client was written against, whole", async () => {
+    const { handler } = runtime(async () => [
+      remoteAgent("http://coworker.internal/ag-ui"),
+      {
+        id: "agent_gone",
+        name: "지워진 봇",
+        type: "unavailable" as const,
+        reason: "laf:agent_unavailable",
+      },
+    ]);
+
+    expect(
+      await whole(await ask(handler, "GET", "/api/copilotkit/info")),
+    ).toEqual({
+      status: 200,
+      headers: { "content-type": "application/json" },
+      body:
+        `{"version":"1.67.1","agents":{` +
+        `"agent_expense":{"name":"agent_expense","description":"","className":"${HttpAgent.name}"},` +
+        `"agent_gone":{"name":"agent_gone","description":"지워진 봇","className":"UnavailableAgent"}},` +
+        `"audioFileTranscriptionEnabled":false,"mode":"sse",` +
+        `"threadEndpoints":{"list":true,"inspect":true,"mutations":false,"realtimeMetadata":false},` +
+        `"suggestions":true,"a2uiEnabled":false,"openGenerativeUIEnabled":false,"telemetryDisabled":true}`,
+    });
+  });
+
+  test("the roster is read again on every ask, so a Bot made a moment ago is on the next answer", async () => {
+    const bots = [remoteAgent("http://coworker.internal/ag-ui")];
+    const { handler } = runtime(async () => [...bots]);
+    const names = async () =>
+      Object.keys(
+        (
+          (await (
+            await ask(handler, "GET", "/api/copilotkit/info")
+          ).json()) as { agents: Record<string, unknown> }
+        ).agents,
+      );
+
+    expect(await names()).toEqual(["agent_expense"]);
+    bots.push({
+      ...remoteAgent("http://second.internal/ag-ui"),
+      id: "agent_second",
+    });
+    expect(await names()).toEqual(["agent_expense", "agent_second"]);
+  });
+
+  test("every other route a runtime knows is a path nothing is mounted on, and reaches no Bot", async () => {
     const { handler, contacted } = runtime();
 
     for (const [method, path] of CLOSED) {
@@ -1039,7 +1102,7 @@ describe("the runtime's doors", () => {
     expect(contacted).toEqual([]);
   });
 
-  test("a path that is nothing the runtime knows is still the runtime's own answer", async () => {
+  test("a path that is nothing a runtime knows is refused too, the bare path among them", async () => {
     const { handler } = runtime();
 
     // Its single-route envelope, which this deployment never mounted, and a wrong method on info.
@@ -1047,5 +1110,190 @@ describe("the runtime's doors", () => {
     expect((await ask(handler, "POST", "/api/copilotkit/info")).status).toBe(
       405,
     );
+    for (const [method, path] of [
+      ["GET", "/api/copilotkit"],
+      ["GET", "/api/copilotkit/"],
+      ["GET", "/api/copilotkit/nothing"],
+      ["DELETE", "/api/copilotkit/a/b/c/d/e"],
+      ["OPTIONS", "/api/copilotkit/agent/agent_expense/run"],
+    ] as const) {
+      expect([
+        method,
+        path,
+        await whole(await ask(handler, method, path)),
+      ]).toEqual([
+        method,
+        path,
+        {
+          status: 404,
+          headers: { "content-type": "application/json;charset=utf-8" },
+          body: '{"code":"laf:not_found"}',
+        },
+      ]);
+    }
+  });
+
+  test.each(["POST", "PUT", "PATCH", "DELETE", "OPTIONS"])(
+    "info is a GET and nothing else: %s is refused, and reads no roster",
+    async (method) => {
+      let asked = 0;
+      const { handler } = runtime(async () => {
+        asked += 1;
+        return [remoteAgent("http://coworker.internal/ag-ui")];
+      });
+
+      expect(
+        await whole(await ask(handler, method, "/api/copilotkit/info")),
+      ).toEqual({ status: 405, headers: { allow: "GET" }, body: "" });
+      expect(asked).toBe(0);
+    },
+  );
+
+  // Hono answers a HEAD from a GET route, without the body: a route declared with `get` would say 200.
+  test("a HEAD on info is refused as it was, not answered as a GET without its body", async () => {
+    const { handler } = runtime();
+
+    const response = await ask(handler, "HEAD", "/api/copilotkit/info");
+
+    expect([response.status, response.headers.get("allow")]).toEqual([
+      405,
+      "GET",
+    ]);
+  });
+
+  /**
+   * The runtime's router took a route from a path's LAST segments, so each of these was `info` and
+   * answered the roster. One spelling answers now; the app asks exactly it (`${runtimeUrl}/info`).
+   */
+  test.each([
+    "/api/copilotkit/info/",
+    "/api/copilotkit/x/info",
+    "/api/copilotkit//info",
+    "/api/copilotkit/INFO",
+    "/api/copilotkit/info/x",
+  ])("info is one path: %s is not it", async (path) => {
+    const { handler } = runtime();
+
+    const response = await ask(handler, "GET", path);
+
+    expect([response.status, await response.json()]).toEqual([
+      404,
+      { code: "laf:not_found" },
+    ]);
+  });
+
+  /**
+   * No answer here says which origins may read it. The runtime added `Access-Control-Allow-Origin:
+   * *` to every response and answered every preflight 204; the app is same-origin with its API and
+   * asks with its cookie, which a wildcard cannot be used with, so nothing could have relied on it.
+   */
+  test("nothing under the endpoint invites another origin to read it", async () => {
+    const { handler } = runtime();
+    const from = (method: string, path: string) =>
+      handler.request(`http://laf.test${path}`, {
+        method,
+        headers: {
+          origin: "http://elsewhere.example",
+          "access-control-request-method": "GET",
+        },
+      });
+
+    const preflight = await from("OPTIONS", "/api/copilotkit/info");
+    expect(preflight.status).toBe(405);
+    for (const response of [
+      preflight,
+      await from("GET", "/api/copilotkit/info"),
+      await from("GET", "/api/copilotkit/threads"),
+    ]) {
+      expect(
+        [...response.headers.keys()].filter((name) =>
+          name.startsWith("access-control-"),
+        ),
+      ).toEqual([]);
+    }
+    // And the answer is still the roster for the app itself.
+    expect((await from("GET", "/api/copilotkit/info")).status).toBe(200);
+  });
+
+  /**
+   * THE REAL HANDLER BEHIND THE REAL GUARD. `copilot-guard.test.ts` holds the guard in front of a
+   * stand-in; this is the route itself mounted the way `main.ts` mounts it, so a route that
+   * lost its base path in the mount, or answered ahead of the guard, fails here.
+   */
+  describe("mounted in the app", () => {
+    const config = loadConfig({ ...testEnvironment() });
+    const mounted = (signedIn: boolean, readable = true) => {
+      let asked = 0;
+      const { handler } = runtime(async () => {
+        asked += 1;
+        if (!readable) throw new Error("roster unreadable c41f");
+        return [remoteAgent("http://coworker.internal/ag-ui")];
+      });
+      const app = createApp({
+        config,
+        auth: {
+          handler: () => new Response(null, { status: 204 }),
+          api: {
+            getSession: async () =>
+              signedIn
+                ? {
+                    user: {
+                      id: "member",
+                      email: "member@laf.test",
+                      name: "member",
+                    },
+                  }
+                : null,
+          },
+        },
+        roleRepository: { rolesForUser: async () => ["user"] as never },
+        copilotHandler: handler,
+      });
+      return { app, asked: () => asked };
+    };
+
+    test("nobody signed in is refused before the roster is read", async () => {
+      const { app, asked } = mounted(false);
+
+      for (const [method, path] of [
+        ["GET", "/api/copilotkit/info"],
+        ["POST", "/api/copilotkit/info"],
+        ["OPTIONS", "/api/copilotkit/info"],
+        ["GET", "/api/copilotkit"],
+        ["GET", "/api/copilotkit/threads"],
+      ] as const) {
+        const response = await app.request(`http://laf.local${path}`, {
+          method,
+        });
+        expect(`${method} ${path} → ${response.status}`).toBe(
+          `${method} ${path} → 401`,
+        );
+      }
+      expect(asked()).toBe(0);
+    });
+
+    test("a signed-in person is answered the roster at the path the app asks", async () => {
+      const { app } = mounted(true);
+
+      const info = await app.request("http://laf.local/api/copilotkit/info");
+      expect(info.status).toBe(200);
+      expect(
+        Object.keys(((await info.json()) as { agents: object }).agents),
+      ).toEqual(["agent_expense"]);
+    });
+
+    // The runtime answered this itself, with the error's own message in the body.
+    test("a roster that cannot be read is the server's own 500, and its reason stays on the server", async () => {
+      const { app } = mounted(true, false);
+
+      const response = await app.request(
+        "http://laf.local/api/copilotkit/info",
+      );
+
+      expect([response.status, await response.text()]).toEqual([
+        500,
+        '{"code":"laf:internal"}',
+      ]);
+    });
   });
 });
