@@ -61,7 +61,7 @@
  * tried again. One Bot's nights run one at a time in this process (one server per deployment,
  * docs/laf/deployment-model.md): two conversations of one Bot closing at once would otherwise
  * each write the same fact. A conversation dropped while the extractor was thinking writes
- * nothing: `kept` is re-read after the call, before any write.
+ * nothing: `kept` is re-read after the extractor's call and after each judge's, before any write.
  */
 import { and, eq, inArray, isNull, lt } from "drizzle-orm";
 import { EVIDENCE_KEEP, MAX_MEMORY_LENGTH } from "../../../shared/notebook";
@@ -388,27 +388,41 @@ export function createStandingHook(options: {
           text: message.shown,
           at: message.at ?? null,
         }));
-      const older = await database
-        .select({ id: agentMemories.id, content: agentMemories.content })
-        .from(agentMemories)
-        .where(
-          and(
-            eq(agentMemories.agentId, botId),
-            eq(agentMemories.ownerUserId, ownerUserId),
-            inArray(agentMemories.source, ["bot", "night"]),
-            isNull(agentMemories.forgottenAt),
-            isNull(agentMemories.confirmedAt),
-            lt(agentMemories.createdAt, new Date()),
-          ),
-        )
-        .orderBy(agentMemories.createdAt)
-        .limit(OLDER_LINES);
+      /*
+       * ONLY A LINE OLDER THAN THE EVIDENCE MAY BE RETIRED BY IT — older than the moment the owner's
+       * quoted message was first seen, never than the close. The hourly pass bounds on the
+       * candidate's own stamp; a night line is stamped at the close, so bounding on "now" here
+       * offered the judge every live line, and a quote from the morning could retire a correction
+       * the Bot wrote in a turn that afternoon, or one another conversation of the same Bot had
+       * learned (review of 7561be80). A message from before stamps offers nothing: the line is
+       * still written, and an older value it contradicts stands beside it for the person to settle.
+       */
+      const older =
+        said.at == null
+          ? []
+          : await database
+              .select({ id: agentMemories.id, content: agentMemories.content })
+              .from(agentMemories)
+              .where(
+                and(
+                  eq(agentMemories.agentId, botId),
+                  eq(agentMemories.ownerUserId, ownerUserId),
+                  inArray(agentMemories.source, ["bot", "night"]),
+                  isNull(agentMemories.forgottenAt),
+                  isNull(agentMemories.confirmedAt),
+                  lt(agentMemories.createdAt, new Date(said.at)),
+                ),
+              )
+              .orderBy(agentMemories.createdAt)
+              .limit(OLDER_LINES);
       const verdict = await judgeClaim(asker, {
         claim: line,
         messages,
         forgotten: forgottenRows.slice(0, JUDGED_FORGOTTEN),
         older,
       });
+      // Dropped while the judge was reading: nothing more is written tonight, as after the extractor.
+      if (kept && !kept()) return counts;
       if (!verdict) {
         // No judge, no decision: nothing more is written tonight.
         counts.unjudged += facts.length - facts.indexOf(fact);

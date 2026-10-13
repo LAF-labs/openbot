@@ -166,8 +166,16 @@ const FACT = "매출 정산 자료: 매달 5일까지 세무사님에게 넘김"
 const LOOKUP = "한일포장 배송 조건 좀 확인해 줘";
 const JIEUN = "지은이는 화요일이랑 목요일만 나와";
 
+/** The owner's messages of the span, stamped now: a line older than them may be retired by them. */
 const said = (threadId: string, ...texts: string[]): OwnerMessage[] =>
-  texts.map((text, at) => ({ id: `u${at}`, threadId, text }));
+  texts.map((text, at) => ({ id: `u${at}`, threadId, text, at: Date.now() }));
+
+/** Move a row's stamp: a line the Bot wrote at some hour of the day. */
+const stampAt = (id: string, when: Date) =>
+  database
+    .update(agentMemories)
+    .set({ createdAt: when })
+    .where(eq(agentMemories.id, id));
 
 const added = () =>
   recentLines
@@ -260,6 +268,8 @@ describe("a standing fact the owner stated", () => {
       })),
     );
     const old = await store.remember(bot.id, owner.id, FACT);
+    // The Bot's line is from before the owner's change was said.
+    await stampAt(old?.id ?? "", new Date(Date.now() - 60 * 60_000));
     const counts = await hook({
       botId: bot.id,
       threadId,
@@ -325,6 +335,53 @@ describe("a standing fact the owner stated", () => {
         "매출 정산 자료: 매달 10일까지",
       ].sort(),
     );
+  });
+
+  test("only a line older than the evidence may be retired by it: a correction the Bot wrote after the quoted message stands, and a message from before stamps retires nothing", async () => {
+    const earlier = "정산 자료: 매달 3일까지";
+    const later = "매출 정산 자료: 매달 10일까지 세무사님에게 넘김";
+    const monday = "지은: 월요일 출근";
+    let facts: ExtractedFact[] = [{ line: FACT, quote: SAID }];
+    const { owner, bot, store, hook, threadId, judge } = await setup(
+      () => facts,
+      // A judge that would retire every older line it is shown.
+      judgeOf(() => ({ support: 0.9, replaces: ["3일", "10일", "월요일"] })),
+    );
+    const tenAm = Date.now() - 13 * 60 * 60_000;
+    const before = await store.remember(bot.id, owner.id, earlier);
+    await stampAt(before?.id ?? "", new Date(tenAm - 60 * 60_000));
+    // The owner said it at ten; the Bot wrote the correction in a turn at two; the close is now.
+    const after = await store.remember(bot.id, owner.id, later);
+    await stampAt(after?.id ?? "", new Date(tenAm + 4 * 60 * 60_000));
+    const counts = await hook({
+      botId: bot.id,
+      threadId,
+      owner: [{ id: "u0", threadId, text: SAID, at: tenAm }],
+    });
+    expect(counts).toMatchObject({ added: 1, superseded: 1 });
+    expect(judge?.asked.map((a) => a.older)).toEqual([[earlier]]);
+    let rows = await rowsOf(bot.id);
+    expect(rows.find((row) => row.id === before?.id)).toMatchObject({
+      forgetReason: "superseded",
+    });
+    expect(rows.find((row) => row.id === after?.id)).toMatchObject({
+      forgottenAt: null,
+    });
+    // A message from before stamps: the line is written, nothing is offered to be retired.
+    const unstamped = await store.remember(bot.id, owner.id, monday);
+    await stampAt(unstamped?.id ?? "", new Date(tenAm - 60 * 60_000));
+    facts = [{ line: "지은: 화요일 목요일 출근", quote: JIEUN }];
+    const none = await hook({
+      botId: bot.id,
+      threadId,
+      owner: [{ id: "u1", threadId, text: JIEUN, at: null }],
+    });
+    expect(none).toMatchObject({ added: 1, superseded: 0 });
+    expect(judge?.asked[1]?.older).toEqual([]);
+    rows = await rowsOf(bot.id);
+    expect(rows.find((row) => row.id === unstamped?.id)).toMatchObject({
+      forgottenAt: null,
+    });
   });
 
   test("the judge refuses what the floor cannot: another person, a dropped negation, a changed recurrence, 10시 read as 10만", async () => {
@@ -494,6 +551,31 @@ describe("a standing fact the owner stated", () => {
     });
     expect(counts).toMatchObject({ added: 0 });
     expect(judge?.asked).toEqual([]);
+    expect(await rowsOf(bot.id)).toEqual([]);
+  });
+
+  test("a conversation dropped while the judge was reading writes nothing more", async () => {
+    let kept = true;
+    const judge = judgeOf(() => {
+      kept = false;
+      return { support: 0.9 };
+    });
+    const { bot, hook, threadId } = await setup(
+      () => [
+        { line: FACT, quote: SAID },
+        { line: "지은: 화요일 목요일 출근", quote: JIEUN },
+      ],
+      judge,
+    );
+    const counts = await hook({
+      botId: bot.id,
+      threadId,
+      owner: said(threadId, SAID, JIEUN),
+      kept: () => kept,
+    });
+    expect(counts).toMatchObject({ added: 0, unsupported: 0, unjudged: 0 });
+    // The first fact's judge dropped the conversation; the second was never asked about.
+    expect(judge.asked).toHaveLength(1);
     expect(await rowsOf(bot.id)).toEqual([]);
   });
 
