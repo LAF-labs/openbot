@@ -3,7 +3,10 @@ import { type AttachmentPart, attachmentPartsOf } from "@shared/attachments";
 import { type FeedQuotePart, feedQuotesOf } from "@shared/feed";
 import { isFirstMove } from "@shared/first-move";
 import { TOOL_SEARCH } from "@shared/tools/bridge";
-import { GALLERY_DECISIONS } from "@shared/tools/gallery";
+import {
+  GALLERY_CONFIRMATIONS,
+  GALLERY_DECISIONS,
+} from "@shared/tools/gallery";
 import { stepDidNotWork } from "@shared/tools/step-result";
 import {
   BROWSING_TOOLS,
@@ -497,6 +500,21 @@ export function toVisibleChatItems(
          */
         if (
           GALLERY_DECISIONS.has(toolCall.function.name) &&
+          wasRefusedForArguments(results.get(toolCall.id))
+        ) {
+          continue;
+        }
+        /*
+         * NOR IS A CARD THAT WAS CALLED WITH NOTHING IN IT. Such a call was answered "on screen"
+         * and drew nothing (#189, `holdsSomethingToDraw`); the server now refuses it with the
+         * same fact a question gets (`holdsSomethingToShow`, `@shared/tools/gallery`), and a
+         * refusal is drawn as a line — "주요 수치 — 실패 · 봇의 요청에 빠진 값이 있음", in the
+         * warning's colour, above the card the Bot went on to draw (seen on the running app,
+         * 2026-10-13). Nothing was drawn there before and nothing is now: the Bot's call again
+         * is the card, and a person has no use for the one that held nothing.
+         */
+        if (
+          Object.hasOwn(GALLERY_CONFIRMATIONS, toolCall.function.name) &&
           wasRefusedForArguments(results.get(toolCall.id))
         ) {
           continue;
