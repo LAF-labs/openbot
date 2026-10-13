@@ -14,6 +14,7 @@ export const GALLERY_CONFIRMATIONS: Readonly<Record<string, string>> = {
   showMetrics: "The figures are now on screen for the person.",
   showChecklist: "The checklist is now on screen for the person.",
   showNotice: "The notice is now on screen for the person.",
+  showQuote: "The quotation is now on screen for the person.",
   showBarChart: "The bar chart is now on screen for the person.",
   showPieChart: "The donut chart is now on screen for the person.",
   showLineChart: "The line chart is now on screen for the person.",

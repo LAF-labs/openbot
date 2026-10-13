@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import { fieldsToFill, holdsSomethingToShow } from "@shared/tools/gallery";
+import {
+  fieldsToFill,
+  GALLERY_CONFIRMATIONS,
+  holdsSomethingToShow,
+} from "@shared/tools/gallery";
 import { holdsSomethingToDraw } from "../src/components/gallery/gallery-card";
 import type { GalleryComponent } from "../src/lib/copilot/gallery-registry";
 import { toolJsonSchema } from "../src/lib/copilot/tool-schema";
@@ -82,6 +86,21 @@ describe("a card's call with nothing to draw", () => {
       // every call — a rule that always said no would agree with itself too.
       expect(holdsSomethingToShow(declared, {})).toBe(false);
       expect(said.some(([, holds]) => holds === true)).toBe(true);
+    },
+  );
+
+  /*
+   * AND WHAT THE TURN SAYS OF A CARD THAT IS SHOWN IS WHAT THE CARD ITSELF DECLARES. The
+   * quotation was in the window's gallery and not in the turn's table (found 2026-10-13): the Bot
+   * was answered the sentence of a card nobody compiled, and the conversation did not take its
+   * row for a card — so a quotation refused for having nothing in it kept a line no other card
+   * keeps.
+   */
+  test.each(CARDS.map((card) => [card.name, card] as const))(
+    "%s: the turn answers with the sentence the card declares",
+    (name, card) => {
+      expect(card.confirmation).toBeString();
+      expect(GALLERY_CONFIRMATIONS[name]).toBe(card.confirmation as string);
     },
   );
 
