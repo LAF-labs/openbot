@@ -128,6 +128,19 @@ export async function askModel(call: ModelCall, ask: Ask): Promise<Answer> {
   const apiKey = await call.apiKey().catch(() => null);
   if (!apiKey) return { ok: false, because: "no credential" };
   const send = call.fetch ?? globalThis.fetch;
+  /*
+   * THE DEADLINE IS ASKED WHETHER IT PASSED, NOT GUESSED FROM WHAT WAS THROWN. A provider that
+   * sends its headers at once and the body when the model is done — OpenRouter does — is cut by
+   * the deadline while the body is being read, and what the read then throws depends on who read
+   * it first: with a `fetch` handed in that looks at a copy of the reply and swallows its failure
+   * (the evaluations' priced one does), the caller's own read is "Unexpected end of JSON input",
+   * a SyntaxError with nothing of a timeout in its name. Read by the name alone, every one of those
+   * was `refused`: in three weeks of `eval:memory-days`, each close that ran to the summariser's
+   * 120 s was logged `summary: refused` at 120,00x ms, with no refusal from the provider on record.
+   */
+  const deadline = AbortSignal.timeout(ask.timeoutMs);
+  /** Whether the provider answered at all: a reply that then cannot be read is not a refusal. */
+  let answered = false;
 
   try {
     const response = await send(
@@ -155,7 +168,7 @@ export async function askModel(call: ModelCall, ask: Ask): Promise<Answer> {
             { role: "user", content: soundText(ask.user) },
           ],
         }),
-        signal: AbortSignal.timeout(ask.timeoutMs),
+        signal: deadline,
       },
     );
     if (!response.ok) {
@@ -169,6 +182,7 @@ export async function askModel(call: ModelCall, ask: Ask): Promise<Answer> {
       });
       return { ok: false, because: "refused" };
     }
+    answered = true;
     const body = (await response.json()) as {
       choices?: Array<{ message?: { content?: unknown } }>;
       usage?: {
@@ -203,9 +217,16 @@ export async function askModel(call: ModelCall, ask: Ask): Promise<Answer> {
       : { ok: false, because: "unreadable" };
   } catch (error) {
     const timedOut =
-      error instanceof Error &&
-      (error.name === "TimeoutError" || error.name === "AbortError");
-    return { ok: false, because: timedOut ? "took too long" : "refused" };
+      deadline.aborted ||
+      (error instanceof Error &&
+        (error.name === "TimeoutError" || error.name === "AbortError"));
+    if (timedOut) return { ok: false, because: "took too long" };
+    /*
+     * A reply that came and could not be read — not JSON, or cut off part-way — is the answer that
+     * was not usable, which pressing again may well mend. Only nothing coming back at all is the
+     * provider saying no.
+     */
+    return { ok: false, because: answered ? "unreadable" : "refused" };
   }
 }
 
