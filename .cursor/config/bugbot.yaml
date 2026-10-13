@@ -1,0 +1,23 @@
+# Bugbot reads this from the pull request's BASE branch, so a pull request cannot
+# change how it is itself reviewed. The rules it reviews by are in ../BUGBOT.md.
+# Why each value: CLAUDE.md, "How a change lands".
+version: 1
+triggers:
+  # A review is asked for (`bugbot run`) on a finished head, at merge time. The
+  # "run only when mentioned" switch is the dashboard's; these two are what holds
+  # if that switch is ever off: no drafts, and never push by push.
+  drafts: false
+  frequency: oncePerPr
+review:
+  # Few reviews, each at merge time: thorough is worth its price.
+  effort: high
+  # A second pass reads what changed since the first. A verdict belongs to the
+  # patch it read.
+  incremental: true
+prSummary:
+  # The description is the template, filled in by whoever did the work. Nothing
+  # rewrites it.
+  mode: disabled
+autofix:
+  # A reviewer does not push. Findings are claims, sorted before anything is fixed.
+  mode: disabled
