@@ -345,6 +345,18 @@ export function createStandingHook(options: {
     );
     const forgottenLines = forgottenRows.map((row) => row.line);
     const flat = (text: string) => text.replace(/\s+/g, " ").trim();
+    /*
+     * The floor first, on every fact; then the facts IN THE ORDER OF THEIR EVIDENCE, oldest message
+     * first, whatever order the extractor returned them in — so that when one night's extract holds
+     * a fact and its same-day correction, the correction is judged after the fact it corrects and
+     * can retire it, and never the other way round. Two facts quoted from one message keep the
+     * extractor's order; a message from before stamps goes last.
+     */
+    const candidates: Array<{
+      line: string;
+      fact: ExtractedFact;
+      said: (typeof shown)[number];
+    }> = [];
     for (const fact of facts) {
       const line = flat(fact.line);
       if (!line) continue;
@@ -356,6 +368,20 @@ export function createStandingHook(options: {
         counts.unquoted += 1;
         continue;
       }
+      candidates.push({ line, fact, said });
+    }
+    const order = (message: OwnerMessage) =>
+      message.at ?? Number.MAX_SAFE_INTEGER;
+    candidates.sort((a, b) => order(a.said) - order(b.said));
+    /*
+     * What this night wrote, with the time of the owner's message each line rests on. A line
+     * written tonight is stamped at the close, so the bound below on a row's stamp never offers it
+     * — and the hourly pass will not either, since the night marks its lines judged (Bugbot's read
+     * of c67c71cf). It is offered here instead, under the same rule: only when its evidence is not
+     * later than the current fact's, and never when either stamp is missing.
+     */
+    let written: Array<{ id: string; content: string; at: number | null }> = [];
+    for (const [index, { line, fact, said }] of candidates.entries()) {
       // Live lines as they are NOW: a line this night wrote, or another close's, counts.
       const live = await store.list(botId, ownerUserId);
       if (live.some((carried) => flat(carried.content) === line)) {
@@ -397,24 +423,35 @@ export function createStandingHook(options: {
        * learned (review of 7561be80). A message from before stamps offers nothing: the line is
        * still written, and an older value it contradicts stands beside it for the person to settle.
        */
+      const evidenceAt = said.at;
       const older =
-        said.at == null
+        evidenceAt == null
           ? []
-          : await database
-              .select({ id: agentMemories.id, content: agentMemories.content })
-              .from(agentMemories)
-              .where(
-                and(
-                  eq(agentMemories.agentId, botId),
-                  eq(agentMemories.ownerUserId, ownerUserId),
-                  inArray(agentMemories.source, ["bot", "night"]),
-                  isNull(agentMemories.forgottenAt),
-                  isNull(agentMemories.confirmedAt),
-                  lt(agentMemories.createdAt, new Date(said.at)),
-                ),
-              )
-              .orderBy(agentMemories.createdAt)
-              .limit(OLDER_LINES);
+          : [
+              ...(await database
+                .select({
+                  id: agentMemories.id,
+                  content: agentMemories.content,
+                })
+                .from(agentMemories)
+                .where(
+                  and(
+                    eq(agentMemories.agentId, botId),
+                    eq(agentMemories.ownerUserId, ownerUserId),
+                    inArray(agentMemories.source, ["bot", "night"]),
+                    isNull(agentMemories.forgottenAt),
+                    isNull(agentMemories.confirmedAt),
+                    lt(agentMemories.createdAt, new Date(evidenceAt)),
+                  ),
+                )
+                .orderBy(agentMemories.createdAt)
+                .limit(OLDER_LINES)),
+              ...written
+                .filter(
+                  (tonight) => tonight.at != null && tonight.at <= evidenceAt,
+                )
+                .map(({ id, content }) => ({ id, content })),
+            ];
       const verdict = await judgeClaim(asker, {
         claim: line,
         messages,
@@ -425,7 +462,7 @@ export function createStandingHook(options: {
       if (kept && !kept()) return counts;
       if (!verdict) {
         // No judge, no decision: nothing more is written tonight.
-        counts.unjudged += facts.length - facts.indexOf(fact);
+        counts.unjudged += candidates.length - index;
         break;
       }
       if (verdict.restated) {
@@ -455,6 +492,7 @@ export function createStandingHook(options: {
           continue;
         }
         counts.added += 1;
+        written.push({ id: row.id, content: line, at: said.at ?? null });
         /*
          * The judge's supersessions, applied as the hourly pass applies them: the new row says
          * what it replaces and is marked judged, with the judge's support; each older line the
@@ -497,6 +535,10 @@ export function createStandingHook(options: {
             counts.superseded += gone.length;
           }
         });
+        // A line retired tonight is not offered again.
+        written = written.filter(
+          (tonight) => !replaced.some((old) => old.id === tonight.id),
+        );
       } catch (error) {
         if (error instanceof MemoryFullError) counts.full += 1;
         else if (error instanceof MemoryForgottenError) counts.forgotten += 1;
