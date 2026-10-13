@@ -3146,6 +3146,15 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * in one night's extract — the lines written tonight are offered to the judge of a later message,
  * and the facts are judged in the order of their evidence whatever order the extractor returned.
  *
+ * RAISED 2026-10-13 FOR WHAT WE DEPEND ON, `root` from 1714 to 1731, all seventeen in
+ * `tests/dependencies.test.ts`: every direct dependency of each of the six package.json files is on
+ * a list with its reason and the list names nothing they lack (six, one a workspace, and one that
+ * the list covers every workspace); the allow-list's reading of six SPDX expressions; every package
+ * the store holds permissive or a named exception; no exception stale, none for a package already
+ * permissive, none naming a licence file the package lacks; a package the store lacks only ever
+ * another platform's binary; and nothing fetched from outside the registry but the one named.
+ * 1714 and 17 is 1731.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -3203,7 +3212,7 @@ const GROUPS: readonly {
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 1714, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 1731, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
