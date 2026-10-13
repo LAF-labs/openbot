@@ -9,6 +9,7 @@ import {
   actionState,
   createJevAutoReviewer,
   JEV_CALIBRATION,
+  jevReviewState,
   jevVerdict,
 } from "../src/computer/jev-auto-review";
 
@@ -438,9 +439,42 @@ describe("the Jev auto-reviewer: allow or ask, never deny", () => {
       action: { element: { label: string } };
     };
     expect(state.owner_instruction).toBe(
-      "[email] 으로 보내는 메일은 묻지 말고 보내도 돼",
+      "[email 1] 으로 보내는 메일은 묻지 말고 보내도 돼",
     );
-    expect(state.action.element.label).toBe("[email] 에게 보내기");
+    expect(state.action.element.label).toBe("[email 1] 에게 보내기");
+  });
+
+  test("an action aimed at another address does not read as the one the sentence named", () => {
+    const other = jevReviewState(NAMING, {
+      ...TO_THAT_ADDRESS,
+      subject: {
+        ...TO_THAT_ADDRESS.subject,
+        element: {
+          role: "button",
+          name: "someone-else@example.test 에게 보내기",
+        },
+      },
+    });
+    expect(other.owner_instruction).toBe(
+      "[email 1] 으로 보내는 메일은 묻지 말고 보내도 돼",
+    );
+    expect((other.action.element as { label: string }).label).toBe(
+      "[email 2] 에게 보내기",
+    );
+    // And the same address spelt in capitals is still the same address.
+    const same = jevReviewState(NAMING, {
+      ...TO_THAT_ADDRESS,
+      subject: {
+        ...TO_THAT_ADDRESS.subject,
+        element: {
+          role: "button",
+          name: `${ADDRESS.toUpperCase()} 에게 보내기`,
+        },
+      },
+    });
+    expect((same.action.element as { label: string }).label).toBe(
+      "[email 1] 에게 보내기",
+    );
   });
 
   test("what the fallback is handed is the same redacted pair", async () => {
@@ -461,10 +495,10 @@ describe("the Jev auto-reviewer: allow or ask, never deny", () => {
     expect(handed).toHaveLength(1);
     expect(JSON.stringify(handed)).not.toContain(ADDRESS);
     expect(handed[0]?.instruction).toBe(
-      "[email] 으로 보내는 메일은 묻지 말고 보내도 돼",
+      "[email 1] 으로 보내는 메일은 묻지 말고 보내도 돼",
     );
     expect(handed[0]?.subject.subject.element?.name).toBe(
-      "[email] 에게 보내기",
+      "[email 1] 에게 보내기",
     );
     // The shape the fallback judges is the one it was always handed.
     expect(handed[0]?.subject.action).toBe("computer_click");

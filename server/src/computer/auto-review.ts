@@ -39,7 +39,7 @@
  *   second verdict, the page's own words echoed back — is a question for the person.
  */
 
-import { redactDeep, redactText } from "../context/judge-redaction";
+import { matchingRedaction } from "../context/judge-redaction";
 import { noAnswerFact } from "../failure-text";
 import { log } from "../log";
 import type { AskSubject } from "./approvals";
@@ -257,6 +257,7 @@ export function createModelAutoReviewer(
     // Nothing to judge, and nothing spent finding that out.
     if (!trimmed) return null;
 
+    const redaction = matchingRedaction();
     const answer = await askModel(options, {
       /*
        * THROUGH THE ONE REDACTION, HERE, WHERE THE SENTENCE LEAVES (`context/judge-redaction.ts`).
@@ -264,12 +265,13 @@ export function createModelAutoReviewer(
        * judge is a model somebody else hosts. The Jev reviewer redacted what it sent and what it
        * handed this one as its fallback (`jev-auto-review.ts`); a deployment with Jev off — the
        * default — calls this directly, and there the sentence left whole. Done here it holds
-       * whoever calls. Both sides through the same rule, so a sentence naming an address still
-       * matches the label naming it: `[email]` on either side. Redacting twice changes nothing.
+       * whoever calls. Both sides through ONE redaction that numbers what it hides, so a sentence
+       * naming an address still matches the label naming it (`[email 1]` on either side) and does
+       * not match a label naming another (`[email 2]`). Redacting twice changes nothing.
        */
       ...reviewPrompt(
-        redactText(trimmed),
-        redactDeep(subject) as ReviewSubject,
+        redaction.text(trimmed),
+        redaction.deep(subject) as ReviewSubject,
       ),
       timeoutMs,
       /*
