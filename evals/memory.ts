@@ -15,6 +15,7 @@ import {
   modelAsker,
   withFallback,
 } from "../server/src/computer/decision-askers";
+import { decisionBaseUrlOf } from "../server/src/computer/decision-call";
 import { createConversationStore } from "../server/src/context/conversations";
 import {
   createDaySummarizer,
@@ -58,7 +59,15 @@ const said = (
 
 export async function forgottenAcrossADay(): Promise<ForgottenDay> {
   const key = process.env.OPENAI_API_KEY ?? "";
-  const baseUrl = process.env.OPENAI_BASE_URL ?? "https://openrouter.ai/api/v1";
+  const baseUrl = process.env.OPENAI_BASE_URL ?? "";
+  // Where the judge is reached: the deployment's own endpoint, as the server resolves it, or
+  // nowhere — the key handed to it is the endpoint's, and goes to no other company.
+  const judgeBase = decisionBaseUrlOf(baseUrl);
+  if (!judgeBase) {
+    throw new Error(
+      "Jev is reached through OpenRouter: OPENAI_BASE_URL must be OpenRouter's.",
+    );
+  }
   let spentUsd = 0;
   const priced = (async (
     url: Parameters<typeof fetch>[0],
@@ -96,7 +105,7 @@ export async function forgottenAcrossADay(): Promise<ForgottenDay> {
   const asker = withFallback(
     jevAsker(
       {
-        baseUrl: "https://openrouter.ai/api",
+        baseUrl: judgeBase,
         model: process.env.EVAL_JEV_MODEL ?? "typesafe/jev-1.13-20260917",
         apiKey: async () => key,
         onUsage: (usage) => {
