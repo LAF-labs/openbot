@@ -487,7 +487,7 @@ describe("what the model reviewer sends, asked directly", () => {
     expect(sent).not.toContain("hunter2-example");
     expect(sent).not.toContain("010-1234-5678");
     expect(between(userOf(seen[0]), OWNER_INSTRUCTION)).toBe(
-      "[email] 으로 보내는 메일은 묻지 말고 보내도 돼. 비밀번호: [secret] [phone]",
+      "[email 1] 으로 보내는 메일은 묻지 말고 보내도 돼. 비밀번호: [secret 1] [phone 1]",
     );
   });
 
@@ -497,7 +497,7 @@ describe("what the model reviewer sends, asked directly", () => {
       const user = userOf(body);
       const owner = between(user, OWNER_INSTRUCTION) ?? "";
       const data = between(user, PAGE_DATA) ?? "";
-      const named = /^(\S+) 으로/.exec(owner)?.[1] ?? "\u0000";
+      const named = /^(.+?) 으로/.exec(owner)?.[1] ?? "\u0000";
       return data.includes(`Send to ${named}`)
         ? '{"verdict":"allow","reason":"Same address."}'
         : '{"verdict":"ask","reason":"Different address."}';
@@ -507,6 +507,11 @@ describe("what the model reviewer sends, asked directly", () => {
       allowed: true,
       reason: "Same address.",
     });
+    // An action aimed at ANOTHER address is not the one the sentence named: the two are different
+    // placeholders, so a judge matching words cannot take one for the other.
+    expect(
+      await reviewer(NAMING, click("Send to someone-else@example.test")),
+    ).toEqual({ allowed: false, reason: "Different address." });
     // And the judge can still tell an action the sentence does not name.
     expect(await reviewer(NAMING, click("Send to everyone"))).toEqual({
       allowed: false,

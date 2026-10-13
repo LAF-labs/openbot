@@ -46,7 +46,7 @@ import {
   type ReviewSubject,
   type ReviewVerdict,
 } from "./auto-review";
-import { redactDeep, redactText } from "../context/judge-redaction";
+import { matchingRedaction } from "../context/judge-redaction";
 import {
   askDecision,
   type DecisionAnswer,
@@ -104,13 +104,27 @@ export function actionState(subject: ReviewSubject): Record<string, unknown> {
  * every line was redacted. Both sides through the same rule, so a sentence that names an address
  * still matches the label that names it: `[email]` on either side.
  */
+export function reviewedPair(
+  instruction: string,
+  subject: ReviewSubject,
+): { instruction: string; subject: ReviewSubject } {
+  // One redaction for both sides, so the same value is the same placeholder on each and two
+  // different values never are (`matchingRedaction`).
+  const redaction = matchingRedaction();
+  return {
+    instruction: redaction.text(instruction),
+    subject: redaction.deep(subject) as ReviewSubject,
+  };
+}
+
 export function jevReviewState(
   instruction: string,
   subject: ReviewSubject,
 ): { owner_instruction: string; action: Record<string, unknown> } {
+  const pair = reviewedPair(instruction, subject);
   return {
-    owner_instruction: redactText(instruction),
-    action: redactDeep(actionState(subject)) as Record<string, unknown>,
+    owner_instruction: pair.instruction,
+    action: actionState(pair.subject),
   };
 }
 
@@ -181,7 +195,11 @@ export function createJevAutoReviewer(
     const bar = JEV_CALIBRATION[options.call.model];
     // An unmeasured snapshot is not a judge.
     if (!bar) return { allowed: false, reason: "" };
-    const state = jevReviewState(trimmed, subject);
+    const pair = reviewedPair(trimmed, subject);
+    const state = {
+      owner_instruction: pair.instruction,
+      action: actionState(pair.subject),
+    };
     const decided = await askDecision(options.call, {
       purpose: "auto-review",
       state,
@@ -191,10 +209,7 @@ export function createJevAutoReviewer(
     if (!decided.ok) {
       // The same redacted pair: the fallback judges what Jev would have, and nothing more leaves.
       return options.fallback
-        ? options.fallback(
-            state.owner_instruction,
-            redactDeep(subject) as ReviewSubject,
-          )
+        ? options.fallback(pair.instruction, pair.subject)
         : { allowed: false, reason: "" };
     }
     return jevVerdict(decided.answers, bar, decided.model);

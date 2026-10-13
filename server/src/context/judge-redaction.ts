@@ -56,6 +56,84 @@ export function redactText(text: string): string {
   return out;
 }
 
+/** How one value of a kind is told from another without being shown: by what it is, not how it is spelt. */
+function sameValueKey(kind: string, value: string): string {
+  if (kind === "email") return value.toLowerCase();
+  if (kind === "phone" || kind === "card" || kind === "id-number") {
+    return value.replace(/\D/g, "");
+  }
+  return value;
+}
+
+/**
+ * A redaction that keeps WHICH value stood where, for a judge that has to say whether two texts
+ * are about the same thing: the first address it meets is `[email 1]`, a different one
+ * `[email 2]`, and the first again is `[email 1]` wherever it comes back — in the owner's sentence
+ * or in the action it is held against. One of these is made per judgement and both sides go
+ * through it.
+ *
+ * `redactText` alone was used for that at first, on both sides, and every address became the one
+ * word `[email]`: a standing instruction naming one recipient then read the same as an action aimed
+ * at any other, and the reviewer could let it through unasked (found by review of #232, 2026-10-13;
+ * the Jev path had carried it since #217). A judge that cannot tell two recipients apart is not
+ * redacted, it is blinded, and a boundary must never lie.
+ *
+ * Text that has already been through one of these comes out unchanged, so handing an
+ * already-redacted pair to a second reviewer is safe.
+ */
+export function matchingRedaction(): {
+  text: (text: string) => string;
+  deep: (value: unknown) => unknown;
+} {
+  const seen = new Map<string, Map<string, number>>();
+  const numbered = (kind: string, value: string): string => {
+    const ofKind = seen.get(kind) ?? new Map<string, number>();
+    seen.set(kind, ofKind);
+    const key = sameValueKey(kind, value);
+    const at = ofKind.get(key) ?? ofKind.size + 1;
+    ofKind.set(key, at);
+    return `[${kind} ${at}]`;
+  };
+  const text = (input: string): string => {
+    let out = input;
+    for (const [pattern, replacement] of PATTERNS) {
+      const kind = /\[([a-z-]+)\]/.exec(replacement)?.[1];
+      if (!kind) continue;
+      // What the placeholder stands in for: the match without the words the replacement keeps.
+      const kept = replacement.startsWith("$1")
+        ? 1
+        : replacement.startsWith("Bearer ")
+          ? "bearer"
+          : 0;
+      out = out.replace(pattern, (match: string, ...groups: unknown[]) => {
+        const lead =
+          kept === 1
+            ? String(groups[0] ?? "")
+            : kept === "bearer"
+              ? (/^Bearer\s+/i.exec(match)?.[0] ?? "")
+              : "";
+        const head = kept === "bearer" ? "Bearer " : lead;
+        return `${head}${numbered(kind, match.slice(lead.length))}`;
+      });
+    }
+    return out;
+  };
+  const deep = (value: unknown): unknown => {
+    if (typeof value === "string") return text(value);
+    if (Array.isArray(value)) return value.map(deep);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+          key,
+          deep(item),
+        ]),
+      );
+    }
+    return value;
+  };
+  return { text, deep };
+}
+
 /** A value with every string in it redacted, the same shape otherwise. */
 export function redactDeep(value: unknown): unknown {
   if (typeof value === "string") return redactText(value);
