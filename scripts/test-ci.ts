@@ -3207,8 +3207,14 @@ const GROUPS: readonly {
      * in `workspace-scope.test.ts` — the copies taken by name and nothing beside them, one that
      * could not be removed failing the call, and five names that are paths refusing the whole
      * removal.
+     *
+     * RAISED 2026-10-13 FOR WHERE A WRITE LANDS AND A DOWNLOAD THAT LANDS LATE, from 620 to 631:
+     * eight in `workspace-scope.test.ts` — a link in a project's folder followed for a write,
+     * six ways, and a download landing after its project was removed, two — and three in
+     * `workspace.test.ts`, a write through a link that is itself the file. 620 and 8 is 628, and
+     * 3 is 631.
      */
-    floor: 620,
+    floor: 631,
     roots: ["agent-computer"],
     processes: 1,
   },
