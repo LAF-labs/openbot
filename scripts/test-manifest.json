@@ -588,6 +588,7 @@
   "server/tests/workbench-client.test.ts",
   "server/tests/workbench-gateway.test.ts",
   "server/tests/workbench-trail.integration.test.ts",
+  "tests/bugbot-rules.test.ts",
   "tests/caddyfile.test.ts",
   "tests/clean-checkout.test.ts",
   "tests/compose.test.ts",

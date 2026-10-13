@@ -9,8 +9,15 @@ triggers:
   drafts: false
   frequency: oncePerPr
 review:
-  # Few reviews, each at merge time: thorough is worth its price.
-  effort: high
+  # What a review costs follows how hard it reads (about a dollar a run at the default, 2026-10).
+  # Hard where a miss costs a person something, light where the gate already reads the change.
+  effort: smart
+  smartPrompt: >-
+    Use high effort when the change touches sign-in or sessions, secrets or saved logins, the
+    boundary and approvals, the audit trail, money or budgets, a database migration, deleting or
+    forgetting data, what the Bot reads (shared/prompt, shared/tools), or the computer gateway
+    (server/src/computer, agent-computer). Use low effort when the change is only documentation,
+    tests, evaluation scripts, copy or styling. Use default effort for everything else.
   # A second pass reads what changed since the first. A verdict belongs to the
   # patch it read.
   incremental: true
