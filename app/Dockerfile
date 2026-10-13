@@ -63,7 +63,7 @@ RUN bun run build
 
 # caddy:2-alpine — resolved to 2.11.4 on 2026-09-10. The tag floats across every 2.x minor; the
 # digest is what a customer VM actually gets, and Dependabot's docker entry is what moves it.
-FROM caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+FROM caddy:2-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
 
 # Certificates and the ACME account live in /data, which compose gives a volume. Without that
 # volume every restart asks Let's Encrypt for the same certificate again, and five of those in a
