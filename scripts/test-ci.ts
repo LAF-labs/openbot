@@ -3142,6 +3142,9 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * evidence may be retired by it (a correction the Bot wrote after the quoted message stands; a
  * message from before stamps retires nothing), and a conversation dropped while the judge was
  * reading writes nothing more.
+ * And two more, 4655 → 4657, from Bugbot's read of c67c71cf: a fact and its same-day correction
+ * in one night's extract — the lines written tonight are offered to the judge of a later message,
+ * and the facts are judged in the order of their evidence whatever order the extractor returned.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -3171,7 +3174,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4655, roots: ["server"] },
+  { name: "server", floor: 4657, roots: ["server"] },
   { name: "app", floor: 2446, roots: ["app"] },
   {
     name: "agent-computer",
