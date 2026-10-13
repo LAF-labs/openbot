@@ -13,9 +13,12 @@ import {
 } from "../src/computer/bot-id";
 import {
   BROWSER_HEADER,
+  COMPUTER_TIMED_OUT,
+  COMPUTER_UNREACHABLE,
   type ComputerClient,
   ComputerUnavailableError,
   createComputerClient,
+  STOPPED,
   WorkspaceRequestError,
 } from "../src/computer/client";
 import {
@@ -654,7 +657,7 @@ describe("opening a background browser", () => {
     const { gateway, calls, rows, trouble, isOpen } = gatewayOn({});
     await gateway.openBrowser("bot-1", "run-7", ACTOR);
     trouble.release = () => {
-      throw new Error("the computer did not answer");
+      throw new ComputerUnavailableError(COMPUTER_UNREACHABLE);
     };
     await gateway.releaseBrowser("bot-1", "run-7").catch(() => undefined);
     calls.length = 0;
@@ -674,9 +677,33 @@ describe("opening a background browser", () => {
         {
           bot: "bot-1",
           actor: ACTOR.id,
-          reason: "the browser from the run before could not be let go of",
+          reason: "not let go of first: laf:computer_unreachable",
         },
       ],
+    ]);
+  });
+
+  /*
+   * THE ROW NAMES WHAT HAPPENED (review of #210, C2). It said "the browser from the run before
+   * could not be let go of" for anything caught — a computer nothing answered at, where there
+   * may be no such browser at all, and a run stopped while the letting-go was on its way.
+   */
+  test.each([
+    ["nothing answered", COMPUTER_UNREACHABLE],
+    ["it did not answer in time", COMPUTER_TIMED_OUT],
+    ["the run was stopped first", STOPPED],
+  ])("the refusal's row says which failure it was: %s", async (_what, fact) => {
+    const { gateway, rows, trouble } = gatewayOn({});
+    trouble.release = () => {
+      throw new ComputerUnavailableError(fact);
+    };
+    // The first open since this server started: nothing is known to be under the name.
+    expect(await gateway.openBrowser("bot-1", "run-7", ACTOR)).toEqual({
+      opened: false,
+      because: "not_let_go",
+    });
+    expect(rows.map((row) => row.payload)).toEqual([
+      { bot: "bot-1", actor: ACTOR.id, reason: `not let go of first: ${fact}` },
     ]);
   });
 

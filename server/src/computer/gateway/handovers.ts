@@ -12,7 +12,7 @@
  */
 import type { AuditStore } from "../../audit";
 import { computerIdOf } from "../bot-id";
-import type { ComputerClient } from "../client";
+import { type ComputerClient, factOfError } from "../client";
 import type { ActionActor } from "./caller";
 import type { Secrets } from "./secrets";
 import type { SnapshotCache } from "./snapshots";
@@ -20,8 +20,9 @@ import { writeControlEvent } from "./trail";
 
 /**
  * What opening a background browser comes to: one opened, fresh; or none — the computer has no
- * room, or the one the run before left under the name could not be let go of. Each refusal is a
- * row (`computer.browser_refused`), and the caller answers the run with the fact.
+ * room, or what an earlier run may have left under the name could not be let go of first. Each
+ * refusal is a row (`computer.browser_refused`) naming which, and the caller answers the run with
+ * the fact.
  */
 export type BrowserOpened =
   | { opened: true; open: number; cap: number }
@@ -148,8 +149,16 @@ export function createHandovers(deps: {
     if (!letGoOf.has(browser)) {
       try {
         await releaseNow(botId, browser, within);
-      } catch {
-        await refused("the browser from the run before could not be let go of");
+      } catch (error) {
+        /*
+         * WHICH FAILURE, AS THE CLIENT NAMED IT. The row said "the browser from the run before
+         * could not be let go of" whatever was caught, and two of the things caught are not
+         * that: a computer nothing answered at (there may be no browser from a run before at
+         * all — the first open since this server started lets go on a guess), and a run that
+         * was stopped while the letting-go was on its way. Somebody reading the row to learn
+         * why a routine had no browser was sent to look for a stuck one.
+         */
+        await refused(`not let go of first: ${factOfError(error)}`);
         return { opened: false, because: "not_let_go" };
       }
     }
