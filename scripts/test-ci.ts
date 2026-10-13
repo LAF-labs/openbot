@@ -3199,6 +3199,15 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * — a person removed has their channel retired under their pseudonym, and the row holds their id
  * nowhere. 4735 and 1.
  *
+ * LOWERED 2026-10-13 FOR A ROUTE THAT WENT: `server` by twenty-five (to 4711). `GET
+ * /api/copilotkit/info` was removed once the app's library that asked it had left (#234), and the
+ * tests of it went with it — twenty-six: the route's own (copilot.test.ts, 20: the seventeen
+ * raised above and three older), the per-request agent factory only it used (copilot.test.ts, 2),
+ * the session guard in front of its mount (copilot-guard.test.ts, 3, the file gone) and the
+ * id-and-role projection its factory read (request-actor.test.ts, 1). One is added: a booted
+ * server answers the path as it answers any path nothing is mounted on
+ * (log-hygiene.integration.test.ts). 4736 less 26, and 1.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -3227,7 +3236,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4736, roots: ["server"] },
+  { name: "server", floor: 4711, roots: ["server"] },
   { name: "app", floor: 2532, roots: ["app"] },
   {
     name: "agent-computer",
