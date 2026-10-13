@@ -1173,8 +1173,11 @@ with the next desktop release.
 `rustls` 0.23.43 → 0.23.45 (`cargo update -p rustls`, RUSTSEC-2026-0285);
 `cargo audit` then reports no vulnerabilities, only the unmaintained-crate
 warnings of Tauri's own tree and the glib entry below. `uuid` is overridden to
-^11.1.1 in the root `package.json` (GHSA-w5hq-g745-h8pq): `@copilotkit/runtime`
-declares ^10 but its bundle never imports the package. `esbuild` ≤0.24.2
+^11.1.1 in the root `package.json` (GHSA-w5hq-g745-h8pq). It was for
+`@copilotkit/runtime`, which declared ^10; the runtime left the server on
+2026-10-13 and the override stays as a floor: `@ag-ui/client`,
+`@copilotkit/shared` and `mermaid` each still ask for a range that admits
+11.1.0. `esbuild` ≤0.24.2
 (GHSA-67mh-4wv8-2f99) stays: it is `drizzle-kit`'s `@esbuild-kit` loader pinned
 at ~0.18, a nested range a root override cannot reach without replacing the
 loader, and the advisory is about esbuild's development server, which nothing

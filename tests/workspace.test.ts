@@ -131,9 +131,13 @@ describe("LAF Agent workspace", () => {
    * names (`hono`, `fast-uri`, `js-yaml`) took it to four high, all in packages nobody here
    * names: `lodash-es` 4.17.21 pinned EXACTLY by chevrotain under cel-js (the policy language), and
    * `undici` 5.29.0 asked for by `@ai-sdk/provider-utils` under CopilotKit's runtime — which never
-   * imports it: the only code in the tree that does is `openai` and `dotenvx`, and they want 7.x.
-   * So both are overridden to the fixed line, and the floor is written down here: an override
-   * moved BELOW the fix, or dropped, would reopen an advisory without `bun audit` being run.
+   * imported it. So both were overridden to the fixed line, and the floor is written down here: an
+   * override moved BELOW the fix, or dropped, would reopen an advisory without `bun audit` being
+   * run.
+   *
+   * `undici`'s override went on 2026-10-13: the runtime left the server (#230) and with it every
+   * package that asked for `undici`, so the override named nothing in the lockfile. What is kept is
+   * the lockfile's half of the check below — a 5.x that comes back fails here.
    */
   test("overrides the transitive advisories to their fixed versions, and no lower", () => {
     const rootManifest = JSON.parse(
@@ -157,18 +161,19 @@ describe("LAF Agent workspace", () => {
     };
     // GHSA-r5fr-rjxr-66jc and the two `_.unset` prototype pollutions: fixed in 4.17.23.
     atLeast("lodash-es", [4, 17, 23]);
-    // The WebSocket and header advisories: fixed across 6.23 / 7.x; 7 is what its importers want.
-    atLeast("undici", [7, 29, 0]);
     /*
-     * GHSA-x5fp-wj9c-mxmx and GHSA-4mjr-xmp4-gh2g (2026-09-25): `qs` 6.14.2–6.15.3, under
-     * CopilotKit's runtime and the MCP SDK through Express, whose own `~6.15.1` would never reach
-     * 6.16.0. Neither Express is served here (Hono is), but a parser nobody calls today is still one
-     * import away from a request.
+     * GHSA-x5fp-wj9c-mxmx and GHSA-4mjr-xmp4-gh2g (2026-09-25): `qs` 6.14.2–6.15.3, under the MCP
+     * SDK through Express, whose ranges (`^6.14.0`, and `^6.15.2` in its body parser) admit them.
+     * It was under CopilotKit's runtime too, whose own `~6.15.1` would never have reached 6.16.0,
+     * until the runtime left (#230). Express is not served here (Hono is), but a parser nobody
+     * calls today is still one import away from a request.
      */
     atLeast("qs", [6, 16, 0]);
 
     // And the lockfile agrees: the vulnerable lines are gone from what would be installed.
     const lock = readFileSync(join(repositoryRoot, "bun.lock"), "utf8");
+    // The WebSocket and header advisories, fixed across 6.23 / 7.x: no override holds this any
+    // more, since nothing asks for the package.
     expect(lock).not.toMatch(/"undici@5\./);
     expect(lock).not.toMatch(/"lodash-es@4\.17\.2[012]"/);
     expect(lock).not.toMatch(/"qs@6\.1[45]\./);
