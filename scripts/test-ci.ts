@@ -3135,6 +3135,9 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * negation, a changed recurrence and 10시 read as 10만; the floor alone on the quote's figure and
  * folded digits; a conversation dropped during the call; two closes at once; the judge down; the
  * store's night branches; the hour not re-judging a night line.
+ * And two more, 4651 → 4653, from the mutation pass before this landed, which found two lines no
+ * test guarded: one fact returned twice in one night is counted added once (the live lines are
+ * read again before each write), and a quote past the judge's window is not evidence.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
@@ -3164,7 +3167,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4651, roots: ["server"] },
+  { name: "server", floor: 4653, roots: ["server"] },
   { name: "app", floor: 2446, roots: ["app"] },
   {
     name: "agent-computer",
