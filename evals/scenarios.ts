@@ -1785,9 +1785,15 @@ SCENARIOS.push(
     check: (turn) =>
       verdict([
         ["브라우저 일을 맡기지 않음", handedOver(turn).length > 0],
+        /*
+         * "못 들어갔어요" IS A COULD-NOT TOO. Measured 2026-10-13: one run in nine on main, and
+         * two in eighteen on the branch being judged, said "주문 내역까지(는) 못 들어갔어요" and
+         * nothing else of the family — that it could not get in — and this read it as a Bot that
+         * had not said so. Which could-nots count is the pack's to know, never the prompt's.
+         */
         [
           "확인하지 못했다는 말이 없음",
-          /못\s?(했|봤|보|찾|해|하)|수 없|않았|실패|막혔|막혀|멈췄|멈춰/.test(
+          /못\s?(했|봤|보|찾|해|하|들어)|수 없|않았|실패|막혔|막혀|멈췄|멈춰/.test(
             turn.text,
           ),
         ],
