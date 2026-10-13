@@ -3161,7 +3161,8 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  *
  * RAISED 2026-10-13 FOR THE REVIEWERS' REDACTION: `server` by two (to 4709), in
  * `jev-decisions.test.ts` — an action aimed at another address is a different placeholder from the
- * one the owner's sentence named, and the same address in capitals is the same one. 4707 and 1.
+ * one the owner's sentence named, the same address in capitals is the same one, and a pair that
+ * has been through the redaction comes back as it was. 4707 and 2.
  *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to

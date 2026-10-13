@@ -495,6 +495,12 @@ describe("the Jev auto-reviewer: allow or ask, never deny", () => {
     });
     expect(twice.owner_instruction).toBe(once.owner_instruction);
     expect(twice.action).toEqual(once.action);
+    // Whatever order the numbers stand in: a second pass does not count them again.
+    const outOfOrder =
+      "비밀번호: [secret#2] 다른 비밀번호: [secret#1] Bearer [secret#3]";
+    expect(jevReviewState(outOfOrder, TO_THAT_ADDRESS).owner_instruction).toBe(
+      outOfOrder,
+    );
   });
 
   test("what the fallback is handed is the same redacted pair", async () => {
