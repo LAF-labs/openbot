@@ -84,7 +84,6 @@ const DECIDED: Record<string, Record<string, string>> = {
   server: {
     "@ag-ui/client": "dials every Bot's AG-UI endpoint",
     "@better-auth/drizzle-adapter": "sign-in's tables through Drizzle",
-    "@copilotkit/runtime": "the chat runtime's server half (copilot.ts)",
     "@modelcontextprotocol/sdk": "plugins that are MCP servers",
     "@typesafe-ai/sdk": "the boundary's decision call, typed",
     "better-auth": "sign-in",
@@ -151,21 +150,12 @@ const EXCEPTIONS: Record<string, Exception> = {
   "@ag-ui/client@0.0.57": { licence: "MIT", read: "LICENSE" },
   "@ag-ui/encoder@0.0.57": { licence: "MIT", read: "LICENSE" },
   "@ag-ui/proto@0.0.57": { licence: "MIT", read: "LICENSE" },
-  // 0.0.54 of the same four is what @copilotkit/runtime 1.67.1 pins beside our 0.0.57.
-  "@ag-ui/core@0.0.54": { licence: "MIT", read: "LICENSE" },
-  "@ag-ui/client@0.0.54": { licence: "MIT", read: "LICENSE" },
-  "@ag-ui/encoder@0.0.54": { licence: "MIT", read: "LICENSE" },
-  "@ag-ui/proto@0.0.54": { licence: "MIT", read: "LICENSE" },
-  "@ag-ui/mcp-apps-middleware@0.0.3": { licence: "MIT", read: "LICENSE" },
-  "@ag-ui/mcp-middleware@0.0.1": { licence: "MIT", read: "LICENSE" },
   // CopilotKit's two packages without the field; the file is the MIT text
   // (https://github.com/CopilotKit/CopilotKit/blob/main/LICENSE).
   "@copilotkit/core@1.67.1": { licence: "MIT", read: "LICENSE" },
   "@copilotkit/web-inspector@1.67.1": { licence: "MIT", read: "LICENSE" },
   // Under streamdown's mermaid. No field; the file is the MIT text.
   "khroma@2.1.0": { licence: "MIT", read: "license" },
-  // Uses the old `licenses: [{ type, url }]` array instead of a string. The file is the MIT text.
-  "limiter@1.1.5": { licence: "MIT", read: "LICENSE.txt" },
   // Browser-support data under browserslist, used at build time by Tailwind and Vite. Attribution
   // only; the data never ships.
   "caniuse-lite@1.0.30001809": { licence: "CC-BY-4.0", read: "LICENSE" },
