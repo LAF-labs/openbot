@@ -266,8 +266,8 @@ export function createModelAutoReviewer(
        * handed this one as its fallback (`jev-auto-review.ts`); a deployment with Jev off — the
        * default — calls this directly, and there the sentence left whole. Done here it holds
        * whoever calls. Both sides through ONE redaction that numbers what it hides, so a sentence
-       * naming an address still matches the label naming it (`[email 1]` on either side) and does
-       * not match a label naming another (`[email 2]`). Redacting twice changes nothing.
+       * naming an address still matches the label naming it (`[email#1]` on either side) and does
+       * not match a label naming another (`[email#2]`). Redacting twice changes nothing.
        */
       ...reviewPrompt(
         redaction.text(trimmed),

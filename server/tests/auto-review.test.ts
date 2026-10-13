@@ -487,7 +487,7 @@ describe("what the model reviewer sends, asked directly", () => {
     expect(sent).not.toContain("hunter2-example");
     expect(sent).not.toContain("010-1234-5678");
     expect(between(userOf(seen[0]), OWNER_INSTRUCTION)).toBe(
-      "[email 1] 으로 보내는 메일은 묻지 말고 보내도 돼. 비밀번호: [secret 1] [phone 1]",
+      "[email#1] 으로 보내는 메일은 묻지 말고 보내도 돼. 비밀번호: [secret#1] [phone#1]",
     );
   });
 

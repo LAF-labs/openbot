@@ -30,7 +30,9 @@ const databaseUrl = process.env.DATABASE_URL;
 const describeDb = databaseUrl ? describe : describe.skip;
 
 /** What the person typed, planted wherever these rows could be made to carry words. */
-const PLANTED = "사장님 통장 비밀번호 7731 김영희 010-4455-6677";
+// The number is long on purpose: the rows hold random ids and times, and a four-digit needle
+// ("7731") turned up in one of them by chance on CI (2026-10-13) and failed a run that leaked nothing.
+const PLANTED = "사장님 통장 비밀번호 773120486159 김영희 010-4455-6677";
 const ZONE = "Asia/Seoul";
 /** 2003-03-03 00:00 UTC, 09:00 in Seoul. */
 const ERA = Date.UTC(2003, 2, 3, 0, 0, 0);
@@ -568,7 +570,7 @@ describeDb("the wait a turn measured, on its row and in the section", () => {
     expect(rows.some((found) => found.label === PLANTED)).toBe(true);
     const measured = rows.map(({ label, error, ...rest }) => rest);
     const everything = JSON.stringify({ measured, section });
-    for (const piece of ["비밀번호", "7731", "김영희", "010-4455"]) {
+    for (const piece of ["비밀번호", "773120486159", "김영희", "010-4455"]) {
       expect([piece, everything.includes(piece)]).toEqual([piece, false]);
     }
   });
