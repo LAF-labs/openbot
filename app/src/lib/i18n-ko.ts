@@ -3427,4 +3427,7 @@ export const ko: Record<string, string> = {
   Markdown: "마크다운",
   "For a spreadsheet": "엑셀에 붙여 넣기",
   "View fullscreen": "크게 보기",
+  "Reset the zoom": "원래 크기로",
+  "Zoom in": "확대",
+  "Zoom out": "축소",
 };

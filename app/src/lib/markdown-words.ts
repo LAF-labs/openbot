@@ -46,11 +46,15 @@ export const MARKDOWN_WORDS: Readonly<
   mermaidFormatSvg: "SVG",
   openExternalLink: "Open external link?",
   openLink: "Open link",
+  // Streamdown 2.7 put three zoom buttons on every diagram.
+  resetView: "Reset the zoom",
   tableFormatCsv: "CSV",
   tableFormatMarkdown: "Markdown",
   // Tab-separated is what a spreadsheet takes into its cells; nobody outside software calls it TSV.
   tableFormatTsv: "For a spreadsheet",
   viewFullscreen: "View fullscreen",
+  zoomIn: "Zoom in",
+  zoomOut: "Zoom out",
 };
 
 /**
