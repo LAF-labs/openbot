@@ -26,6 +26,7 @@ import {
   STOPPED,
   WorkspaceRequestError,
 } from "../client";
+import { computerIdOf } from "../bot-id";
 import { isSecretFieldElement } from "../default-policy";
 import type { PolicyDecision } from "../policy";
 import type {
@@ -336,8 +337,20 @@ export function createSecrets(deps: {
    * Never throws: this is called as a turn is let go of, where there is nobody to answer an error
    * to. A computer that could not be told, or could not close a tab, is still holding the value —
    * and is still noted here as holding it, so the next run to end tells it again.
+   *
+   * `where.browser`: THE BACKGROUND BROWSER THE RUN'S PAGES WERE IN, where it had one of its own
+   * (a routine's). The note of a run nobody named is ended by "the next run of the Bot's to end"
+   * because any run of the Bot's might have been the one — which was so while every run was in
+   * the main browser. A routine's is not: after this server started again in the middle of a
+   * conversation's sign-in, the first routine to finish told the MAIN browser a run was over, and
+   * the computer closed the tab the conversation was working in. So such a run ends an unnamed
+   * note only in its own browser, and the main one's waits for a run that is in the main one.
    */
-  async function runEnded(botId: string, threadId?: string): Promise<void> {
+  async function runEnded(
+    botId: string,
+    threadId?: string,
+    where?: { browser?: string },
+  ): Promise<void> {
     // What this run was only shown is this server's note alone: let go of here, and the computer
     // is told nothing on its account (`shownRuns`).
     const shown = shownRuns.get(botId);
@@ -355,10 +368,26 @@ export function createSecrets(deps: {
      * that run's own end. And only THESE runs' notes: another run of the Bot's that holds a
      * value in a browser of its own keeps it, and its note, until its own end.
      */
+    const own = threadId ?? ANY_RUN;
+    const ownBrowser = where?.browser
+      ? computerIdOf(botId, where.browser)
+      : null;
     const ending = new Map(
-      [threadId ?? ANY_RUN, ANY_RUN]
+      [own, ANY_RUN]
         .filter((run) => runs.has(run))
-        .map((run) => [run, new Set(runs.get(run))] as const),
+        .map((run) => {
+          const browsers = [...(runs.get(run) ?? [])];
+          // An unnamed note, at the end of a run in a browser of its own: only that browser's.
+          return [
+            run,
+            new Set(
+              run === ANY_RUN && run !== own && ownBrowser
+                ? browsers.filter((computerId) => computerId === ownBrowser)
+                : browsers,
+            ),
+          ] as const;
+        })
+        .filter(([, browsers]) => browsers.size > 0),
     );
     if (ending.size === 0) return;
     try {

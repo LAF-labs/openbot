@@ -166,7 +166,12 @@ export type RoutineRunOptions = SettlementOptions & {
     letGo: (botId: string, within: AbortSignal) => Promise<unknown>;
     letGoMs?: number;
   };
-  runEnded?: (botId: string, runKey: string) => Promise<void>;
+  runEnded?: (
+    botId: string,
+    runKey: string,
+    /** The browser of its own the run's pages were in. */
+    where?: { browser: string },
+  ) => Promise<void>;
   goals?: RoutineGoals;
   lane?: BotLane;
   runTimeoutMs: number;
@@ -603,7 +608,12 @@ async function askTheBot(
          * Never a reason for the run to fail: the gateway keeps its note and tells again.
          */
         await options
-          .runEnded?.(row.agentId, runKeyOf(runId))
+          .runEnded?.(
+            row.agentId,
+            runKeyOf(runId),
+            // Which browser the run's pages were in: what an unnamed note is ended by.
+            options.browser ? { browser: options.browser.name } : undefined,
+          )
           .catch(() => undefined);
         /*
          * AND ITS BROWSER IS LET GO OF, after the computer was told the run is over — the values
