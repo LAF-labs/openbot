@@ -34,6 +34,7 @@
   "agent-computer/tests/korean-browser.test.ts",
   "agent-computer/tests/korean-sites.test.ts",
   "agent-computer/tests/late-frame-secret.test.ts",
+  "agent-computer/tests/light-load.test.ts",
   "agent-computer/tests/live-screen-input.test.ts",
   "agent-computer/tests/login-fill-site.test.ts",
   "agent-computer/tests/navigation-guard.test.ts",

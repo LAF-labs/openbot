@@ -76,6 +76,7 @@ import { botTimeZone, PINNED_CHROMIUM_VERSION } from "./browser-identity";
 import { LAUNCH_WAIT_MS, launchBrowser } from "./browser-launch";
 import { keepChildProcesses } from "./child-processes";
 import { deploymentEgress, deploymentEgressLabel } from "./egress";
+import { skipUnreadRequests } from "./light-load";
 import { saysRendererDied } from "./respond";
 import { log } from "./log";
 import {
@@ -398,6 +399,10 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
         await closeAndWait(context).catch(() => undefined);
         throw error;
       }
+      // Sound, video and a short list of ad hosts are not downloaded, in this browser and in every
+      // background one (light-load.ts). After the guard, which fails the launch where it cannot be
+      // installed: this only saves CPU, so a browser without it browses as it did before.
+      await skipUnreadRequests(context);
       shared = {
         context,
         startedAt: new Date().toISOString(),
