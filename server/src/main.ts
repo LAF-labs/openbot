@@ -111,6 +111,8 @@ import { createFleetNotifier } from "./fleet/notify";
 import { createGoalStore } from "./goals/store";
 import { deploymentHealthProbes } from "./health";
 import { createLiveScreen, type SocketData } from "./live-screen";
+import { users } from "./db/schema";
+import { createHubRuntime } from "./hub";
 import { log, recentLines } from "./log";
 import { createLoginVault } from "./logins/store";
 import { readApprovalMetrics } from "./notifications/approval-metrics";
@@ -386,6 +388,31 @@ const runMeter = {
  * second instance for the carrier to reach.
  */
 const channelEvents = createChannelEventHub();
+/**
+ * The company hub, when this VM belongs to one (`hub/`). Its events reach the app as `hub.*`
+ * frames on the same socket, addressed to every account here — which is the one person this
+ * deployment is for (`docs/laf/deployment-model.md`), read per frame rather than captured at boot,
+ * so a first sign-in after boot hears the next frame.
+ */
+let hubFramesSent: Promise<void> = Promise.resolve();
+const hubRuntime = config.hub
+  ? createHubRuntime({
+      config: config.hub,
+      database,
+      // Chained, so frames reach the page in the order the hub numbered them.
+      deliver: (frame) => {
+        hubFramesSent = hubFramesSent
+          .then(() => database.select({ id: users.id }).from(users))
+          .then((rows) =>
+            channelEvents.deliverFrame({
+              ...frame,
+              memberIds: rows.map((row) => row.id),
+            }),
+          )
+          .catch(() => undefined);
+      },
+    })
+  : undefined;
 /**
  * The partner vendor LAF holds the account at, assembled once.
  *
@@ -1310,6 +1337,7 @@ const app = createApp({
   // 목표: the goals the person set, and their timelines.
   goals: goalStore,
   logins: loginVault,
+  ...(hubRuntime ? { hub: hubRuntime } : {}),
 });
 
 /** The live screen, proxied ahead of the app because an upgrade is not a request. See live-screen.ts. */
@@ -1360,6 +1388,7 @@ sayBooted({
   model: tenantPackage.model,
   port: server.port,
   fleetWebhook: Boolean(fleetNotifier),
+  hub: Boolean(hubRuntime),
   harness: { version: HARNESS_VERSION, conversations: conversationsLoaded },
   ...(botsBroughtHome === undefined ? {} : { botsBroughtHome }),
 });
@@ -1430,6 +1459,8 @@ startBackgroundWork({
   auditRetentionDays: config.auditRetentionDays,
   // Only with a fleet: on a laptop there is nothing to tell.
   fleetOutbox: fleetNotifier ? notificationOutbox : undefined,
+  // Only with a hub: writes it has not taken yet, offered at boot and every five minutes.
+  ...(hubRuntime ? { hubOutbox: hubRuntime.outbox } : {}),
   deploymentKeys: deploymentKeyRuntime,
   builtInSkills,
   pluginStore,
@@ -1452,3 +1483,6 @@ startBackgroundWork({
     now: () => conversations.now(),
   }),
 });
+
+// The line to the company hub, once the port is open: its frames go to sockets this server holds.
+hubRuntime?.link.start();

@@ -13,6 +13,7 @@ import {
   NotificationPermission,
   noticeWindowNote,
 } from "@/components/notifications/notification-permission";
+import { HubStatusSection } from "@/components/settings/hub-status";
 import { SummonShortcutRow } from "@/components/settings/summon-shortcut";
 import { TodayUsageSection } from "@/components/settings/today-usage";
 import { VersionLine } from "@/components/settings/version-line";
@@ -208,6 +209,8 @@ function RouteComponent() {
           ) : null}
         </PageRows>
       </PageSection>
+      {/* Only on a VM that belongs to a company. See the component. */}
+      <HubStatusSection />
       {/* Only on a free trial, and only when today's count could be read. See the component. */}
       <TodayUsageSection />
       <PageSection title={t("General")}>
