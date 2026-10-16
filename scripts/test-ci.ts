@@ -3333,6 +3333,18 @@ const GROUPS: readonly {
    * committed late never skipped, an event's fields); events-socket.test.ts 6 (live delivery,
    * catch-up on reconnect, per-member delivery, heartbeat, a departure closing the socket, no
    * socket without a pass); audit.test.ts 4 (insert, and update, delete and truncate refused).
+   *
+   * RAISED 2026-10-16 FOR TEAM FILES AND SEARCH, from 46 to 111: files.test.ts 24 (bytes kept by
+   * hash and read back, a version replacing text and chunks, one blob held twice and let go once,
+   * a repeated key, the size limit at its byte, three visibilities refused and two given, two bad
+   * requests, three bad bodies, no pass, a text range, four bad ranges, who deletes a company
+   * file, events and the trail, a full company, a third upload while two are read);
+   * multipart.test.ts 15 (seven chunk sizes, a body cut short, a nameless part, a sink that stops
+   * the read, five boundaries); search.test.ts 23 (eight words and their forms, how a query is
+   * split, a particle both ways, every word required, two characters in names only, a snippet and
+   * where to read on, ranking, a Latin word's case, wildcards as characters, old versions and
+   * deleted files, the trail, five bad requests); visibility-property.test.ts 3 (three seeds of
+   * members, tasks and files, every way of asking). 46 and 65 is 111.
    */
   /*
    * RAISED 2026-10-16 FOR THE HUB'S FIX ROUND, from 46 to 50: a ping that throws kept inside its
