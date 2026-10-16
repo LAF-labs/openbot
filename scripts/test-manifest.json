@@ -314,6 +314,7 @@
   "hub/tests/events-socket.test.ts",
   "hub/tests/fleet.test.ts",
   "hub/tests/sync.test.ts",
+  "hub/tests/tasks.test.ts",
   "server/tests/account-lifecycle.integration.test.ts",
   "server/tests/account-routes.test.ts",
   "server/tests/agent-connection-live.test.ts",

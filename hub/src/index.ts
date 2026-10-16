@@ -4,6 +4,7 @@ import { createHubApp } from "./app";
 import { readHubConfig } from "./config";
 import { createHubDatabase, migrateHub } from "./db/client";
 import { sweepIdempotency } from "./idempotency";
+import { startTaskSweeper } from "./task-sweeper";
 
 const log = createLogger("hub");
 reportCrashes(log);
@@ -41,6 +42,11 @@ const sweep = setInterval(
   60 * 60 * 1000,
 );
 
+// A claim whose run stopped beating is freed within a minute of running out; once at boot too, for
+// the claims that ran out while the hub was down.
+const tasks = startTaskSweeper({ database, listeners, log });
+void tasks.sweep();
+
 log.info("boot", {
   ...buildOf(process.env),
   port: server.port,
@@ -53,6 +59,7 @@ log.info("boot", {
 // Bun 1.3.14's `stop` can wait forever on a socket it closed itself (hub/tests/support/hub.ts).
 process.on("SIGTERM", () => {
   clearInterval(sweep);
+  tasks.stop();
   listeners.closeAll(1001, "laf:hub_stopping");
   void Promise.race([server.stop(), Bun.sleep(5_000)])
     .then(() => database.close())
