@@ -3213,6 +3213,11 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * registered: another Bot's routine by the same name is not this call's, and this Bot's is drawn
  * though another has one by that name. 2532 and 2.
  *
+ * RAISED 2026-10-16 FOR QUIET HEALTH CHECKS: `root` by thirteen (to 1757), in `compose.test.ts`
+ * — each long-lived service asked at most once a minute and red within three (1), and the server's
+ * and the computer's bash checks run against a real answer: 200 and 204 green, 503, 500 and 302
+ * red, and red with nothing listening (2 × 6). 1744 and 13.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -3280,7 +3285,7 @@ const GROUPS: readonly {
     roots: ["agent-computer"],
     processes: 1,
   },
-  { name: "root", floor: 1744, roots: ["tests", "agent-bot"] },
+  { name: "root", floor: 1757, roots: ["tests", "agent-bot"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
