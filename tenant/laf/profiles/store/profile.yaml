@@ -1,0 +1,13 @@
+# 매장 판매 꾸러미. 미리 까는 것이고, 어떤 기능도 가리지 않는다.
+version: "1"
+skills:
+  - 매장판매
+  - 쇼핑가격
+  - 네이버블로그
+  - 세금노무
+routine_suggestions:
+  - review-watch
+  - unanswered-enquiries
+  - weekly-settlement
+  - stock-check
+  - competitor-price
