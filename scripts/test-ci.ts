@@ -3294,7 +3294,13 @@ const GROUPS: readonly {
    * catch-up on reconnect, per-member delivery, heartbeat, a departure closing the socket, no
    * socket without a pass); audit.test.ts 4 (insert, and update, delete and truncate refused).
    */
-  { name: "hub", floor: 46, roots: ["hub"] },
+  /*
+   * RAISED 2026-10-16 FOR THE HUB'S FIX ROUND, from 46 to 50: a ping that throws kept inside its
+   * timer, a socket opened before a rotation closed when the grace ends, one opened inside the
+   * grace with the old pass closed then while the new pass's stays (events-socket.test.ts, 3), and
+   * a name-only registry write leaving a running grace alone (auth.test.ts, 1).
+   */
+  { name: "hub", floor: 50, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
