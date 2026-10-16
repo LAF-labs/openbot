@@ -88,7 +88,7 @@ function CompanyPage() {
     <PageShell title={workspace ?? t("Company")}>
       {line?.note ? (
         <p
-          className="-mt-2 mb-4 text-muted-foreground text-sm"
+          className="mt-1 text-muted-foreground text-sm"
           data-company-line
           role="status"
         >
