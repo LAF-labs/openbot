@@ -5,6 +5,8 @@ import {
   HUB_VAULT_LEASE_MS,
   type HubVault,
   type HubVaultLease,
+  type HubVaultLeaseAsk,
+  type HubVaultPut,
 } from "../../shared/hub/protocol";
 import { createLogger } from "../../shared/log";
 import * as sharedSeal from "../../shared/login-seal";
@@ -101,14 +103,15 @@ async function store(
   id: string,
   extra: Record<string, unknown> = {},
 ): Promise<void> {
-  const answer = await call("admin", "PUT", `/${id}`, {
+  const body: HubVaultPut = {
     label: `Wing ${id}`,
     site: "wing",
     origins: [SITE],
     username: USERNAME,
     password: PASSWORD,
     ...extra,
-  });
+  };
+  const answer = await call("admin", "PUT", `/${id}`, body);
   expect(answer).toEqual({ status: 200, body: { ok: true, id } });
 }
 
@@ -120,10 +123,8 @@ async function grant(id: string, members: Who[]): Promise<void> {
 }
 
 async function lease(who: Who, id: string) {
-  return call(who, "POST", `/${id}/lease`, {
-    origin: SITE,
-    runId: `run-${who}`,
-  });
+  const ask: HubVaultLeaseAsk = { origin: SITE, runId: `run-${who}` };
+  return call(who, "POST", `/${id}/lease`, ask);
 }
 
 const leaseOf = (answer: { body: Record<string, unknown> }) =>
