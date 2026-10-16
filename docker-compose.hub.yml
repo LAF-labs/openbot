@@ -73,7 +73,13 @@ services:
       HUB_PUBLIC_ORIGIN: ${HUB_PUBLIC_ORIGIN:-http://localhost}
       HUB_FLEET_SECRET: ${HUB_FLEET_SECRET:-}
       HUB_PRIVATE_IP: ${HUB_PRIVATE_IP:-}
+      # Team files, by content hash (hub/src/files/store.ts). Unset, files and search are refused.
+      HUB_FILES_DIR: /srv/hub/files
       IMAGE_TAG: ${IMAGE_TAG:-stable}
+    volumes:
+      # Owned by the image's user (uid 1000) on first mount (hub/Dockerfile). laf-control: put the hub
+      # VM's block volume under this named volume (or bind it at /srv/hub/files, chowned 1000:1000).
+      - hub-files:/srv/hub/files
     ports:
       # Loopback only: `GET /hub/v1/metrics` is read here by the operator's collector over SSH, and
       # the front door refuses that path from outside (hub/Caddyfile).
@@ -122,5 +128,6 @@ services:
 
 volumes:
   hub-postgres-data:
+  hub-files:
   hub-caddy-data:
   hub-caddy-config:

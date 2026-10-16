@@ -36,7 +36,12 @@ ARG CHANNEL=
 ENV GIT_SHA=${REVISION} \
     BUILD_CHANNEL=${CHANNEL}
 
-# Nothing here writes to the image's disk, so it needs no root.
+# The one place the hub writes: team files (HUB_FILES_DIR in docker-compose.hub.yml). Made here and
+# given to the unprivileged user, because Docker fills an empty named volume from the image's
+# directory, owner included, the first time it is mounted — so the volume is the hub's to write.
+RUN mkdir -p /srv/hub/files && chown bun:bun /srv/hub/files
+
+# Nothing else here writes to the image's disk, so it needs no root.
 USER bun
 ENV PORT=7200
 EXPOSE 7200
