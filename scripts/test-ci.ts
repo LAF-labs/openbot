@@ -3255,6 +3255,17 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * .integration.test.ts, 3: a post sent once with its row's key, a write kept through an outage and
  * sent once after, a refusal ended); and the head of the prompt the same bytes with and without
  * the hub, and no hub tool without the pass (hub-tools-head.test.ts, 3). 4747 and 28.
+ *
+ * RAISED 2026-10-16 FOR "@라피" IN A TEAM ROOM: `server` by twenty-eight (to 4803) — what a mention
+ * names, who wrote a room's line, whose 라피 is working and what a turn posts (room-answers.test.ts,
+ * 18); the turn in the room's own conversation on a real Postgres and the real engine — read first,
+ * posted once as the person's 라피, nothing for another's mention, once when heard twice, nothing
+ * late, nothing twice, nothing after a failure, no move without the tool, and the conversation found
+ * again (room-answers.integration.test.ts, 8); the head the same bytes as a chat turn's
+ * (room-answers-head.test.ts, 1); and the line's listener hearing each event, a throw stopping
+ * nothing (hub-link.integration.test.ts, 1). 4775 and 28. `app` by five (to 2548): the room's words
+ * for who wrote what and whose 라피 is working, and the room's conversation found and named
+ * (hub-rooms.test.ts). 2543 and 5.
  */
 const GROUPS: readonly {
   name: string;
@@ -3262,8 +3273,8 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4775, roots: ["server"] },
-  { name: "app", floor: 2543, roots: ["app"] },
+  { name: "server", floor: 4803, roots: ["server"] },
+  { name: "app", floor: 2548, roots: ["app"] },
   {
     name: "agent-computer",
     /*
