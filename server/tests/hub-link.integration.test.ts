@@ -266,6 +266,60 @@ describe("the line to the company hub", () => {
     expect(asked.slice(before)).toEqual([]);
   });
 
+  test("a door that takes the socket and drops it at once is not knocked on faster for it", async () => {
+    const pass = newPass();
+    await putMember(hub, {
+      email: "f@laf.test",
+      vmOrigin: "https://f.agent.test",
+      pass,
+    });
+    const real = createHubHttp({
+      url: hub.url,
+      vmKey: pass,
+      sleep: async () => {},
+    });
+    const asked: number[] = [];
+    const counting: HubHttp = {
+      request: (request) => {
+        // `/me` only: each attempt starts with one. `/sync` is the poll between.
+        if (request.path === "/me") asked.push(Date.now());
+        return real.request(request);
+      },
+      socket: real.socket,
+    };
+    // Opens, then closes on the next tick: what a front door with its hub down did, live.
+    const flapping = (() => {
+      const socket = {
+        onopen: null as null | (() => void),
+        onclose: null as null | ((event: { code: number }) => void),
+        onmessage: null,
+        onerror: null,
+        send() {},
+        close() {},
+      };
+      setTimeout(() => {
+        socket.onopen?.();
+        setTimeout(() => socket.onclose?.({ code: 1011 }), 0);
+      }, 0);
+      return socket as unknown as WebSocket;
+    }) as () => WebSocket;
+    const link = createHubLink({
+      database,
+      http: counting,
+      hub: hub.url,
+      deliver: () => {},
+      timing: FAST,
+      openSocket: flapping,
+    });
+    links.push(link);
+    link.start();
+    await Bun.sleep(700);
+    link.stop();
+    // Waits of 50, 100, 200, 200 ms: about five asks in 700 ms. Reset on every open, it was fourteen.
+    expect(asked.length).toBeLessThanOrEqual(6);
+    expect(asked.length).toBeGreaterThanOrEqual(2);
+  });
+
   test("a hub that does not answer leaves the line disconnected and trying", async () => {
     const nowhere = Bun.serve({ port: 0, fetch: () => new Response() });
     const url = `http://localhost:${nowhere.port}`;
