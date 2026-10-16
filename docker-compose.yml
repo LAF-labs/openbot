@@ -102,11 +102,16 @@ services:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    # Once a minute when up, every second while it starts (HEALTH, QUIETLY, under agent-bot). Each
+    # `pg_isready` makes Postgres fork a backend for the handshake: ~40 ms of CPU, the dearest check
+    # here, and at every five seconds the largest single share of an idle VM's checks.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U openbot -d openbot"]
-      interval: 5s
+      interval: 60s
       timeout: 5s
-      retries: 10
+      retries: 3
+      start_period: 60s
+      start_interval: 1s
     # A person's VM reboots; their Bots are supposed to still be there when it does.
     restart: unless-stopped
 
@@ -332,13 +337,13 @@ services:
         condition: service_healthy
       agent-computer:
         condition: service_healthy
+    # The same GET the fleet monitor makes, written in the image's bash rather than a fresh `bun`
+    # (HEALTH, QUIETLY, under agent-bot): green on a 2xx status line and on nothing else.
     healthcheck:
-      test: ["CMD-SHELL", "bun -e \"const r = await fetch('http://localhost:3001/health'); process.exit(r.ok ? 0 : 1)\""]
-      interval: 10s
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/3001 && printf 'GET /health HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && read -r _ code _ <&3 && [[ $$code == 2?? ]]"]
+      interval: 60s
       timeout: 5s
-      retries: 5
-      # Checked every second while it starts, and every ten once it is up (see HEALTH WHILE
-      # STARTING under agent-bot).
+      retries: 3
       start_period: 60s
       start_interval: 1s
     # The process that holds a conversation in memory while a Bot answers it, and the one that
@@ -410,9 +415,9 @@ services:
     # `-O /dev/null` rather than `--spider`, which sends a HEAD the API's GET route does not answer.
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:2021/health"]
-      interval: 10s
+      interval: 60s
       timeout: 5s
-      retries: 5
+      retries: 3
       # The API waits on migrations and on two other containers being healthy, so a cold boot spends
       # a while with nothing behind this door. Failures in here do not count against `retries`.
       start_period: 60s
@@ -544,12 +549,11 @@ services:
     # 2026-09-10 (audit A5 §9): 503 → exit 0. The `web` healthcheck's `wget` fails on an HTTP error
     # status for the same reason.
     #
-    # Every second while starting, every thirty after (the image's own HEALTHCHECK says why): the
-    # server's `service_healthy` wait sees it ready as soon as it is, and an idle computer no longer
-    # starts a `bun` every few seconds to ask.
+    # Every second while starting, once a minute after, and in bash rather than a fresh `bun` (HEALTH,
+    # QUIETLY, under agent-bot) — this replaces the image's own HEALTHCHECK, which still starts one.
     healthcheck:
-      test: ["CMD-SHELL", "bun -e \"const r = await fetch('http://localhost:4100/health'); process.exit(r.ok ? 0 : 1)\""]
-      interval: 30s
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/4100 && printf 'GET /health HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && read -r _ code _ <&3 && [[ $$code == 2?? ]]"]
+      interval: 60s
       timeout: 5s
       retries: 3
       start_period: 60s
@@ -587,17 +591,34 @@ services:
       BOT_PROVIDER_POLICY: ${BOT_PROVIDER_POLICY:-}
     logging: *logging
     healthcheck:
-      test: ["CMD-SHELL", "bun -e \"const r = await fetch('http://localhost:4200/health'); process.exit(r.ok ? 0 : 1)\""]
-      interval: 10s
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:4200/health"]
+      interval: 60s
       timeout: 5s
-      retries: 5
+      retries: 3
       # HEALTH WHILE STARTING. The first check used to run a full `interval` after the start, so
       # every `up` waited ten seconds for agent-bot and agent-computer before the server could start,
       # and another ten before the server read as healthy. Measured 2026-09-26 on a 1-OCPU VM: 23.3 s
       # from `up` to an answering server, against about 7 s with a check every second while the
       # service is starting. `start_period` only bounds how long the fast checks run, and a failure
       # inside it does not count against `retries`. Once the first check passes, the interval goes
-      # back to ten seconds. Needs Docker 25 or later (the VMs run 29.8).
+      # back to the steady one. Needs Docker 25 or later (the VMs run 29.8).
+      #
+      # HEALTH, QUIETLY. Once up, every service is asked once a minute. Every check is a process the
+      # engine starts inside the container, and an idle VM was paying for five of them every 5–30 s,
+      # about 32 a minute: measured 2026-10-16 on a 1-OCPU A1, the whole idle VM at 3.8 % of its core
+      # with those and 1.2 % with these (`/proc/stat`, a minute at a time). A cold `up` got faster,
+      # not slower — all healthy in 6.0–6.7 s against 9.8–10.4 s — because Postgres, which used to be
+      # asked first at five seconds, is on the 1 s checks too. Nothing waits on a check after the
+      # start — compose's `service_healthy` and the fleet tool's wait both meet a freshly started
+      # container, which is on the 1 s checks — so the minute only sets how late `docker compose ps`
+      # turns red: three misses, about three minutes, against fifty seconds before. The fleet
+      # monitor asks the front door itself and is not slowed.
+      #
+      # And no `bun` where the image has something smaller: a `bun -e fetch(…)` is ~25 ms of CPU
+      # against ~5 for the same GET from bash or busybox `wget` (measured 2026-10-16 on a 1-OCPU A1,
+      # twenty in a row inside each container). Alpine's busybox `wget` here and on the front door;
+      # bash's /dev/tcp in the server and the computer, which ship no wget. Each still turns red on
+      # anything but a 2xx, as `r.ok` did.
       start_period: 60s
       start_interval: 1s
     # One turn in flight at a time per Bot, each carrying the conversation the API handed it.

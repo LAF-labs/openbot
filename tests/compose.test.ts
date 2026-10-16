@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -264,6 +264,8 @@ const parsedCompose = parseYaml(
       logging?: { driver?: string; options?: Record<string, string> };
       healthcheck?: {
         test?: string[];
+        interval?: string;
+        retries?: number;
         start_period?: string;
         start_interval?: string;
       };
@@ -342,7 +344,8 @@ test("sets Postgres for a 6GB VM on SSD, and logs the slow statements", () => {
  *
  * `bun -e "await fetch(…)"` resolves on a 503 exactly as on a 200 — measured 2026-09-10 (audit A5
  * §9): 503 → exit 0 — so two dials could not go red for anything short of a closed port. `r.ok`
- * and busybox `wget` both fail on a non-2xx; `pg_isready` is Postgres's own word.
+ * and busybox `wget` both fail on a non-2xx; `pg_isready` is Postgres's own word; the bash checks
+ * match the status line against 2xx (and are run against a real answer below).
  */
 test("gives every healthcheck a way to go red", () => {
   for (const [name, service] of Object.entries(parsedCompose.services)) {
@@ -355,7 +358,7 @@ test("gives every healthcheck a way to go red", () => {
     }
     const command = service.healthcheck.test?.join(" ") ?? "";
     expect(
-      /process\.exit\(r\.ok \? 0 : 1\)|^CMD-SHELL wget |^CMD-SHELL pg_isready /.test(
+      /process\.exit\(r\.ok \? 0 : 1\)|^CMD-SHELL wget |^CMD-SHELL pg_isready |^CMD bash -c .*&& \[\[ \$\$code == 2\?\? \]\]$/.test(
         command,
       ),
       `${name}: ${command}`,
@@ -373,11 +376,98 @@ test("gives every healthcheck a way to go red", () => {
  * difference.
  */
 test("checks the long-lived services every second while they start", () => {
-  for (const name of ["server", "web", "agent-bot", "agent-computer"]) {
+  for (const name of [
+    "postgres",
+    "server",
+    "web",
+    "agent-bot",
+    "agent-computer",
+  ]) {
     const health = parsedCompose.services[name]?.healthcheck;
     expect(health?.start_interval, name).toBe("1s");
     expect(health?.start_period, name).toBe("60s");
   }
+});
+
+/**
+ * Once up, each long-lived service is asked once a minute, and still turns red within about three.
+ *
+ * Every check is a process the engine starts inside the container. At 5–30 s across six services
+ * that was ~3.8 % of an idle 1-OCPU VM's CPU, measured 2026-10-16 (docker-compose.yml, HEALTH,
+ * QUIETLY). Nothing waits on a check once a container is up, so a longer interval only delays the
+ * red in `docker compose ps` — bounded here, so a quieter dial does not become one that never moves.
+ */
+test("asks each long-lived service once a minute, and turns red within three", () => {
+  const seconds = (value: string | undefined) => {
+    const match = /^(\d+)(s|m)$/.exec(value ?? "");
+    if (!match) throw new Error(`not a duration compose writes here: ${value}`);
+    return Number(match[1]) * (match[2] === "m" ? 60 : 1);
+  };
+  for (const name of [
+    "postgres",
+    "server",
+    "web",
+    "agent-bot",
+    "agent-computer",
+  ]) {
+    const health = parsedCompose.services[name]?.healthcheck;
+    const interval = seconds(health?.interval);
+    expect(interval, name).toBeGreaterThanOrEqual(60);
+    expect(interval * (health?.retries ?? 3), name).toBeLessThanOrEqual(180);
+  }
+});
+
+/**
+ * The server's and the computer's checks are bash, not a fresh `bun`, and still go red on any
+ * status but a 2xx — what `r.ok` gave, run here against a real HTTP answer rather than read.
+ *
+ * The command is taken from the file as compose would hand it to the engine (`$$` is compose's
+ * escape for one `$`), pointed at a local server instead of the container's port.
+ */
+describe.each(["server", "agent-computer"])("%s's healthcheck", (name) => {
+  const check = parsedCompose.services[name]?.healthcheck?.test ?? [];
+  const status = { code: 200 };
+  let server: ReturnType<typeof Bun.serve>;
+  beforeAll(() => {
+    server = Bun.serve({
+      port: 0,
+      fetch: (request) =>
+        new URL(request.url).pathname === "/health"
+          ? new Response("{}", { status: status.code })
+          : new Response("not here", { status: 404 }),
+    });
+  });
+  afterAll(() => server.stop(true));
+
+  const run = async (port: number) => {
+    expect(check.slice(0, 3)).toEqual(["CMD", "bash", "-c"]);
+    const script = (check[3] ?? "")
+      .replaceAll("$$", "$")
+      .replace(/\/dev\/tcp\/localhost\/\d+/, `/dev/tcp/localhost/${port}`);
+    const child = Bun.spawn(["bash", "-c", script], {
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    return await child.exited;
+  };
+
+  test.each([
+    [200, 0],
+    [204, 0],
+    [503, 1],
+    [500, 1],
+    [302, 1],
+  ])("answers %i → exit %i", async (code, exit) => {
+    status.code = code;
+    expect(await run(server.port as number)).toBe(exit);
+  });
+
+  test("is red when nothing listens", async () => {
+    const closed = Bun.serve({ port: 0, fetch: () => new Response("") });
+    const port = closed.port as number;
+    closed.stop(true);
+    expect(await run(port)).not.toBe(0);
+  });
 });
 
 /**

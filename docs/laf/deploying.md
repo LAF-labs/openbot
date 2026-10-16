@@ -87,11 +87,22 @@ the one service whose death is the product's death, and it used to have nothing.
 
 Every long-lived service's healthcheck also runs **every second while the
 service starts** (`start_interval: 1s`, inside a `start_period` of 60 s), and
-every ten seconds once it has passed. With only `interval: 10s`, Docker's first
+once a minute once it has passed. With only `interval: 10s`, Docker's first
 check came ten seconds after the start: `up` waited that long for `agent-bot`
 and `agent-computer`, and ten more before the server read as healthy. Measured
 2026-09-26 on a 1-OCPU VM, that was 23.3 s from `up` to an answering server,
 against about 7 s with the fast checks. It needs Docker 25 or later.
+
+Once a minute, because each check is a process the engine starts inside the
+container, and at every 5–30 s the five of them were most of an idle VM's CPU.
+Nothing waits on a check once a container is up, so the minute only decides
+how late `docker compose ps` turns red: three misses, about three minutes. The
+server and the computer are asked from bash and `agent-bot` with busybox
+`wget` rather than with a fresh `bun` — the same GET, red on anything but a
+2xx. Measured 2026-10-16 on a 1-OCPU VM at rest, the whole machine went from
+3.8 % of its core to 1.2 %, and a cold `up` reached all-healthy in 6.0–6.7 s
+against 9.8–10.4 s, since Postgres is now asked every second while it starts
+too.
 
 The `migrate` one-shot reads its ledger before it loads drizzle-kit
 (`server/scripts/migrate.ts`). When the newest migration in the journal is
