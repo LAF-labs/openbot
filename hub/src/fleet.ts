@@ -8,6 +8,7 @@ import {
   HUB_FLEET_KEY_LABEL,
   HUB_ROLES,
   type HubFleetEnvelope,
+  type HubFleetLeft,
   type HubFleetMember,
   type HubRole,
 } from "../../shared/hub/protocol";
@@ -19,6 +20,7 @@ import { emitEvent, type Listeners } from "./events";
 import { type Answer, IDEMPOTENCY_KEY_SHAPE, onceFor } from "./idempotency";
 import { leaveEveryRoom } from "./rooms";
 import { leaveEveryTask } from "./tasks";
+import { dropVaultFor, vaultOriginsOf } from "./vault";
 
 /**
  * The registry's door: laf-control tells the hub who its members are.
@@ -213,11 +215,17 @@ async function putMember(
       return { status: 404, body: { ok: false, code: HUB_FACTS.notFound } };
     }
     if (existing.state === "left") {
-      return {
-        status: 200,
-        body: { ok: true, member: { id: existing.id, state: "left" } },
+      const body: HubFleetLeft = {
+        ok: true,
+        member: { id: existing.id, state: "left" },
+        vault: { origins: await vaultOriginsOf(tx, existing.id) },
       };
+      return { status: 200, body };
     }
+    // Read before the grants go, and in the same transaction: after this commit the VM's pass
+    // opens nothing, so this answer is the one place the origins it must clear can come from.
+    const vaultOrigins = await vaultOriginsOf(tx, existing.id);
+    const vaultLogins = await dropVaultFor(tx, existing.id);
     // Leaving drops the pass and the VM with it: the hash, the grace, the origin. Nothing the
     // departed VM holds opens anything after this commit.
     await tx
@@ -233,6 +241,9 @@ async function putMember(
       .where(eq(hubMembers.id, existing.id));
     await leaveEveryRoom(tx, existing.id, FLEET_MEMBER);
     await leaveEveryTask(tx, existing.id, FLEET_MEMBER);
+    for (const loginId of vaultLogins) {
+      await emitEvent(tx, { type: "vault.changed", refId: loginId });
+    }
     const seq = await emitEvent(tx, {
       type: "member.changed",
       refId: existing.id,
@@ -242,13 +253,17 @@ async function putMember(
       member: FLEET_MEMBER,
       target: existing.id,
       outcome: "ok",
+      ...(vaultLogins.length > 0 ? { payload: { vaultLogins } } : {}),
     });
     effects.emitted = true;
     effects.closeMember = existing.id;
-    return {
-      status: 200,
-      body: { ok: true, member: { id: existing.id, state: "left" }, seq },
+    const body: HubFleetLeft = {
+      ok: true,
+      member: { id: existing.id, state: "left" },
+      seq,
+      vault: { origins: vaultOrigins },
     };
+    return { status: 200, body };
   }
 
   // Another member already holding this VM or this pass is a registry mistake, refused rather

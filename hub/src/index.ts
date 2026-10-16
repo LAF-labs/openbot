@@ -36,6 +36,7 @@ const { app, websocket, listeners } = createHubApp({
   filesDir: config.filesDir,
   filesQuotaBytes: config.filesQuotaBytes,
   ...(mirror ? { mirror } : {}),
+  vaultKey: config.vaultKey,
 });
 
 const server = Bun.serve({
@@ -82,6 +83,7 @@ log.info("boot", {
   // The one boot line about the mirror: "off" until laf-control installs the door, which a later
   // pass finds by itself and logs (`blob_mirror_door`), as it logs any later change.
   mirror: door,
+  vault: config.vaultKey ? "set" : "unset",
 });
 
 // An upgrade stops this container. The VMs are told the hub is going away (1001) and reconnect to
