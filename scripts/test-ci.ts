@@ -3246,7 +3246,8 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * 4401, a hub that does not answer); the two doors (hub-routes.test.ts, 6); and the two `.env`
  * lines (config.test.ts, 10). And `app` by nine (to 2543): the settings line, the hub's four facts
  * in Korean, and the socket telling a hub frame from a roster patch (hub-status.test.ts). 4711 and
- * 35; 2534 and 9.
+ * 35; 2534 and 9. Then `server` by one more (to 4747): a door that takes the socket and drops it
+ * at once is not asked faster for it (hub-link.integration.test.ts).
  */
 const GROUPS: readonly {
   name: string;
@@ -3254,7 +3255,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4746, roots: ["server"] },
+  { name: "server", floor: 4747, roots: ["server"] },
   { name: "app", floor: 2543, roots: ["app"] },
   {
     name: "agent-computer",
