@@ -3,9 +3,8 @@
  * person's VM database, nor restored over one.
  *
  * The registry, the event log, the idempotency ledger and the trail (0000); the team rooms (0001);
- * the team's files and what search reads of them (0002); team skills and team memory (0003).
- * Tasks and the vault arrive
- * with the changes that build them, each with its own migration.
+ * the team's files and what search reads of them (0002); team skills and team memory (0003); the
+ * task board (0004). The vault arrives with the change that builds it, with its own migration.
  */
 import { sql } from "drizzle-orm";
 import {
@@ -13,6 +12,7 @@ import {
   bigserial,
   boolean,
   check,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -178,10 +178,92 @@ export const hubRoomMembers = pgTable(
 );
 
 /**
- * Who is on a task, for `task:<id>` visibility. Only the membership: the task itself (its title,
- * its stage, its notes) arrives with the change that builds tasks, which adds the foreign key. It
- * is here now because a file can already be a task's, and the rule that says who sees it
- * (`hub_visible_to`, migration 0001) has to read something that exists.
+ * The task board. A task is one piece of the company's work: who has it (`assignee`), where it
+ * stands (`stage`), and — while a 라피 is working on it — which run holds it and until when.
+ *
+ * THE CLAIM IS THREE COLUMNS AND ONE UPDATE. `checkout_run_id`, `checkout_by` and
+ * `lock_expires_at` are set together by a single conditional UPDATE (`hub/src/tasks.ts`), so two
+ * runs asking at once cannot both be told yes: Postgres makes the second wait on the first's row
+ * lock and then re-reads the row, which no longer matches. The claim runs out unless its run beats
+ * (`HUB_TASK_LOCK_MS`), and the hub's sweep frees what ran out, so a VM that died mid-task does
+ * not hold the task forever.
+ *
+ * `version` is what a person's edit is checked against: a board that read the task before a run
+ * moved it is told so (`laf:task_stale`) instead of writing over what the run did.
+ */
+export const hubTasks = pgTable(
+  "hub_tasks",
+  {
+    id: text("id").primaryKey(),
+    title: text("title").notNull(),
+    description: text("description"),
+    stage: text("stage").notNull().default("todo"),
+    visibility: text("visibility").notNull().default("company"),
+    assignee: text("assignee"),
+    assignedBy: text("assigned_by").references(() => hubMembers.id),
+    createdBy: text("created_by").references(() => hubMembers.id),
+    checkoutRunId: text("checkout_run_id"),
+    checkoutBy: text("checkout_by").references(() => hubMembers.id),
+    lockExpiresAt: timestamp("lock_expires_at", { withTimezone: true }),
+    version: integer("version").notNull().default(1),
+    rank: doublePrecision("rank").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    doneAt: timestamp("done_at", { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      "hub_tasks_stage",
+      sql`${table.stage} in ('todo', 'doing', 'review', 'blocked', 'done')`,
+    ),
+    check(
+      "hub_tasks_visibility",
+      sql`${table.visibility} = 'company' or ${table.visibility} like 'me:_%' or ${table.visibility} like 'task:_%'`,
+    ),
+    check(
+      "hub_tasks_assignee",
+      sql`${table.assignee} is null or ${table.assignee} like 'm:_%' or ${table.assignee} like 'bot:_%' or ${table.assignee} like 'job:_%'`,
+    ),
+    // A claim is all three columns or none: a run id with no expiry would never be swept.
+    check(
+      "hub_tasks_checkout",
+      sql`(${table.checkoutRunId} is null) = (${table.lockExpiresAt} is null) and (${table.checkoutRunId} is null) = (${table.checkoutBy} is null)`,
+    ),
+    index("hub_tasks_created").on(table.createdAt, table.id),
+    // What the sweep reads every minute: only the claimed rows, by when they run out.
+    index("hub_tasks_lock")
+      .on(table.lockExpiresAt)
+      .where(sql`${table.checkoutRunId} is not null`),
+  ],
+);
+
+/**
+ * A task's notes, oldest first. A 라피's note is one line of fact or link (`HUB_TASK_LIMITS`); what a
+ * run met that a person has to allow is written as its topic only, never the values it saw.
+ */
+export const hubTaskNotes = pgTable(
+  "hub_task_notes",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => hubTasks.id, { onDelete: "cascade" }),
+    by: text("by").notNull(),
+    text: text("text").notNull(),
+    runId: text("run_id"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("hub_task_notes_task").on(table.taskId, table.id)],
+);
+
+/**
+ * Who is on a task. A task whose visibility is `task:<id>` is seen by these members, and so is
+ * every file put under it. The same table the files change reads for `task:` visibility; whichever
+ * of the two migrations runs second finds it made (`hub/drizzle/0004_hub_tasks.sql`).
  */
 export const hubTaskMembers = pgTable(
   "hub_task_members",
@@ -300,7 +382,7 @@ export const hubFileVersions = pgTable(
  * now; skills, tasks, rooms and memory add theirs. A new version replaces its file's chunks in
  * the transaction that writes it, and a deleted file's go with it — there is nothing to sweep.
  *
- * The trigram index is the migration's (0001), as the product's 0065 is: an operator class and
+ * The trigram index is the migration's (0002), as the product's 0065 is: an operator class and
  * its statistics target are not drizzle's to describe.
  */
 export const hubChunks = pgTable(

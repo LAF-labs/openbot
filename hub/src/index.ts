@@ -5,6 +5,7 @@ import { readHubConfig } from "./config";
 import { createHubDatabase, migrateHub } from "./db/client";
 import { createBlobMirror } from "./files/mirror";
 import { sweepIdempotency } from "./idempotency";
+import { startTaskSweeper } from "./task-sweeper";
 import { closeUploads, serveUploads } from "./uploads";
 
 const log = createLogger("hub");
@@ -66,6 +67,11 @@ const sweep = setInterval(
   60 * 60 * 1000,
 );
 
+// A claim whose run stopped beating is freed within a minute of running out; once at boot too, for
+// the claims that ran out while the hub was down.
+const tasks = startTaskSweeper({ database, listeners, log });
+void tasks.sweep();
+
 log.info("boot", {
   ...buildOf(process.env),
   port: server.port,
@@ -84,6 +90,7 @@ log.info("boot", {
 // itself (hub/tests/support/hub.ts).
 process.on("SIGTERM", () => {
   clearInterval(sweep);
+  tasks.stop();
   listeners.closeAll(1001, "laf:hub_stopping");
   void Promise.race([
     Promise.all([server.stop(), mirror?.stop(), closeUploads(uploads)]),
