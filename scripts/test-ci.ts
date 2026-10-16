@@ -3275,6 +3275,13 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * RAISED 2026-10-18 FOR 회사'S FIRST REVIEW: `app` by six (to 2570) — nobody taken for a colleague
  * who left before the roster arrives, a new room's colleagues never this person and nobody until
  * this person is known, and a room or file pressed again keeping its key (hub-company.test.ts).
+ *
+ * RAISED 2026-10-16 FOR 라피'S TWO HUB TOOLS: `server` by twenty-eight (to 4775) — the reads against
+ * a scripted hub, what is refused before anybody is asked, and the hub's mark on a stored result
+ * (hub-tools.test.ts, 22); the writes through the outbox on a real Postgres (hub-tools
+ * .integration.test.ts, 3: a post sent once with its row's key, a write kept through an outage and
+ * sent once after, a refusal ended); and the head of the prompt the same bytes with and without
+ * the hub, and no hub tool without the pass (hub-tools-head.test.ts, 3). 4747 and 28.
  */
 const GROUPS: readonly {
   name: string;
