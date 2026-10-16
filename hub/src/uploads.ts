@@ -16,7 +16,9 @@ import type { Logger } from "../../shared/log";
  * by a reader that keeps up: 773 MB resident at the peak through `Bun.serve`, 117 MB through
  * `node:http` in the same Bun with the body handed on as a web stream. `node:http` pauses the socket
  * while the stream's reader is behind, so the network waits for the disk instead of the heap holding
- * the difference — up to a whole gigabyte file, more than the hub's 512 MB.
+ * the difference. In the hub's container (512 MB) through `Bun.serve`, a 1 GB upload was killed
+ * for memory and two 300 MB ones at once peaked at 502 MB; through this listener the same 1 GB
+ * peaked at 172 MB resident.
  *
  * The request is handed to the SAME Hono app as every other route: the pass, the limits and the
  * trail are the ones `src/files/routes.ts` applies, and nothing about an upload is decided here.
