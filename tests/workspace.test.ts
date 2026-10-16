@@ -14,7 +14,7 @@ function packageManifest(path: string) {
 }
 
 describe("LAF Agent workspace", () => {
-  test("defines the app, server, both agents and the desktop packages", () => {
+  test("defines the app, server, both agents, the desktop and the hub packages", () => {
     const rootManifest = JSON.parse(
       readFileSync(join(repositoryRoot, "package.json"), "utf8"),
     ) as { workspaces: string[] };
@@ -26,6 +26,9 @@ describe("LAF Agent workspace", () => {
      *
      * `agent-computer` was outside this list until 2026-09, which is why root `typecheck` had never
      * seen the service that drives the browser.
+     *
+     * `hub` is the company hub (2026-10-16): a process of its own on a VM of its own, which a
+     * company's members' VMs talk to. Not part of a person's deployment.
      */
     expect(rootManifest.workspaces).toEqual([
       "app",
@@ -33,6 +36,7 @@ describe("LAF Agent workspace", () => {
       "agent-bot",
       "agent-computer",
       "desktop",
+      "hub",
     ]);
 
     for (const packageName of rootManifest.workspaces) {
