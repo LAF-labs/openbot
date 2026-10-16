@@ -21,6 +21,7 @@ COPY server/package.json server/package.json
 COPY agent-bot/package.json agent-bot/package.json
 COPY agent-computer/package.json agent-computer/package.json
 COPY desktop/package.json desktop/package.json
+COPY hub/package.json hub/package.json
 RUN bun install --frozen-lockfile --filter=agent-bot
 
 # Preserve the repo layout so `../../shared/bot-prompt` resolves the same in the image and locally.
