@@ -10,6 +10,10 @@ export type HubConfig = {
   /** This hub's registry key (`HMAC(master, "laf-hub-fleet/v1 <origin>")`, hex). */
   fleetSecret: string | undefined;
   privateIp: string | null;
+  /** `HUB_FILES_DIR`: the volume team files are kept on. Unset, the hub keeps no files. */
+  filesDir: string | null;
+  /** `HUB_FILES_QUOTA_BYTES`: the company's share of that volume; unset, the disk's own end. */
+  filesQuotaBytes: number | null;
 };
 
 const KEY_SHAPE = /^[0-9a-f]{64}$/;
@@ -38,5 +42,21 @@ export function readHubConfig(
   if (privateIp !== null && !IPV4.test(privateIp)) {
     throw new Error("HUB_PRIVATE_IP is not an IPv4 address");
   }
-  return { databaseUrl, port, publicOrigin, fleetSecret, privateIp };
+  const filesDir = env.HUB_FILES_DIR?.trim() || null;
+  if (filesDir !== null && !filesDir.startsWith("/")) {
+    throw new Error("HUB_FILES_DIR is not an absolute path");
+  }
+  const quota = env.HUB_FILES_QUOTA_BYTES?.trim() || null;
+  if (quota !== null && !/^[1-9]\d{0,15}$/.test(quota)) {
+    throw new Error("HUB_FILES_QUOTA_BYTES is not a number of bytes");
+  }
+  return {
+    databaseUrl,
+    port,
+    publicOrigin,
+    fleetSecret,
+    privateIp,
+    filesDir,
+    filesQuotaBytes: quota === null ? null : Number(quota),
+  };
 }

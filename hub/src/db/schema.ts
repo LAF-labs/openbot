@@ -2,12 +2,13 @@
  * The hub's tables. Every name starts `hub_`, so a dump of a hub can never be mistaken for a
  * person's VM database, nor restored over one.
  *
- * Only what the registry, the event log, the idempotency ledger and the trail need. Files, skills,
- * memory, rooms, tasks and the vault arrive with the changes that build them, each with its own
- * migration.
+ * The registry, the event log, the idempotency ledger and the trail (0000); the team's files and
+ * what search reads of them (0001). Skills, memory, rooms, tasks and the vault arrive with the
+ * changes that build them, each with its own migration.
  */
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   bigserial,
   boolean,
   check,
@@ -18,6 +19,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  unique,
 } from "drizzle-orm/pg-core";
 
 /**
@@ -127,4 +129,125 @@ export const hubAudit = pgTable(
     payload: jsonb("payload"),
   },
   (table) => [index("hub_audit_at").on(table.at)],
+);
+
+/**
+ * Who is on a task, for `task:<id>` visibility. Only the membership: the task itself (its title,
+ * its stage, its notes) arrives with the change that builds tasks, which adds the foreign key. It
+ * is here now because a file can already be a task's, and the rule that says who sees it
+ * (`hub_visible_to`, migration 0001) has to read something that exists.
+ */
+export const hubTaskMembers = pgTable(
+  "hub_task_members",
+  {
+    taskId: text("task_id").notNull(),
+    memberId: text("member_id")
+      .notNull()
+      .references(() => hubMembers.id),
+  },
+  (table) => [
+    primaryKey({ columns: [table.taskId, table.memberId] }),
+    index("hub_task_members_member").on(table.memberId),
+  ],
+);
+
+/**
+ * The bytes, once per content: a file's versions point here by SHA-256, and the bytes live on the
+ * hub's volume at `<HUB_FILES_DIR>/ab/cd/<sha256>`. Two members uploading the same file make one
+ * blob. `refs` counts the versions of files not deleted that point here; a blob at 0 is what a
+ * later sweep removes. `mirrored_at` is for the copy to the bucket, which a later change makes.
+ */
+export const hubBlobs = pgTable("hub_blobs", {
+  sha256: text("sha256").primaryKey(),
+  bytes: bigint("bytes", { mode: "number" }).notNull(),
+  refs: integer("refs").notNull().default(0),
+  storedAt: timestamp("stored_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  mirroredAt: timestamp("mirrored_at", { withTimezone: true }),
+});
+
+/**
+ * A team file: where it sits, who may see it, and which version is its newest. Deleting sets
+ * `deleted_at`; from then on no query a member can reach returns it.
+ */
+export const hubFiles = pgTable(
+  "hub_files",
+  {
+    id: text("id").primaryKey(),
+    folder: text("folder").notNull().default("/"),
+    name: text("name").notNull(),
+    visibility: text("visibility").notNull().default("company"),
+    /** The task of a `task:<id>` file, for ranking a run's own task first. */
+    taskId: text("task_id"),
+    version: integer("version").notNull().default(0),
+    createdBy: text("created_by").references(() => hubMembers.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      "hub_files_visibility",
+      sql`${table.visibility} = 'company' or ${table.visibility} like 'me:_%' or ${table.visibility} like 'task:_%'`,
+    ),
+    index("hub_files_folder_name").on(table.folder, table.name, table.id),
+  ],
+);
+
+/** Every version of a file: who wrote it, its bytes, and the words the uploading VM read out. */
+export const hubFileVersions = pgTable(
+  "hub_file_versions",
+  {
+    id: text("id").primaryKey(),
+    fileId: text("file_id")
+      .notNull()
+      .references(() => hubFiles.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    sha256: text("sha256")
+      .notNull()
+      .references(() => hubBlobs.sha256),
+    bytes: bigint("bytes", { mode: "number" }).notNull(),
+    mime: text("mime"),
+    text: text("text"),
+    textChars: integer("text_chars"),
+    by: text("by").references(() => hubMembers.id),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("hub_file_versions_file_version").on(table.fileId, table.version),
+  ],
+);
+
+/**
+ * What search reads: a file's newest text cut into overlapping pieces, each carrying its source's
+ * visibility so the permission is decided in the same query as the match. `source_kind` is `file`
+ * now; skills, tasks, rooms and memory add theirs. A new version replaces its file's chunks in
+ * the transaction that writes it, and a deleted file's go with it — there is nothing to sweep.
+ *
+ * The trigram index is the migration's (0001), as the product's 0065 is: an operator class and
+ * its statistics target are not drizzle's to describe.
+ */
+export const hubChunks = pgTable(
+  "hub_chunks",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    sourceKind: text("source_kind").notNull(),
+    sourceId: text("source_id").notNull(),
+    ordinal: integer("ordinal").notNull(),
+    text: text("text").notNull(),
+    title: text("title"),
+    visibility: text("visibility").notNull(),
+    taskId: text("task_id"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  // By source id alone, never led by `source_kind`: with no statistics on a young table the planner
+  // took an index on `source_kind = 'file'` — every row — over the trigram index, and a search
+  // for a rare word read all 10,000 chunks (measured: 88 ms where the trigram index takes 1 ms).
+  // Ids are unique across kinds (`f_…`), so the id finds a source's chunks by itself.
+  (table) => [index("hub_chunks_source").on(table.sourceId, table.ordinal)],
 );

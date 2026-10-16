@@ -40,6 +40,14 @@ export const HUB_FACTS = {
   forbidden: "laf:hub_forbidden",
   /** Nothing the member may see answers to that id. */
   notFound: "laf:hub_not_found",
+  /** The hub's file space is full (its disk, or the company's share of it). Reads still work. */
+  full: "laf:hub_full",
+  /** One file is larger than `HUB_FILE_MAX_BYTES`. */
+  fileTooLarge: "laf:hub_file_too_large",
+  /** The hub is reading as many uploads as it takes at once. Retried, after `Retry-After`. */
+  busy: "laf:hub_busy",
+  /** The hub holds no file space (`HUB_FILES_DIR` unset): files and search are not offered. */
+  filesUnset: "laf:hub_files_unset",
 } as const;
 
 export type HubRole = "owner" | "admin" | "member";
@@ -48,7 +56,7 @@ export const HUB_ROLES: readonly HubRole[] = ["owner", "admin", "member"];
 export type HubMemberState = "active" | "left";
 
 /** The kinds of change an event names. A VM drops a type it does not know. */
-export const HUB_EVENT_TYPES = ["member.changed"] as const;
+export const HUB_EVENT_TYPES = ["member.changed", "file.changed"] as const;
 export type HubEventType = (typeof HUB_EVENT_TYPES)[number];
 
 /**
@@ -151,3 +159,117 @@ export type HubFleetEnvelope =
       hub: string;
       workspace: { name: string; plan?: string | null };
     };
+
+/**
+ * Who may see a file, its chunks and the events about it — the same three values everywhere the
+ * hub keeps something a member may not see:
+ *
+ * - `company`: every member.
+ * - `me:<member id>`: that member alone.
+ * - `task:<task id>`: the members of that task (`hub_task_members`).
+ *
+ * The hub decides it in the query itself (`hub_visible_to` in `hub/drizzle/0001_hub_files.sql`),
+ * never by filtering a page afterwards.
+ */
+export type HubVisibility = "company" | `me:${string}` | `task:${string}`;
+
+/** One file, at its newest version, as a list or `GET /files/:id` gives it. */
+export type HubFile = {
+  id: string;
+  name: string;
+  /** `/` or `/a/b`: where it sits in the company's folders. */
+  folder: string;
+  /** Bytes of the newest version. */
+  size: number;
+  version: number;
+  sha256: string;
+  mime: string | null;
+  /** The member who wrote the newest version. */
+  by: string | null;
+  /** ISO 8601: when the newest version was written. */
+  at: string;
+  visibility: HubVisibility;
+  /** Whether the uploading VM sent the words read out of it, so `/text` and search have them. */
+  hasText: boolean;
+};
+
+/** `GET /hub/v1/files?folder=&cursor=`. `next` goes back as `cursor`; null on the last page. */
+export type HubFileList = { ok: true; files: HubFile[]; next: string | null };
+
+/** The most one `GET /files` page lists. */
+export const HUB_FILES_PAGE = 100;
+
+/** The largest file the hub takes: the same gigabyte a Bot's own download may be. */
+export const HUB_FILE_MAX_BYTES = 1024 * 1024 * 1024;
+
+/**
+ * The most text one file carries, in characters. The uploading VM's converter reads a document
+ * into words; a file whose words run past this is refused rather than cut silently, since a
+ * search that misses the second half of a file it claims to have read is worse than a refusal.
+ */
+export const HUB_TEXT_MAX_CHARS = 2_000_000;
+
+/** The most one `GET /files/:id/text` hands back. */
+export const HUB_TEXT_READ_MAX = 20_000;
+
+/** `GET /hub/v1/files/:id/text?from=&limit=`: characters `from` up to `from + limit`. */
+export type HubFileText = {
+  ok: true;
+  text: string;
+  from: number;
+  /** All the characters the file's text holds. */
+  total: number;
+  /** More follows: ask again with `from` set to `from + text.length`. */
+  truncated: boolean;
+};
+
+/**
+ * `PUT /hub/v1/files`, multipart, with an `Idempotency-Key`:
+ *
+ * - `meta` (JSON): `{ name, folder?, visibility? }` for a new file, or `{ id }` for a new version
+ *   of one — a version keeps the file's name, folder and visibility.
+ * - `text` (optional): the words the VM's converter read out of the file.
+ * - `blob`: the file's bytes.
+ */
+export type HubFilePutMeta =
+  | { id: string }
+  | { name: string; folder?: string; visibility?: HubVisibility };
+
+export type HubFilePut = {
+  ok: true;
+  id: string;
+  version: number;
+  sha256: string;
+};
+
+/** How a file's text is cut for search: 1,200 characters, each overlapping the last by 200. */
+export const HUB_CHUNK_CHARS = 1_200;
+export const HUB_CHUNK_OVERLAP = 200;
+
+/** `POST /hub/v1/search` — a POST because what a person looks for is content, kept out of logs. */
+export type HubSearchRequest = {
+  q: string;
+  /** Hits wanted, at most `HUB_SEARCH_MAX_HITS`; `HUB_SEARCH_HITS` when absent. */
+  limit?: number;
+  /** A task the asking run works on: its files rank higher. */
+  task?: string;
+};
+
+export const HUB_SEARCH_HITS = 10;
+export const HUB_SEARCH_MAX_HITS = 30;
+/** How much of a chunk a hit carries. */
+export const HUB_SNIPPET_CHARS = 300;
+
+export type HubSearchHit = {
+  kind: "file";
+  /** The file's id: `GET /files/:id/text?from=` reads on from `where.from`. */
+  id: string;
+  title: string;
+  where: { folder: string; from: number };
+  snippet: string;
+  score: number;
+  at: string;
+  by: string | null;
+};
+
+export type HubSearchResult = { ok: true; hits: HubSearchHit[] };
