@@ -8,6 +8,7 @@ import {
   HUB_FLEET_KEY_LABEL,
   HUB_ROLES,
   type HubFleetEnvelope,
+  type HubFleetLeft,
   type HubFleetMember,
   type HubRole,
 } from "../../shared/hub/protocol";
@@ -204,14 +205,12 @@ async function putMember(
       return { status: 404, body: { ok: false, code: HUB_FACTS.notFound } };
     }
     if (existing.state === "left") {
-      return {
-        status: 200,
-        body: {
-          ok: true,
-          member: { id: existing.id, state: "left" },
-          vault: { origins: await vaultOriginsOf(tx, existing.id) },
-        },
+      const body: HubFleetLeft = {
+        ok: true,
+        member: { id: existing.id, state: "left" },
+        vault: { origins: await vaultOriginsOf(tx, existing.id) },
       };
+      return { status: 200, body };
     }
     // Read before the grants go, and in the same transaction: after this commit the VM's pass
     // opens nothing, so this answer is the one place the origins it must clear can come from.
@@ -246,15 +245,13 @@ async function putMember(
     });
     effects.emitted = true;
     effects.closeMember = existing.id;
-    return {
-      status: 200,
-      body: {
-        ok: true,
-        member: { id: existing.id, state: "left" },
-        seq,
-        vault: { origins: vaultOrigins },
-      },
+    const body: HubFleetLeft = {
+      ok: true,
+      member: { id: existing.id, state: "left" },
+      seq,
+      vault: { origins: vaultOrigins },
     };
+    return { status: 200, body };
   }
 
   // Another member already holding this VM or this pass is a registry mistake, refused rather
