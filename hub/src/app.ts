@@ -17,6 +17,7 @@ import { hubMembers, hubWorkspace } from "./db/schema";
 import { createListeners, eventsSince, headSeq } from "./events";
 import { fleetRoutes } from "./fleet";
 import { countIdempotency } from "./idempotency";
+import { memberRoutes } from "./members";
 import { eventSocket } from "./socket";
 
 export type HubAppOptions = {
@@ -116,6 +117,8 @@ export function createHubApp(options: HubAppOptions) {
     };
     return context.json(body);
   });
+
+  hub.route("/members", memberRoutes({ database, member }));
 
   hub.get("/sync", member, async (context) => {
     const since = cursorOf(context.req.query("since"), 0);

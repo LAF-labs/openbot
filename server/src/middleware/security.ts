@@ -42,6 +42,7 @@ import { bodyLimit } from "hono/body-limit";
 import { getConnInfo } from "hono/bun";
 import { every } from "hono/combine";
 import { ATTACHMENT_UPLOAD_MAX_BYTES } from "../../../shared/attachments";
+import { HUB_UPLOAD_MAX_BYTES } from "../../../shared/hub/upload";
 
 export const BODY_LIMIT_BYTES = 1_000_000;
 
@@ -74,6 +75,15 @@ export const LARGER_BODIES: ReadonlyArray<{
     name: "attachment",
     matches: (path) => /^\/api\/channels\/[^/]+\/attachments\/?$/.test(path),
     maxBytes: ATTACHMENT_UPLOAD_MAX_BYTES,
+  },
+  /*
+   * A team file from the 회사 screen (`hub/routes-ui.ts`): streamed through to the company hub, never
+   * held here, behind the session guard, and like the attachment only for a declared length.
+   */
+  {
+    name: "hub file",
+    matches: (path) => /^\/api\/hub\/files\/?$/.test(path),
+    maxBytes: HUB_UPLOAD_MAX_BYTES,
   },
 ];
 

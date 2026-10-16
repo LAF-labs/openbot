@@ -3,6 +3,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { focusRingBare } from "@/components/ui/focus";
 import { isProject } from "@/lib/channels/projects";
 import { channelListQueryOptions } from "@/lib/channels/queries";
+import { hubStatusQueryOptions } from "@/lib/hub/status";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +21,10 @@ import { cn } from "@/lib/utils";
  * 프로젝트 WEARS A MARK WHILE A PROJECT HAS SOMETHING UNREAD. A project's answer lands while its
  * person is in the main conversation, and nothing else on that screen is about projects. The
  * main conversation's own unread mark is the menu button's, as it was.
+ *
+ * 회사 IS A THIRD PART ONLY WHERE THIS VM BELONGS TO A COMPANY (`/api/hub/status`). On a VM whose
+ * person is on their own it is not drawn at all — not greyed, not explained — and while the first
+ * answer is out it is not drawn either: a 회사 that appears and then vanishes would be a claim.
  *
  * IT READS THE LIST OF CONVERSATIONS AND TRUSTS NONE OF IT. It is outside the roster's seam (the
  * row is the window's handle, and stays whatever fails): an answer that is not a list is no
@@ -50,10 +55,15 @@ export function ScreenSwitch() {
   // The main conversation: its own address, the address that opens on it, or a new one.
   const isOnChat = pathname === "/" || (open !== null && !isOnProject);
   const hasUnread = projects.some((project) => project.unread === true);
+  const hub = useQuery(hubStatusQueryOptions());
+  const hasCompany = hub.data?.configured === true;
+  const isOnCompany = pathname === "/company";
 
   return (
     <nav
-      aria-label={t("Chat or projects")}
+      aria-label={
+        hasCompany ? t("Chat, projects or company") : t("Chat or projects")
+      }
       className="flex h-8 shrink-0 items-center rounded-full bg-muted p-0.5 text-sm"
       data-screen-switch
     >
@@ -83,6 +93,16 @@ export function ScreenSwitch() {
           </>
         ) : null}
       </Link>
+      {hasCompany ? (
+        <Link
+          aria-current={isOnCompany ? "page" : undefined}
+          className={cn(PART, isOnCompany ? ON : OFF, focusRingBare)}
+          data-screen="company"
+          to="/company"
+        >
+          {t("Company")}
+        </Link>
+      ) : null}
     </nav>
   );
 }

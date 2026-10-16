@@ -47,8 +47,24 @@ export const HUB_ROLES: readonly HubRole[] = ["owner", "admin", "member"];
 
 export type HubMemberState = "active" | "left";
 
-/** The kinds of change an event names. A VM drops a type it does not know. */
-export const HUB_EVENT_TYPES = ["member.changed"] as const;
+/**
+ * The kinds of change an event names. A VM drops a type it does not know.
+ *
+ * Beside `member.changed`, the kinds the 회사 screen redraws on (`app/src/lib/hub/company.ts`):
+ * the rooms' (#250, `laf/hub-rooms`), the team files' (`laf/hub-files`) and the skills' and team
+ * memory's (`laf/hub-skills-memory`). Each of those branches adds its own here; at rebase the list
+ * is their union.
+ */
+export const HUB_EVENT_TYPES = [
+  "member.changed",
+  "room.changed",
+  "room.message",
+  "room.mention",
+  "file.changed",
+  "skill.changed",
+  "memory.changed",
+  "memory.proposals",
+] as const;
 export type HubEventType = (typeof HUB_EVENT_TYPES)[number];
 
 /**
@@ -77,6 +93,16 @@ export type HubMe = {
   privateIp: string | null;
   /** The newest event number now; a VM with no cursor starts here. */
   seq: number;
+};
+
+/**
+ * `GET /hub/v1/members`: the company's members as any member may see them — who is in it and in
+ * what role, so a room can show a name where its messages say `m:<id>`. No address, no VM origin:
+ * an email is the registry's (laf-control's) to hold, not every colleague's.
+ */
+export type HubMemberList = {
+  ok: true;
+  members: { id: string; name: string | null; role: HubRole }[];
 };
 
 /** The most `GET /sync` returns at once. */
