@@ -26,6 +26,8 @@ export type EmitInput = {
   actor?: string | null;
   /** Null or absent: every member. Otherwise only these member ids. */
   visibleTo?: readonly string[] | null;
+  /** The collection's version after this change (`versions.ts`), on the types that have one. */
+  version?: number | null;
 };
 
 /** Writes one event inside the caller's transaction. Listeners hear of it after the commit. */
@@ -41,6 +43,7 @@ export async function emitEvent(
       refId: input.refId ?? null,
       actor: input.actor ?? null,
       visibleTo: input.visibleTo ? [...input.visibleTo] : null,
+      version: input.version ?? null,
     })
     .returning({ seq: hubEvents.seq });
   if (!row) throw new Error("hub_events insert returned nothing");
@@ -81,9 +84,10 @@ export async function eventsSince(
     type: string;
     ref_id: string | null;
     actor: string | null;
+    version: string | null;
     at: Date | string;
   }>(sql`
-    select seq::text as seq, type, ref_id, actor, at
+    select seq::text as seq, type, ref_id, actor, version::text as version, at
       from hub_events
      where seq > ${since}
        and seq <= ${head}
@@ -98,6 +102,8 @@ export async function eventsSince(
       refId: row.ref_id,
       actor: row.actor,
       at: new Date(row.at).toISOString(),
+      // Only where there is one, so an event without a version reads as it did before 0001.
+      ...(row.version === null ? {} : { version: Number(row.version) }),
     }),
   );
   const full = events.length === limit;

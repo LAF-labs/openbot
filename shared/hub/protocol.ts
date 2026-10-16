@@ -53,6 +53,17 @@ export const HUB_FACTS = {
    * dump before its blobs came back from the bucket. Retried, after `Retry-After`.
    */
   blobRestoring: "laf:hub_blob_restoring",
+  /** A team-memory line that is not waiting for confirmation was asked to be confirmed. */
+  memoryNotProposed: "laf:memory_not_proposed",
+  /** The same words as a team-memory line an admin retired. Refused, not stored again. */
+  memoryRestatedRetired: "laf:memory_restated_retired",
+  /** The product's own refusals for a 수첩 line (`server/src/agents/routes.ts`), here for a team one. */
+  memoryLooksLikeASecret: "laf:memory_looks_like_a_secret",
+  memoryLooksLikeInstruction: "laf:memory_looks_like_instruction",
+  /** A team skill's title or summary — which ride in every member's prompt — shaped as a secret. */
+  skillLooksLikeASecret: "laf:skill_looks_like_a_secret",
+  /** …or shaped as a prompt: a role marker, a rule override, a tool call. */
+  skillLooksLikePrompt: "laf:skill_looks_like_prompt",
 } as const;
 
 export type HubRole = "owner" | "admin" | "member";
@@ -74,6 +85,9 @@ export type HubMemberState = "active" | "left";
  *   the one on the caller's own VM — the others are never asked.
  * - `file.changed`: a team file was uploaded, changed, moved or deleted. `refId` is the file id.
  *   Seen by whoever the file's visibility admits.
+ * - `skill.changed` and `memory.changed` carry the collection's new `version`; `memory.proposals`
+ *   (a line proposed, or a proposal turned down) is seen only by the admins and the proposer, and
+ *   changes nothing any Bot reads.
  */
 export const HUB_EVENT_TYPES = [
   "member.changed",
@@ -81,6 +95,9 @@ export const HUB_EVENT_TYPES = [
   "room.message",
   "room.mention",
   "file.changed",
+  "skill.changed",
+  "memory.changed",
+  "memory.proposals",
 ] as const;
 export type HubEventType = (typeof HUB_EVENT_TYPES)[number];
 
@@ -96,6 +113,8 @@ export type HubEvent = {
   actor: string | null;
   /** ISO 8601. */
   at: string;
+  /** The collection's version after the change, on the types that have one; absent otherwise. */
+  version?: number;
 };
 
 export type HubFailure = { ok: false; code: string };
@@ -110,7 +129,12 @@ export type HubMe = {
   privateIp: string | null;
   /** The newest event number now; a VM with no cursor starts here. */
   seq: number;
+  /** What a VM's caches of the team's skills and memory are compared against. */
+  versions: HubVersions;
 };
+
+/** One number per cached collection, 0 before its first change. */
+export type HubVersions = { skills: number; memory: number };
 
 /** The most `GET /sync` returns at once. */
 export const HUB_SYNC_LIMIT = 500;
@@ -377,3 +401,91 @@ export type HubSearchHit = {
 };
 
 export type HubSearchResult = { ok: true; hits: HubSearchHit[] };
+
+/**
+ * A team skill as `GET /hub/v1/skills` lists it: everything but the instructions, which a Bot reads
+ * one skill at a time (`GET /hub/v1/skills/:slug`).
+ *
+ * `version` is this skill's own count of saves. `edited` says the team changed an industry pack's
+ * skill since it was shipped (always false on one the team wrote).
+ */
+export type HubSkillEntry = {
+  slug: string;
+  title: string;
+  summary: string;
+  version: number;
+  createdBy: string | null;
+  updatedBy: string | null;
+  /** ISO 8601, the last save. */
+  at: string;
+  profile: string | null;
+  shippedVersion: string | null;
+  edited: boolean;
+};
+
+export type HubSkillList = {
+  ok: true;
+  skills: HubSkillEntry[];
+  /** The `skills` collection version. */
+  version: number;
+};
+
+export type HubSkill = {
+  ok: true;
+  skill: HubSkillEntry & { instructions: string };
+};
+
+/** `PUT /hub/v1/skills/:slug`. Only an admin may send `pack`. */
+export type HubSkillPut = {
+  title: string;
+  summary?: string;
+  instructions: string;
+  pack?: { profile: string; version: string };
+};
+
+export const HUB_SKILL_LIMITS = {
+  title: 120,
+  summary: 500,
+  instructions: 20_000,
+} as const;
+
+/** One team-memory line, as long as a person's 수첩 line may be (`shared/notebook.ts`). */
+export const HUB_MEMORY_LINE_MAX = 400;
+/**
+ * The whole team's confirmed lines, together. Past it the oldest confirmed lines are pushed out:
+ * kept and marked, never deleted, and no longer read by any Bot.
+ */
+export const HUB_MEMORY_CAP = 1_500;
+export const HUB_MEMORY_EXCERPT_MAX = 200;
+
+/** Where the proposing Bot learned a line. `excerpt` is what the admin confirming it reads. */
+export type HubMemoryEvidence = { kind: string; id: string; excerpt: string };
+
+/** `POST /hub/v1/memory/proposals`. `runId` may come as the `x-laf-run` header instead. */
+export type HubMemoryProposal = {
+  content: string;
+  evidence: HubMemoryEvidence;
+  runId?: string;
+};
+
+/** `GET /hub/v1/memory`: the confirmed lines every Bot carries, oldest first. Nothing else. */
+export type HubMemory = {
+  ok: true;
+  lines: { id: string; content: string; confirmedBy: string; at: string }[];
+  version: number;
+  /** Characters the lines take, of `cap`. */
+  used: number;
+  cap: number;
+};
+
+/** `GET /hub/v1/memory/proposals`: every waiting line for an admin, a member's own otherwise. */
+export type HubMemoryProposals = {
+  ok: true;
+  proposals: {
+    id: string;
+    content: string;
+    proposedBy: string;
+    evidence: HubMemoryEvidence;
+    at: string;
+  }[];
+};
