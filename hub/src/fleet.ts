@@ -177,8 +177,16 @@ export function parseFleetEnvelope(raw: string): HubFleetEnvelope {
 type Effects = {
   emitted: boolean;
   closeMember: string | null;
-  /** A rotation: sockets opened with `passHash` close at `until`. */
-  expirePass: { member: string; passHash: string; until: Date } | null;
+  /**
+   * A rotation: sockets on `graced` close at `until`; sockets on any pass that is neither that nor
+   * `current` close at once.
+   */
+  expirePass: {
+    member: string;
+    current: string;
+    graced: string;
+    until: Date;
+  } | null;
 };
 
 /**
@@ -345,7 +353,8 @@ async function putMember(
   if (rotated && !rejoined && existing.vmKeyHash) {
     effects.expirePass = {
       member: existing.id,
-      passHash: existing.vmKeyHash,
+      current: input.vmKeyHash,
+      graced: existing.vmKeyHash,
       until: graceUntil,
     };
   }
@@ -493,8 +502,13 @@ export function fleetRoutes(options: FleetRouteOptions) {
           );
         }
         if (effects.expirePass) {
-          const { member, passHash, until } = effects.expirePass;
-          options.listeners.expirePass(member, passHash, until);
+          const { member, ...rotation } = effects.expirePass;
+          options.listeners.expirePass(
+            member,
+            rotation,
+            4401,
+            HUB_FACTS.passRefused,
+          );
         }
         if (effects.emitted) options.listeners.pokeAll();
       }
