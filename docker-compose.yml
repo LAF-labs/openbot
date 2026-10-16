@@ -282,6 +282,11 @@ services:
       # endpoint on the other end destroys machines); the server refuses to start without it.
       LAF_FLEET_WEBHOOK_URL: ${LAF_FLEET_WEBHOOK_URL:-}
       LAF_FLEET_WEBHOOK_SECRET: ${LAF_FLEET_WEBHOOK_SECRET:-}
+      # The company hub this person belongs to, and this VM's pass to it — both written by
+      # laf-control when the person joins a company, both removed when they leave. Unset, nothing
+      # about a hub runs. One without the other refuses to start.
+      LAF_HUB_URL: ${LAF_HUB_URL:-}
+      LAF_HUB_VM_KEY: ${LAF_HUB_VM_KEY:-}
       # The fleet's own OAuth application for Cafe24, and where relayed vendors send the browser
       # back. Google's pair is already passed above for sign-in and is the SAME application these
       # connectors consent under — one client, one console, both callbacks registered on it.

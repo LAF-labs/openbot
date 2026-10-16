@@ -2477,6 +2477,18 @@ export const ko: Record<string, string> = {
   "The free trial has ended.": "무료 체험이 끝났어요.",
   "Today's free trial allowance is used up. It opens again at midnight, Korean time.":
     "오늘 무료 체험에서 쓸 수 있는 양을 다 썼어요. 내일 0시(한국 시간)부터 다시 쓸 수 있어요.",
+  // 회사 — 회사 허브에 붙은 VM의 설정 한 줄과, 허브가 알린 사실의 문장(server/src/hub/).
+  Company: "회사",
+  "Company: {name} · {state}": "회사: {name} · {state}",
+  "Company · {state}": "회사 · {state}",
+  Connecting: "연결 중",
+  Disconnected: "끊김",
+  "Cannot reach the company server · trying again":
+    "회사 서버에 연결할 수 없어요 · 다시 시도 중",
+  "The link to your company was undone. Let the operator know.":
+    "회사 연결이 풀렸어요. 운영에 알려 주세요.",
+  "Your company does not allow this.": "회사에서 허락되지 않은 일이에요.",
+  "Your company does not have that.": "회사에서 찾을 수 없어요.",
   // 오늘 사용량 — 설정의 한 줄과, 80%부터 입력창 위에 뜨는 한 줄. 거절당하기 전에 남은 양을 알린다.
   "Free trial": "무료 체험",
   "Today's usage": "오늘 사용량",
