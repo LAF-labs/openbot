@@ -46,6 +46,11 @@ COPY --chmod=755 scripts/upgrade.sh scripts/restore.sh scripts/laf-browser-firew
 # because nothing here may execute anything. A build without that step fails on this line, which is
 # the point — a bundle with no `legal/version` is one the front door closes sign-up for.
 COPY deploy/legal/ /deploy/legal/
+# The company hub's own stack, for a hub VM stood up from this bundle alone: its compose file at the
+# root beside the product's, and the Caddyfile at the relative path that file mounts it from. A hub
+# VM runs only `docker compose -f docker-compose.hub.yml`; a person's VM never reads either.
+COPY docker-compose.hub.yml /deploy/
+COPY hub/Caddyfile /deploy/hub/
 # The channel is the one this build was made FOR: `edge` from main, `vX.Y.Z` from a tag. `:stable`
 # is only ever an alias minted onto one of those in the merge job, so a VM on IMAGE_TAG=stable reads
 # here what stable resolved to — which is the question.
