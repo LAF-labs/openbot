@@ -3218,6 +3218,14 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * and the computer's bash checks run against a real answer: 200 and 204 green, 503, 500 and 302
  * red, and red with nothing listening (2 × 6). 1744 and 13.
  *
+ * RAISED 2026-10-16 FOR THE INDUSTRY PACKS: `server` by thirty-nine (to 4750). Thirty-two in
+ * `industry-packs.test.ts` — what each of the eight kinds installs, a broken pack refused by name,
+ * a kind's suggestions first, the deployment's kind, a reconcile only when the kind changes, and
+ * what a company's hub is written; five in `industry-packs.integration.test.ts` — a person's VM
+ * following its kind on real tables, their own skills kept and the prompt the same bytes while the
+ * kind is; two in `routine-suggestions.integration.test.ts` — the service ordering by the pack, and
+ * ordering nothing when the kind cannot be read. 4711 and 39.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -3266,7 +3274,7 @@ const GROUPS: readonly {
    * below it, one test per share from 0.01 to 1 that the server outwaits the computer's longest
    * call, and four on the header the deadline follows. 4711 and 105 is 4816.
    */
-  { name: "server", floor: 4857, roots: ["server"] },
+  { name: "server", floor: 4896, roots: ["server"] },
   { name: "app", floor: 2543, roots: ["app"] },
   {
     name: "agent-computer",
