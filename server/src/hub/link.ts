@@ -131,6 +131,7 @@ export function createHubLink(input: {
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let pollTimer: ReturnType<typeof setInterval> | undefined;
   let silenceTimer: ReturnType<typeof setInterval> | undefined;
+  let stableTimer: ReturnType<typeof setTimeout> | undefined;
   let heardAt = 0;
   /** Events are applied one at a time, in order, whichever door they came through. */
   let applying: Promise<void> = Promise.resolve();
@@ -199,9 +200,11 @@ export function createHubLink(input: {
     if (retryTimer) clearTimeout(retryTimer);
     if (pollTimer) clearInterval(pollTimer);
     if (silenceTimer) clearInterval(silenceTimer);
+    if (stableTimer) clearTimeout(stableTimer);
     retryTimer = undefined;
     pollTimer = undefined;
     silenceTimer = undefined;
+    stableTimer = undefined;
   };
 
   const dropSocket = () => {
@@ -272,7 +275,15 @@ export function createHubLink(input: {
     next.onopen = () => {
       if (socket !== next) return;
       heardAt = Date.now();
-      retryDelay = timing.firstRetryMs;
+      /*
+       * The backoff starts again from a second only once the socket has STAYED up for the longest
+       * wait. Reset on open, a front door that accepts the upgrade and drops it at once (measured
+       * live with a proxy whose hub was down) was knocked on every second for as long as it did.
+       */
+      if (stableTimer) clearTimeout(stableTimer);
+      stableTimer = setTimeout(() => {
+        if (socket === next) retryDelay = timing.firstRetryMs;
+      }, timing.maxRetryMs);
       if (pollTimer) clearInterval(pollTimer);
       pollTimer = undefined;
       silenceTimer = setInterval(
