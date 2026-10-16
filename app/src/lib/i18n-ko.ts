@@ -167,6 +167,7 @@ export const ko: Record<string, string> = {
   "Used a tool": "도구 사용",
   "Public tenders and support programmes": "나라장터·기업마당",
   "Web search": "웹 검색",
+  Company: "회사",
   "It wants to list what is in the workspace.":
     "봇 폴더에 무엇이 있는지 보려 해요.",
   "It wants to list what is in {path}.": "{path} 안에 무엇이 있는지 보려 해요.",
@@ -464,6 +465,12 @@ export const ko: Record<string, string> = {
     "기상청의 지금 날씨와 며칠 뒤까지의 예보.",
   "Tells you the weather where you are, or anywhere in Korea you name — now, the next few hours and the next few days.":
     "지금 계신 곳이나 말씀하신 곳의 날씨를 알려 줘요 — 지금, 몇 시간 뒤, 며칠 뒤까지.",
+  // 회사 — 이 VM의 출입증으로 회사 허브를 읽고 쓰는 엔트리(server/src/hub/tools.ts). 연결할 것 없음.
+  회사: "회사",
+  "This person's company: team files, rooms, skills and memory.":
+    "내가 속한 회사의 팀 파일·단체방·스킬·팀 기억.",
+  "Finds and reads your team's files, rooms, skills and confirmed memory, posts to a team room, and suggests a line for the team to remember.":
+    "팀 파일·단체방·스킬·팀이 확인한 사실을 찾아 읽고, 단체방에 글을 올리고, 팀이 기억할 한 줄을 제안해요.",
   "Offered to every Bot on this deployment on the fleet's own key. Nothing to connect.":
     "LAF의 키로 이 배포의 모든 봇에 제공돼요. 연결할 것이 없어요.",
   "Connected to {name}.": "{name}에 연결했어요.",
