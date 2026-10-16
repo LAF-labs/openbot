@@ -18,6 +18,7 @@ import { createListeners, eventsSince, headSeq } from "./events";
 import { fleetRoutes } from "./fleet";
 import { countIdempotency } from "./idempotency";
 import { eventSocket } from "./socket";
+import { taskRoutes } from "./tasks";
 
 export type HubAppOptions = {
   database: HubDatabase;
@@ -138,6 +139,8 @@ export function createHubApp(options: HubAppOptions) {
     );
     return context.json({ ok: true, ...page });
   });
+
+  hub.route("/tasks", taskRoutes({ database, listeners, member }));
 
   hub.get(
     "/events",
