@@ -25,6 +25,7 @@ import { memoryRoutes } from "./memory";
 import { skillRoutes } from "./skills";
 import { eventSocket } from "./socket";
 import { readVersions } from "./versions";
+import { taskRoutes } from "./tasks";
 
 export type HubAppOptions = {
   database: HubDatabase;
@@ -187,6 +188,7 @@ export function createHubApp(options: HubAppOptions) {
   });
 
   hub.route("/rooms", roomRoutes({ database, listeners, member }));
+  hub.route("/tasks", taskRoutes({ database, listeners, member }));
 
   hub.get(
     "/events",

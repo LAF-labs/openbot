@@ -88,6 +88,12 @@ export type HubMemberState = "active" | "left";
  * - `skill.changed` and `memory.changed` carry the collection's new `version`; `memory.proposals`
  *   (a line proposed, or a proposal turned down) is seen only by the admins and the proposer, and
  *   changes nothing any Bot reads.
+ * - `task.changed`: a task was made, edited, noted, taken, let go or freed by the sweep. `refId` is
+ *   the task id. Seen by whoever can see the task — and, when its visibility or members narrow, by
+ *   those who could see it a moment ago, so a board drops what it may no longer show.
+ * - `task.assigned`: a task was given to somebody. `refId` is the task id. Seen by the assigned
+ *   member alone (`m:` or `bot:`), whose VM is the one that acts on it; for a `job:` assignee, by
+ *   whoever can see the task, since the job's own VM is not a member the hub knows yet.
  */
 export const HUB_EVENT_TYPES = [
   "member.changed",
@@ -98,6 +104,8 @@ export const HUB_EVENT_TYPES = [
   "skill.changed",
   "memory.changed",
   "memory.proposals",
+  "task.changed",
+  "task.assigned",
 ] as const;
 export type HubEventType = (typeof HUB_EVENT_TYPES)[number];
 
@@ -296,7 +304,7 @@ export type HubFleetEnvelope =
  * - `me:<member id>`: that member alone.
  * - `task:<task id>`: the members of that task (`hub_task_members`).
  *
- * The hub decides it in the query itself (`hub_visible_to` in `hub/drizzle/0001_hub_files.sql`),
+ * The hub decides it in the query itself (`hub_visible_to` in `hub/drizzle/0002_hub_files.sql`),
  * never by filtering a page afterwards.
  */
 export type HubVisibility = "company" | `me:${string}` | `task:${string}`;
@@ -489,3 +497,119 @@ export type HubMemoryProposals = {
     at: string;
   }[];
 };
+
+/**
+ * THE TASK BOARD (`/hub/v1/tasks`).
+ *
+ * A task moves `todo` → `doing` (a run took it) → `review` or `blocked` (the run finished, or met
+ * something a person has to allow) → `done`, which only a person sets: whether a piece of work is
+ * finished is a person's judgement, never a Bot's.
+ */
+export const HUB_TASK_STAGES = [
+  "todo",
+  "doing",
+  "review",
+  "blocked",
+  "done",
+] as const;
+export type HubTaskStage = (typeof HUB_TASK_STAGES)[number];
+
+/** The stages a 라피 may move a task it holds to. Never `done`. */
+export const HUB_TASK_BOT_STAGES: readonly HubTaskStage[] = [
+  "review",
+  "blocked",
+];
+
+/**
+ * How long a run's claim on a task lasts without a heartbeat. Shorter than a routine's ten-minute
+ * ceiling, so a task whose VM died is free again before a run that size would have ended.
+ */
+export const HUB_TASK_LOCK_MS = 5 * 60 * 1000;
+
+/**
+ * How often a run holding a task says it is still working on it. Two beats fit in one lock.
+ *
+ * @public The VM's run beats on this; that side arrives with the VM taking up `task.assigned`.
+ */
+export const HUB_TASK_HEARTBEAT_MS = 2 * 60 * 1000;
+
+/** How often the hub frees the claims whose time ran out. */
+export const HUB_TASK_SWEEP_MS = 60 * 1000;
+
+/** The facts the task routes answer with, beside `HUB_FACTS`. */
+export const HUB_TASK_FACTS = {
+  /** Another run holds the task, or it is not waiting to be taken. Not retried: the run stops. */
+  taken: "laf:task_taken",
+  /** The edit was made against an older version. The surface reads the task again. */
+  stale: "laf:task_stale",
+  /** The run does not hold the task (it was freed, or another run took it). The run stops. */
+  notHeld: "laf:task_not_held",
+  /** A 라피 tried to set `done`, which only a person does. */
+  doneByPerson: "laf:task_done_by_person",
+} as const;
+
+export const HUB_TASK_LIMITS = {
+  title: 200,
+  description: 10_000,
+  /** A person's note. */
+  note: 4_000,
+  /** A 라피's note: one line of fact or link, never a report. */
+  botNote: 500,
+  members: 50,
+  /** Tasks in one page of `GET /tasks`, and the page with no `limit`. */
+  page: 200,
+  pageDefault: 100,
+} as const;
+
+/**
+ * Who may see a task, as it is asked for. The hub stores the row's visibility the way it stores a
+ * file's — `company`, `me:<member>`, `task:<task id>` — and answers with the stored form.
+ *
+ * - `company`: every member.
+ * - `me`: the member who made it, alone.
+ * - `members`: the task's members (`hub_task_members`); its maker is always one of them.
+ */
+export type HubTaskVisibilityChoice = "company" | "me" | "members";
+
+/**
+ * `m:<member>` is a person, `bot:<member>` that person's 라피, `job:<id>` a scheduled job (a sub-Bot)
+ * on its owner's VM.
+ */
+export type HubTaskAssignee = `m:${string}` | `bot:${string}` | `job:${string}`;
+
+export type HubTask = {
+  id: string;
+  title: string;
+  description: string | null;
+  stage: HubTaskStage;
+  /** `company`, `me:<member>` or `task:<this id>`. */
+  visibility: string;
+  members: string[];
+  assignee: string | null;
+  assignedBy: string | null;
+  createdBy: string | null;
+  /** The run holding the task and until when, or null when nobody does. */
+  checkout: { runId: string; by: string; until: string } | null;
+  /** Sent back on a person's edit; a different number is `laf:task_stale`. */
+  version: number;
+  /** Order inside a stage's column, smallest first. */
+  rank: number;
+  createdAt: string;
+  updatedAt: string;
+  doneAt: string | null;
+};
+
+export type HubTaskNote = {
+  id: number;
+  /** `m:<member>` or `bot:<member>`. */
+  by: string;
+  text: string;
+  runId: string | null;
+  at: string;
+};
+
+/** `GET /hub/v1/tasks?stage=&cursor=&limit=`, newest first. `next` goes back as `cursor`. */
+export type HubTaskList = { ok: true; tasks: HubTask[]; next: string | null };
+
+/** `GET /hub/v1/tasks/:id`. */
+export type HubTaskDetail = { ok: true; task: HubTask; notes: HubTaskNote[] };
