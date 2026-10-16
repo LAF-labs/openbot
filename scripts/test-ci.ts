@@ -3213,6 +3213,14 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * registered: another Bot's routine by the same name is not this call's, and this Bot's is drawn
  * though another has one by that name. 2532 and 2.
  *
+ * RAISED 2026-10-16 FOR THE INDUSTRY PACKS: `server` by thirty-nine (to 4750). Thirty-two in
+ * `industry-packs.test.ts` — what each of the eight kinds installs, a broken pack refused by name,
+ * a kind's suggestions first, the deployment's kind, a reconcile only when the kind changes, and
+ * what a company's hub is written; five in `industry-packs.integration.test.ts` — a person's VM
+ * following its kind on real tables, their own skills kept and the prompt the same bytes while the
+ * kind is; two in `routine-suggestions.integration.test.ts` — the service ordering by the pack, and
+ * ordering nothing when the kind cannot be read. 4711 and 39.
+ *
  * `roots` is a partition of the repository rather than a filter: a test file under none of them
  * fails the run instead of going uncounted, which is the same silence this whole script exists to
  * break.
@@ -3241,7 +3249,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4711, roots: ["server"] },
+  { name: "server", floor: 4750, roots: ["server"] },
   { name: "app", floor: 2534, roots: ["app"] },
   {
     name: "agent-computer",
