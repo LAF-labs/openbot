@@ -3343,7 +3343,17 @@ const GROUPS: readonly {
    * RAISED 2026-10-16 FOR A SECOND ROTATION, from 50 to 51: the pass it drops loses its socket at
    * once while the pass in grace keeps its own (events-socket.test.ts, 1).
    */
-  { name: "hub", floor: 51, roots: ["hub"] },
+  /*
+   * RAISED 2026-10-16 FOR THE TEAM ROOMS, from 51 to 75: rooms.test.ts 24 (a room listed and read
+   * only by its members, an outside admin included; a message's event to the members alone; an
+   * admin adding somebody, and a plain outsider refused; leaving, and only the maker or an admin
+   * taking others out; a room made only of company members; a lafi mention to the author alone and
+   * a member mention to that member, over sync and over the socket; a 라피's post that cannot call
+   * 라피; an outsider's mention refused with nothing posted; one message for a repeated key; a post
+   * with no key refused; four bad messages and one at the limit; the trail without text; paging
+   * forward, newest and backward; four bad queries).
+   */
+  { name: "hub", floor: 75, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
