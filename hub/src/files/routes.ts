@@ -71,12 +71,12 @@ export const FILES_BODY_MAX = HUB_FILE_MAX_BYTES + BODY_OVERHEAD;
  * Uploads whose bodies are read at once; the next is answered 503 `laf:hub_busy` and retried by the
  * VM (design §4.3: 5xx is retried, 0.5 s → 2 s → 8 s).
  *
- * WHY A BOUND AT ALL: Bun 1.3.14 reads a request body off the socket as fast as it arrives,
- * whether or not the handler is reading it — measured with a reader sleeping 200 ms a chunk, a
- * 300 MB body arrived as one 314 MB chunk and the process held 600 MB. Streaming to the volume
- * keeps the hub's own copies small (see `readMultipart`), but where the network is faster than
- * the disk the difference waits in memory, up to a whole file. Two at a time is two files' worth
- * at worst on a 3 GB hub; an upload in pieces would remove it, and is a change of the protocol.
+ * WHY A BOUND AT ALL: through `Bun.serve`, Bun 1.3.14 reads a request body off the socket as fast
+ * as it arrives, whether or not the handler is reading it (a 300 MB body arrived as one 314 MB
+ * chunk), so a file could wait in memory whole. In the hub this route is served by the upload
+ * listener (src/uploads.ts), which pauses the socket while the disk is behind — measured in the
+ * hub's container, a 1 GB upload peaked at 172 MB resident and two 300 MB ones at once at 285 MB,
+ * under its 512 MB. The bound still caps the disk writes and hashes running at once.
  */
 const UPLOADS_AT_ONCE = 2;
 
