@@ -3285,6 +3285,17 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `server` by two more (to 4883 on top of 4881): a write meeting a refused pass is said as that,
  * not as kept — with no row when it was known before (hub-tools.test.ts), the row waiting when the
  * hub's 401 came during the write (hub-tools.integration.test.ts).
+ *
+ * RAISED 2026-10-16 FOR "@라피" IN A TEAM ROOM: `server` by twenty-eight (to 4803) — what a mention
+ * names, who wrote a room's line, whose 라피 is working and what a turn posts (room-answers.test.ts,
+ * 18); the turn in the room's own conversation on a real Postgres and the real engine — read first,
+ * posted once as the person's 라피, nothing for another's mention, once when heard twice, nothing
+ * late, nothing twice, nothing after a failure, no move without the tool, and the conversation found
+ * again (room-answers.integration.test.ts, 8); the head the same bytes as a chat turn's
+ * (room-answers-head.test.ts, 1); and the line's listener hearing each event, a throw stopping
+ * nothing (hub-link.integration.test.ts, 1). 4775 and 28. `app` by five (to 2548): the room's words
+ * for who wrote what and whose 라피 is working, and the room's conversation found and named
+ * (hub-rooms.test.ts). 2543 and 5.
  */
 const GROUPS: readonly {
   name: string;
