@@ -29,6 +29,7 @@ export type HubAppOptions = {
   /** `HUB_PRIVATE_IP`: given to members so a VM in the same network tries it first. */
   privateIp: string | null;
   heartbeatMs?: number;
+  rotationGraceMs?: number;
   now?: () => Date;
 };
 
@@ -95,6 +96,9 @@ export function createHubApp(options: HubAppOptions) {
       secret: options.fleetSecret,
       hubOrigin: options.publicOrigin,
       ...(options.now ? { now: options.now } : {}),
+      ...(options.rotationGraceMs
+        ? { rotationGraceMs: options.rotationGraceMs }
+        : {}),
     }),
   );
 

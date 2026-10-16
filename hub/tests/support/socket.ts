@@ -19,6 +19,7 @@ export function openSocket(
   url: string,
   pass: string,
   query = "",
+  options: { answerPings?: boolean } = {},
 ): Promise<TestSocket> {
   const socket = new WebSocket(
     `${url.replace(/^http/, "ws")}/hub/v1/events${query}`,
@@ -29,7 +30,12 @@ export function openSocket(
   const frames: Frame[] = [];
   const waiters = new Set<() => void>();
   socket.addEventListener("message", (message) => {
-    frames.push(JSON.parse(String(message.data)) as Frame);
+    const frame = JSON.parse(String(message.data)) as Frame;
+    frames.push(frame);
+    // A VM answers the hub's pings; a test that is about something else does too.
+    if (options.answerPings && frame.kind === "ping") {
+      socket.send(JSON.stringify({ kind: "pong" }));
+    }
     for (const wake of waiters) wake();
   });
   const closed = new Promise<{ code: number; reason: string }>((resolve) => {

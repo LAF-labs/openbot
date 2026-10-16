@@ -121,8 +121,12 @@ export async function eventsSince(
  */
 export type Listener = {
   member: string;
+  /** The hash of the pass the socket was opened with. */
+  passHash: string;
   poke(): void;
   close(code: number, reason: string): void;
+  /** Close the socket when its pass stops working. */
+  expireAt(until: Date): void;
 };
 
 export function createListeners() {
@@ -137,6 +141,18 @@ export function createListeners() {
       for (const listener of listeners) listener.poke();
     },
     /** A member who left, or whose pass changed, keeps no socket open on the old pass. */
+    /**
+     * A pass was rotated: every socket opened with it is closed when its grace ends. Not at once —
+     * the VM is still switching to the new pass, and a socket closed now would reconnect with the
+     * old one (valid for the grace) and need this timer anyway.
+     */
+    expirePass(member: string, passHash: string, until: Date): void {
+      for (const listener of listeners) {
+        if (listener.member === member && listener.passHash === passHash) {
+          listener.expireAt(until);
+        }
+      }
+    },
     closeMember(member: string, code: number, reason: string): void {
       for (const listener of listeners) {
         if (listener.member === member) listener.close(code, reason);

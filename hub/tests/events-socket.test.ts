@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { PING_FRAME, PONG_FRAME } from "../../shared/channel-socket";
 import type { HubMe } from "../../shared/hub/protocol";
 import { emitEvent } from "../src/events";
+import { startPings } from "../src/socket";
 import {
   asMember,
   newPass,
@@ -26,7 +27,7 @@ let amyId = "";
 let boId = "";
 
 beforeAll(async () => {
-  hub = await startTestHub({ heartbeatMs: 100 });
+  hub = await startTestHub({ heartbeatMs: 100, rotationGraceMs: 400 });
   amyId = (await putMember(hub, amy)).id;
   boId = (await putMember(hub, bo)).id;
 });
@@ -148,6 +149,88 @@ describe("the events socket", () => {
       code: 4401,
       reason: "laf:hub_pass_refused",
     });
+  });
+
+  test("a socket opened before a rotation closes when the old pass's grace ends, not before", async () => {
+    const dee = {
+      email: "dee@example.com",
+      vmOrigin: "https://dee.example",
+      pass: newPass(),
+    };
+    await putMember(hub, dee);
+    const socket = await openSocket(hub.url, dee.pass, "", {
+      answerPings: true,
+    });
+    const rotatedAt = performance.now();
+    const { seq } = await putMember(hub, { ...dee, pass: newPass() });
+    // Still open through the grace: it is told about its own rotation.
+    expect((await socket.events(1)).map((frame) => frame.seq)).toEqual([seq]);
+    const ended = await Promise.race([
+      socket.closed,
+      Bun.sleep(3_000).then(() => "still open"),
+    ]);
+    expect(ended).toEqual({ code: 4401, reason: "laf:hub_pass_refused" });
+    expect(performance.now() - rotatedAt).toBeGreaterThanOrEqual(300);
+  });
+
+  test("a socket opened inside the grace with the old pass closes when it ends; the new pass's stays", async () => {
+    const eve = {
+      email: "eve@example.com",
+      vmOrigin: "https://eve.example",
+      pass: newPass(),
+    };
+    await putMember(hub, eve);
+    const next = newPass();
+    await putMember(hub, { ...eve, pass: next });
+    const onOld = await openSocket(hub.url, eve.pass, "", {
+      answerPings: true,
+    });
+    const onNew = await openSocket(hub.url, next, "", { answerPings: true });
+    try {
+      const ended = await Promise.race([
+        onOld.closed,
+        Bun.sleep(3_000).then(() => "still open"),
+      ]);
+      expect(ended).toEqual({ code: 4401, reason: "laf:hub_pass_refused" });
+      onNew.send(PING_FRAME);
+      const deadline = Date.now() + 2_000;
+      while (
+        !onNew.frames.some((frame) => frame.kind === "pong") &&
+        Date.now() < deadline
+      ) {
+        await Bun.sleep(10);
+      }
+      expect(onNew.frames.map((frame) => frame.kind)).toContain("pong");
+    } finally {
+      onNew.close();
+    }
+  });
+
+  test("a ping that throws stays inside the timer, and silence still ends the socket once", async () => {
+    let clock = 0;
+    let pinged = 0;
+    let silent = 0;
+    const pings = startPings({
+      everyMs: 5,
+      now: () => clock,
+      ping: () => {
+        pinged += 1;
+        throw new Error("socket is closing");
+      },
+      onSilent: () => {
+        silent += 1;
+        throw new Error("socket is closing");
+      },
+    });
+    while (pinged < 2) await Bun.sleep(5);
+    clock = 1_000;
+    while (silent < 1) await Bun.sleep(5);
+    const after = pinged;
+    await Bun.sleep(30);
+    expect(silent).toBe(1);
+    // Stopped once silent: no ping after the close.
+    expect(pinged).toBe(after);
+    pings.stop();
   });
 
   test("without a good pass there is no socket", async () => {

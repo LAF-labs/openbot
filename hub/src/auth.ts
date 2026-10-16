@@ -22,6 +22,10 @@ export type AuthedMember = {
   role: HubRole;
   name: string | null;
   vmOrigin: string | null;
+  /** The hash of the pass this request came with. */
+  passHash: string;
+  /** When that pass stops working: its rotation grace's end, or null for the current pass. */
+  passUntil: Date | null;
 };
 
 /** The origin as a VM writes `PUBLIC_ORIGIN`: no trailing slash. */
@@ -51,6 +55,7 @@ export async function memberForPass(
       vmOrigin: hubMembers.vmOrigin,
       vmKeyHash: hubMembers.vmKeyHash,
       prevKeyHash: hubMembers.prevKeyHash,
+      prevKeyUntil: hubMembers.prevKeyUntil,
     })
     .from(hubMembers)
     .where(
@@ -79,6 +84,8 @@ export async function memberForPass(
     role: row.role as HubRole,
     name: row.name,
     vmOrigin: row.vmOrigin,
+    passHash: hash,
+    passUntil: row.vmKeyHash === hash ? null : row.prevKeyUntil,
   };
 }
 
