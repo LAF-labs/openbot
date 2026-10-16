@@ -3286,8 +3286,13 @@ const GROUPS: readonly {
      * sites work on that nothing is skipped from, and three in a real Chromium: an ad host's script
      * and pixel never sent while the page's own script and font are, an ad host opened as a page
      * still opening, and a page's video never downloaded by the deployment's browser.
+     *
+     * RAISED 2026-10-16 FOR STEP DEADLINES ON A THROTTLED VM, from 674 to 685: eleven in
+     * `core-share.test.ts` — reading `/proc/stat`, the share over its window on an A1, a pinned
+     * E4, a starved machine, one that starts bursting, an idle one, counters that went backwards
+     * and a machine with no `/proc/stat`, and the two answers `/health` gives.
      */
-    floor: 674,
+    floor: 685,
     roots: ["agent-computer"],
     processes: 1,
   },
