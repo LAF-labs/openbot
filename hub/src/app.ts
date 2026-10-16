@@ -17,6 +17,7 @@ import { hubMembers, hubWorkspace } from "./db/schema";
 import { createListeners, eventsSince, headSeq } from "./events";
 import { fleetRoutes } from "./fleet";
 import { countIdempotency } from "./idempotency";
+import { roomRoutes } from "./rooms";
 import { eventSocket } from "./socket";
 
 export type HubAppOptions = {
@@ -138,6 +139,8 @@ export function createHubApp(options: HubAppOptions) {
     );
     return context.json({ ok: true, ...page });
   });
+
+  hub.route("/rooms", roomRoutes({ database, listeners, member }));
 
   hub.get(
     "/events",

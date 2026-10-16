@@ -313,6 +313,7 @@
   "hub/tests/auth.test.ts",
   "hub/tests/events-socket.test.ts",
   "hub/tests/fleet.test.ts",
+  "hub/tests/rooms.test.ts",
   "hub/tests/sync.test.ts",
   "server/tests/account-lifecycle.integration.test.ts",
   "server/tests/account-routes.test.ts",
