@@ -2478,7 +2478,6 @@ export const ko: Record<string, string> = {
   "Today's free trial allowance is used up. It opens again at midnight, Korean time.":
     "오늘 무료 체험에서 쓸 수 있는 양을 다 썼어요. 내일 0시(한국 시간)부터 다시 쓸 수 있어요.",
   // 회사 — 회사 허브에 붙은 VM의 설정 한 줄과, 허브가 알린 사실의 문장(server/src/hub/).
-  Company: "회사",
   "Company: {name} · {state}": "회사: {name} · {state}",
   "Company · {state}": "회사 · {state}",
   Connecting: "연결 중",
