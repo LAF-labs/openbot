@@ -17,6 +17,7 @@ import type { HubDatabase, HubTransaction } from "./db/client";
 import { hubMembers, hubWorkspace } from "./db/schema";
 import { emitEvent, type Listeners } from "./events";
 import { type Answer, IDEMPOTENCY_KEY_SHAPE, onceFor } from "./idempotency";
+import { dropVaultFor, vaultOriginsOf } from "./vault";
 
 /**
  * The registry's door: laf-control tells the hub who its members are.
@@ -205,9 +206,17 @@ async function putMember(
     if (existing.state === "left") {
       return {
         status: 200,
-        body: { ok: true, member: { id: existing.id, state: "left" } },
+        body: {
+          ok: true,
+          member: { id: existing.id, state: "left" },
+          vault: { origins: await vaultOriginsOf(tx, existing.id) },
+        },
       };
     }
+    // Read before the grants go, and in the same transaction: after this commit the VM's pass
+    // opens nothing, so this answer is the one place the origins it must clear can come from.
+    const vaultOrigins = await vaultOriginsOf(tx, existing.id);
+    const vaultLogins = await dropVaultFor(tx, existing.id);
     // Leaving drops the pass and the VM with it: the hash, the grace, the origin. Nothing the
     // departed VM holds opens anything after this commit.
     await tx
@@ -221,6 +230,9 @@ async function putMember(
         vmOrigin: null,
       })
       .where(eq(hubMembers.id, existing.id));
+    for (const loginId of vaultLogins) {
+      await emitEvent(tx, { type: "vault.changed", refId: loginId });
+    }
     const seq = await emitEvent(tx, {
       type: "member.changed",
       refId: existing.id,
@@ -230,12 +242,18 @@ async function putMember(
       member: FLEET_MEMBER,
       target: existing.id,
       outcome: "ok",
+      ...(vaultLogins.length > 0 ? { payload: { vaultLogins } } : {}),
     });
     effects.emitted = true;
     effects.closeMember = existing.id;
     return {
       status: 200,
-      body: { ok: true, member: { id: existing.id, state: "left" }, seq },
+      body: {
+        ok: true,
+        member: { id: existing.id, state: "left" },
+        seq,
+        vault: { origins: vaultOrigins },
+      },
     };
   }
 

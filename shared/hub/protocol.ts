@@ -47,8 +47,14 @@ export const HUB_ROLES: readonly HubRole[] = ["owner", "admin", "member"];
 
 export type HubMemberState = "active" | "left";
 
-/** The kinds of change an event names. A VM drops a type it does not know. */
-export const HUB_EVENT_TYPES = ["member.changed"] as const;
+/**
+ * The kinds of change an event names. A VM drops a type it does not know.
+ *
+ * - `member.changed`: a member joined, changed or left. `refId` is the member id.
+ * - `vault.changed`: a company login was stored or changed, who may use it changed, or a VM
+ *   verified itself on it. `refId` is the login id. Never a value: the VM asks `GET /vault`.
+ */
+export const HUB_EVENT_TYPES = ["member.changed", "vault.changed"] as const;
 export type HubEventType = (typeof HUB_EVENT_TYPES)[number];
 
 /**
@@ -103,6 +109,85 @@ export type HubSync = {
  */
 export type HubSocketFrame = { kind: "event" } & HubEvent;
 
+/**
+ * THE COMPANY LOGIN VAULT (`hub/src/vault.ts`). An admin stores a login once and grants it to
+ * members; a member's VM leases it, opens it once per lease, and says when it verified a new
+ * device. Only `POST /vault/:id/open` ever answers with a value.
+ */
+export const HUB_VAULT_FACTS = {
+  /** `HUB_KEY_ENCRYPTION_KEY` is not set on this hub: the vault answers nothing else. */
+  unset: "laf:hub_vault_unset",
+  /** Another member's VM holds this login's lease; `busy` says whose and until when. */
+  busy: "laf:vault_busy",
+  /** The lease is unknown, another member's, expired, released or already opened. */
+  leaseInvalid: "laf:vault_lease_invalid",
+  /** The page the VM would fill is not one of the login's origins. */
+  originMismatch: "laf:login_origin_mismatch",
+  /** The sealed row did not open under this hub's key. */
+  sealUnreadable: "laf:login_seal_unreadable",
+} as const;
+
+/** How long a lease holds a login before it lapses on its own; renewed by leasing again with it. */
+export const HUB_VAULT_LEASE_MS = 10 * 60 * 1000;
+
+/** Bounds on what one login may hold. */
+export const HUB_VAULT_LIMITS = {
+  label: 100,
+  site: 200,
+  origins: 10,
+  username: 512,
+  password: 1024,
+  members: 200,
+} as const;
+
+/** One row of `GET /hub/v1/vault`. Nothing in it is a value. */
+export type HubVaultLogin = {
+  id: string;
+  label: string;
+  site: string | null;
+  /** Where its values may be filled, as `https://host[:port]`. */
+  origins: string[];
+  /** Whether the caller holds a grant for it. */
+  canUse: boolean;
+  /** Any number of VMs may hold it at once: leasing never answers busy. */
+  concurrent: boolean;
+  /** Of the VMs that may use it, how many have verified themselves as a device on the site. */
+  verifiedVms: number;
+  totalVms: number;
+  /** Another member's VM holds it now. Absent when nobody else does. */
+  busy?: { member: string; until: string };
+};
+
+export type HubVault = { ok: true; logins: HubVaultLogin[] };
+
+/** `PUT /hub/v1/vault/:id` (admin). The two values may be left out on a change to keep them. */
+export type HubVaultPut = {
+  label: string;
+  site?: string | null;
+  origins: string[];
+  username?: string;
+  password?: string;
+  concurrent?: boolean;
+};
+
+/** `POST /hub/v1/vault/:id/lease`. `lease` renews the caller's own lease instead of taking one. */
+export type HubVaultLeaseAsk = {
+  origin: string;
+  runId?: string | null;
+  lease?: string;
+};
+
+export type HubVaultLease = {
+  ok: true;
+  lease: string;
+  /** ISO 8601. */
+  until: string;
+  concurrent: boolean;
+};
+
+/** `POST /hub/v1/vault/:id/open`: the values, once per lease. */
+export type HubVaultOpened = { ok: true; username: string; password: string };
+
 /** The internal registry route laf-control signs (`POST /hub/v1/fleet`). */
 export const HUB_FLEET_PATH = `${HUB_PREFIX}/fleet`;
 
@@ -151,3 +236,17 @@ export type HubFleetEnvelope =
       hub: string;
       workspace: { name: string; plan?: string | null };
     };
+
+/**
+ * The registry's answer to a `member.put` with `state: "left"`. `vault.origins` are the origins of
+ * every company login the member was granted or opened — never a value — so whoever disconnects
+ * that VM (laf-control) can have it clear those sites' cookies, and only those. Read in the same
+ * transaction that drops the member's grants, because after it commits the VM's pass opens
+ * nothing and it could not ask.
+ */
+export type HubFleetLeft = {
+  ok: true;
+  member: { id: string; state: "left" };
+  seq?: number;
+  vault: { origins: string[] };
+};

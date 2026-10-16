@@ -2,8 +2,8 @@
  * The hub's tables. Every name starts `hub_`, so a dump of a hub can never be mistaken for a
  * person's VM database, nor restored over one.
  *
- * Only what the registry, the event log, the idempotency ledger and the trail need. Files, skills,
- * memory, rooms, tasks and the vault arrive with the changes that build them, each with its own
+ * Only what the registry, the event log, the idempotency ledger, the trail and the login vault need.
+ * Files, skills, memory, rooms and tasks arrive with the changes that build them, each with its own
  * migration.
  */
 import { sql } from "drizzle-orm";
@@ -18,6 +18,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 /**
@@ -127,4 +128,98 @@ export const hubAudit = pgTable(
     payload: jsonb("payload"),
   },
   (table) => [index("hub_audit_at").on(table.at)],
+);
+
+/**
+ * A company login: what an admin stored once for the members to use. Nothing in it is a value.
+ *
+ * Sealed by the same envelope as a person's saved logins (`shared/login-seal.ts`): a key of the
+ * row's own seals the name and the password, and that key is wrapped under the hub's
+ * `HUB_KEY_ENCRYPTION_KEY`, which is not in this database. `kek_id` says which hub key wrapped it.
+ */
+export const hubVaultLogins = pgTable("hub_vault_logins", {
+  id: text("id").primaryKey(),
+  label: text("label").notNull(),
+  site: text("site"),
+  origins: text("origins").array().notNull(),
+  wrappedKey: text("wrapped_key").notNull(),
+  kekId: text("kek_id").notNull(),
+  sealedUsername: text("sealed_username").notNull(),
+  sealedPassword: text("sealed_password").notNull(),
+  concurrent: boolean("concurrent").notNull().default(false),
+  createdBy: text("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  changedBy: text("changed_by"),
+  changedAt: timestamp("changed_at", { withTimezone: true }),
+});
+
+/** Who may use a login. Dropped with the login, and with the member's leaving (`fleet.ts`). */
+export const hubVaultGrants = pgTable(
+  "hub_vault_grants",
+  {
+    loginId: text("login_id")
+      .notNull()
+      .references(() => hubVaultLogins.id, { onDelete: "cascade" }),
+    memberId: text("member_id")
+      .notNull()
+      .references(() => hubMembers.id, { onDelete: "cascade" }),
+    grantedBy: text("granted_by"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.loginId, table.memberId] }),
+    index("hub_vault_grants_member").on(table.memberId),
+  ],
+);
+
+/**
+ * A VM's hold on a login. `id` is the SHA-256 of the lease the VM was given, so the table never
+ * holds a lease that opens anything. `opened_at` is set by the one `open` a lease allows.
+ *
+ * At most one exclusive lease per login, held in the lease route under the login row's lock; the
+ * partial unique index is the floor under that. A concurrent login's leases are not exclusive and
+ * any number of VMs hold one at once.
+ */
+export const hubVaultLeases = pgTable(
+  "hub_vault_leases",
+  {
+    id: text("id").primaryKey(),
+    loginId: text("login_id")
+      .notNull()
+      .references(() => hubVaultLogins.id, { onDelete: "cascade" }),
+    memberId: text("member_id")
+      .notNull()
+      .references(() => hubMembers.id, { onDelete: "cascade" }),
+    vmOrigin: text("vm_origin"),
+    runId: text("run_id"),
+    origin: text("origin").notNull(),
+    exclusive: boolean("exclusive").notNull(),
+    until: timestamp("until", { withTimezone: true }).notNull(),
+    openedAt: timestamp("opened_at", { withTimezone: true }),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("hub_vault_leases_login").on(table.loginId),
+    uniqueIndex("hub_vault_leases_one_exclusive")
+      .on(table.loginId)
+      .where(sql`${table.exclusive}`),
+  ],
+);
+
+/** The VMs that verified themselves as a device on a login's site: "인증된 VM 3/5". */
+export const hubVaultDevices = pgTable(
+  "hub_vault_devices",
+  {
+    loginId: text("login_id")
+      .notNull()
+      .references(() => hubVaultLogins.id, { onDelete: "cascade" }),
+    vmOrigin: text("vm_origin").notNull(),
+    verifiedBy: text("verified_by"),
+    verifiedAt: timestamp("verified_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.loginId, table.vmOrigin] })],
 );

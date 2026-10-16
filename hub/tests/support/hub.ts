@@ -36,6 +36,8 @@ export async function startTestHub(
     heartbeatMs?: number;
     rotationGraceMs?: number;
     now?: () => Date;
+    /** The vault's key; a fresh one unless given, `null` for a hub started without one. */
+    vaultKey?: string | null;
   } = {},
 ): Promise<TestHub> {
   const source = new URL(base());
@@ -56,13 +58,18 @@ export async function startTestHub(
   const log = createLogger("hub", (level, line) => lines.push({ level, line }));
   const fleetKey = randomBytes(32).toString("hex");
   const origin = "https://test.hub.example";
+  const { vaultKey, ...rest } = options;
   const { app, websocket } = createHubApp({
     database,
     log,
     publicOrigin: origin,
     fleetSecret: fleetKey,
     privateIp: "10.20.0.5",
-    ...options,
+    vaultKey:
+      vaultKey === null
+        ? undefined
+        : (vaultKey ?? randomBytes(32).toString("hex")),
+    ...rest,
   });
   const server = Bun.serve({
     port: 0,

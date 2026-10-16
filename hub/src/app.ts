@@ -18,6 +18,7 @@ import { createListeners, eventsSince, headSeq } from "./events";
 import { fleetRoutes } from "./fleet";
 import { countIdempotency } from "./idempotency";
 import { eventSocket } from "./socket";
+import { vaultRoutes } from "./vault";
 
 export type HubAppOptions = {
   database: HubDatabase;
@@ -28,6 +29,10 @@ export type HubAppOptions = {
   fleetSecret: string | undefined;
   /** `HUB_PRIVATE_IP`: given to members so a VM in the same network tries it first. */
   privateIp: string | null;
+  /** `HUB_KEY_ENCRYPTION_KEY`. Absent, the login vault answers `laf:hub_vault_unset`. */
+  vaultKey?: string | undefined;
+  /** `HUB_VAULT_LEASE_MS`; shorter only in tests. */
+  vaultLeaseMs?: number;
   heartbeatMs?: number;
   rotationGraceMs?: number;
   now?: () => Date;
@@ -138,6 +143,19 @@ export function createHubApp(options: HubAppOptions) {
     );
     return context.json({ ok: true, ...page });
   });
+
+  hub.route(
+    "/vault",
+    vaultRoutes({
+      database,
+      listeners,
+      member,
+      log,
+      key: options.vaultKey,
+      ...(options.now ? { now: options.now } : {}),
+      ...(options.vaultLeaseMs ? { leaseMs: options.vaultLeaseMs } : {}),
+    }),
+  );
 
   hub.get(
     "/events",

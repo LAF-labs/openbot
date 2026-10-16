@@ -19,6 +19,7 @@ const { app, websocket, listeners } = createHubApp({
   publicOrigin: config.publicOrigin,
   fleetSecret: config.fleetSecret,
   privateIp: config.privateIp,
+  vaultKey: config.vaultKey,
 });
 
 const server = Bun.serve({
@@ -46,6 +47,7 @@ log.info("boot", {
   port: server.port,
   protocol: HUB_PROTOCOL,
   fleet: config.fleetSecret ? "set" : "unset",
+  vault: config.vaultKey ? "set" : "unset",
 });
 
 // An upgrade stops this container. The VMs are told the hub is going away (1001) and reconnect to

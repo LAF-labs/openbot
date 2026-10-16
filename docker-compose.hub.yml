@@ -9,8 +9,9 @@
 #
 # What a hub's `.env` holds: HUB_PUBLIC_ORIGIN (the address members reach it at, scheme included),
 # HUB_FLEET_SECRET (this hub's registry key, derived by laf-control — never the master),
-# POSTGRES_PASSWORD, IMAGE_TAG, and optionally HUB_PRIVATE_IP (given to members in the same
-# private network to try first).
+# POSTGRES_PASSWORD, IMAGE_TAG, HUB_KEY_ENCRYPTION_KEY (the login vault's key, `openssl rand -hex
+# 32`; without it the vault refuses and the rest of the hub runs), and optionally HUB_PRIVATE_IP
+# (given to members in the same private network to try first).
 name: laf-hub
 
 # Every service's logs, bounded, for the reason docker-compose.yml gives: a full disk stops Postgres.
@@ -72,6 +73,7 @@ services:
       PORT: "7200"
       HUB_PUBLIC_ORIGIN: ${HUB_PUBLIC_ORIGIN:-http://localhost}
       HUB_FLEET_SECRET: ${HUB_FLEET_SECRET:-}
+      HUB_KEY_ENCRYPTION_KEY: ${HUB_KEY_ENCRYPTION_KEY:-}
       HUB_PRIVATE_IP: ${HUB_PRIVATE_IP:-}
       IMAGE_TAG: ${IMAGE_TAG:-stable}
     ports:

@@ -26,7 +26,7 @@ RUN bun install --frozen-lockfile --filter=hub --production
 COPY tsconfig.base.json ./
 COPY hub/tsconfig.json hub/tsconfig.json
 COPY shared/hub shared/hub
-COPY shared/channel-socket.ts shared/log.ts shared/failure-text.ts shared/
+COPY shared/channel-socket.ts shared/log.ts shared/failure-text.ts shared/login-seal.ts shared/
 COPY hub/src hub/src
 COPY hub/drizzle hub/drizzle
 

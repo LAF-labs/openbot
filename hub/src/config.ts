@@ -10,6 +10,11 @@ export type HubConfig = {
   /** This hub's registry key (`HMAC(master, "laf-hub-fleet/v1 <origin>")`, hex). */
   fleetSecret: string | undefined;
   privateIp: string | null;
+  /**
+   * `HUB_KEY_ENCRYPTION_KEY`: the key the login vault wraps each login's own key under, 32 bytes
+   * as hex. Absent, the vault's routes answer `laf:hub_vault_unset` and the rest of the hub runs.
+   */
+  vaultKey: string | undefined;
 };
 
 const KEY_SHAPE = /^[0-9a-f]{64}$/;
@@ -38,5 +43,18 @@ export function readHubConfig(
   if (privateIp !== null && !IPV4.test(privateIp)) {
     throw new Error("HUB_PRIVATE_IP is not an IPv4 address");
   }
-  return { databaseUrl, port, publicOrigin, fleetSecret, privateIp };
+  // Malformed is refused at boot like the fleet key: a vault sealing under a key that is not 32
+  // bytes would fail on its first write, long after the operator could see why.
+  const vaultKey = env.HUB_KEY_ENCRYPTION_KEY?.trim() || undefined;
+  if (vaultKey !== undefined && !KEY_SHAPE.test(vaultKey)) {
+    throw new Error("HUB_KEY_ENCRYPTION_KEY is not 64 hex characters");
+  }
+  return {
+    databaseUrl,
+    port,
+    publicOrigin,
+    fleetSecret,
+    privateIp,
+    vaultKey,
+  };
 }
