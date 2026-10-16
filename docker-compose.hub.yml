@@ -11,6 +11,10 @@
 # HUB_FLEET_SECRET (this hub's registry key, derived by laf-control — never the master),
 # POSTGRES_PASSWORD, IMAGE_TAG, and optionally HUB_PRIVATE_IP (given to members in the same
 # private network to try first).
+#
+# What it reads from the host besides: /etc/laf-hub-blob-remote, the write-only door into the
+# company's blob bucket that laf-control installs (root, 600) — handed to the hub by the `door`
+# service below.
 name: laf-hub
 
 # Every service's logs, bounded, for the reason docker-compose.yml gives: a full disk stops Postgres.
@@ -75,11 +79,18 @@ services:
       HUB_PRIVATE_IP: ${HUB_PRIVATE_IP:-}
       # Team files, by content hash (hub/src/files/store.ts). Unset, files and search are refused.
       HUB_FILES_DIR: /srv/hub/files
+      # The blob bucket's door, as the `door` service leaves it (hub/src/files/mirror.ts). Read on
+      # every mirror pass; absent, nothing is copied and `/metrics` says `mirror: "off"`.
+      HUB_BLOB_DOOR_FILE: /run/laf-door/blob-remote
+      # `PUT /hub/v1/files` on a listener of its own, which streams a body to the volume without
+      # holding it in memory (hub/src/uploads.ts). Reached only through `web` (hub/Caddyfile).
+      HUB_UPLOAD_PORT: "7201"
       IMAGE_TAG: ${IMAGE_TAG:-stable}
     volumes:
       # Owned by the image's user (uid 1000) on first mount (hub/Dockerfile). laf-control: put the hub
       # VM's block volume under this named volume (or bind it at /srv/hub/files, chowned 1000:1000).
       - hub-files:/srv/hub/files
+      - hub-door:/run/laf-door:ro
     ports:
       # Loopback only: `GET /hub/v1/metrics` is read here by the operator's collector over SSH, and
       # the front door refuses that path from outside (hub/Caddyfile).
@@ -96,6 +107,43 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    restart: unless-stopped
+
+  # Hands the blob bucket's door from the host to the hub. laf-control writes it root-only (600) at
+  # /etc/laf-hub-blob-remote, the hub runs as uid 1000 and cannot read that, and the file may not
+  # exist yet: laf-control's `hub create` mints it after this stack is up, `hub offsite` on a hub
+  # already running. So not a bind of the file itself — Docker would make a DIRECTORY at that path
+  # on the host when it is missing, and laf-control's "is a door installed" check would then find
+  # one and never write it. Instead this reads /etc (read-only) once a minute and keeps a copy the
+  # hub's user can read on a memory-backed volume (never the disk), or removes the copy when the
+  # door is gone. No network, nothing but the one copy: root only because the door is root's.
+  door:
+    image: ghcr.io/laf-labs/openbot-hub:${IMAGE_TAG:-stable}
+    user: "0:0"
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    # `chgrp bun`: the copy is root's, readable by the hub's group (0440), so this can compare it.
+    cap_add: [CHOWN]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        trap 'exit 0' TERM INT
+        src=/host-etc/laf-hub-blob-remote
+        dst=/run/laf-door/blob-remote
+        while :; do
+          if [ -f "$$src" ] && [ -s "$$src" ]; then
+            cmp -s "$$src" "$$dst" || { rm -f "$$dst.new" && cp "$$src" "$$dst.new" && chmod 0440 "$$dst.new" && chgrp bun "$$dst.new" && mv -f "$$dst.new" "$$dst"; }
+          else
+            rm -f "$$dst"
+          fi
+          sleep 60 & wait $$!
+        done
+    volumes:
+      - /etc:/host-etc:ro
+      - hub-door:/run/laf-door
+    logging: *logging
+    mem_limit: 32m
     restart: unless-stopped
 
   # The front door: TLS and the one proxy. The stock image with the hub's Caddyfile mounted — the
@@ -129,5 +177,12 @@ services:
 volumes:
   hub-postgres-data:
   hub-files:
+  # The door's copy (the `door` service): in memory, so the secret is on the disk only where
+  # laf-control put it.
+  hub-door:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=64k,mode=0755"
   hub-caddy-data:
   hub-caddy-config:
