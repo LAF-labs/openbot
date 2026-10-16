@@ -3241,7 +3241,13 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4711, roots: ["server"] },
+  /*
+   * RAISED 2026-10-16 FOR THE CALL'S DEADLINE ON A THROTTLED VM, from 4711 to 4816: 105 in
+   * `computer-client.test.ts` — today's 45 s at a whole core and the stretched, capped deadline
+   * below it, one test per share from 0.01 to 1 that the server outwaits the computer's longest
+   * call, and four on the header the deadline follows. 4711 and 105 is 4816.
+   */
+  { name: "server", floor: 4816, roots: ["server"] },
   { name: "app", floor: 2534, roots: ["app"] },
   {
     name: "agent-computer",
@@ -3280,8 +3286,12 @@ const GROUPS: readonly {
      * `core-share.test.ts` — reading `/proc/stat`, the share over its window on an A1, a pinned
      * E4, a starved machine, one that starts bursting, an idle one, counters that went backwards
      * and a machine with no `/proc/stat`, and the two answers `/health` gives.
+     *
+     * RAISED 2026-10-16 FOR A CALL'S SHARE, IN AND OUT, from 643 to 646: three more in
+     * `core-share.test.ts` — a step stretched as far as the server said it waits, never further,
+     * and a machine that cannot be read saying nothing.
      */
-    floor: 643,
+    floor: 646,
     roots: ["agent-computer"],
     processes: 1,
   },
