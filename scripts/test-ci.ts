@@ -3234,6 +3234,19 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * the same file had passed for two weeks with the group in one process, on machines as quick.
  * What it costs: the group is the run's longest piece, about 175 s on its own worker beside the
  * others, against about 135 s spread — the gate still ends when it does.
+ *
+ * RAISED 2026-10-16 FOR THE VM'S LINE TO ITS COMPANY HUB: `server` by thirty-five (to 4746) — the
+ * one HTTP door's retries and facts (hub-http.test.ts, 10: a 5xx tried again, a silent hub four
+ * tries 0.5/2/8 s apart, 401/403/404 never retried, another 4xx's own code, a 429's Retry-After,
+ * one attempt when asked, the headers, the socket's address); the outbox on a real Postgres
+ * (hub-outbox.integration.test.ts, 4: a row kept through an outage and sent with one key, a refusal
+ * ended, a refused pass said once, two senders sending each row once); the line against the real
+ * hub of `hub/` (hub-link.integration.test.ts, 5: two VMs hearing each other within a second and
+ * the cursor kept, a gap caught up from the cursor, an unknown pass refused once, a departure's
+ * 4401, a hub that does not answer); the two doors (hub-routes.test.ts, 6); and the two `.env`
+ * lines (config.test.ts, 10). And `app` by nine (to 2543): the settings line, the hub's four facts
+ * in Korean, and the socket telling a hub frame from a roster patch (hub-status.test.ts). 4711 and
+ * 35; 2534 and 9.
  */
 const GROUPS: readonly {
   name: string;
@@ -3241,8 +3254,8 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4711, roots: ["server"] },
-  { name: "app", floor: 2534, roots: ["app"] },
+  { name: "server", floor: 4746, roots: ["server"] },
+  { name: "app", floor: 2543, roots: ["app"] },
   {
     name: "agent-computer",
     /*
