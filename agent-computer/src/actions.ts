@@ -7,6 +7,7 @@
  */
 import type { Page } from "playwright";
 import type { BotRoute } from "./computer";
+import { stepDeadline } from "./core-share";
 import { actionFailure } from "./failures";
 import { holdToLabel } from "./label-hold";
 import { log } from "./log";
@@ -254,7 +255,7 @@ export const act: BotRoute = async (
         target,
         url.pathname,
         body,
-        config.actionTimeoutMs,
+        stepDeadline(config.actionTimeoutMs),
         // The caller going away is the stop signal: the surface aborts its request, the server
         // aborts the one it made to this computer, and Bun aborts this one in turn.
         request.signal,
@@ -346,7 +347,9 @@ export const upload: BotRoute = async (
     );
     await holdToLabel(field, body.element);
     await onElement(() =>
-      field.setInputFiles(full, { timeout: config.actionTimeoutMs }),
+      field.setInputFiles(full, {
+        timeout: stepDeadline(config.actionTimeoutMs),
+      }),
     );
     return json(
       withNotes(session, {
