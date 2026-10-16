@@ -3241,7 +3241,11 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4711, roots: ["server"] },
+  /*
+   * RAISED 2026-10-16 FOR THE MEMORY FILTERS MOVED TO shared/, from 4711 to 4715: four in
+   * `memory-guards-shared.test.ts`, each filter the server exports held to the shared function.
+   */
+  { name: "server", floor: 4715, roots: ["server"] },
   { name: "app", floor: 2534, roots: ["app"] },
   {
     name: "agent-computer",
@@ -3300,7 +3304,17 @@ const GROUPS: readonly {
    * grace with the old pass closed then while the new pass's stays (events-socket.test.ts, 3), and
    * a name-only registry write leaving a running grace alone (auth.test.ts, 1).
    */
-  { name: "hub", floor: 50, roots: ["hub"] },
+  /*
+   * RAISED 2026-10-16 FOR TEAM SKILLS AND TEAM MEMORY, from 50 to 75: memory.test.ts 18 (seven
+   * planted shapes refused and stored nowhere, a secret in the evidence, the trail keeping the
+   * reason and not the words, a fact proposed and read by nobody, who hears of a proposal, the
+   * Idempotency-Key, a member refused at confirm, an admin's confirm carried with its version, no
+   * second confirm, retiring and the same words refused twice, the 1,500 characters pushing the
+   * oldest out); skills.test.ts 7 (taught and listed with its version, an unchanged save, author or
+   * admin, a planted title or summary, a slug the VM could not call, a pack installed by an admin,
+   * a pack edited since it shipped).
+   */
+  { name: "hub", floor: 75, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
