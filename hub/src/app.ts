@@ -19,14 +19,15 @@ import { type BlobMirror, countUnmirrored } from "./files/mirror";
 import { fileRoutes } from "./files/routes";
 import { fleetRoutes } from "./fleet";
 import { countIdempotency } from "./idempotency";
+import { memberRoutes } from "./members";
+import { memoryRoutes } from "./memory";
 import { roomRoutes } from "./rooms";
 import { searchRoute } from "./search";
-import { memoryRoutes } from "./memory";
 import { skillRoutes } from "./skills";
 import { eventSocket } from "./socket";
-import { readVersions } from "./versions";
 import { taskRoutes } from "./tasks";
 import { vaultRoutes } from "./vault";
+import { readVersions } from "./versions";
 
 export type HubAppOptions = {
   database: HubDatabase;
@@ -173,6 +174,7 @@ export function createHubApp(options: HubAppOptions) {
       ...(options.now ? { now: options.now } : {}),
     }),
   );
+  hub.route("/members", memberRoutes({ database, member }));
 
   hub.get("/sync", member, async (context) => {
     const since = cursorOf(context.req.query("since"), 0);

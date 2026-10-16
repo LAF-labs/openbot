@@ -16,6 +16,7 @@ import {
   type NotificationFrame,
   notificationFrames,
 } from "@/lib/notifications/outbox";
+import { hubKeysForFrame } from "@/lib/hub/company";
 import { hubKeys } from "@/lib/hub/status";
 import { OUTAGE_CAP_MS } from "@/lib/polling";
 import { type ChannelSummary, channelKeys } from "./queries";
@@ -327,6 +328,8 @@ function openConnection(queryClient: QueryClient): Connection {
         // And what the polls would have learned meanwhile, once rather than on their next tick.
         void queryClient.invalidateQueries({ queryKey: workingKeys.all });
         void queryClient.invalidateQueries({ queryKey: dayKeys.all });
+        // The company's frames missed meanwhile: a room open on screen would otherwise stay as it was.
+        void queryClient.invalidateQueries({ queryKey: hubKeys.all });
         socketState.dispatchEvent(new Event(SOCKET_RECONNECTED));
       }
       opened = true;
@@ -367,9 +370,12 @@ function openConnection(queryClient: QueryClient): Connection {
         );
         return;
       }
-      // The company hub: its line changed, or something in the company did.
+      // The company hub: its line changed, or something in the company did — only what that names
+      // is asked again, so a message in one room does not refetch the files and every other room.
       if (isHubFrame(parsed)) {
-        void queryClient.invalidateQueries({ queryKey: hubKeys.all });
+        for (const queryKey of hubKeysForFrame(parsed)) {
+          void queryClient.invalidateQueries({ queryKey });
+        }
         hubFrames.dispatchEvent(
           new CustomEvent<HubFrame>(HUB_FRAME, { detail: parsed }),
         );

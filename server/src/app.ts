@@ -83,6 +83,7 @@ import { log } from "./log";
 import type { HubHttp } from "./hub/http";
 import type { HubLink } from "./hub/link";
 import { createHubRoutes } from "./hub/routes";
+import { createHubUiRoutes } from "./hub/routes-ui";
 import { createLoginRoutes } from "./logins/routes";
 import type { LoginVault } from "./logins/store";
 import { createSecurityMiddleware, RATE_LIMITED } from "./middleware/security";
@@ -1064,6 +1065,8 @@ export function createApp({
   }
 
   app.route("/api/hub", createHubRoutes(hub, requireUser));
+  // The 회사 screen's doors: members, rooms, team files, skills and team memory, through the pass.
+  app.route("/api/hub", createHubUiRoutes(hub, requireUser));
 
   if (feed) {
     app.route("/api/feed", createFeedRoutes(feed, requireUser));
