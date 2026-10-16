@@ -21,6 +21,7 @@ COPY agent-computer/package.json agent-computer/package.json
 # layer is cached, and fails the first time somebody builds on a fresh machine — which is a
 # deployment.
 COPY desktop/package.json desktop/package.json
+COPY hub/package.json hub/package.json
 RUN bun install --frozen-lockfile
 
 COPY app app

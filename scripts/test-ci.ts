@@ -3281,6 +3281,29 @@ const GROUPS: readonly {
     processes: 1,
   },
   { name: "root", floor: 1744, roots: ["tests", "agent-bot"] },
+  /*
+   * ADDED 2026-10-16 WITH THE COMPANY HUB, at forty-six: its own process on its own VM, so its own
+   * floor rather than a share of another's. auth.test.ts 11 (a pass opening /me as its member, a
+   * refused one a single line with nothing logged, four malformed headers, a pass used from
+   * another VM, a member who left and came back, a rotation's ten minutes, health and the
+   * metrics' counts); fleet.test.ts 16 (signatures, the per-hub key, another hub's body, a stale
+   * body, four bad fields, one write for a repeated or racing id, no event for no change, a
+   * conflict, an unknown departure, the trail, an unset key, one workspace row); sync.test.ts 9
+   * (paging, `visible_to` both ways, a cursor past hidden events, four bad cursors, a number
+   * committed late never skipped, an event's fields); events-socket.test.ts 6 (live delivery,
+   * catch-up on reconnect, per-member delivery, heartbeat, a departure closing the socket, no
+   * socket without a pass); audit.test.ts 4 (insert, and update, delete and truncate refused).
+   */
+  /*
+   * RAISED 2026-10-16 FOR THE HUB'S FIX ROUND, from 46 to 50: a ping that throws kept inside its
+   * timer, a socket opened before a rotation closed when the grace ends, one opened inside the
+   * grace with the old pass closed then while the new pass's stays (events-socket.test.ts, 3), and
+   * a name-only registry write leaving a running grace alone (auth.test.ts, 1).
+   *
+   * RAISED 2026-10-16 FOR A SECOND ROTATION, from 50 to 51: the pass it drops loses its socket at
+   * once while the pass in grace keeps its own (events-socket.test.ts, 1).
+   */
+  { name: "hub", floor: 51, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
