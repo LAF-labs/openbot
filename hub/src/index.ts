@@ -3,6 +3,7 @@ import { buildOf, createLogger, reportCrashes } from "../../shared/log";
 import { createHubApp } from "./app";
 import { readHubConfig } from "./config";
 import { createHubDatabase, migrateHub } from "./db/client";
+import { FILES_BODY_MAX } from "./files/routes";
 import { sweepIdempotency } from "./idempotency";
 
 const log = createLogger("hub");
@@ -19,6 +20,8 @@ const { app, websocket, listeners } = createHubApp({
   publicOrigin: config.publicOrigin,
   fleetSecret: config.fleetSecret,
   privateIp: config.privateIp,
+  filesDir: config.filesDir,
+  filesQuotaBytes: config.filesQuotaBytes,
 });
 
 const server = Bun.serve({
@@ -26,6 +29,9 @@ const server = Bun.serve({
   // Longer than the heartbeat's three missed pings, so the hub's own silence rule closes a quiet
   // socket and Bun's idle cut never does it first.
   idleTimeout: 60,
+  // Bun's own default is 128 MB; a team file may be a gigabyte. `PUT /files` streams the body to
+  // the volume and counts it as it goes (src/files/routes.ts), so this bound costs no memory.
+  maxRequestBodySize: FILES_BODY_MAX,
   fetch: (request, bunServer) => app.fetch(request, { server: bunServer }),
   websocket,
 });
@@ -46,6 +52,7 @@ log.info("boot", {
   port: server.port,
   protocol: HUB_PROTOCOL,
   fleet: config.fleetSecret ? "set" : "unset",
+  files: config.filesDir ? "set" : "unset",
 });
 
 // An upgrade stops this container. The VMs are told the hub is going away (1001) and reconnect to

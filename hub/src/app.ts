@@ -15,9 +15,11 @@ import { type MemberVariables, requireMember } from "./auth";
 import type { HubDatabase } from "./db/client";
 import { hubMembers, hubWorkspace } from "./db/schema";
 import { createListeners, eventsSince, headSeq } from "./events";
+import { fileRoutes } from "./files/routes";
 import { fleetRoutes } from "./fleet";
 import { countIdempotency } from "./idempotency";
 import { roomRoutes } from "./rooms";
+import { searchRoute } from "./search";
 import { eventSocket } from "./socket";
 
 export type HubAppOptions = {
@@ -29,6 +31,12 @@ export type HubAppOptions = {
   fleetSecret: string | undefined;
   /** `HUB_PRIVATE_IP`: given to members so a VM in the same network tries it first. */
   privateIp: string | null;
+  /** `HUB_FILES_DIR`, or null when this hub keeps no files. */
+  filesDir?: string | null;
+  /** `HUB_FILES_QUOTA_BYTES`, or null. */
+  filesQuotaBytes?: number | null;
+  /** The largest file taken; `HUB_FILE_MAX_BYTES` unless a test sets a smaller one. */
+  fileMaxBytes?: number;
   heartbeatMs?: number;
   rotationGraceMs?: number;
   now?: () => Date;
@@ -104,6 +112,20 @@ export function createHubApp(options: HubAppOptions) {
   );
 
   const member = requireMember(database);
+  const filesDir = options.filesDir ?? null;
+
+  hub.route(
+    "/files",
+    fileRoutes({
+      database,
+      listeners,
+      member,
+      filesDir,
+      quotaBytes: options.filesQuotaBytes ?? null,
+      ...(options.fileMaxBytes ? { fileMaxBytes: options.fileMaxBytes } : {}),
+    }),
+  );
+  hub.route("/search", searchRoute({ database, member, filesDir }));
 
   hub.get("/me", member, async (context) => {
     const self = context.get("member");
