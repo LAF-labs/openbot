@@ -3306,7 +3306,7 @@ const GROUPS: readonly {
    * deleted files, the trail, five bad requests); visibility-property.test.ts 3 (three seeds of
    * members, tasks and files, every way of asking). 46 and 65 is 111.
    */
-  { name: "hub", floor: 111, roots: ["hub"] },
+  { name: "hub", floor: 131, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
