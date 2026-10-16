@@ -123,6 +123,13 @@ import {
   offeredTools,
 } from "./plugins/built-in-skill-sync";
 import { connectConfigFor } from "./plugins/connect-config";
+import {
+  type IndustryPack,
+  packFor,
+  readDeploymentOwner,
+  readIndustryPacks,
+  withPackOnKindChange,
+} from "./plugins/industry-packs";
 import { createDeploymentKeyRuntime } from "./plugins/deployment-key-runtime";
 import { DEPLOYMENT_KEY_SERVICES } from "./plugins/deployment-key-services";
 import { KMA_WEATHER_KEY } from "./plugins/kma-weather-rest";
@@ -143,6 +150,7 @@ import {
   createRoutineFailureDelivery,
 } from "./routines/deliver";
 import { createRoutineService } from "./routines/service";
+import { ROUTINE_SUGGESTIONS } from "./routines/suggestion-catalog";
 import { createSuggestionDismissalStore } from "./routines/suggestions";
 import { createBotLane } from "./runner/bot-lane";
 import { createWorkInFlight } from "./runner/in-flight";
@@ -421,11 +429,33 @@ const deploymentKeyRuntime = createDeploymentKeyRuntime({
 const deploymentTools = offeredTools({
   deploymentKeyTools: deploymentKeyRuntime.toolNames,
 });
+/**
+ * The industry packs (`tenant/<package>/profiles/<kind>/`): what choosing a kind of business
+ * pre-installs. A pack that does not read is logged and none is carried — never fatal, like a
+ * skill file; the tests fail on it first (`industry-packs.test.ts`).
+ */
+const industryPacks: readonly IndustryPack[] = await readIndustryPacks(
+  config.tenantPackageDirectory,
+  { suggestions: ROUTINE_SUGGESTIONS },
+).catch((error: unknown) => {
+  log.error("industry_packs_not_read", {
+    reason: error instanceof Error ? error.message : String(error),
+  });
+  return [];
+});
 const builtInSkills = createBuiltInSkills({
   packageDir: config.tenantPackageDirectory,
   listBots: () => allLiveBots(database),
   // A skill whose tool this deployment lacks is not carried at all (`requires:` in its file).
   hasTool: (name) => deploymentTools.has(name),
+  // The person's business kind decides which pack's own skills are carried beside the package's.
+  packSkills: async () => {
+    const owner = await readDeploymentOwner(database);
+    // Read through the shop store, the one reader of the answer; it is made below and only called
+    // from a reconcile, which runs after boot has made it.
+    const kind = owner ? (await shopStore.read(owner)).kind : null;
+    return packFor(industryPacks, kind)?.own ?? [];
+  },
 });
 sayConnectors({
   alimtalk: config.partners.alimtalk !== null,
@@ -495,7 +525,9 @@ const roleRepository = createRoleRepository(database);
  * What kind of business the person runs and where they work every day: written only by the person
  * (`PUT /api/me/shop`, the first run and Settings), read by `/api/me` and by every run below.
  */
-const shopStore = createShopStore(database);
+const shopStore = withPackOnKindChange(createShopStore(database), () =>
+  builtInSkills.reconcile(pluginStore, "deployment"),
+);
 /**
  * Where every Bot is dialled: at this deployment's own agent on a hosted deployment, whatever its
  * row holds — and where its row says on a developer's stack, where a Bot may be pointed at an
@@ -1291,6 +1323,8 @@ const app = createApp({
   }),
   // The package's skills, handed to a Bot the moment it is made (built-in-skill-sync.ts).
   builtInSkills,
+  // The industry packs: a person's kind orders the routine suggestions (industry-packs.ts).
+  industryPacks,
   // Files the owner hands their Bot: the composer's two doors, and whether photos are offered.
   attachments: attachmentService,
   // A turn the server owns: its doors.

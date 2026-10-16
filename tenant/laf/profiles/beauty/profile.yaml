@@ -1,0 +1,11 @@
+# 미용·뷰티 꾸러미. 미리 까는 것이고, 어떤 기능도 가리지 않는다.
+version: "1"
+skills:
+  - 미용뷰티
+  - 네이버블로그
+  - 세금노무
+routine_suggestions:
+  - booking-check
+  - review-watch
+  - unanswered-enquiries
+  - morning-brief

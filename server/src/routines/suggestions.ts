@@ -4,6 +4,7 @@ import type { AgentActor } from "../agents/profile-types";
 import type { Database } from "../db/client";
 import { lafRoutineSuggestionDismissals } from "../db/schema";
 import { catalogueEntry } from "../plugins/catalogue";
+import { orderedByPack } from "../plugins/industry-packs";
 import { RoutineError, type RoutineService } from "./service";
 import {
   ROUTINE_SUGGESTIONS,
@@ -32,6 +33,9 @@ import {
  *  - AT MOST FIVE. The nag wall is the failure this whole feature would otherwise be — eleven
  *    cards above the list somebody came to read. Five, in catalogue order, and the next one moves
  *    up as the person decides about the ones in front of it.
+ *  - THE KIND'S FIRST. A person who said what kind of business they run is offered that industry
+ *    pack's suggestions ahead of the rest (`leadingKeys`, `industry-packs.ts`). Only the order moves:
+ *    every card is still offered on the same rules, and a kind with no pack keeps catalogue order.
  */
 
 export const MAX_PENDING_SUGGESTIONS = 5;
@@ -111,6 +115,11 @@ export type RoutineSuggestionOptions = {
   bots: (actor: AgentActor) => Promise<{ id: string; name: string }[]>;
   catalogue?: readonly RoutineSuggestionEntry[];
   limit?: number;
+  /**
+   * The suggestion keys this person is offered first — their business kind's pack. A read that
+   * fails orders nothing: the order is a nicety, and the cards still have to come.
+   */
+  leadingKeys?: (userId: string) => Promise<readonly string[]>;
 };
 
 const requirementKey = (requirement: SuggestionRequirement) =>
@@ -137,10 +146,11 @@ async function offeredTo(
   const bots = await options.bots(actor);
   if (bots.length === 0) return [];
 
-  const [connections, dismissed, routines] = await Promise.all([
+  const [connections, dismissed, routines, leading] = await Promise.all([
     options.connections(actor.id),
     options.dismissals.dismissedKeys(actor.id),
     options.routines.list(actor),
+    options.leadingKeys?.(actor.id).catch(() => []) ?? [],
   ]);
 
   /*
@@ -180,7 +190,7 @@ async function offeredTo(
   }
 
   const cards: OfferedSuggestion[] = [];
-  for (const entry of catalogue) {
+  for (const entry of orderedByPack(catalogue, leading)) {
     if (latched.has(entry.key)) continue;
     if (takenKeys.has(entry.key) || takenNames.has(entry.name)) continue;
     const via = entry.needsAnyOf.filter((requirement) =>
