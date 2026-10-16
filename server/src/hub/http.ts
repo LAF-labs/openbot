@@ -41,8 +41,31 @@ export type HubRequest = {
   retry?: boolean;
 };
 
+/**
+ * One request whose body or answer is bytes rather than JSON: a team file going up, or coming back
+ * down. Tried once — a body that is a stream cannot be sent twice, and a download a person started
+ * is theirs to press again.
+ */
+export type HubRawRequest = {
+  method: "GET" | "PUT";
+  path: string;
+  /** Passed as they are: `content-type`, `content-length`. The pass is added here, never there. */
+  headers?: Record<string, string>;
+  body?: ReadableStream<Uint8Array> | null;
+  idempotencyKey?: string;
+  origin?: string;
+  /** Aborted with the person's own request, so a closed tab stops the hub sending. */
+  signal?: AbortSignal;
+};
+
+export type HubRawAnswer =
+  | { ok: true; response: Response }
+  | { ok: false; status: number | null; code: string };
+
 export type HubHttp = {
   request<T = unknown>(request: HubRequest): Promise<HubAnswer<T>>;
+  /** Bytes in or out, one attempt. A refusal is read into a fact the way `request` reads it. */
+  raw?(request: HubRawRequest): Promise<HubRawAnswer>;
   /** The `ws(s)://…/events?since=` address and the headers its upgrade carries. */
   socket(since: number): { url: string; headers: Record<string, string> };
 };
@@ -155,6 +178,50 @@ export function createHubHttp(options: HubHttpOptions): HubHttp {
         if (attempt < attempts - 1) await sleep(wait);
       }
       return last;
+    },
+
+    async raw(request) {
+      const headers: Record<string, string> = {
+        ...(request.headers ?? {}),
+        ...identity,
+        ...(request.idempotencyKey
+          ? { [HUB_HEADERS.idempotencyKey]: request.idempotencyKey }
+          : {}),
+        ...(request.origin ? { [HUB_HEADERS.origin]: request.origin } : {}),
+      };
+      try {
+        const response = await send(`${base}${request.path}`, {
+          method: request.method,
+          headers,
+          ...(request.body ? { body: request.body, duplex: "half" } : {}),
+          // No timeout of this module's own: a gigabyte takes as long as it takes. The person's own
+          // request ending is what stops it.
+          ...(request.signal ? { signal: request.signal } : {}),
+        } as RequestInit);
+        if (response.ok) return { ok: true, response };
+        const parsed: unknown = await response.json().catch(() => null);
+        /*
+         * An upload's refusals name themselves — the hub is full (507), one file is too large (413),
+         * the hub is taking as many uploads as it can (503) — and each wants different words than
+         * "cannot reach the company server". So a `laf:` code the hub named is kept, here only;
+         * a 401 is always the pass, whatever the body says.
+         */
+        const named = (parsed as { code?: unknown } | null)?.code;
+        return {
+          ok: false,
+          status: response.status,
+          code:
+            response.status !== 401 &&
+            typeof named === "string" &&
+            named.startsWith("laf:")
+              ? named
+              : response.status === 429
+                ? HUB_FACTS.unreachable
+                : factOfStatus(response.status, parsed),
+        };
+      } catch {
+        return { ok: false, status: null, code: HUB_FACTS.unreachable };
+      }
     },
 
     socket(since) {

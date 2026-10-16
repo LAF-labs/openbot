@@ -147,6 +147,16 @@ export type HubMe = {
 /** One number per cached collection, 0 before its first change. */
 export type HubVersions = { skills: number; memory: number };
 
+/**
+ * `GET /hub/v1/members`: the company's members as any member may see them — who is in it and in
+ * what role, so a room can show a name where its messages say `m:<id>`. No address, no VM origin:
+ * an email is the registry's (laf-control's) to hold, not every colleague's.
+ */
+export type HubMemberList = {
+  ok: true;
+  members: { id: string; name: string | null; role: HubRole }[];
+};
+
 /** The most `GET /sync` returns at once. */
 export const HUB_SYNC_LIMIT = 500;
 

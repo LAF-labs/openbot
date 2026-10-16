@@ -23,6 +23,7 @@ import { Route as AuthedWelcomeRouteImport } from './routes/_authed/welcome'
 import { Route as LegalPrivacyRouteImport } from './routes/legal/privacy'
 import { Route as LegalTermsRouteImport } from './routes/legal/terms'
 import { Route as AuthedAppIndexRouteImport } from './routes/_authed/_app/index'
+import { Route as AuthedAppCompanyRouteImport } from './routes/_authed/_app/company'
 import { Route as AuthedAppFeedRouteImport } from './routes/_authed/_app/feed'
 import { Route as AuthedAppGoalsRouteImport } from './routes/_authed/_app/goals'
 import { Route as AuthedAppHelpRouteImport } from './routes/_authed/_app/help'
@@ -119,6 +120,11 @@ const LegalTermsRoute = LegalTermsRouteImport.update({
 const AuthedAppIndexRoute = AuthedAppIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
+const AuthedAppCompanyRoute = AuthedAppCompanyRouteImport.update({
+  id: '/company',
+  path: '/company',
   getParentRoute: () => AuthedAppRoute,
 } as any)
 const AuthedAppFeedRoute = AuthedAppFeedRouteImport.update({
@@ -283,6 +289,7 @@ export interface FileRoutesByFullPath {
   '/welcome': typeof AuthedWelcomeRoute
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/terms': typeof LegalTermsRoute
+  '/company': typeof AuthedAppCompanyRoute
   '/feed': typeof AuthedAppFeedRoute
   '/goals': typeof AuthedAppGoalsRoute
   '/help': typeof AuthedAppHelpRoute
@@ -324,6 +331,7 @@ export interface FileRoutesByTo {
   '/welcome': typeof AuthedWelcomeRoute
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/terms': typeof LegalTermsRoute
+  '/company': typeof AuthedAppCompanyRoute
   '/feed': typeof AuthedAppFeedRoute
   '/goals': typeof AuthedAppGoalsRoute
   '/help': typeof AuthedAppHelpRoute
@@ -369,6 +377,7 @@ export interface FileRoutesById {
   '/_authed/welcome': typeof AuthedWelcomeRoute
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/terms': typeof LegalTermsRoute
+  '/_authed/_app/company': typeof AuthedAppCompanyRoute
   '/_authed/_app/feed': typeof AuthedAppFeedRoute
   '/_authed/_app/goals': typeof AuthedAppGoalsRoute
   '/_authed/_app/help': typeof AuthedAppHelpRoute
@@ -415,6 +424,7 @@ export interface FileRouteTypes {
     | '/welcome'
     | '/legal/privacy'
     | '/legal/terms'
+    | '/company'
     | '/feed'
     | '/goals'
     | '/help'
@@ -456,6 +466,7 @@ export interface FileRouteTypes {
     | '/welcome'
     | '/legal/privacy'
     | '/legal/terms'
+    | '/company'
     | '/feed'
     | '/goals'
     | '/help'
@@ -500,6 +511,7 @@ export interface FileRouteTypes {
     | '/_authed/welcome'
     | '/legal/privacy'
     | '/legal/terms'
+    | '/_authed/_app/company'
     | '/_authed/_app/feed'
     | '/_authed/_app/goals'
     | '/_authed/_app/help'
@@ -641,6 +653,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AuthedAppIndexRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
+    '/_authed/_app/company': {
+      id: '/_authed/_app/company'
+      path: '/company'
+      fullPath: '/company'
+      preLoaderRoute: typeof AuthedAppCompanyRouteImport
       parentRoute: typeof AuthedAppRoute
     }
     '/_authed/_app/feed': {
@@ -896,6 +915,7 @@ const AuthedSettingsRouteRouteWithChildren =
   AuthedSettingsRouteRoute._addFileChildren(AuthedSettingsRouteRouteChildren)
 
 interface AuthedAppRouteChildren {
+  AuthedAppCompanyRoute: typeof AuthedAppCompanyRoute
   AuthedAppFeedRoute: typeof AuthedAppFeedRoute
   AuthedAppGoalsRoute: typeof AuthedAppGoalsRoute
   AuthedAppHelpRoute: typeof AuthedAppHelpRoute
@@ -915,6 +935,7 @@ interface AuthedAppRouteChildren {
 }
 
 const AuthedAppRouteChildren: AuthedAppRouteChildren = {
+  AuthedAppCompanyRoute: AuthedAppCompanyRoute,
   AuthedAppFeedRoute: AuthedAppFeedRoute,
   AuthedAppGoalsRoute: AuthedAppGoalsRoute,
   AuthedAppHelpRoute: AuthedAppHelpRoute,
