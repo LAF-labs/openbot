@@ -1,0 +1,126 @@
+# A company hub: one VM holding what a company's members share, reached by their own VMs over
+# HTTPS with a pass each (hub/src/auth.ts). Three services — its Postgres, the hub process and
+# Caddy in front — and nothing of a person's VM: no Bot, no browser, no model key, no app.
+#
+# Its own project name, so on a machine that also runs docker-compose.yml the two never share a
+# container, a network or a volume.
+#
+#   docker compose -f docker-compose.hub.yml up -d
+#
+# What a hub's `.env` holds: HUB_PUBLIC_ORIGIN (the address members reach it at, scheme included),
+# HUB_FLEET_SECRET (this hub's registry key, derived by laf-control — never the master),
+# POSTGRES_PASSWORD, IMAGE_TAG, and optionally HUB_PRIVATE_IP (given to members in the same
+# private network to try first).
+name: laf-hub
+
+# Every service's logs, bounded, for the reason docker-compose.yml gives: a full disk stops Postgres.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: hub
+      POSTGRES_USER: hub
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hub}
+    logging: *logging
+    # docker-compose.yml's tuning, for a 1 OCPU / 3 GB hub: a quarter of the ceiling for shared
+    # buffers, the planner told what page cache the cgroup can really hold, SSD page costs, and any
+    # statement over a second written to the log.
+    command:
+      [
+        "postgres",
+        "-c",
+        "shared_buffers=256MB",
+        "-c",
+        "effective_cache_size=768MB",
+        "-c",
+        "work_mem=8MB",
+        "-c",
+        "random_page_cost=1.1",
+        "-c",
+        "log_min_duration_statement=1000",
+      ]
+    mem_limit: 1g
+    oom_score_adj: -500
+    shm_size: 256m
+    ports:
+      # Loopback only, as on a person's VM: the hub reaches it on the compose network, an operator
+      # through the SSH tunnel they are already in.
+      - "127.0.0.1:${HUB_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - hub-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hub -d hub"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # The hub. It applies its own migrations at boot, so there is no migrate service.
+  hub:
+    image: ghcr.io/laf-labs/openbot-hub:${IMAGE_TAG:-stable}
+    build:
+      context: .
+      dockerfile: hub/Dockerfile
+    environment:
+      DATABASE_URL: postgres://hub:${POSTGRES_PASSWORD:-hub}@postgres:5432/hub
+      PORT: "7200"
+      HUB_PUBLIC_ORIGIN: ${HUB_PUBLIC_ORIGIN:-http://localhost}
+      HUB_FLEET_SECRET: ${HUB_FLEET_SECRET:-}
+      HUB_PRIVATE_IP: ${HUB_PRIVATE_IP:-}
+      IMAGE_TAG: ${IMAGE_TAG:-stable}
+    ports:
+      # Loopback only: `GET /hub/v1/metrics` is read here by the operator's collector over SSH, and
+      # the front door refuses that path from outside (hub/Caddyfile).
+      - "127.0.0.1:${HUB_API_PORT:-7200}:7200"
+    logging: *logging
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:7200/hub/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+      start_interval: 1s
+    mem_limit: 512m
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # The front door: TLS and the one proxy. The stock image with the hub's Caddyfile mounted — the
+  # hub has no pages to bake into an image of its own. Pinned to the digest app/Dockerfile uses.
+  web:
+    image: caddy:2-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
+    ports:
+      - "${HUB_HTTP_PORT:-80}:80"
+      - "${HUB_HTTPS_PORT:-443}:443"
+    environment:
+      HUB_PUBLIC_ORIGIN: ${HUB_PUBLIC_ORIGIN:-http://localhost}
+    volumes:
+      - ./hub/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and the ACME account, kept across restarts (docker-compose.yml says why).
+      - hub-caddy-data:/data
+      - hub-caddy-config:/config
+    logging: *logging
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:2021/hub/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+      start_interval: 1s
+    mem_limit: 256m
+    depends_on:
+      hub:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  hub-postgres-data:
+  hub-caddy-data:
+  hub-caddy-config:
