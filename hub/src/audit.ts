@@ -1,4 +1,7 @@
-import type { HubTransaction } from "./db/client";
+import type { Context } from "hono";
+import { HUB_HEADERS } from "../../shared/hub/protocol";
+import type { MemberVariables } from "./auth";
+import type { HubDatabase, HubTransaction } from "./db/client";
 import { hubAudit } from "./db/schema";
 
 /**
@@ -16,7 +19,7 @@ export type AuditEntry = {
 };
 
 export async function recordAudit(
-  tx: HubTransaction,
+  tx: HubDatabase | HubTransaction,
   entry: AuditEntry,
 ): Promise<void> {
   await tx.insert(hubAudit).values({
@@ -28,4 +31,18 @@ export async function recordAudit(
     outcome: entry.outcome ?? null,
     payload: entry.payload ?? null,
   });
+}
+
+/** A VM's run id, as the trail keeps it: an identifier of bounded shape, or nothing. */
+const RUN_SHAPE = /^[A-Za-z0-9_.:-]{1,128}$/;
+
+/** Who asked, from which VM and in which run: the part of a trail row every member route shares. */
+export function trailOf(context: Context<{ Variables: MemberVariables }>) {
+  const member = context.get("member");
+  const run = context.req.header(HUB_HEADERS.run);
+  return {
+    member: member.id,
+    vmOrigin: member.vmOrigin,
+    runId: run && RUN_SHAPE.test(run) ? run : null,
+  };
 }

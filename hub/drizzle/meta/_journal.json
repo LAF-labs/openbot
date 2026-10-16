@@ -15,6 +15,13 @@
       "when": 1792138992798,
       "tag": "0001_hub_rooms",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792221992781,
+      "tag": "0002_hub_files",
+      "breakpoints": true
     }
   ]
 }

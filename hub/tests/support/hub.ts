@@ -1,4 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import postgres from "postgres";
 import { HUB_FLEET_PATH } from "../../../shared/hub/protocol";
 import { createLogger, type LogLevel } from "../../../shared/log";
@@ -9,6 +12,7 @@ import {
   type HubDatabase,
   migrateHub,
 } from "../../src/db/client";
+import { FILES_BODY_MAX } from "../../src/files/routes";
 import { signHubFleetBody } from "../../src/fleet";
 
 /**
@@ -24,6 +28,8 @@ export type TestHub = {
   /** This hub's registry key. */
   fleetKey: string;
   origin: string;
+  /** The hub's file volume: a temporary directory of this hub's own. */
+  filesDir: string;
   stop(): Promise<void>;
 };
 
@@ -36,6 +42,8 @@ export async function startTestHub(
     heartbeatMs?: number;
     rotationGraceMs?: number;
     now?: () => Date;
+    filesQuotaBytes?: number | null;
+    fileMaxBytes?: number;
   } = {},
 ): Promise<TestHub> {
   const source = new URL(base());
@@ -56,16 +64,19 @@ export async function startTestHub(
   const log = createLogger("hub", (level, line) => lines.push({ level, line }));
   const fleetKey = randomBytes(32).toString("hex");
   const origin = "https://test.hub.example";
+  const filesDir = await mkdtemp(join(tmpdir(), "laf-hub-files-"));
   const { app, websocket } = createHubApp({
     database,
     log,
     publicOrigin: origin,
     fleetSecret: fleetKey,
     privateIp: "10.20.0.5",
+    filesDir,
     ...options,
   });
   const server = Bun.serve({
     port: 0,
+    maxRequestBodySize: FILES_BODY_MAX,
     fetch: (request, bunServer) => app.fetch(request, { server: bunServer }),
     websocket,
   });
@@ -75,6 +86,7 @@ export async function startTestHub(
     lines,
     fleetKey,
     origin,
+    filesDir,
     async stop() {
       // Not awaited. Bun 1.3.14's `stop(true)` never resolves while it counts a socket the hub
       // closed itself (a heartbeat or a departure) as pending, though the socket's close handler
@@ -84,6 +96,7 @@ export async function startTestHub(
       const drop = postgres({ ...adminOptions(source), max: 1 });
       await drop.unsafe(`drop database if exists "${name}" with (force)`);
       await drop.end();
+      await rm(filesDir, { recursive: true, force: true });
     },
   };
 }
