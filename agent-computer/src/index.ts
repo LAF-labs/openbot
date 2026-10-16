@@ -8,7 +8,7 @@ import {
   sweepBackgroundProfiles,
 } from "./browsers";
 import { readConfig } from "./config";
-import { machineCoreShare } from "./core-share";
+import { machineCoreShare, withCoreShare } from "./core-share";
 import { deploymentEgress, ignoredEgressVariables } from "./egress";
 import { createEgressGuard, verdictOf } from "./egress-guard";
 import { liveScreen, type StreamData } from "./live-screen";
@@ -227,7 +227,8 @@ const listener = serve<StreamData>({
   idleTimeout: 120,
   // The screen a person watches is the main browser's; a background one has nobody watching.
   websocket: liveScreen(browsers.main),
-  fetch: computerFetch(browsers),
+  // Every call carries its share of a core in and out (core-share.ts).
+  fetch: withCoreShare(computerFetch(browsers)),
 });
 
 // `listener.port` rather than `PORT`: on port 0 it is the port actually given.

@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { ATTACHMENT_MAX_BYTES } from "../../shared/attachments";
+import {
+  CALL_MARGIN_MS,
+  CORE_SHARE_HEADER,
+  callDeadline,
+  stepDeadline,
+} from "../../shared/computer-deadlines";
 import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import { FILE_PATH_HEADER } from "../../shared/workspace-files";
 import {
@@ -1669,5 +1675,116 @@ describe("a card that asks for values, on the wire", () => {
     const { client, sent } = bodies();
     await client.runEnded();
     expect(sent).toEqual([{ path: "/run/ended", body: {} }]);
+  });
+});
+
+/**
+ * THE SERVER WAITS AS LONG AS THE COMPUTER MAY TAKE (`shared/computer-deadlines.ts`). The computer
+ * stretches its steps on a machine the hypervisor holds back; a server still giving up at 45 s cut a
+ * page that was only slow as `laf:computer_timed_out`.
+ */
+describe("the call's deadline follows the computer's share of a core", () => {
+  test("a whole core is today's 45 s exactly; less is stretched, and capped", () => {
+    expect(callDeadline(45_000, null)).toBe(45_000);
+    expect(callDeadline(45_000, 1)).toBe(45_000);
+    // 0.6: 45 s × 1/0.6 = 75 s, and the margin.
+    expect(callDeadline(45_000, 0.6)).toBe(90_000);
+    // 0.25 would be 180 s; two capped steps are 120 s, and the margin.
+    expect(callDeadline(45_000, 0.25)).toBe(135_000);
+    expect(callDeadline(45_000, 0.05)).toBe(135_000);
+  });
+
+  test.each(Array.from({ length: 100 }, (_, index) => (index + 1) / 100))(
+    "at a share of %p the server outwaits the longest call the computer may run",
+    (share) => {
+      // `/navigate`: a 30 s navigation and then a 15 s read, each stretched by the computer.
+      const navigate =
+        stepDeadline(30_000, share) + stepDeadline(15_000, share);
+      // At a whole core, exactly today's 45 s; held back, the margin beyond it — less the one
+      // millisecond two steps rounded on their own can gain over one rounded call.
+      const margin = share < 1 ? CALL_MARGIN_MS - 1 : 0;
+      expect(callDeadline(45_000, share) - navigate).toBeGreaterThanOrEqual(
+        margin,
+      );
+    },
+  );
+
+  /**
+   * A computer that answers after `ms`, saying `share` on its answer when it has one — unless the
+   * caller gives up first, the way fetch does.
+   */
+  function slowComputer() {
+    const asked: (string | null)[] = [];
+    let answer = { ms: 0, share: null as string | null };
+    const client = createComputerClient({
+      baseUrl: "http://agent-computer:4100",
+      timeoutMs: 100,
+      fetchImpl: ((_url: string, init?: RequestInit) => {
+        asked.push(new Headers(init?.headers).get(CORE_SHARE_HEADER));
+        const { ms, share } = answer;
+        return new Promise<Response>((resolve, reject) => {
+          const timer = setTimeout(
+            () =>
+              resolve(
+                new Response("{}", {
+                  status: 200,
+                  headers: share ? { [CORE_SHARE_HEADER]: share } : {},
+                }),
+              ),
+            ms,
+          );
+          init?.signal?.addEventListener("abort", () => {
+            clearTimeout(timer);
+            reject(init.signal?.reason);
+          });
+        });
+      }) as unknown as typeof fetch,
+    });
+    return {
+      client,
+      asked,
+      answers: (ms: number, share: string | null) => {
+        answer = { ms, share };
+      },
+    };
+  }
+
+  test("a call slower than the deadline is cut while the computer has said nothing", async () => {
+    const { client, answers, asked } = slowComputer();
+    answers(300, null);
+    await expect(client.status("bot-1")).resolves.toMatchObject({
+      state: "unreachable",
+      reason: "laf:computer_timed_out",
+    });
+    expect(asked).toEqual([null]);
+  });
+
+  test("once the computer says it is held back, the next call waits for it and says what it waits by", async () => {
+    const { client, answers, asked } = slowComputer();
+    answers(0, "0.5");
+    await client.status("bot-1");
+    answers(300, "0.5");
+    await expect(client.status("bot-1")).resolves.toEqual({
+      botId: "bot-1",
+      state: "ready",
+    });
+    // The first call said nothing; the second waited by the share the first answer carried.
+    expect(asked).toEqual([null, "0.5"]);
+  });
+
+  test.each([
+    ["a whole core", "1"],
+    ["nothing", null],
+  ])("an answer that says %s puts the deadline back", async (_, said) => {
+    const { client, answers, asked } = slowComputer();
+    answers(0, "0.5");
+    await client.status("bot-1");
+    answers(0, said);
+    await client.status("bot-1");
+    answers(300, null);
+    await expect(client.status("bot-1")).resolves.toMatchObject({
+      reason: "laf:computer_timed_out",
+    });
+    expect(asked).toEqual([null, "0.5", null]);
   });
 });

@@ -13,12 +13,19 @@
  * baseline, about 0–7 % while bursting, and none on an A1, which is not burstable. So the share is
  * what the guest ran out of what it wanted to run — busy / (busy + steal) — over the last half minute,
  * and every step deadline is stretched by its inverse, a little and never without bound
- * ({@link stepDeadline}). A machine that is not throttled has a share of 1 and nothing changes.
+ * (`shared/computer-deadlines.ts`, which the server's client reads too). A machine that is not
+ * throttled has a share of 1 and nothing changes.
  *
  * Sampled on a timer rather than when a step starts: one read of `/proc/stat` is a delta of nothing,
  * and the steps that matter are the ones that arrive after the machine has been busy a while.
  */
+import { AsyncLocalStorage } from "node:async_hooks";
 import { readFileSync } from "node:fs";
+import {
+  CORE_SHARE_HEADER,
+  shareFromHeader,
+  stepDeadline as stretchedStep,
+} from "../../shared/computer-deadlines";
 
 /** What the machine ran and was refused, in the kernel's ticks since boot (every core summed). */
 export type CpuTicks = {
@@ -66,21 +73,6 @@ export const SAMPLE_EVERY_MS = 5_000;
 /** The half minute the share is taken over: long enough to smooth one page, short enough to follow a bank running out. */
 export const SHARE_WINDOW_MS = 30_000;
 
-/**
- * The most a step deadline is stretched by, and the longest any stretched step may wait.
- *
- * Four is what a pinned machine needs at the steal measured (1 / 0.6 is under two) with room for
- * worse; the cap keeps a thirty-second navigation from becoming two minutes. A deadline already set
- * longer than the cap by its environment is left as it was, never shortened.
- *
- * THE SERVER STILL ENDS A CALL AT 45 s (`server/src/computer/client.ts`). A step stretched past that
- * is cut there as `laf:computer_timed_out` before this process answers; `/navigate`, a navigation
- * and then a read, already reaches it unstretched (30 + 15). Until the server stretches its own
- * deadline by the same share — `/health` carries it — the stretch helps the steps that land under it.
- */
-export const MAX_STRETCH = 4;
-export const STEP_DEADLINE_CAP_MS = 60_000;
-
 /** The aggregate `cpu` line of `/proc/stat`, or null where it cannot be read. */
 export function ticksOf(procStat: string): CpuTicks | null {
   const line = procStat.split("\n").find((row) => row.startsWith("cpu "));
@@ -120,13 +112,6 @@ export function shareBetween(from: CpuTicks, to: CpuTicks): CoreShare {
       ? 1
       : Math.round((busy / worked) * 100) / 100;
   return { coreShare, stealPct, pinned: stealPct >= PINNED_STEAL_PCT };
-}
-
-/** How much longer a step may take on a machine getting this share: 1 to {@link MAX_STRETCH}. */
-export function stretchOf(share: CoreShare | null): number {
-  if (!share || share.coreShare >= 1) return 1;
-  if (share.coreShare <= 0) return MAX_STRETCH;
-  return Math.min(Math.max(1 / share.coreShare, 1), MAX_STRETCH);
 }
 
 function readProcStat(): string | null {
@@ -196,24 +181,64 @@ export function createCoreShareSampler(
 
 /**
  * This process's machine. Started in `index.ts`; a module value rather than a field of `Computer`
- * because the deadlines it stretches are read deep inside a look and a read, which are handed a page
- * and not the computer — and because it is a fact about the machine, which every browser shares.
- * Until it is started it has no reading, and every deadline is its own.
+ * because it is a fact about the machine, which every browser shares.
  */
 export const machineCoreShare = createCoreShareSampler();
 
 /**
- * A step's deadline on this machine now: `baseMs` stretched by {@link stretchOf}, never past
- * {@link STEP_DEADLINE_CAP_MS}, and never shorter than `baseMs`.
+ * The share THIS CALL may stretch its steps by, for every step it runs however deep: a look and a
+ * read are handed a page, not the request, so the call's share rides in the async context the route
+ * runs in ({@link withCoreShare}). Outside a call, nothing is stretched.
+ */
+const callShare = new AsyncLocalStorage<number>();
+
+/**
+ * A step's deadline in this call: `baseMs` stretched by the call's share (`shared/computer-deadlines.ts`).
  */
 export function stepDeadline(
   baseMs: number,
-  share: CoreShare | null = machineCoreShare.current(),
+  share: number | null = callShare.getStore() ?? null,
 ): number {
-  const stretch = stretchOf(share);
-  if (stretch === 1) return baseMs;
-  return Math.max(
-    baseMs,
-    Math.min(Math.round(baseMs * stretch), STEP_DEADLINE_CAP_MS),
-  );
+  return stretchedStep(baseMs, share);
+}
+
+/**
+ * The share a call may stretch by: the machine's, but never more than the server said it is
+ * waiting for. The larger share is the smaller stretch, so a machine that slowed down after the
+ * server last heard is stretched only as far as the server will wait — and a caller that said
+ * nothing (an old server, a test, `curl`) is waited for as long as it always was.
+ */
+export function allowedShare(
+  measured: CoreShare | null,
+  serverWaitsBy: number | null,
+): number {
+  return Math.max(measured?.coreShare ?? 1, serverWaitsBy ?? 1);
+}
+
+/**
+ * Every call runs with its share, and every answer says what this machine measured — the share the
+ * server's client waits by on its next call (`server/src/computer/client.ts`). Said on every answer,
+ * refusals included, so the server learns as soon as it hears anything.
+ */
+export function withCoreShare<Rest extends unknown[]>(
+  handle: (request: Request, ...rest: Rest) => Promise<Response>,
+  sampler: CoreShareSampler = machineCoreShare,
+): (request: Request, ...rest: Rest) => Promise<Response> {
+  return async (request, ...rest) => {
+    const measured = sampler.current();
+    const share = allowedShare(
+      measured,
+      shareFromHeader(request.headers.get(CORE_SHARE_HEADER)),
+    );
+    const response = await callShare.run(share, () => handle(request, ...rest));
+    // A websocket upgrade answers nothing, and a response whose headers are fixed keeps them.
+    if (response && measured) {
+      try {
+        response.headers.set(CORE_SHARE_HEADER, String(measured.coreShare));
+      } catch {
+        // Left without it: the server then waits by a whole core, as it always did.
+      }
+    }
+    return response;
+  };
 }
