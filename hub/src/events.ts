@@ -140,19 +140,29 @@ export function createListeners() {
     pokeAll(): void {
       for (const listener of listeners) listener.poke();
     },
-    /** A member who left, or whose pass changed, keeps no socket open on the old pass. */
     /**
      * A pass was rotated: every socket opened with it is closed when its grace ends. Not at once —
      * the VM is still switching to the new pass, and a socket closed now would reconnect with the
      * old one (valid for the grace) and need this timer anyway.
      */
-    expirePass(member: string, passHash: string, until: Date): void {
+    expirePass(
+      member: string,
+      rotation: { current: string; graced: string; until: Date },
+      code: number,
+      reason: string,
+    ): void {
       for (const listener of listeners) {
-        if (listener.member === member && listener.passHash === passHash) {
-          listener.expireAt(until);
+        if (listener.member !== member) continue;
+        if (listener.passHash === rotation.graced) {
+          listener.expireAt(rotation.until);
+        } else if (listener.passHash !== rotation.current) {
+          // A pass the row no longer holds at all — the grace hash a second rotation displaced.
+          // HTTP refuses it from this commit on, so its socket goes now, not at its old timer.
+          listener.close(code, reason);
         }
       }
     },
+    /** A member who left, or whose pass changed, keeps no socket open on the old pass. */
     closeMember(member: string, code: number, reason: string): void {
       for (const listener of listeners) {
         if (listener.member === member) listener.close(code, reason);

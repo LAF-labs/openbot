@@ -206,6 +206,43 @@ describe("the events socket", () => {
     }
   });
 
+  test("a second rotation closes a socket on the pass it drops at once, and leaves the grace pass's", async () => {
+    // A grace far longer than the test, so only the rotation itself can close the first socket.
+    const slow = await startTestHub({
+      heartbeatMs: 100,
+      rotationGraceMs: 60_000,
+    });
+    try {
+      const gil = {
+        email: "gil@example.com",
+        vmOrigin: "https://gil.example",
+        pass: newPass(),
+      };
+      await putMember(slow, gil);
+      const second = newPass();
+      await putMember(slow, { ...gil, pass: second });
+      const onFirst = await openSocket(slow.url, gil.pass, "", {
+        answerPings: true,
+      });
+      const onSecond = await openSocket(slow.url, second, "", {
+        answerPings: true,
+      });
+      const { seq } = await putMember(slow, { ...gil, pass: newPass() });
+      const ended = await Promise.race([
+        onFirst.closed,
+        Bun.sleep(3_000).then(() => "still open"),
+      ]);
+      expect(ended).toEqual({ code: 4401, reason: "laf:hub_pass_refused" });
+      // The pass still in its grace keeps its socket, and hears the rotation.
+      expect((await onSecond.events(1)).map((frame) => frame.seq)).toEqual([
+        seq,
+      ]);
+      onSecond.close();
+    } finally {
+      await slow.stop();
+    }
+  });
+
   test("a ping that throws stays inside the timer, and silence still ends the socket once", async () => {
     let clock = 0;
     let pinged = 0;
