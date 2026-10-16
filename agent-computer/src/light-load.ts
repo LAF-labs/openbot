@@ -3,10 +3,12 @@
  * sends. Nothing it reads is among them — the Bot reads a page's text and its controls, and a person
  * watching sees the page — and fetching them is CPU the VM pays on every page.
  *
- * Measured 2026-10-16 on a 1-OCPU test VM, inside the agent-computer container, opening the same
- * heavy Korean pages with and without this (`docs/laf/browser-limits.md` has the table): the CPU
- * the browser spent fell by the share the pull request records, and no page that opened before
- * failed to open after. Images were tried too and gave nothing; fonts are kept — see below.
+ * Measured 2026-10-16 on a 1-OCPU test VM, inside the agent-computer container, opening 네이버,
+ * 네이버 뉴스, 다음, 대한민국 정책브리핑 and 스마트스토어 six times each way, beside a session that
+ * pauses documents as the navigation guard does: 21.7 CPU-seconds before, 17.4 after (−20 %), the
+ * ranges apart; 다음 −41 %, 네이버 −21 %. No page that opened before failed to open after, the
+ * sign-in pages of the catalogue's sites included (`docs/laf/browser-limits.md` has the table).
+ * Skipping images as well gave nothing, measured the same day.
  *
  * TALKS TO CHROMIUM ON THE BROWSER TARGET, as the navigation guard does (`navigation-guard.ts`), so
  * every tab, popup and frame of every browser — the main one and each background one — is covered
@@ -17,9 +19,10 @@
  * nobody else's; an ad's click-through (`adcr.naver.com`) is a document, so it still opens. Only
  * what a page pulls in beside its document is skipped here.
  *
- * FONTS ARE KEPT. Blocking them saved CPU too, but the pages that lose them draw their icons as
- * words or boxes — the screen a person watches looks broken — and Korean text falls back to the
- * image's NanumGothic, which is not the page's own look. Measured, not assumed: see the table.
+ * FONTS ARE KEPT. The image has a Korean font of its own (NanumGothic, the Dockerfile), and 네이버
+ * with its web fonts skipped still showed its Korean whole on the screen — but skipping them saved
+ * nothing that stood apart from one run to the next, and a page whose icons are a font draws them as
+ * words or boxes without it, on the screen a person watches.
  *
  * FAILS OPEN. This is a saving, not a boundary: a browser on which it could not be installed browses
  * as it did before, and the launch goes on.
@@ -59,6 +62,10 @@ export const SKIPPED_HOSTS: readonly string[] = [
 /**
  * The kinds of request skipped from a listed host. Every kind but a document, whose requests the
  * navigation guard pauses (it asks for `Document` alone): two sessions never pause the same request.
+ *
+ * Only kinds Chromium's Fetch filter knows. One it does not (`TextTrack`, `Prefetch`, `WebSocket`,
+ * measured on 151.0.7922.34) fails the whole `Fetch.enable`, and with it every skip — which
+ * `tests/light-load.test.ts` would see, since nothing would be skipped.
  */
 const HOST_KINDS = [
   "Stylesheet",
