@@ -17,10 +17,11 @@ export type AgentChannel = {
   active: boolean;
   /**
    * The Bot's one main conversation, or a project beside it (the server's `channels.kind`, piece
-   * 4-1). The server always says; optional only because this is what arrived on the wire, and
-   * one that does not say is neither (`my-bots.ts`, `channels/projects.ts`).
+   * 4-1), or the conversation it answers a company's team room in (`room`, `@shared/hub/room-answers`).
+   * The server always says; optional only because this is what arrived on the wire, and one that
+   * does not say is neither (`my-bots.ts`, `channels/projects.ts`).
    */
-  kind?: "main" | "project";
+  kind?: "main" | "project" | "room";
 };
 
 /** A channel plus the last thing said in it, which is what the roster renders. */

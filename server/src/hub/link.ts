@@ -111,6 +111,12 @@ export function createHubLink(input: {
   deliver: (frame: HubFrame) => void;
   /** The hub answered again after being away: the outbox is offered what it kept. */
   onReachable?: () => void;
+  /**
+   * Every event of a known type, in order, beside its frame to the app: what this server acts on
+   * itself (`room-answers.ts`). Called and not awaited — the line does not wait on the work an
+   * event starts — and a throw is the listener's, never the line's.
+   */
+  onEvent?: (event: HubEvent) => void;
   timing?: HubLinkTiming;
   openSocket?: SocketFactory;
 }): HubLink {
@@ -180,6 +186,14 @@ export function createHubLink(input: {
         if (!KNOWN_TYPES.has(event.type)) continue;
         const { type, ...rest } = event;
         input.deliver({ kind: `hub.${type}`, ...rest });
+        try {
+          input.onEvent?.(event);
+        } catch (error) {
+          log.warn("hub_event_not_handled", {
+            type,
+            reason: error instanceof Error ? error.name : "unknown",
+          });
+        }
       }
       if (seq !== undefined && seq > cursor) {
         cursor = seq;

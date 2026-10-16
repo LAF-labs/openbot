@@ -14,6 +14,7 @@ import {
   startTestHub,
   type TestHub,
 } from "../../hub/tests/support/hub";
+import type { HubEvent } from "../../shared/hub/protocol";
 import { createDatabase } from "../src/db/client";
 import { hubCursor } from "../src/db/schema";
 import { createHubHttp, type HubHttp } from "../src/hub/http";
@@ -71,7 +72,10 @@ afterAll(async () => {
 });
 
 /** A VM: its pass registered at the hub as a member, and a line from it. */
-function vm(pass: string, options: { http?: HubHttp } = {}) {
+function vm(
+  pass: string,
+  options: { http?: HubHttp; onEvent?: (event: HubEvent) => void } = {},
+) {
   const frames: HubFrame[] = [];
   const http =
     options.http ??
@@ -82,6 +86,7 @@ function vm(pass: string, options: { http?: HubHttp } = {}) {
     hub: hub.url,
     deliver: (frame) => frames.push(frame),
     timing: FAST,
+    ...(options.onEvent ? { onEvent: options.onEvent } : {}),
   });
   links.push(link);
   return { link, frames };
@@ -169,6 +174,43 @@ describe("the line to the company hub", () => {
       await Bun.sleep(10);
     }
     expect(await kept()).toBe(put.seq ?? -1);
+  });
+
+  test("what the server does itself hears each event the app is sent, and a listener that throws stops neither", async () => {
+    const pass = newPass();
+    await putMember(hub, {
+      email: "e@laf.test",
+      vmOrigin: "https://e.agent.test",
+      pass,
+    });
+    const heard: HubEvent[] = [];
+    const line = vm(pass, {
+      onEvent: (event) => {
+        heard.push(event);
+        throw new Error("a listener's own trouble");
+      },
+    });
+    line.link.start();
+    await until(() => line.link.status().state === "connected");
+    const first = await putMember(hub, {
+      email: "f@laf.test",
+      vmOrigin: "https://f.agent.test",
+      pass: newPass(),
+    });
+    const second = await putMember(hub, {
+      email: "g@laf.test",
+      vmOrigin: "https://g.agent.test",
+      pass: newPass(),
+    });
+    await until(() =>
+      eventsIn(line.frames).some((frame) => frame.seq === second.seq),
+    );
+    // Both, in order, after the first one's listener threw.
+    expect(
+      heard
+        .filter((event) => event.seq >= (first.seq ?? 0))
+        .map((event) => `${event.type} ${event.seq}`),
+    ).toEqual([`member.changed ${first.seq}`, `member.changed ${second.seq}`]);
   });
 
   test("a line started after a gap is told what it missed, from its cursor", async () => {
