@@ -2,12 +2,13 @@
  * The hub's tables. Every name starts `hub_`, so a dump of a hub can never be mistaken for a
  * person's VM database, nor restored over one.
  *
- * Only what the registry, the event log, the idempotency ledger and the trail need. Files, skills,
- * memory, rooms, tasks and the vault arrive with the changes that build them, each with its own
+ * The registry, the event log, the idempotency ledger, the trail, and the team rooms. Files,
+ * skills, memory, tasks and the vault arrive with the changes that build them, each with its own
  * migration.
  */
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   bigserial,
   boolean,
   check,
@@ -127,4 +128,69 @@ export const hubAudit = pgTable(
     payload: jsonb("payload"),
   },
   (table) => [index("hub_audit_at").on(table.at)],
+);
+
+/**
+ * A group chat of the company's. Who may read it is who is in `hub_room_members`, and nobody
+ * else — an admin included: a room is the people in it.
+ *
+ * `last_seq` is the room's own counter. A message takes its number by bumping it, which locks the
+ * room's row until the post commits, so two posts to one room are numbered one after the other and
+ * a reader paging by `seq` never meets a gap that fills in later (the reason `hub_events` takes a
+ * lock, scoped to one room here).
+ */
+export const hubRooms = pgTable("hub_rooms", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  createdBy: text("created_by").references(() => hubMembers.id),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  lastSeq: bigint("last_seq", { mode: "number" }).notNull().default(0),
+});
+
+export const hubRoomMembers = pgTable(
+  "hub_room_members",
+  {
+    roomId: text("room_id")
+      .notNull()
+      .references(() => hubRooms.id, { onDelete: "cascade" }),
+    memberId: text("member_id")
+      .notNull()
+      .references(() => hubMembers.id),
+    addedBy: text("added_by").references(() => hubMembers.id),
+    addedAt: timestamp("added_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.roomId, table.memberId] }),
+    // "Which rooms am I in" is the question every `GET /rooms` asks.
+    index("hub_room_members_member").on(table.memberId),
+  ],
+);
+
+/**
+ * One message, numbered within its room. `by` is `m:<member id>` for what a person wrote and
+ * `bot:<member id>` for what that person's 라피 wrote, so a reader can tell the two apart without
+ * a second table. `mentions` holds member ids and `lafi`; `files` holds hub file ids.
+ */
+export const hubMessages = pgTable(
+  "hub_messages",
+  {
+    roomId: text("room_id")
+      .notNull()
+      .references(() => hubRooms.id, { onDelete: "cascade" }),
+    seq: bigint("seq", { mode: "number" }).notNull(),
+    by: text("by").notNull(),
+    text: text("text").notNull(),
+    mentions: text("mentions").array().notNull().default(sql`'{}'::text[]`),
+    runId: text("run_id"),
+    files: text("files").array().notNull().default(sql`'{}'::text[]`),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.roomId, table.seq] }),
+    check("hub_messages_by", sql`${table.by} ~ '^(m|bot):.+$'`),
+  ],
 );
