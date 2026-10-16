@@ -3261,6 +3261,16 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * in Korean, and the socket telling a hub frame from a roster patch (hub-status.test.ts). 4711 and
  * 35; 2534 and 9. Then `server` by one more (to 4747): a door that takes the socket and drops it
  * at once is not asked faster for it (hub-link.integration.test.ts).
+ *
+ * RAISED 2026-10-16 FOR 회사, THE COMPANY'S SCREEN: `server` by twenty-two (to 4769) — its doors
+ * against a fake hub (hub-routes-ui.test.ts: seven doors answering "no company" unasked, the pass
+ * and `person` sent and never handed back, a failed read asked once, a refused pass a 502, a named
+ * refusal kept, a refused line not asked, a message as the person with its key and only its
+ * fields, a key made or refused, three ids and cursors refused unsent, the query spelled again, a
+ * file saved never drawn, an upload byte for byte past the megabyte, a full hub said, the session);
+ * `app` by twenty-one (to 2564): which reads a hub frame makes stale, whose a message is, the facts
+ * in Korean, and a team file's body (hub-company.test.ts); and `hub` by two (to 48): the roster to
+ * any member and behind the pass (members.test.ts).
  */
 const GROUPS: readonly {
   name: string;
