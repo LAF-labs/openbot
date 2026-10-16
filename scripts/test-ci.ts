@@ -3275,8 +3275,13 @@ const GROUPS: readonly {
      * RAISED 2026-10-13 FOR A FILE THAT ARRIVES AFTER ITS RUN WAS TOLD OVER, from 631 to 632: one
      * in `korean-sites.test.ts`, a real download landing in the folder of the run whose page
      * sent it.
+     *
+     * RAISED 2026-10-16 FOR STEP DEADLINES ON A THROTTLED VM, from 632 to 643: eleven in
+     * `core-share.test.ts` — reading `/proc/stat`, the share over its window on an A1, a pinned
+     * E4, a starved machine, one that starts bursting, an idle one, counters that went backwards
+     * and a machine with no `/proc/stat`, and the two answers `/health` gives.
      */
-    floor: 632,
+    floor: 643,
     roots: ["agent-computer"],
     processes: 1,
   },
