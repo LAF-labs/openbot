@@ -8,6 +8,7 @@
  */
 import type { Frame, Page } from "playwright";
 import type { NoteCode } from "./codes";
+import { stepDeadline } from "./core-share";
 import { log } from "./log";
 import { originOf } from "./navigation-guard";
 import { type Arrival, arrivalOf, fromDocument } from "./page-arrival";
@@ -375,7 +376,8 @@ export async function readSettledPageText(
   target: Page,
   options: { settleFirst?: boolean; whole?: boolean; from?: string } = {},
 ): Promise<PageText> {
-  const deadline = Date.now() + READ_DEADLINE_MS;
+  // Longer on a machine the hypervisor is holding back (core-share.ts); the same everywhere else.
+  const deadline = Date.now() + stepDeadline(READ_DEADLINE_MS);
   if (options.settleFirst) await settle(target);
   else if (!(await settleIfLoading(target))) {
     const arrival = arrivalOf(target);

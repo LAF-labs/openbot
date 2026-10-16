@@ -8,6 +8,7 @@
  */
 import { isBotId } from "./authorisation";
 import type { BotRoute, Computer } from "./computer";
+import { type CoreShareSampler, machineCoreShare } from "./core-share";
 import { forgetFilled } from "./filled-values";
 import { stopViewer } from "./live-screen";
 import { bodyOf, json } from "./respond";
@@ -24,6 +25,7 @@ import { forgetSecretFields } from "./secret-fields";
 export function health(
   asked: string | null,
   { profiles, egress }: Computer,
+  cpu: CoreShareSampler = machineCoreShare,
 ): Response {
   const [profile] = isBotId(asked) ? profiles.summary([asked]) : [];
   return json({
@@ -37,6 +39,12 @@ export function health(
      * the server can only say why if it can still reach the process that knows.
      */
     egress: egress.state(),
+    /*
+     * How much of a core the hypervisor is giving this machine, `{ coreShare, stealPct, pinned }`
+     * (core-share.ts): what tells a throttled burstable VM — slower, and its steps given longer —
+     * from a broken one. Null where `/proc/stat` cannot be read, never a 1 nothing measured.
+     */
+    cpu: cpu.current(),
     /*
      * NO `identity` FIELD. It reported what the local SPIRE agent said this computer was, and
      * SPIRE went with the per-Bot container plane in 2026-08. Nothing has set
