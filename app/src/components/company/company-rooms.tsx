@@ -250,7 +250,7 @@ function OpenRoom({
           <IconArrowLeft />
         </Button>
         <div className="min-w-0">
-          <h2 className="truncate font-semibold text-[17px]">{name}</h2>
+          <h2 className="truncate font-semibold text-lg">{name}</h2>
           <p className="truncate text-muted-foreground text-xs">
             {people.map((id) => memberName(id, members)).join(", ")}
           </p>

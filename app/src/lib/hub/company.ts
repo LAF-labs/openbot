@@ -157,12 +157,19 @@ export function companyFailureText(error: unknown): string {
   return companyFactText(code) ?? t("That did not go through. Try again.");
 }
 
+/**
+ * One more try, not TanStack's three. The server already asked the hub and said what happened; a
+ * hub that is down is "cannot reach" a second sooner, not after seven seconds of a blank list.
+ */
+const RETRIES = 1;
+
 async function read<T>(path: string): Promise<T> {
   return (await requestOrRefusal(path, undefined)) as T;
 }
 
 export const companyMeQueryOptions = () =>
   queryOptions({
+    retry: RETRIES,
     queryKey: companyKeys.me,
     queryFn: () => read<CompanyMe>("/api/hub/me"),
     staleTime: 60_000,
@@ -170,6 +177,7 @@ export const companyMeQueryOptions = () =>
 
 export const companyMembersQueryOptions = () =>
   queryOptions({
+    retry: RETRIES,
     queryKey: companyKeys.members,
     queryFn: async () =>
       (await read<{ members: CompanyMember[] }>("/api/hub/members")).members,
@@ -178,6 +186,7 @@ export const companyMembersQueryOptions = () =>
 
 export const companyRoomsQueryOptions = () =>
   queryOptions({
+    retry: RETRIES,
     queryKey: companyKeys.rooms,
     queryFn: async () =>
       (await read<{ rooms: CompanyRoom[] }>("/api/hub/rooms")).rooms,
@@ -188,6 +197,7 @@ export const ROOM_PAGE = 100;
 
 export const companyMessagesQueryOptions = (roomId: string) =>
   queryOptions({
+    retry: RETRIES,
     queryKey: companyKeys.messages(roomId),
     queryFn: async () =>
       (
@@ -199,6 +209,7 @@ export const companyMessagesQueryOptions = (roomId: string) =>
 
 export const companyFilesQueryOptions = () =>
   queryOptions({
+    retry: RETRIES,
     queryKey: companyKeys.files,
     queryFn: async () =>
       (
@@ -210,6 +221,7 @@ export const companyFilesQueryOptions = () =>
 
 export const companySkillsQueryOptions = () =>
   queryOptions({
+    retry: RETRIES,
     queryKey: companyKeys.skills,
     queryFn: async () =>
       (await read<{ skills: CompanySkill[] }>("/api/hub/skills")).skills,
@@ -217,6 +229,7 @@ export const companySkillsQueryOptions = () =>
 
 export const companySkillQueryOptions = (slug: string) =>
   queryOptions({
+    retry: RETRIES,
     queryKey: companyKeys.skill(slug),
     queryFn: async () =>
       (
@@ -228,6 +241,7 @@ export const companySkillQueryOptions = (slug: string) =>
 
 export const companyMemoryQueryOptions = () =>
   queryOptions({
+    retry: RETRIES,
     queryKey: companyKeys.memory,
     queryFn: async () =>
       (await read<{ lines: CompanyMemoryLine[] }>("/api/hub/memory")).lines,
@@ -235,6 +249,7 @@ export const companyMemoryQueryOptions = () =>
 
 export const companyProposalsQueryOptions = () =>
   queryOptions({
+    retry: RETRIES,
     queryKey: companyKeys.proposals,
     queryFn: async () =>
       (
