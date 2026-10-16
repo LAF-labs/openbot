@@ -3281,6 +3281,35 @@ const GROUPS: readonly {
     processes: 1,
   },
   { name: "root", floor: 1744, roots: ["tests", "agent-bot"] },
+  /*
+   * ADDED 2026-10-16 WITH THE COMPANY HUB, at forty-six: its own process on its own VM, so its own
+   * floor rather than a share of another's. auth.test.ts 11 (a pass opening /me as its member, a
+   * refused one a single line with nothing logged, four malformed headers, a pass used from
+   * another VM, a member who left and came back, a rotation's ten minutes, health and the
+   * metrics' counts); fleet.test.ts 16 (signatures, the per-hub key, another hub's body, a stale
+   * body, four bad fields, one write for a repeated or racing id, no event for no change, a
+   * conflict, an unknown departure, the trail, an unset key, one workspace row); sync.test.ts 9
+   * (paging, `visible_to` both ways, a cursor past hidden events, four bad cursors, a number
+   * committed late never skipped, an event's fields); events-socket.test.ts 6 (live delivery,
+   * catch-up on reconnect, per-member delivery, heartbeat, a departure closing the socket, no
+   * socket without a pass); audit.test.ts 4 (insert, and update, delete and truncate refused).
+   */
+  /*
+   * RAISED 2026-10-16 FOR THE HUB'S FIX ROUND, from 46 to 50: a ping that throws kept inside its
+   * timer, a socket opened before a rotation closed when the grace ends, one opened inside the
+   * grace with the old pass closed then while the new pass's stays (events-socket.test.ts, 3), and
+   * a name-only registry write leaving a running grace alone (auth.test.ts, 1).
+   */
+  /*
+   * RAISED 2026-10-16 FOR THE LOGIN VAULT, from 50 to 70 (vault.test.ts, 20): only an admin stores,
+   * seals and not values in the row, values kept on a change, the list with no value, no grant no
+   * lease and no open, one open per lease, eight rounds of two VMs racing, release, expiry, renew,
+   * a concurrent login never busy, a lease only for the login's origins, a grant taken away ending
+   * its lease, verified VMs counted, the serialisation of logs/trail/events/ledger/tables/list after
+   * an open, the trail's ids, leaving's origins, no key, the wrong key, the key's shape, and the
+   * server and the hub sealing with the same functions.
+   */
+  { name: "hub", floor: 70, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
