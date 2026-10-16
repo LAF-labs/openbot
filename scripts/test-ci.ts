@@ -3300,7 +3300,16 @@ const GROUPS: readonly {
    * grace with the old pass closed then while the new pass's stays (events-socket.test.ts, 3), and
    * a name-only registry write leaving a running grace alone (auth.test.ts, 1).
    */
-  { name: "hub", floor: 50, roots: ["hub"] },
+  /*
+   * RAISED 2026-10-16 FOR THE TASK BOARD, from 50 to 70: tasks.test.ts 20 (racing checkouts with one
+   * winner, an assigned task taken only by its member, the same run asking again, a run-out claim
+   * taken over, a checkout with no run; a beat and a release from the holder only, a person's move
+   * ending a run's claim; the sweep freeing what ran out and only that, and its timer surviving a
+   * failure; a 라피 refused done and moving its own task to blocked with one line; a stale version
+   * refused and none at all; four of visibility — kept to the maker, members, narrowing, and
+   * task.assigned to its member alone; the list's pages and the trail holding no words).
+   */
+  { name: "hub", floor: 70, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
