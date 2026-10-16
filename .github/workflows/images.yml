@@ -110,7 +110,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [server, web, agent-bot, agent-computer]
+        # `hub` is the company hub's process (hub/Dockerfile), run on a hub VM rather than a
+        # person's, beside docker-compose.hub.yml. Built on the same channel as the rest so one
+        # IMAGE_TAG names a hub and the VMs that talk to it from one commit.
+        service: [server, web, agent-bot, agent-computer, hub]
         arch: [amd64, arm64]
         include:
           - arch: amd64
@@ -157,6 +160,7 @@ jobs:
             web)            DOCKERFILE=app/Dockerfile ;;
             agent-bot)      DOCKERFILE=agent-bot/Dockerfile ;;
             agent-computer) DOCKERFILE=agent-computer/Dockerfile ;;
+            hub)            DOCKERFILE=hub/Dockerfile ;;
           esac
           # REVISION and CHANNEL are baked into the server and Bot images (`GET /api/version`, the
           # `boot` log line) — the same two the deploy bundle's VERSION file takes below, so what a
@@ -252,7 +256,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [server, web, agent-bot, agent-computer, deploy]
+        service: [server, web, agent-bot, agent-computer, hub, deploy]
     steps:
       - name: Sign in to GHCR
         env:
