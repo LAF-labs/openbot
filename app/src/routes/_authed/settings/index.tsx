@@ -13,7 +13,7 @@ import {
   NotificationPermission,
   noticeWindowNote,
 } from "@/components/notifications/notification-permission";
-import { HubStatusSection } from "@/components/settings/hub-status";
+import { HubStatusRow } from "@/components/settings/hub-status";
 import { SummonShortcutRow } from "@/components/settings/summon-shortcut";
 import { TodayUsageSection } from "@/components/settings/today-usage";
 import { VersionLine } from "@/components/settings/version-line";
@@ -155,7 +155,8 @@ function RouteComponent() {
        * which of them is the different one.
        */}
       <PageSection title={t("Account")}>
-        <PageRows>
+        {/* A line between the account and the company line under it, as between General's rows. */}
+        <PageRows className="divide-y divide-border">
           <Item size="sm">
             {/*
              * Held open at the row's real height while `/api/me` is in flight. It rendered an
@@ -202,6 +203,8 @@ function RouteComponent() {
               </>
             )}
           </Item>
+          {/* Only on a VM that belongs to a company. See the component. */}
+          <HubStatusRow />
           {signOutError ? (
             <p className="px-1 text-destructive text-sm" role="alert">
               {signOutError}
@@ -209,8 +212,6 @@ function RouteComponent() {
           ) : null}
         </PageRows>
       </PageSection>
-      {/* Only on a VM that belongs to a company. See the component. */}
-      <HubStatusSection />
       {/* Only on a free trial, and only when today's count could be read. See the component. */}
       <TodayUsageSection />
       <PageSection title={t("General")}>
