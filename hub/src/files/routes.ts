@@ -15,6 +15,7 @@ import {
   type HubVisibility,
 } from "../../../shared/hub/protocol";
 import { charLength } from "../../../shared/hub/search-words";
+import type { Logger } from "../../../shared/log";
 import { recordAudit, trailOf } from "../audit";
 import type { MemberVariables } from "../auth";
 import type { HubDatabase, HubTransaction } from "../db/client";
@@ -49,6 +50,9 @@ export type FileRoutesOptions = {
   quotaBytes: number | null;
   /** `HUB_FILE_MAX_BYTES` unless a test needs a limit it can cross without a gigabyte. */
   fileMaxBytes?: number;
+  log?: Logger;
+  /** Told after a version is written, so its blob is copied to the bucket now (src/files/mirror.ts). */
+  onBlobWritten?: () => void;
 };
 
 /** The `meta` part: a name and a place, nothing that could be a file's content. */
@@ -414,8 +418,22 @@ export function fileRoutes(options: FileRoutesOptions) {
     if (!row) return notFound(context);
     const blob = Bun.file(blobPath(dir, row.sha256));
     if (!(await blob.exists())) {
-      // A row whose bytes are gone is the hub's fault, not the member's: a 500 the log names.
-      throw new Error(`blob missing for file ${row.id} v${row.version}`);
+      // A row whose bytes are not on this disk: a hub rebuilt from its dump, its blobs still to come
+      // back from the bucket. Said as a fact the VM retries, not as a 500 — and logged, because on
+      // a hub that was never restored it is a lost file.
+      // TODO(hub restore): fetch the blob from the bucket here. The hub's door is write-only
+      // (laf-control mints it so), so the fill is the restore's, with a read it holds.
+      const [held] = await database
+        .select({ mirroredAt: hubBlobs.mirroredAt })
+        .from(hubBlobs)
+        .where(eq(hubBlobs.sha256, row.sha256));
+      options.log?.warn("blob_restoring", {
+        file: row.id,
+        version: row.version,
+        mirrored: Boolean(held?.mirroredAt),
+      });
+      context.header("retry-after", "60");
+      return context.json({ ok: false, code: HUB_FACTS.blobRestoring }, 503);
     }
     await recordAudit(database, {
       ...trailOf(context),
@@ -553,7 +571,10 @@ export function fileRoutes(options: FileRoutesOptions) {
         if (error instanceof FilesFull) return full();
         throw error;
       }
-      if (!answer.replayed && answer.status === 200) listeners.pokeAll();
+      if (!answer.replayed && answer.status === 200) {
+        listeners.pokeAll();
+        options.onBlobWritten?.();
+      }
       return context.json(
         answer.body as Record<string, unknown>,
         answer.status as 200,

@@ -15,6 +15,7 @@ import { type MemberVariables, requireMember } from "./auth";
 import type { HubDatabase } from "./db/client";
 import { hubMembers, hubWorkspace } from "./db/schema";
 import { createListeners, eventsSince, headSeq } from "./events";
+import { type BlobMirror, countUnmirrored } from "./files/mirror";
 import { fileRoutes } from "./files/routes";
 import { fleetRoutes } from "./fleet";
 import { countIdempotency } from "./idempotency";
@@ -36,6 +37,8 @@ export type HubAppOptions = {
   filesQuotaBytes?: number | null;
   /** The largest file taken; `HUB_FILE_MAX_BYTES` unless a test sets a smaller one. */
   fileMaxBytes?: number;
+  /** The copy of each blob to the company's bucket; absent, nothing is copied (and `/metrics` says so). */
+  mirror?: BlobMirror;
   heartbeatMs?: number;
   now?: () => Date;
 };
@@ -92,6 +95,10 @@ export function createHubApp(options: HubAppOptions) {
       events: { head: await headSeq(database) },
       sockets: listeners.size,
       idempotencyKept: await countIdempotency(database),
+      // Blobs a live file holds that the bucket does not: what a lost disk would lose. With the
+      // door "off" or "invalid" it only grows.
+      unmirrored: await countUnmirrored(database),
+      mirror: options.mirror?.door() ?? "off",
     });
   });
 
@@ -117,7 +124,9 @@ export function createHubApp(options: HubAppOptions) {
       member,
       filesDir,
       quotaBytes: options.filesQuotaBytes ?? null,
+      log,
       ...(options.fileMaxBytes ? { fileMaxBytes: options.fileMaxBytes } : {}),
+      ...(options.mirror ? { onBlobWritten: options.mirror.kick } : {}),
     }),
   );
   hub.route("/search", searchRoute({ database, member, filesDir }));

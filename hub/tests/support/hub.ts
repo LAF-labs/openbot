@@ -12,6 +12,7 @@ import {
   type HubDatabase,
   migrateHub,
 } from "../../src/db/client";
+import { type BlobMirror, createBlobMirror } from "../../src/files/mirror";
 import { FILES_BODY_MAX } from "../../src/files/routes";
 import { signHubFleetBody } from "../../src/fleet";
 
@@ -30,6 +31,10 @@ export type TestHub = {
   origin: string;
   /** The hub's file volume: a temporary directory of this hub's own. */
   filesDir: string;
+  /** The routes, for a test that serves them some other way (src/uploads.ts). */
+  app: { fetch(request: Request): Response | Promise<Response> };
+  /** The blob mirror, when the test asked for one. */
+  mirror: BlobMirror | null;
   stop(): Promise<void>;
 };
 
@@ -43,8 +48,11 @@ export async function startTestHub(
     now?: () => Date;
     filesQuotaBytes?: number | null;
     fileMaxBytes?: number;
+    /** A mirror reading its door from this file; not started — a test runs its passes. */
+    blobDoorFile?: string | null;
   } = {},
 ): Promise<TestHub> {
+  const { blobDoorFile, ...appOptions } = options;
   const source = new URL(base());
   const name = `${decodeURIComponent(source.pathname.slice(1))}_hub_${randomBytes(4).toString("hex")}`;
   const admin = postgres({
@@ -64,6 +72,15 @@ export async function startTestHub(
   const fleetKey = randomBytes(32).toString("hex");
   const origin = "https://test.hub.example";
   const filesDir = await mkdtemp(join(tmpdir(), "laf-hub-files-"));
+  const mirror =
+    blobDoorFile === undefined
+      ? null
+      : createBlobMirror({
+          database,
+          dir: filesDir,
+          doorFile: blobDoorFile,
+          log,
+        });
   const { app, websocket } = createHubApp({
     database,
     log,
@@ -71,7 +88,8 @@ export async function startTestHub(
     fleetSecret: fleetKey,
     privateIp: "10.20.0.5",
     filesDir,
-    ...options,
+    ...appOptions,
+    ...(mirror ? { mirror } : {}),
   });
   const server = Bun.serve({
     port: 0,
@@ -86,7 +104,10 @@ export async function startTestHub(
     fleetKey,
     origin,
     filesDir,
+    app,
+    mirror,
     async stop() {
+      await mirror?.stop();
       // Not awaited. Bun 1.3.14's `stop(true)` never resolves while it counts a socket the hub
       // closed itself (a heartbeat or a departure) as pending, though the socket's close handler
       // has run and the peer has seen the close. Stopping is still begun, and the port was 0.
