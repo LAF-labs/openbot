@@ -3281,6 +3281,20 @@ const GROUPS: readonly {
     processes: 1,
   },
   { name: "root", floor: 1744, roots: ["tests", "agent-bot"] },
+  /*
+   * ADDED 2026-10-16 WITH THE COMPANY HUB, at forty-six: its own process on its own VM, so its own
+   * floor rather than a share of another's. auth.test.ts 11 (a pass opening /me as its member, a
+   * refused one a single line with nothing logged, four malformed headers, a pass used from
+   * another VM, a member who left and came back, a rotation's ten minutes, health and the
+   * metrics' counts); fleet.test.ts 16 (signatures, the per-hub key, another hub's body, a stale
+   * body, four bad fields, one write for a repeated or racing id, no event for no change, a
+   * conflict, an unknown departure, the trail, an unset key, one workspace row); sync.test.ts 9
+   * (paging, `visible_to` both ways, a cursor past hidden events, four bad cursors, a number
+   * committed late never skipped, an event's fields); events-socket.test.ts 6 (live delivery,
+   * catch-up on reconnect, per-member delivery, heartbeat, a departure closing the socket, no
+   * socket without a pass); audit.test.ts 4 (insert, and update, delete and truncate refused).
+   */
+  { name: "hub", floor: 46, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
