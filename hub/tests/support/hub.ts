@@ -32,7 +32,11 @@ const base = () =>
   "postgres://openbot:openbot@localhost:55432/openbot";
 
 export async function startTestHub(
-  options: { heartbeatMs?: number; now?: () => Date } = {},
+  options: {
+    heartbeatMs?: number;
+    rotationGraceMs?: number;
+    now?: () => Date;
+  } = {},
 ): Promise<TestHub> {
   const source = new URL(base());
   const name = `${decodeURIComponent(source.pathname.slice(1))}_hub_${randomBytes(4).toString("hex")}`;
