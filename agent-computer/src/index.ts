@@ -8,6 +8,7 @@ import {
   sweepBackgroundProfiles,
 } from "./browsers";
 import { readConfig } from "./config";
+import { machineCoreShare } from "./core-share";
 import { deploymentEgress, ignoredEgressVariables } from "./egress";
 import { createEgressGuard, verdictOf } from "./egress-guard";
 import { liveScreen, type StreamData } from "./live-screen";
@@ -263,6 +264,12 @@ if (!config.egressFirewall) {
     }),
   );
 }
+
+/*
+ * How much of a core the hypervisor is giving this machine, read every few seconds: what stretches
+ * the step deadlines on a throttled burstable VM, and what `/health` reports (core-share.ts).
+ */
+machineCoreShare.start();
 
 /*
  * A deployment that still names a per-Bot proxy is told, once, at boot.

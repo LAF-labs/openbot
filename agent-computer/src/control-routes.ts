@@ -12,6 +12,7 @@ import { isSameAsk, secretFieldsOf } from "../../shared/secret-ask";
 import type { BotRoute } from "./computer";
 import type { ComputerConfig } from "./config";
 import { ControlRequestError, NO_SECRET_PENDING } from "./control";
+import { stepDeadline } from "./core-share";
 import { actionFailure } from "./failures";
 import {
   filledTabs,
@@ -121,7 +122,9 @@ export async function putValues(
   let characters = 0;
   for (const [index, { field, judged, ref }] of boxes.entries()) {
     const text = texts[index] ?? "";
-    await onElement(() => field.click({ timeout: config.actionTimeoutMs }));
+    await onElement(() =>
+      field.click({ timeout: stepDeadline(config.actionTimeoutMs) }),
+    );
     // ASKED AGAIN, AFTER THE CLICK AND BEFORE THE VALUE. The click is this process's own, and a
     // page may answer it: a box whose focus handler turns it into something else passed the
     // hold above as a password box and would have been filled as a comment box (Codex's read of
@@ -133,7 +136,7 @@ export async function putValues(
     rememberFilled(session, target, text);
     // A failure here must not say what it was filling: Playwright's message for it does.
     await onElement(() =>
-      field.fill(text, { timeout: config.actionTimeoutMs }),
+      field.fill(text, { timeout: stepDeadline(config.actionTimeoutMs) }),
     );
     /*
      * THE NODE, NOT THE REF AND NOT THE VALUE. The next snapshot has to blank this field
