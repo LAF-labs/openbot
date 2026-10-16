@@ -174,7 +174,12 @@ export function parseFleetEnvelope(raw: string): HubFleetEnvelope {
   throw new Invalid("event");
 }
 
-type Effects = { emitted: boolean; closeMember: string | null };
+type Effects = {
+  emitted: boolean;
+  closeMember: string | null;
+  /** A rotation: sockets opened with `passHash` close at `until`. */
+  expirePass: { member: string; passHash: string; until: Date } | null;
+};
 
 /**
  * One member, created or changed, in the caller's transaction. Keyed by email: the registry knows
@@ -185,6 +190,7 @@ async function putMember(
   input: HubFleetMember,
   now: Date,
   effects: Effects,
+  graceMs: number,
 ): Promise<Answer> {
   const [existing] = await tx
     .select()
@@ -295,6 +301,7 @@ async function putMember(
     };
   }
   const rejoined = existing.state === "left";
+  const graceUntil = new Date(now.getTime() + graceMs);
   await tx
     .update(hubMembers)
     .set({
@@ -302,13 +309,17 @@ async function putMember(
       name: input.name ?? null,
       vmOrigin: input.vmOrigin,
       vmKeyHash: input.vmKeyHash,
-      // The old pass keeps working for the grace, unless the member is coming back: a pass from
-      // before they left is not one anybody should be holding.
-      prevKeyHash: rotated && !rejoined ? existing.vmKeyHash : null,
-      prevKeyUntil:
-        rotated && !rejoined && existing.vmKeyHash
-          ? new Date(now.getTime() + ROTATION_GRACE_MS)
-          : null,
+      // Only a write that rotates the pass touches the grace. A rotated pass keeps working for it,
+      // unless the member is coming back: a pass from before they left is not one anybody should
+      // be holding. A write that changes only the role, name or VM leaves a running grace alone,
+      // or requests still in flight on the previous pass would be refused before it ends.
+      ...(rotated || rejoined
+        ? {
+            prevKeyHash: rotated && !rejoined ? existing.vmKeyHash : null,
+            prevKeyUntil:
+              rotated && !rejoined && existing.vmKeyHash ? graceUntil : null,
+          }
+        : {}),
       state: "active",
       leftAt: null,
       ...(rejoined ? { joinedAt: now } : {}),
@@ -331,6 +342,13 @@ async function putMember(
     payload: { role: input.role },
   });
   effects.emitted = true;
+  if (rotated && !rejoined && existing.vmKeyHash) {
+    effects.expirePass = {
+      member: existing.id,
+      passHash: existing.vmKeyHash,
+      until: graceUntil,
+    };
+  }
   return {
     status: 200,
     body: { ok: true, member: { id: existing.id, state: "active" }, seq },
@@ -371,6 +389,8 @@ export type FleetRouteOptions = {
   /** `HUB_PUBLIC_ORIGIN`: the hub a body must name. */
   hubOrigin: string;
   now?: () => Date;
+  /** `ROTATION_GRACE_MS`; shorter only in tests. */
+  rotationGraceMs?: number;
 };
 
 export function fleetRoutes(options: FleetRouteOptions) {
@@ -432,7 +452,11 @@ export function fleetRoutes(options: FleetRouteOptions) {
         );
       }
 
-      const effects: Effects = { emitted: false, closeMember: null };
+      const effects: Effects = {
+        emitted: false,
+        closeMember: null,
+        expirePass: null,
+      };
       let answer: Awaited<ReturnType<typeof onceFor>>;
       try {
         answer = await onceFor(
@@ -441,7 +465,13 @@ export function fleetRoutes(options: FleetRouteOptions) {
           envelope.id,
           (tx) =>
             envelope.event === "member.put"
-              ? putMember(tx, envelope.member, clock, effects)
+              ? putMember(
+                  tx,
+                  envelope.member,
+                  clock,
+                  effects,
+                  options.rotationGraceMs ?? ROTATION_GRACE_MS,
+                )
               : putWorkspace(tx, envelope.workspace),
         );
       } catch (error) {
@@ -461,6 +491,10 @@ export function fleetRoutes(options: FleetRouteOptions) {
             4401,
             HUB_FACTS.passRefused,
           );
+        }
+        if (effects.expirePass) {
+          const { member, passHash, until } = effects.expirePass;
+          options.listeners.expirePass(member, passHash, until);
         }
         if (effects.emitted) options.listeners.pokeAll();
       }

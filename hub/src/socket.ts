@@ -8,7 +8,7 @@ import {
   PING_FRAME,
   PONG_FRAME,
 } from "../../shared/channel-socket";
-import type { HubSocketFrame } from "../../shared/hub/protocol";
+import { HUB_FACTS, type HubSocketFrame } from "../../shared/hub/protocol";
 import type { Logger } from "../../shared/log";
 import type { AuthedMember, MemberVariables } from "./auth";
 import type { HubDatabase } from "./db/client";
@@ -21,6 +21,54 @@ import { eventsSince, headSeq, type Listeners } from "./events";
  * written to forever. The VM reconnects with its cursor and loses nothing.
  */
 const SILENCE_PINGS = 3;
+
+/**
+ * Pings every `everyMs`, and calls `onSilent` once (then stops) when nothing has been heard for
+ * three of them.
+ *
+ * THE PING MAY THROW, AND MUST NOT ESCAPE. Bun throws from `send` on a socket that is already
+ * closing — a member who just left, a peer that dropped between two ticks — and an exception out of
+ * a timer is an uncaught one, which `reportCrashes` turns into the whole hub exiting. The product's
+ * channel heartbeat (`server/src/channels/socket.ts`, `startHeartbeat`) swallows it for the same
+ * reason: a socket that cannot be written to is closing, and its close says so.
+ */
+export function startPings(input: {
+  everyMs: number;
+  ping: () => void;
+  onSilent: () => void;
+  now?: () => number;
+}): { heard(): void; stop(): void } {
+  const now = input.now ?? Date.now;
+  let heardAt = now();
+  let stopped = false;
+  const stop = () => {
+    stopped = true;
+    clearInterval(tick);
+  };
+  const tick = setInterval(() => {
+    if (stopped) return;
+    if (now() - heardAt > SILENCE_PINGS * input.everyMs) {
+      stop();
+      try {
+        input.onSilent();
+      } catch {
+        // Closing a socket that is already closing; its close handler runs either way.
+      }
+      return;
+    }
+    try {
+      input.ping();
+    } catch {
+      // See above: the socket is closing.
+    }
+  }, input.everyMs);
+  return {
+    heard: () => {
+      heardAt = now();
+    },
+    stop,
+  };
+}
 
 /**
  * `WS /hub/v1/events?since=<seq>`.
@@ -50,9 +98,23 @@ export function eventSocket(input: {
       let reading = false;
       let again = false;
       let closed = false;
-      let heardAt = Date.now();
-      let heartbeat: ReturnType<typeof setInterval> | undefined;
+      let pings: ReturnType<typeof startPings> | undefined;
+      let expiry: ReturnType<typeof setTimeout> | undefined;
       let remove: (() => void) | undefined;
+      /** Every way a socket ends goes through here, so no timer outlives it. */
+      const finish = () => {
+        closed = true;
+        pings?.stop();
+        clearTimeout(expiry);
+        remove?.();
+      };
+      const closeSafely = (socket: WSContext, code: number, reason: string) => {
+        try {
+          socket.close(code, reason);
+        } catch {
+          // Already closing.
+        }
+      };
 
       const pull = async (socket: WSContext) => {
         if (closed) return;
@@ -79,7 +141,7 @@ export function eventSocket(input: {
         } catch (error) {
           input.log.warn("socket_read_failed", { error });
           // 1011: the hub could not read its own table. The VM reconnects with its cursor.
-          if (!closed) socket.close(1011, "laf:hub_unavailable");
+          if (!closed) closeSafely(socket, 1011, "laf:hub_unavailable");
         } finally {
           reading = false;
         }
@@ -87,30 +149,47 @@ export function eventSocket(input: {
 
       return {
         onOpen(_event, socket) {
+          /*
+           * A socket keeps the pass it was opened with for as long as it lives, and nothing on it
+           * asks again. So a socket on a pass that is running out — opened inside a rotation's
+           * grace, or opened before a rotation (`Listeners.expirePass`) — is closed when the pass
+           * stops working, and the VM reconnects with the pass it holds now.
+           */
+          const expireAt = (until: Date) => {
+            clearTimeout(expiry);
+            expiry = setTimeout(
+              () => closeSafely(socket, 4401, HUB_FACTS.passRefused),
+              Math.max(0, until.getTime() - Date.now()),
+            );
+          };
           remove = input.listeners.add({
             member: member.id,
+            passHash: member.passHash,
             poke: () => void pull(socket),
-            close: (code, reason) => socket.close(code, reason),
+            close: (code, reason) => closeSafely(socket, code, reason),
+            expireAt,
           });
-          heartbeat = setInterval(() => {
-            if (Date.now() - heardAt > SILENCE_PINGS * every) {
-              socket.close(HEARTBEAT_CLOSE_CODE, HEARTBEAT_CLOSE_REASON);
-              return;
-            }
-            socket.send(PING_FRAME);
-          }, every);
+          if (member.passUntil) expireAt(member.passUntil);
+          pings = startPings({
+            everyMs: every,
+            ping: () => socket.send(PING_FRAME),
+            onSilent: () =>
+              closeSafely(socket, HEARTBEAT_CLOSE_CODE, HEARTBEAT_CLOSE_REASON),
+          });
           void pull(socket);
         },
         onMessage(event, socket) {
-          heardAt = Date.now();
-          if (heartbeatFrameKind(event.data) === "ping")
-            socket.send(PONG_FRAME);
+          pings?.heard();
+          if (heartbeatFrameKind(event.data) === "ping") {
+            try {
+              socket.send(PONG_FRAME);
+            } catch {
+              // Closing.
+            }
+          }
         },
-        onClose() {
-          closed = true;
-          clearInterval(heartbeat);
-          remove?.();
-        },
+        onClose: finish,
+        onError: finish,
       };
     },
   );

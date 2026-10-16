@@ -150,6 +150,26 @@ describe("a member's pass", () => {
     expect(await memberForPass(hub.database, dave.pass, later)).toBeNull();
     expect((await memberForPass(hub.database, next, later))?.id).toBe(id);
   });
+
+  test("a registry write that changes only the name leaves a running grace alone", async () => {
+    const fay = {
+      email: "fay@example.com",
+      vmOrigin: "https://fay.example",
+      pass: newPass(),
+    };
+    const { id } = await putMember(hub, fay);
+    const next = newPass();
+    await putMember(hub, { ...fay, pass: next });
+    await putMember(hub, { ...fay, pass: next, name: "Fay", role: "admin" });
+
+    const now = new Date();
+    expect((await memberForPass(hub.database, fay.pass, now))?.id).toBe(id);
+    expect(
+      (await fetch(`${hub.url}/hub/v1/me`, asMember(fay.pass))).status,
+    ).toBe(200);
+    const later = new Date(now.getTime() + 11 * 60 * 1000);
+    expect(await memberForPass(hub.database, fay.pass, later)).toBeNull();
+  });
 });
 
 describe("what the hub answers without a pass", () => {
