@@ -1,0 +1,13 @@
+# 온라인 판매 꾸러미. 미리 까는 것이고, 어떤 기능도 가리지 않는다.
+version: "1"
+skills:
+  - 온라인판매
+  - 쇼핑가격
+  - 세금노무
+routine_suggestions:
+  - unanswered-enquiries
+  - delivery-delay
+  - stock-check
+  - weekly-settlement
+  - competitor-price
+  - ad-spend

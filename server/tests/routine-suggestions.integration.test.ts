@@ -260,6 +260,39 @@ describe("what is offered", () => {
     // The cap is doing work: the catalogue has more eligible cards than the screen shows.
     expect(ROUTINE_SUGGESTIONS.length).toBeGreaterThan(MAX_PENDING_SUGGESTIONS);
   });
+
+  test("a person's business kind puts its pack's cards first; the rest follow and none is dropped", async () => {
+    const leading = ["tax-calendar", "booking-check"];
+    const service = createRoutineSuggestionService({
+      routines,
+      dismissals: createSuggestionDismissalStore(database),
+      connections: async () => EVERYTHING,
+      bots: async () => [BOT_A],
+      leadingKeys: async (userId) => (userId === OWNER.id ? leading : []),
+      limit: ROUTINE_SUGGESTIONS.length,
+    });
+    const rest = ROUTINE_SUGGESTIONS.map((entry) => entry.key).filter(
+      (key) => !leading.includes(key),
+    );
+    expect(keysOf(await service.list(OWNER))).toEqual([...leading, ...rest]);
+  });
+
+  test("a kind that cannot be read orders nothing and still offers the cards", async () => {
+    const cards = await createRoutineSuggestionService({
+      routines,
+      dismissals: createSuggestionDismissalStore(database),
+      connections: async () => EVERYTHING,
+      bots: async () => [BOT_A],
+      leadingKeys: async () => {
+        throw new Error("the read failed");
+      },
+    }).list(OWNER);
+    expect(keysOf(cards)).toEqual(
+      ROUTINE_SUGGESTIONS.slice(0, MAX_PENDING_SUGGESTIONS).map(
+        (entry) => entry.key,
+      ),
+    );
+  });
 });
 
 describe("만들기", () => {

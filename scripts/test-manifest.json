@@ -452,6 +452,8 @@
   "server/tests/hub-outbox.integration.test.ts",
   "server/tests/hub-routes.test.ts",
   "server/tests/ideas.test.ts",
+  "server/tests/industry-packs.integration.test.ts",
+  "server/tests/industry-packs.test.ts",
   "server/tests/jev-decisions.test.ts",
   "server/tests/jsonb-encoding.integration.test.ts",
   "server/tests/jsonb-storable.integration.test.ts",
