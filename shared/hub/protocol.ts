@@ -48,6 +48,11 @@ export const HUB_FACTS = {
   busy: "laf:hub_busy",
   /** The hub holds no file space (`HUB_FILES_DIR` unset): files and search are not offered. */
   filesUnset: "laf:hub_files_unset",
+  /**
+   * The file is known but its bytes are not on the hub's disk yet — a hub rebuilt from its database
+   * dump before its blobs came back from the bucket. Retried, after `Retry-After`.
+   */
+  blobRestoring: "laf:hub_blob_restoring",
 } as const;
 
 export type HubRole = "owner" | "admin" | "member";
