@@ -14,6 +14,13 @@ export type HubConfig = {
   filesDir: string | null;
   /** `HUB_FILES_QUOTA_BYTES`: the company's share of that volume; unset, the disk's own end. */
   filesQuotaBytes: number | null;
+  /**
+   * `HUB_BLOB_DOOR_FILE`: where the write-only door into the company's blob bucket is read from,
+   * on every mirror pass (src/files/mirror.ts). Unset, nothing is mirrored.
+   */
+  blobDoorFile: string | null;
+  /** `HUB_UPLOAD_PORT`: the listener `PUT /files` is served on (src/uploads.ts). */
+  uploadPort: number;
 };
 
 const KEY_SHAPE = /^[0-9a-f]{64}$/;
@@ -50,6 +57,19 @@ export function readHubConfig(
   if (quota !== null && !/^[1-9]\d{0,15}$/.test(quota)) {
     throw new Error("HUB_FILES_QUOTA_BYTES is not a number of bytes");
   }
+  const blobDoorFile = env.HUB_BLOB_DOOR_FILE?.trim() || null;
+  if (blobDoorFile !== null && !blobDoorFile.startsWith("/")) {
+    throw new Error("HUB_BLOB_DOOR_FILE is not an absolute path");
+  }
+  const uploadPort = Number(env.HUB_UPLOAD_PORT ?? "7201");
+  if (
+    !Number.isInteger(uploadPort) ||
+    uploadPort < 1 ||
+    uploadPort > 65_535 ||
+    uploadPort === port
+  ) {
+    throw new Error("HUB_UPLOAD_PORT is not a port of its own");
+  }
   return {
     databaseUrl,
     port,
@@ -58,5 +78,7 @@ export function readHubConfig(
     privateIp,
     filesDir,
     filesQuotaBytes: quota === null ? null : Number(quota),
+    blobDoorFile,
+    uploadPort,
   };
 }
