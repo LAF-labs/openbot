@@ -1,5 +1,10 @@
 import { ATTACHMENT_MAX_BYTES } from "../../../shared/attachments";
 import {
+  CORE_SHARE_HEADER,
+  callDeadline,
+  shareFromHeader,
+} from "../../../shared/computer-deadlines";
+import {
   BOTS_LOOK,
   LOOK_HEADER,
   PERSONS_LOOK,
@@ -75,6 +80,10 @@ export type ComputerClientOptions = {
   allowPrivateHosts?: boolean;
   /** This deployment's own app and its sign-in, never opened (`shared/net/own-addresses.ts`). */
   ownAddresses?: readonly string[];
+  /**
+   * How long a call is waited for on a machine getting a whole core. Stretched, with the computer's
+   * own step deadlines, on a machine the hypervisor is holding back (`shared/computer-deadlines.ts`).
+   */
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
   /**
@@ -405,6 +414,15 @@ export function createComputerClient(options: ComputerClientOptions) {
    */
   const token = options.token;
   const timeoutMs = options.timeoutMs ?? 45_000;
+  /**
+   * The share of a core the computer last said its machine is getting, which the next call waits by
+   * and tells the computer it waits by (`shared/computer-deadlines.ts`). Null until it has said one,
+   * and again after an answer that said none: then a call is waited for exactly `timeoutMs`, as it
+   * always was. From the last answer rather than asked of `/health` before each call: every answer
+   * carries it at no cost, and the computer stretches no further than the share sent with the call,
+   * so a machine that slowed down since is never cut short by a server waiting on an older number.
+   */
+  let waitsBy: number | null = null;
   const base = options.baseUrl.replace(/\/$/, "");
 
   /**
@@ -479,6 +497,8 @@ export function createComputerClient(options: ComputerClientOptions) {
           ? await options.whereaboutsFor(botId).catch(() => null)
           : null;
 
+      const share = waitsBy;
+      const deadlineMs = callDeadline(timeoutMs, share);
       let response: Response;
       try {
         response = await doFetch(`${base}${path}`, {
@@ -492,6 +512,10 @@ export function createComputerClient(options: ComputerClientOptions) {
             ...(browser ? { [BROWSER_HEADER]: browser } : {}),
             ...(scope ? { [FILE_SCOPE_HEADER]: fileScopeHeader(scope) } : {}),
             ...(token ? { "x-openbot-computer-token": token } : {}),
+            // Only when stretched: a call that says nothing is one the computer does not stretch.
+            ...(share !== null && share < 1
+              ? { [CORE_SHARE_HEADER]: String(share) }
+              : {}),
             ...(whereabouts
               ? {
                   [TIME_ZONE_HEADER]: whereabouts.timeZone,
@@ -508,8 +532,8 @@ export function createComputerClient(options: ComputerClientOptions) {
            * whichever fires first ends the request.
            */
           signal: caller
-            ? AbortSignal.any([caller, AbortSignal.timeout(timeoutMs)])
-            : AbortSignal.timeout(timeoutMs),
+            ? AbortSignal.any([caller, AbortSignal.timeout(deadlineMs)])
+            : AbortSignal.timeout(deadlineMs),
           /*
            * A CONNECTION OF ITS OWN FOR EVERY CALL, NEVER ONE FROM THE POOL.
            *
@@ -539,6 +563,8 @@ export function createComputerClient(options: ComputerClientOptions) {
         // there, which is an operator problem, not something the person asking can fix by rephrasing.
         throw notAnswered(error, caller);
       }
+      // Whatever the answer was, a refusal included: it is the machine's latest word on its share.
+      waitsBy = shareFromHeader(response.headers.get(CORE_SHARE_HEADER));
 
       // The code, and nothing else about the answer: not its status, not the door it came out of,
       // and never `error`, which is where Playwright's words used to ride. See COMPUTER_ANSWERS.
