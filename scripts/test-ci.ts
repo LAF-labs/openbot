@@ -3248,6 +3248,13 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * in Korean, and the socket telling a hub frame from a roster patch (hub-status.test.ts). 4711 and
  * 35; 2534 and 9. Then `server` by one more (to 4747): a door that takes the socket and drops it
  * at once is not asked faster for it (hub-link.integration.test.ts).
+ *
+ * RAISED 2026-10-16 FOR 라피'S TWO HUB TOOLS: `server` by twenty-eight (to 4775) — the reads against
+ * a scripted hub, what is refused before anybody is asked, and the hub's mark on a stored result
+ * (hub-tools.test.ts, 22); the writes through the outbox on a real Postgres (hub-tools
+ * .integration.test.ts, 3: a post sent once with its row's key, a write kept through an outage and
+ * sent once after, a refusal ended); and the head of the prompt the same bytes with and without
+ * the hub, and no hub tool without the pass (hub-tools-head.test.ts, 3). 4747 and 28.
  */
 const GROUPS: readonly {
   name: string;
@@ -3255,7 +3262,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4747, roots: ["server"] },
+  { name: "server", floor: 4775, roots: ["server"] },
   { name: "app", floor: 2543, roots: ["app"] },
   {
     name: "agent-computer",
