@@ -51,9 +51,11 @@ export async function startTestHub(
     fileMaxBytes?: number;
     /** A mirror reading its door from this file; not started — a test runs its passes. */
     blobDoorFile?: string | null;
+    /** The vault's key; a fresh one unless given, `null` for a hub started without one. */
+    vaultKey?: string | null;
   } = {},
 ): Promise<TestHub> {
-  const { blobDoorFile, ...appOptions } = options;
+  const { blobDoorFile, vaultKey, ...appOptions } = options;
   const source = new URL(base());
   const name = `${decodeURIComponent(source.pathname.slice(1))}_hub_${randomBytes(4).toString("hex")}`;
   const admin = postgres({
@@ -89,6 +91,10 @@ export async function startTestHub(
     fleetSecret: fleetKey,
     privateIp: "10.20.0.5",
     filesDir,
+    vaultKey:
+      vaultKey === null
+        ? undefined
+        : (vaultKey ?? randomBytes(32).toString("hex")),
     ...appOptions,
     ...(mirror ? { mirror } : {}),
   });

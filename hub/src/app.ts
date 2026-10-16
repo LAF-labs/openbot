@@ -26,6 +26,7 @@ import { skillRoutes } from "./skills";
 import { eventSocket } from "./socket";
 import { readVersions } from "./versions";
 import { taskRoutes } from "./tasks";
+import { vaultRoutes } from "./vault";
 
 export type HubAppOptions = {
   database: HubDatabase;
@@ -44,6 +45,10 @@ export type HubAppOptions = {
   fileMaxBytes?: number;
   /** The copy of each blob to the company's bucket; absent, nothing is copied (and `/metrics` says so). */
   mirror?: BlobMirror;
+  /** `HUB_KEY_ENCRYPTION_KEY`. Absent, the login vault answers `laf:hub_vault_unset`. */
+  vaultKey?: string | undefined;
+  /** `HUB_VAULT_LEASE_MS`; shorter only in tests. */
+  vaultLeaseMs?: number;
   heartbeatMs?: number;
   rotationGraceMs?: number;
   now?: () => Date;
@@ -189,6 +194,18 @@ export function createHubApp(options: HubAppOptions) {
 
   hub.route("/rooms", roomRoutes({ database, listeners, member }));
   hub.route("/tasks", taskRoutes({ database, listeners, member }));
+  hub.route(
+    "/vault",
+    vaultRoutes({
+      database,
+      listeners,
+      member,
+      log,
+      key: options.vaultKey,
+      ...(options.now ? { now: options.now } : {}),
+      ...(options.vaultLeaseMs ? { leaseMs: options.vaultLeaseMs } : {}),
+    }),
+  );
 
   hub.get(
     "/events",
