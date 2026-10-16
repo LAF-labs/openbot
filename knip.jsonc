@@ -79,6 +79,12 @@
     "desktop": {
       "entry": ["scripts/*.ts"],
       "project": ["*.ts", "scripts/**/*.ts"]
+    },
+    "hub": {
+      "entry": ["src/index.ts", "drizzle.config.ts", "tests/**/*.test.ts"],
+      // Its plugin loads the config to find the schema; the entry above already names both.
+      "drizzle": false,
+      "project": ["src/**/*.ts", "tests/**/*.ts"]
     }
   }
 }

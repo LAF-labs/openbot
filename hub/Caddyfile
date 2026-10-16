@@ -1,0 +1,44 @@
+# The hub's front door: TLS, and the one proxy to the hub process.
+#
+# HUB_PUBLIC_ORIGIN is the address members' VMs reach this hub at, and it is the whole TLS setup:
+# Caddy takes a certificate for any name here that is not localhost (the product's app/Caddyfile
+# says what has to be true for that). The second address is the container asking itself, for the
+# healthcheck in docker-compose.hub.yml; 2021 is published nowhere.
+#
+# No `log` directive: Caddy then writes no access log, so no request line — and no Authorization
+# header — is ever written by the door. The hub itself logs nothing about a refused request either
+# (hub/src/auth.ts).
+
+{$HUB_PUBLIC_ORIGIN:http://localhost}, http://localhost:2021 {
+	encode zstd gzip
+
+	# Counts for the operator's collector, read on the hub VM through the loopback port compose
+	# publishes for the hub process. Not from here: a stranger has no business counting members.
+	handle /hub/v1/metrics {
+		header Content-Type application/json
+		respond `{"ok":false,"code":"laf:hub_not_found"}` 404
+	}
+
+	# A team file, to the hub's upload listener: it streams the body to the volume as fast as the
+	# disk takes it, where the main listener would hold it in memory first (hub/src/uploads.ts).
+	# Caddy streams a request body through as it comes, so the member's VM waits for the disk too.
+	@upload {
+		method PUT
+		path /hub/v1/files /hub/v1/files/
+	}
+	handle @upload {
+		reverse_proxy hub:7201
+	}
+
+	# Everything the hub answers, the events WebSocket included: `reverse_proxy` passes an upgrade
+	# through without being told to.
+	handle /hub/v1/* {
+		reverse_proxy hub:7200
+	}
+
+	# There is no page here. A person never opens the hub; their own VM's app does the talking.
+	handle {
+		header Content-Type application/json
+		respond `{"ok":false,"code":"laf:hub_not_found"}` 404
+	}
+}
