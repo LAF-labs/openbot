@@ -19,6 +19,17 @@
 		respond `{"ok":false,"code":"laf:hub_not_found"}` 404
 	}
 
+	# A team file, to the hub's upload listener: it streams the body to the volume as fast as the
+	# disk takes it, where the main listener would hold it in memory first (hub/src/uploads.ts).
+	# Caddy streams a request body through as it comes, so the member's VM waits for the disk too.
+	@upload {
+		method PUT
+		path /hub/v1/files /hub/v1/files/
+	}
+	handle @upload {
+		reverse_proxy hub:7201
+	}
+
 	# Everything the hub answers, the events WebSocket included: `reverse_proxy` passes an upgrade
 	# through without being told to.
 	handle /hub/v1/* {
