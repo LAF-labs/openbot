@@ -80,6 +80,10 @@ import {
 import { createIdeaRoutes } from "./ideas/routes";
 import { createIdeaService } from "./ideas/service";
 import { log } from "./log";
+import type { HubHttp } from "./hub/http";
+import type { HubLink } from "./hub/link";
+import { createHubRoutes } from "./hub/routes";
+import { createHubUiRoutes } from "./hub/routes-ui";
 import { createLoginRoutes } from "./logins/routes";
 import type { LoginVault } from "./logins/store";
 import { createSecurityMiddleware, RATE_LIMITED } from "./middleware/security";
@@ -450,6 +454,11 @@ export type CreateAppOptions = {
    * `/api/logins` unmounted.
    */
   logins?: LoginVault;
+  /**
+   * The company hub this VM belongs to (hub/), or absent when its person is on their own. The
+   * `/api/hub` doors are mounted either way, so the app can ask and be told `configured: false`.
+   */
+  hub?: { http: HubHttp; link: HubLink };
 };
 
 export function createApp({
@@ -503,6 +512,7 @@ export function createApp({
   feed,
   goals,
   logins,
+  hub,
 }: CreateAppOptions) {
   const app = new Hono<{ Variables: AppVariables }>();
   app.use("*", createSecurityMiddleware());
@@ -1049,6 +1059,10 @@ export function createApp({
   if (logins) {
     app.route("/api/logins", createLoginRoutes(logins, requireUser));
   }
+
+  app.route("/api/hub", createHubRoutes(hub, requireUser));
+  // The 회사 screen's doors: members, rooms, team files, skills and team memory, through the pass.
+  app.route("/api/hub", createHubUiRoutes(hub, requireUser));
 
   if (feed) {
     app.route("/api/feed", createFeedRoutes(feed, requireUser));
