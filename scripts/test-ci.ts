@@ -3280,8 +3280,14 @@ const GROUPS: readonly {
      * RAISED 2026-10-13 FOR A FILE THAT ARRIVES AFTER ITS RUN WAS TOLD OVER, from 631 to 632: one
      * in `korean-sites.test.ts`, a real download landing in the folder of the run whose page
      * sent it.
+     *
+     * RAISED 2026-10-16 FOR WHAT THE BROWSER DOES NOT DOWNLOAD, from 632 to 674: forty-two in
+     * `light-load.test.ts` — nine requests judged skipped or not, thirty hosts the catalogue's
+     * sites work on that nothing is skipped from, and three in a real Chromium: an ad host's script
+     * and pixel never sent while the page's own script and font are, an ad host opened as a page
+     * still opening, and a page's video never downloaded by the deployment's browser.
      */
-    floor: 632,
+    floor: 674,
     roots: ["agent-computer"],
     processes: 1,
   },
