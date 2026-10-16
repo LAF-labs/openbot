@@ -21,7 +21,10 @@ import { fleetRoutes } from "./fleet";
 import { countIdempotency } from "./idempotency";
 import { roomRoutes } from "./rooms";
 import { searchRoute } from "./search";
+import { memoryRoutes } from "./memory";
+import { skillRoutes } from "./skills";
 import { eventSocket } from "./socket";
+import { readVersions } from "./versions";
 
 export type HubAppOptions = {
   database: HubDatabase;
@@ -149,9 +152,21 @@ export function createHubApp(options: HubAppOptions) {
       protocol: HUB_PROTOCOL,
       privateIp: options.privateIp,
       seq: await headSeq(database),
+      versions: await readVersions(database),
     };
     return context.json(body);
   });
+
+  hub.route("/skills", skillRoutes({ database, listeners, member }));
+  hub.route(
+    "/memory",
+    memoryRoutes({
+      database,
+      listeners,
+      member,
+      ...(options.now ? { now: options.now } : {}),
+    }),
+  );
 
   hub.get("/sync", member, async (context) => {
     const since = cursorOf(context.req.query("since"), 0);
