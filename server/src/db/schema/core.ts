@@ -258,7 +258,15 @@ export const channels = pgTable("channels", {
    * locked (`channels/conversations.ts`), and the migration that filled this column is tested
    * against rows.
    */
-  kind: text("kind").$type<"main" | "project">().notNull().default("main"),
+  /*
+   * `room` (2026-10-16): the conversation in which the person's 라피 answers what they asked it in a
+   * company hub's team room (`hub/room-answers.ts`) — one per room, never `main`, never a project.
+   * A text column, so the third kind needed no migration.
+   */
+  kind: text("kind")
+    .$type<"main" | "project" | "room">()
+    .notNull()
+    .default("main"),
   /*
    * THIS CONVERSATION IS BEING DELETED, since when (2026-10-10, record §3, piece 4-5; migration
    * 0066). Set before anything of a project is stopped or removed, and read by every door that

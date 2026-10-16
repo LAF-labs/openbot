@@ -33,6 +33,13 @@ export const HUB_TOOL_PATHS = {
   roomMessages: (id: string, limit: number) =>
     `/rooms/${segment(id)}/messages?limit=${limit}`,
   roomPost: (id: string) => `/rooms/${segment(id)}/messages`,
+  /**
+   * One message by its number: the page after the one before it, one long. What a `room.mention`
+   * names (`<room>:<seq>`) is read this way, so the VM sees who wrote it and whom it mentions —
+   * the event itself carries neither.
+   */
+  roomMessage: (id: string, seq: number) =>
+    `/rooms/${segment(id)}/messages?since=${Math.max(0, seq - 1)}&limit=1`,
 } as const;
 
 /** The kinds a search may be narrowed to, as the hub names them. */
