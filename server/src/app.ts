@@ -90,6 +90,7 @@ import type { ApprovalMetrics } from "./notifications/approval-metrics";
 import type { NotificationOutbox } from "./notifications/outbox";
 import { createNotificationRoutes } from "./notifications/routes";
 import type { BuiltInSkillsRuntime } from "./plugins/built-in-skill-sync";
+import { type IndustryPack, packFor } from "./plugins/industry-packs";
 import { createConnectedPageRoute } from "./plugins/connected-page";
 import type { DeploymentKeyRuntime } from "./plugins/deployment-key-runtime";
 import {
@@ -406,6 +407,8 @@ export type CreateAppOptions = {
    * Absent, a new Bot waits for nothing: it simply holds none.
    */
   builtInSkills?: BuiltInSkillsRuntime;
+  /** The industry packs: a kind's routine suggestions are offered first (`industry-packs.ts`). */
+  industryPacks?: readonly IndustryPack[];
   /**
    * Files the owner hands their Bot (attachments/).
    *
@@ -504,6 +507,7 @@ export function createApp({
   whereabouts,
   readDay,
   builtInSkills,
+  industryPacks,
   attachments,
   turnRoutes,
   readMade,
@@ -1316,6 +1320,12 @@ export function createApp({
                   id: bot.id,
                   name: bot.name,
                 })),
+              // The person's business kind puts its pack's suggestions first.
+              leadingKeys: async (userId) =>
+                packFor(
+                  industryPacks ?? [],
+                  (await shop?.read(userId))?.kind ?? null,
+                )?.routineSuggestions ?? [],
             }),
             requireUser,
           ),

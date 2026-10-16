@@ -1,0 +1,15 @@
+# 음식점·카페 꾸러미. 이 업종을 고르면 미리 깔리는 것이고, 어떤 기능도 가리지 않는다.
+# 자주 쓰는 곳은 여기 적지 않는다: shared/shop/catalogue.ts의 places가 한 벌뿐인 원본이다.
+version: "1"
+# 이 꾸러미가 싣는 스킬. tenant/laf/skills의 것(모두에게 이미 깔려 있다)과 이 폴더 skills/의 것.
+skills:
+  - 음식점카페
+  - 네이버블로그
+  - 세금노무
+# 루틴 제안을 이 순서로 먼저 보인다. 나머지는 원래 순서대로 뒤에 선다 — 빼는 것이 아니다.
+routine_suggestions:
+  - store-open-check
+  - review-watch
+  - weekly-settlement
+  - booking-check
+  - morning-brief

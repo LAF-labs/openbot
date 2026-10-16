@@ -21,6 +21,12 @@
  * planted and the server restarts), the skill arrives with it as a new one, and every Bot is
  * handed it then; a person who had taken it off before it went finds it on again, which is the one
  * place "what a person takes off stays off" gives way, because the grant went with the row.
+ *
+ * AND THE INDUSTRY PACK OF THE PERSON'S KIND (`industry-packs.ts`). Its own skills are built-in rows
+ * like the package's, carried while the person's business kind is that pack's: choosing a kind adds
+ * them, changing it removes the old pack's and adds the new one's, by this same reconcile — run again
+ * when the answer changes. A slug somebody here already took is theirs, as above, so a skill a person
+ * wrote under a pack's name is never replaced or removed by a pack.
  */
 import { COMPUTER_TOOLS } from "../../../shared/tools/computer";
 import { NOW_TOOL_NAME } from "../../../shared/tools/now";
@@ -88,8 +94,15 @@ export function createBuiltInSkills(input: {
   hasTool: (name: string) => boolean;
   /** For tests: the skills, instead of reading the package. */
   skills?: () => Promise<BuiltInSkill[]>;
+  /** The own skills of the pack for the person's business kind, as it is now. None by default. */
+  packSkills?: () => Promise<readonly BuiltInSkill[]>;
 }): BuiltInSkillsRuntime {
-  const read = input.skills ?? (() => readBuiltInSkills(input.packageDir));
+  const packageSkills =
+    input.skills ?? (() => readBuiltInSkills(input.packageDir));
+  const read = async () => [
+    ...(await packageSkills()),
+    ...((await input.packSkills?.()) ?? []),
+  ];
   /** What the package ships that this deployment can use; the rest is logged once per boot. */
   const shipped = async () => {
     const skills = await read();
@@ -106,7 +119,18 @@ export function createBuiltInSkills(input: {
   /** The slugs this deployment actually carries as built-in, after the last reconcile. */
   let ours: string[] | null = null;
 
-  async function reconcile(store: BuiltInSkillStore, by: string) {
+  /**
+   * One reconcile at a time. Boot runs one and a changed business kind runs another; two at once
+   * would each read the rows before the other wrote them, and hand a fresh skill out twice or
+   * remove what the other just wrote.
+   */
+  let running: Promise<void> = Promise.resolve();
+  function reconcile(store: BuiltInSkillStore, by: string) {
+    running = running.then(() => reconcileOnce(store, by));
+    return running;
+  }
+
+  async function reconcileOnce(store: BuiltInSkillStore, by: string) {
     try {
       const skills = await shipped();
       const rows = new Map(
