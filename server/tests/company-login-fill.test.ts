@@ -204,6 +204,8 @@ function stack(
   /** What the page was given: the one place the values may arrive. */
   const filled: { ref: string; value: string }[][] = [];
   const timers: { ms: number; run: () => void; cancelled: boolean }[] = [];
+  /** The origins kept for leaving the company (`hub_vault_origins`). */
+  const noted: string[][] = [];
   let page = LOGIN_PAGE;
   const client = {
     snapshot: async () => page,
@@ -263,6 +265,7 @@ function stack(
     },
     companyLogins: {
       vault: createCompanyVault({ http: hub.http }),
+      noteOrigins: async (origins) => void noted.push([...origins]),
       // The renewal clock, by hand: a case fires a timer when it means the lease is near its end.
       schedule: (ms, run) => {
         const timer = { ms, run, cancelled: false };
@@ -299,7 +302,7 @@ function stack(
     page = next;
     await gateway.snapshot("bot-1");
   };
-  return { gateway, hub, calls, filled, rows, ask, lookAt, timers };
+  return { gateway, hub, calls, filled, rows, ask, lookAt, timers, noted };
 }
 
 /** Everything a value must never be in, after a case: serialised whole. */
@@ -376,6 +379,8 @@ describe("a company login granted to the person, on a site's sign-in", () => {
       { run: "thread-a", login: LOGIN_ID },
     ]);
     expect(made.gateway.holdsValues("bot-1")).toBe(true);
+    // The login's origins are kept for leaving the company — origins, and nothing else.
+    expect(made.noted).toEqual([[ORIGIN]]);
   });
 
   test("is opened only once the fill is allowed: a rule that asks opens nothing and gives the lease back", async () => {
@@ -430,6 +435,8 @@ describe("a company login another member's VM holds", () => {
     expect(hub.sent("open")).toEqual([]);
     expect(made.filled).toEqual([]);
     expect(made.calls).toEqual([]);
+    // Nothing went in, so there is no site to sign out of.
+    expect(made.noted).toEqual([]);
     expect(companyLoginResult(answer)).toMatchObject({
       ok: false,
       code: "laf:vault_busy",

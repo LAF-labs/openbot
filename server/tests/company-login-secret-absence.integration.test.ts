@@ -7,10 +7,20 @@ import type { ComputerClient } from "../src/computer/client";
 import { createComputerGateway } from "../src/computer/gateway";
 import type { SnapshotResult } from "../src/computer/schema";
 import { createDatabase } from "../src/db/client";
-import { auditEvents, hubOutbox, lafThreadMessages } from "../src/db/schema";
+import {
+  auditEvents,
+  hubOutbox,
+  hubVaultOrigins,
+  lafThreadMessages,
+} from "../src/db/schema";
 import type { HubAnswer, HubHttp, HubRequest } from "../src/hub/http";
 import { createHubOutbox } from "../src/hub/outbox";
-import { companyLoginResult, createCompanyVault } from "../src/hub/vault";
+import {
+  companyLoginResult,
+  createCompanyVault,
+  noteVaultOrigins,
+  vaultOriginsUsed,
+} from "../src/hub/vault";
 import { recentLines } from "../src/log";
 import { appendMessages, messagesFor } from "../src/runner/thread-store";
 import { HISTORY_PAGE, historyPage } from "../src/turns/history";
@@ -38,7 +48,8 @@ const database = createDatabase(
 
 const WHO = "company-user-CANARY-4410";
 const PASSWORD = "C0mpany!Pass-CANARY-2287";
-const ORIGIN = "https://seller.example";
+/** Its own host, so this file's row in `hub_vault_origins` is its own to clean up. */
+const ORIGIN = `https://seller-${randomUUID().slice(0, 8)}.example`;
 
 const threadIds: string[] = [];
 
@@ -50,6 +61,9 @@ afterAll(async () => {
       .delete(lafThreadMessages)
       .where(eq(lafThreadMessages.threadId, threadId));
   }
+  await database
+    .delete(hubVaultOrigins)
+    .where(eq(hubVaultOrigins.origin, ORIGIN));
   await database.$client.close();
 });
 
@@ -155,7 +169,10 @@ describe("a run that signed in with a company login", () => {
       client,
       auditStore: createAuditStore(database),
       policy: () => ({ deny: [], ask: [], allow: ["true"] }),
-      companyLogins: { vault: createCompanyVault({ http: hub.http }) },
+      companyLogins: {
+        vault: createCompanyVault({ http: hub.http }),
+        noteOrigins: (origins) => noteVaultOrigins(database, origins),
+      },
     });
     const ask = async () => {
       page = LOGIN_PAGE;
@@ -238,6 +255,14 @@ describe("a run that signed in with a company login", () => {
       .from(auditEvents)
       .where(eq(auditEvents.actorUserId, person));
     const outboxAfter = await database.select().from(hubOutbox);
+    const originsKept = await database.select().from(hubVaultOrigins);
+    // The site is kept for leaving the company, once however often it was filled.
+    expect(await vaultOriginsUsed(database)).toContain(ORIGIN);
+    expect(
+      originsKept
+        .filter((row) => row.origin === ORIGIN)
+        .map((row) => row.origin),
+    ).toEqual([ORIGIN]);
 
     // Something was written in each place, so their silence below is not an empty record.
     expect(
@@ -252,6 +277,7 @@ describe("a run that signed in with a company login", () => {
       forTheModel,
       forAWindow.messages,
       outboxAfter,
+      originsKept,
       recentLines.lines().slice(logsFrom),
       hub.requests,
       [ready, busy, gone, filled],
