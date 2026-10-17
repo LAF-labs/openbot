@@ -40,12 +40,13 @@ function pulledImages(contents: string): string[] {
 }
 
 describe("the base images", () => {
-  test("are the five the workflow builds", () => {
+  test("are the six the workflow builds", () => {
     expect(dockerfiles.sort()).toEqual([
       "agent-bot/Dockerfile",
       "agent-computer/Dockerfile",
       "app/Dockerfile",
       "deploy/Dockerfile",
+      "hub/Dockerfile",
       "server/Dockerfile",
     ]);
   });

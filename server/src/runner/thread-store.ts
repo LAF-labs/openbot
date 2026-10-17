@@ -24,6 +24,7 @@
 import type { Message } from "@ag-ui/client";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { type FirstMoveMark, isFirstMove } from "../../../shared/first-move";
+import { DEFERRED_TOOL_PREFIX } from "../../../shared/tools/bridge";
 import type { DelegatedMark } from "../../../shared/tools/delegate";
 import {
   type ProjectsMark,
@@ -60,6 +61,11 @@ import { redactSecretTyping } from "./secret-redaction";
  * conversation's copy of what was said somewhere else. A result naming a project that is gone is
  * not kept as it arrived — see `appendMessages`.
  *
+ * `lafSource: "hub"` says a tool result holds what the company hub answered (`hub/tools.ts`) — the
+ * company's words, copied into this person's conversation. It is what lets a person who leaves
+ * their company have those copies taken out without reading every result to guess which they were
+ * (lafi-dev-design §4, "떠나기"); see `markHubResults`.
+ *
  * A room's messages also carried `lafRoomReceipts`, which members read one and how their part came
  * out. Rooms were removed on 2026-09-24 and migration 0047 deleted their rows and took the key off
  * any message still holding it.
@@ -73,6 +79,7 @@ export type StoredMessage = Message &
     lafAt?: string;
     lafAgentId?: string;
     lafRedacted?: boolean;
+    lafSource?: "hub";
   };
 
 /**
@@ -243,6 +250,84 @@ export function keepProjectsRead(
       lafProjects: [...new Set([...kept, ...projectsReadBy(message)])],
     };
   });
+}
+
+/** The tools whose results are the company hub's: `mcp__hub__read`, `mcp__hub__write`. */
+const HUB_TOOL_PREFIX = `${DEFERRED_TOOL_PREFIX}hub__`;
+
+/**
+ * Mark every tool result answering a hub tool's call `lafSource: "hub"`, and keep the mark on a copy
+ * that arrives without it.
+ *
+ * Read off the call, by the tool's real name: the bridge's `tool_call` reaches the wire in the name
+ * it calls (`agent-bot/src/deferral.ts`), so the assistant message beside the result names the hub
+ * tool itself. The call is looked for in what arrived and in what is held, because a run hands its
+ * whole history back but an append reads only the newest rows. A result once marked stays marked:
+ * nothing takes the mark off, for `keepProjectsRead`'s reason.
+ */
+export function markHubResults(
+  messages: readonly StoredMessage[],
+  held: readonly StoredMessage[],
+): StoredMessage[] {
+  const calls = new Set<string>();
+  for (const message of [...held, ...messages]) {
+    if (message.role === "tool" && message.lafSource === "hub") {
+      calls.add(message.toolCallId);
+    }
+    if (message.role !== "assistant") continue;
+    // Read defensively: a stored row is cast, not validated (`parseMessage`), and an append that
+    // threw on one odd old row would stop the whole conversation from being written.
+    for (const call of message.toolCalls ?? []) {
+      const name = call?.function?.name;
+      if (typeof name === "string" && name.startsWith(HUB_TOOL_PREFIX)) {
+        calls.add(call.id);
+      }
+    }
+  }
+  if (calls.size === 0) return [...messages];
+  return messages.map((message) =>
+    message.role === "tool" &&
+    calls.has(message.toolCallId) &&
+    message.lafSource !== "hub"
+      ? { ...message, lafSource: "hub" as const }
+      : message,
+  );
+}
+
+/**
+ * What a hub tool result says once its person has left the company (`hub/leave.ts`): the call and
+ * its answer stay a pair, so the history a provider is handed is still well formed, and what the
+ * company's server answered is not in it. It says what happened, not what was there.
+ */
+export const LEFT_COMPANY_RESULT = "[회사를 떠나며 지운 내용]";
+
+/**
+ * Keep a hub result blanked by a leave blank on a copy that arrives with its words — the path
+ * `withoutGoneProjects` closes for a deleted project's results. A run hands its whole history back,
+ * and a copy built before the leave would otherwise be written over the blank row.
+ */
+export function keepLeftBlank(
+  messages: readonly StoredMessage[],
+  held: readonly StoredMessage[],
+): StoredMessage[] {
+  const blank = new Set(
+    held
+      .filter(
+        (message) =>
+          message.role === "tool" &&
+          message.lafSource === "hub" &&
+          message.content === LEFT_COMPANY_RESULT,
+      )
+      .map((message) => message.id),
+  );
+  if (blank.size === 0) return [...messages];
+  return messages.map((message) =>
+    message.role === "tool" &&
+    blank.has(message.id) &&
+    message.content !== LEFT_COMPANY_RESULT
+      ? { ...message, lafSource: "hub" as const, content: LEFT_COMPANY_RESULT }
+      : message,
+  );
 }
 
 /**
@@ -477,7 +562,10 @@ export async function appendMessages(
      * here for the project's row, this transaction has written nothing the deletion could be
      * waiting for. Read after a first write, the two would wait on each other.
      */
-    const marked = keepProjectsRead(merged, heldMessages);
+    const marked = keepLeftBlank(
+      markHubResults(keepProjectsRead(merged, heldMessages), heldMessages),
+      heldMessages,
+    );
     const named = [...new Set(marked.flatMap(projectsReadBy))];
     const live = new Set(
       named.length === 0

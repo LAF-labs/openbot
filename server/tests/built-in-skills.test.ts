@@ -3,6 +3,9 @@ import { join } from "node:path";
 import { skillIndexText } from "../../shared/prompt/skill-index";
 import { SKILL_SLUG_PATTERN } from "../../shared/tools/skills";
 import { offeredTools } from "../src/plugins/built-in-skill-sync";
+import { createDeploymentKeyRuntime } from "../src/plugins/deployment-key-runtime";
+import { DEPLOYMENT_KEY_SERVICES } from "../src/plugins/deployment-key-services";
+import { deploymentKeysFrom } from "../src/plugins/shared-clients";
 import { PUBLIC_DATA_TOOLS } from "../src/plugins/public-data-rest";
 import {
   parseSkillFile,
@@ -18,6 +21,8 @@ import {
 const PACKAGE = join(import.meta.dir, "../../tenant/laf");
 /** What a VM holding the data.go.kr key adds to a Bot's tools, by name. */
 const PUBLIC_DATA_TOOL_NAMES = PUBLIC_DATA_TOOLS.map((tool) => tool.name);
+/** What a VM attached to a company hub adds, by the names a Bot calls them. */
+const HUB_WIRE_NAMES = ["mcp__hub__read", "mcp__hub__write"];
 
 describe("the package's skills", () => {
   test("every file parses into a name, a title, one line and a body", async () => {
@@ -34,7 +39,18 @@ describe("the package's skills", () => {
   });
 
   test("the index they add to every prompt stays small", async () => {
-    const index = skillIndexText(await readBuiltInSkills(PACKAGE));
+    const skills = await readBuiltInSkills(PACKAGE);
+    // What a VM in no company carries: 팀에-올리기 is withheld there (`requires:`), so it is the
+    // attached VM's prompt alone that pays for its line — measured below.
+    const alone = skills.filter(
+      (skill) => !skill.requires?.includes("mcp__hub__write"),
+    );
+    const index = skillIndexText(alone);
+    const attached = skillIndexText(skills);
+    expect(alone.length).toBe(skills.length - 1);
+    // One line, about forty tokens, on a VM in a company only (lafi-dev-design §4).
+    expect(attached.length - index.length).toBeGreaterThan(0);
+    expect(attached.length - index.length).toBeLessThan(60);
     // Every request pays for it (the footprint ladder); four hundred characters is about the
     // size of one tool's description. RAISED 2026-09-27 from 500 to 560 for 목표's skill (phase 9),
     // the rung below a tool: its one line is what makes "오늘 30분 했어" reach the goal's timeline,
@@ -89,7 +105,7 @@ describe("the package's skills", () => {
     ).toBe(true);
     // A misspelt name would withhold a skill on every deployment, with only a log line to say so.
     const everything = offeredTools({
-      deploymentKeyTools: PUBLIC_DATA_TOOL_NAMES,
+      deploymentKeyTools: [...PUBLIC_DATA_TOOL_NAMES, ...HUB_WIRE_NAMES],
     });
     for (const skill of skills) {
       for (const name of skill.requires ?? [])
@@ -98,8 +114,33 @@ describe("the package's skills", () => {
     // The rest need nothing but what every Bot has: the briefing asks about 지원사업 only where the
     // chip found the tool (`morning-briefing.ts`), so it is not withheld with it.
     expect(
-      skills.filter((skill) => skill.requires).map((skill) => skill.slug),
-    ).toEqual(["지원사업"]);
+      skills
+        .filter((skill) => skill.requires)
+        .map((skill) => skill.slug)
+        .sort(),
+    ).toEqual(["지원사업", "팀에-올리기"].sort());
+  });
+
+  test("팀에-올리기 needs the hub's write tool, which only a VM holding the hub pass offers", async () => {
+    const skills = await readBuiltInSkills(PACKAGE);
+    const join = skills.find((skill) => skill.slug === "팀에-올리기");
+    expect(join?.requires).toEqual(["mcp__hub__write"]);
+    const offered = (keys: Record<string, string>) => {
+      const runtime = createDeploymentKeyRuntime({
+        keys: deploymentKeysFrom(keys),
+        services: DEPLOYMENT_KEY_SERVICES,
+        listBots: async () => [],
+      });
+      return offeredTools({
+        deploymentKeyTools: [...runtime.toolNames, ...runtime.wireToolNames],
+      });
+    };
+    // On its own, and after a detach took the pass away: not carried, so no Bot is told of it.
+    expect(offered({}).has("mcp__hub__write")).toBe(false);
+    // Attached: carried. The bare name alone would not do — `write` says nothing about whose.
+    expect(
+      offered({ LAF_HUB_VM_KEY: "a".repeat(64) }).has("mcp__hub__write"),
+    ).toBe(true);
   });
 
   test("requires is one tool or a list of them, and anything else is refused by name", () => {

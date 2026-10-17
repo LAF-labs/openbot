@@ -10,8 +10,10 @@
  * vendor would be the copies drifting on the order of a revoke, which is the one thing here that
  * must not.
  */
+import { DEFERRED_TOOL_PREFIX } from "../../../shared/tools/bridge";
 import type { Whereabouts } from "../../../shared/whereabouts";
 import { describeFailure } from "../failure-text";
+import type { HubToolRuntime } from "../hub/tools";
 import { log } from "../log";
 import type { DeploymentKeyFamily } from "./catalogue";
 import type { PartnerToolSpec } from "./partner-tools";
@@ -46,6 +48,11 @@ export type DeploymentKeyService = {
     fetchImpl?: typeof fetch;
     now?: () => Date;
     whereaboutsOf?: WhereaboutsReader;
+    /**
+     * The company hub's line and outbox, which the hub's tools speak through (`hub/tools.ts`) —
+     * a thing of this process, not a key. Absent on a VM with no hub, where that entry has no key.
+     */
+    hub?: HubToolRuntime;
   }) => VendorTransport;
 };
 
@@ -66,6 +73,12 @@ export type DeploymentKeyRuntime = {
   has: (catalogueKey: string) => boolean;
   /** Every tool the keys this VM holds put in front of a Bot, by its bare name. */
   toolNames: string[];
+  /**
+   * The same tools by the name a Bot calls them (`mcp__hub__write`, `store.ts` `toolNameFor`): what a
+   * skill names in `requires:` when the bare name says nothing on its own — the hub's `read` and
+   * `write` (`plugins/built-in-skill-sync.ts`).
+   */
+  wireToolNames: string[];
   /** For the catalogue listing, which hides a deployment-key entry whose key is absent. */
   keys: DeploymentKeyLookup;
   /** For `createPluginStore`. A family with no key has no transport, and its entry refuses. */
@@ -92,6 +105,8 @@ export function createDeploymentKeyRuntime(input: {
   now?: () => Date;
   /** Absent in a test that asks about no person; then a call naming no place is told nobody's is known. */
   whereaboutsOf?: WhereaboutsReader;
+  /** The company hub's runtime, for its tools. See `DeploymentKeyService.transport`. */
+  hub?: HubToolRuntime;
 }): DeploymentKeyRuntime {
   const held = input.services.filter((service) => input.keys[service.family]);
   const transports: Partial<Record<DeploymentKeyFamily, VendorTransport>> = {};
@@ -102,6 +117,7 @@ export function createDeploymentKeyRuntime(input: {
       ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
       ...(input.now ? { now: input.now } : {}),
       ...(input.whereaboutsOf ? { whereaboutsOf: input.whereaboutsOf } : {}),
+      ...(input.hub ? { hub: input.hub } : {}),
     });
   }
 
@@ -183,6 +199,11 @@ export function createDeploymentKeyRuntime(input: {
     has: (catalogueKey) => held.some((service) => service.key === catalogueKey),
     toolNames: held.flatMap((service) =>
       service.tools.map((tool) => tool.name),
+    ),
+    wireToolNames: held.flatMap((service) =>
+      service.tools.map(
+        (tool) => `${DEFERRED_TOOL_PREFIX}${service.key}__${tool.name}`,
+      ),
     ),
     keys: keyLookupOver(input.keys),
     transports,

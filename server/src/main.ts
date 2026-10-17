@@ -111,6 +111,10 @@ import { createFleetNotifier } from "./fleet/notify";
 import { createGoalStore } from "./goals/store";
 import { deploymentHealthProbes } from "./health";
 import { createLiveScreen, type SocketData } from "./live-screen";
+import { users } from "./db/schema";
+import { createHubRuntime } from "./hub";
+import { leaveCompanyIfDetached } from "./hub/leave";
+import { describeFailure } from "./failure-text";
 import { log, recentLines } from "./log";
 import { createLoginVault } from "./logins/store";
 import { readApprovalMetrics } from "./notifications/approval-metrics";
@@ -338,6 +342,38 @@ const computerClient = config.computer
       whereaboutsFor: browserWhereabouts.forBot,
     })
   : undefined;
+/*
+ * A VM detached from its company since the last boot takes the company's copies off this machine,
+ * once, before anything runs (`hub/leave.ts`) — the conversations were loaded above, so the new
+ * epoch it asks for reaches every one of them, and no turn has started that could write a company
+ * conversation back.
+ */
+await leaveCompanyIfDetached({
+  attached: Boolean(config.hub),
+  database,
+  conversations,
+  /*
+   * NONE ARE KNOWN TODAY. The origins of the company's shared logins are the vault's (hub design
+   * §9.3), which neither the hub nor this VM has yet, and by this boot the hub refuses this VM's
+   * pass — the detach told it first. The vault, when it is built, has to keep on this VM the origins
+   * it fills, for this to read; until then no company login can have reached the browser.
+   */
+  loginOrigins: async () => [],
+  ...(computerClient
+    ? {
+        forgetCookies: async (origins: readonly string[]) => {
+          const [bot] = await allLiveBots(database);
+          // No Bot to address the computer with: nothing has used the browser since it was reset.
+          if (!bot) return 0;
+          return (await computerClient.forBot(bot).forgetCookies(origins))
+            .forgotten;
+        },
+      }
+    : {}),
+}).catch((error: unknown) => {
+  // Logged and not fatal: the cursor stays, so the next boot tries again.
+  log.error("hub_leave_failed", { reason: describeFailure(error) });
+});
 const agentProfileStore = createAgentProfileStore(
   database,
   config.managedAgentAgUiUrl,
@@ -387,6 +423,31 @@ const runMeter = {
  */
 const channelEvents = createChannelEventHub();
 /**
+ * The company hub, when this VM belongs to one (`hub/`). Its events reach the app as `hub.*`
+ * frames on the same socket, addressed to every account here — which is the one person this
+ * deployment is for (`docs/laf/deployment-model.md`), read per frame rather than captured at boot,
+ * so a first sign-in after boot hears the next frame.
+ */
+let hubFramesSent: Promise<void> = Promise.resolve();
+const hubRuntime = config.hub
+  ? createHubRuntime({
+      config: config.hub,
+      database,
+      // Chained, so frames reach the page in the order the hub numbered them.
+      deliver: (frame) => {
+        hubFramesSent = hubFramesSent
+          .then(() => database.select({ id: users.id }).from(users))
+          .then((rows) =>
+            channelEvents.deliverFrame({
+              ...frame,
+              memberIds: rows.map((row) => row.id),
+            }),
+          )
+          .catch(() => undefined);
+      },
+    })
+  : undefined;
+/**
  * The partner vendor LAF holds the account at, assembled once.
  *
  * BEFORE THE OUTBOX AND BEFORE THE PLUGIN STORE, because both take something from it: the AlimTalk
@@ -413,13 +474,28 @@ const deploymentKeyRuntime = createDeploymentKeyRuntime({
   listBots: () => allLiveBots(database),
   // The weather asked about with no place named is the person's own place's (`kma-weather-rest.ts`).
   whereaboutsOf: whereaboutsStore.read,
+  // The company hub's tools speak through its line and outbox (`hub/tools.ts`).
+  ...(hubRuntime
+    ? {
+        hub: {
+          http: hubRuntime.http,
+          outbox: hubRuntime.outbox,
+          database,
+          passRefused: () => hubRuntime.link.status().state === "refused",
+          onPassRefused: () => hubRuntime.link.passRefused("tool"),
+        },
+      }
+    : {}),
 });
 /**
  * The package's own skills (`tenant/<package>/skills/*.md`): written at boot, handed to every Bot.
  * Read from the same directory the package above was, so a deployment's skills are its package's.
  */
 const deploymentTools = offeredTools({
-  deploymentKeyTools: deploymentKeyRuntime.toolNames,
+  deploymentKeyTools: [
+    ...deploymentKeyRuntime.toolNames,
+    ...deploymentKeyRuntime.wireToolNames,
+  ],
 });
 const builtInSkills = createBuiltInSkills({
   packageDir: config.tenantPackageDirectory,
@@ -1310,6 +1386,7 @@ const app = createApp({
   // 목표: the goals the person set, and their timelines.
   goals: goalStore,
   logins: loginVault,
+  ...(hubRuntime ? { hub: hubRuntime } : {}),
 });
 
 /** The live screen, proxied ahead of the app because an upgrade is not a request. See live-screen.ts. */
@@ -1360,6 +1437,7 @@ sayBooted({
   model: tenantPackage.model,
   port: server.port,
   fleetWebhook: Boolean(fleetNotifier),
+  hub: Boolean(hubRuntime),
   harness: { version: HARNESS_VERSION, conversations: conversationsLoaded },
   ...(botsBroughtHome === undefined ? {} : { botsBroughtHome }),
 });
@@ -1430,6 +1508,8 @@ startBackgroundWork({
   auditRetentionDays: config.auditRetentionDays,
   // Only with a fleet: on a laptop there is nothing to tell.
   fleetOutbox: fleetNotifier ? notificationOutbox : undefined,
+  // Only with a hub: writes it has not taken yet, offered at boot and every five minutes.
+  ...(hubRuntime ? { hubOutbox: hubRuntime.outbox } : {}),
   deploymentKeys: deploymentKeyRuntime,
   builtInSkills,
   pluginStore,
@@ -1452,3 +1532,6 @@ startBackgroundWork({
     now: () => conversations.now(),
   }),
 });
+
+// The line to the company hub, once the port is open: its frames go to sockets this server holds.
+hubRuntime?.link.start();
