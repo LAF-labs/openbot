@@ -106,6 +106,9 @@ export const BUNDLE_FILES = [
    * renders it first.
    */
   "deploy/legal/",
+  // The company hub's stack (docker-compose.hub.yml mounts hub/Caddyfile by that relative path).
+  "docker-compose.hub.yml",
+  "hub/Caddyfile",
 ] as const;
 
 /**

@@ -19,7 +19,7 @@ version: 2
 # reads — and CI, which runs the same checks that gate an image, is what says whether it is safe.
 updates:
   # Bun reads the same manifests, and the root manifest declares the workspaces, so one entry
-  # covers app, server, agent-bot, agent-computer and desktop.
+  # covers app, server, agent-bot, agent-computer, desktop and hub.
   - package-ecosystem: bun
     directory: /
     schedule:
@@ -105,6 +105,7 @@ updates:
       - /app
       - /agent-bot
       - /agent-computer
+      - /hub
     schedule:
       interval: weekly
       day: monday

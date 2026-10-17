@@ -3281,6 +3281,59 @@ const GROUPS: readonly {
     processes: 1,
   },
   { name: "root", floor: 1744, roots: ["tests", "agent-bot"] },
+  /*
+   * ADDED 2026-10-16 WITH THE COMPANY HUB, at forty-six: its own process on its own VM, so its own
+   * floor rather than a share of another's. auth.test.ts 11 (a pass opening /me as its member, a
+   * refused one a single line with nothing logged, four malformed headers, a pass used from
+   * another VM, a member who left and came back, a rotation's ten minutes, health and the
+   * metrics' counts); fleet.test.ts 16 (signatures, the per-hub key, another hub's body, a stale
+   * body, four bad fields, one write for a repeated or racing id, no event for no change, a
+   * conflict, an unknown departure, the trail, an unset key, one workspace row); sync.test.ts 9
+   * (paging, `visible_to` both ways, a cursor past hidden events, four bad cursors, a number
+   * committed late never skipped, an event's fields); events-socket.test.ts 6 (live delivery,
+   * catch-up on reconnect, per-member delivery, heartbeat, a departure closing the socket, no
+   * socket without a pass); audit.test.ts 4 (insert, and update, delete and truncate refused).
+   */
+  /*
+   * RAISED 2026-10-16 FOR THE HUB'S FIX ROUND, from 46 to 50: a ping that throws kept inside its
+   * timer, a socket opened before a rotation closed when the grace ends, one opened inside the
+   * grace with the old pass closed then while the new pass's stays (events-socket.test.ts, 3), and
+   * a name-only registry write leaving a running grace alone (auth.test.ts, 1).
+   */
+  /*
+   * RAISED 2026-10-16 FOR THE TASK BOARD, from 50 to 70: tasks.test.ts 20 (racing checkouts with one
+   * winner, an assigned task taken only by its member, the same run asking again, a run-out claim
+   * taken over, a checkout with no run; a beat and a release from the holder only, a person's move
+   * ending a run's claim; the sweep freeing what ran out and only that, and its timer surviving a
+   * failure; a 라피 refused done and moving its own task to blocked with one line; a stale version
+   * refused and none at all; four of visibility — kept to the maker, members, narrowing, and
+   * task.assigned to its member alone; the list's pages and the trail holding no words).
+   */
+  /*
+   * RAISED 2026-10-17 FOR THE BUDGET LEDGER AND THE SUB-BOT REGISTER, from 70 to 83: budget.test.ts
+   * 13 (ten racing $0.2 reservations against $1 with exactly five passing; the default day from the
+   * seat count; a job's own limit refusing with its scope and budget.reached said once; a job only
+   * its runner reserves for; a task only who sees it; limits set by an admin only; settle twice;
+   * settle with no reservation; expiry still counting and a late settle; a member reading only
+   * their own spend; a handed-on job moving with job.moved to its two runners; a member refused a
+   * job's limit; the register refusing a prompt).
+   */
+  /*
+   * RAISED 2026-10-17 FOR A SUB-BOT'S HANDOFF AND A YES FOR A BLOCKED TASK, from 83 to 95:
+   * job-handoff.test.ts 8 (handed on, told again, taken and cleared; PUT only from the member it
+   * moved from with a move pending; GET only by the member it moved to; DELETE by them or an admin;
+   * the 64 KB cap; a second move pointing the slot on; expiry and the sweep; the definition in no
+   * event, trail row, kept answer or log line) and task-approvals.test.ts 4 (the yes and its event's
+   * shape; another member refused and an admin let; a task a person moved no longer waiting; a
+   * stale version and a topic that is not one).
+   */
+  /*
+   * RAISED 2026-10-17 FOR A SUB-BOT'S TASK WORKED BY ITS RUNNER, from 95 to 100: job-tasks.test.ts
+   * 5 (the runner takes it, the assigner and a third member do not; an assigner who runs the job
+   * does; a 라피's task stays its member's; a move frees the old runner's claim and refuses it after;
+   * a holder the task is no longer for loses its beat and report but may let go).
+   */
+  { name: "hub", floor: 100, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
