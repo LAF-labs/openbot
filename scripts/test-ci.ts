@@ -3318,7 +3318,16 @@ const GROUPS: readonly {
    * their own spend; a handed-on job moving with job.moved to its two runners; a member refused a
    * job's limit; the register refusing a prompt).
    */
-  { name: "hub", floor: 83, roots: ["hub"] },
+  /*
+   * RAISED 2026-10-17 FOR A SUB-BOT'S HANDOFF AND A YES FOR A BLOCKED TASK, from 83 to 95:
+   * job-handoff.test.ts 8 (handed on, told again, taken and cleared; PUT only from the member it
+   * moved from with a move pending; GET only by the member it moved to; DELETE by them or an admin;
+   * the 64 KB cap; a second move pointing the slot on; expiry and the sweep; the definition in no
+   * event, trail row, kept answer or log line) and task-approvals.test.ts 4 (the yes and its event's
+   * shape; another member refused and an admin let; a task a person moved no longer waiting; a
+   * stale version and a topic that is not one).
+   */
+  { name: "hub", floor: 95, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
