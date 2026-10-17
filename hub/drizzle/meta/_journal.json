@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1792135461048,
+      "tag": "0000_hub_skeleton",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792140189412,
+      "tag": "0001_hub_tasks",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792218413919,
+      "tag": "0002_hub_budget",
+      "breakpoints": true
+    }
+  ]
+}
