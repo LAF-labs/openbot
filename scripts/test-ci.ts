@@ -3285,6 +3285,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `server` by two more (to 4883 on top of 4881): a write meeting a refused pass is said as that,
  * not as kept — with no row when it was known before (hub-tools.test.ts), the row waiting when the
  * hub's 401 came during the write (hub-tools.integration.test.ts).
+ *
+ * the hub, and no hub tool without the pass (hub-tools-head.test.ts, 3). 4747 and 28.
+ *
+ * RAISED 2026-10-17 FOR THE COMPANY LOGIN ON THE VM: `server` by eighteen (to 4793) — a company
+ * login through the same fill against a scripted hub: leased, judged, opened once, the values in
+ * the page and in no row, answer, request or log line; given back on a question, a refusal, a
+ * stop, a failure and the run's end, renewed while the run goes on, never held when concurrent;
+ * busy said with its holder; a hub that cannot hand it over a fact, never retried or queued; the
+ * person's own and the company's named back together; a verified device only off a page with no
+ * password box (company-login-fill.test.ts, 17); and the whole record on a real Postgres — trail,
+ * conversation, outbox, log — with neither value in it (company-login-secret-absence
+ * .integration.test.ts, 1). 4775 and 18.
  */
 const GROUPS: readonly {
   name: string;
