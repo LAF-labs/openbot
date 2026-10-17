@@ -3281,6 +3281,44 @@ const GROUPS: readonly {
     processes: 1,
   },
   { name: "root", floor: 1744, roots: ["tests", "agent-bot"] },
+  /*
+   * ADDED 2026-10-16 WITH THE COMPANY HUB, at forty-six: its own process on its own VM, so its own
+   * floor rather than a share of another's. auth.test.ts 11 (a pass opening /me as its member, a
+   * refused one a single line with nothing logged, four malformed headers, a pass used from
+   * another VM, a member who left and came back, a rotation's ten minutes, health and the
+   * metrics' counts); fleet.test.ts 16 (signatures, the per-hub key, another hub's body, a stale
+   * body, four bad fields, one write for a repeated or racing id, no event for no change, a
+   * conflict, an unknown departure, the trail, an unset key, one workspace row); sync.test.ts 9
+   * (paging, `visible_to` both ways, a cursor past hidden events, four bad cursors, a number
+   * committed late never skipped, an event's fields); events-socket.test.ts 6 (live delivery,
+   * catch-up on reconnect, per-member delivery, heartbeat, a departure closing the socket, no
+   * socket without a pass); audit.test.ts 4 (insert, and update, delete and truncate refused).
+   *
+   * RAISED 2026-10-16 FOR TEAM FILES AND SEARCH, from 46 to 111: files.test.ts 24 (bytes kept by
+   * hash and read back, a version replacing text and chunks, one blob held twice and let go once,
+   * a repeated key, the size limit at its byte, three visibilities refused and two given, two bad
+   * requests, three bad bodies, no pass, a text range, four bad ranges, who deletes a company
+   * file, events and the trail, a full company, a third upload while two are read);
+   * multipart.test.ts 15 (seven chunk sizes, a body cut short, a nameless part, a sink that stops
+   * the read, five boundaries); search.test.ts 23 (eight words and their forms, how a query is
+   * split, a particle both ways, every word required, two characters in names only, a snippet and
+   * where to read on, ranking, a Latin word's case, wildcards as characters, old versions and
+   * deleted files, the trail, five bad requests); visibility-property.test.ts 3 (three seeds of
+   * members, tasks and files, every way of asking). 46 and 65 is 111.
+   *
+   * RAISED 2026-10-17 FOR TEAM DOCUMENTS, from 111 to 184: docs.test.ts 23 (made from markdown and
+   * read back, two members on two blocks at once, two and eight saves racing on one block, a held
+   * block refusing 라피 and another member, a stale hash, a run without a hash, all or none,
+   * inserts, a move and a delete, a renumbering, search right after a save, a snapshot, a private
+   * document by every route, holds on the sockets that may see them, events and the trail, a
+   * repeated key, deleting, renaming, the list's pages, four bad documents); doc-markdown.test.ts 40 (every kind
+   * back as it went, one document of every kind, eleven paragraphs that look like syntax, a list
+   * item with a box, marker-like lines, a paragraph with list lines, the marker, unmarked reading,
+   * a hash that does not move, seven refusals, a table squared); doc-rank.test.ts 10 (the first
+   * ranks, 500 inserts at one place, out of order, a full digit, four even spreads, two holds).
+   * 111 and 73 is 184.
+   */
+  { name: "hub", floor: 184, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
