@@ -15,6 +15,13 @@
       "when": 1792138651608,
       "tag": "0001_hub_files",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792219758569,
+      "tag": "0002_hub_docs",
+      "breakpoints": true
     }
   ]
 }

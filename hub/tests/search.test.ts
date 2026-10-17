@@ -132,8 +132,9 @@ describe("POST /search", () => {
     });
     expect(hit?.snippet.length).toBe(300);
     expect(hit?.snippet).toContain("특이한낱말");
+    const from = hit?.kind === "file" ? hit.where.from : -1;
     const response = await fetch(
-      `${hub.url}/hub/v1/files/${file.id}/text?from=${hit?.where.from}&limit=1200`,
+      `${hub.url}/hub/v1/files/${file.id}/text?from=${from}&limit=1200`,
       asMember(ann.pass),
     );
     expect(((await response.json()) as HubFileText).text).toContain(

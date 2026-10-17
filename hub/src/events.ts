@@ -123,6 +123,8 @@ export type Listener = {
   member: string;
   poke(): void;
   close(code: number, reason: string): void;
+  /** Sends a light frame as it is (a document hold): not an event, not numbered, not kept. */
+  send(frame: string): void;
 };
 
 export function createListeners() {
@@ -135,6 +137,17 @@ export function createListeners() {
     /** Called after a commit that wrote an event. */
     pokeAll(): void {
       for (const listener of listeners) listener.poke();
+    },
+    /**
+     * A light frame to the sockets of `audience` (null: every member). Only what can be lost — a
+     * VM that misses one learns the same from its next read.
+     */
+    sendTo(audience: readonly string[] | null, frame: string): void {
+      for (const listener of listeners) {
+        if (audience === null || audience.includes(listener.member)) {
+          listener.send(frame);
+        }
+      }
     },
     /** A member who left, or whose pass changed, keeps no socket open on the old pass. */
     closeMember(member: string, code: number, reason: string): void {

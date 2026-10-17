@@ -8,6 +8,7 @@ import {
   HUB_SEARCH_MAX_HITS,
   HUB_SNIPPET_CHARS,
   type HubSearchHit,
+  type HubSearchKind,
   type HubSearchRequest,
   type HubSearchResult,
 } from "../../shared/hub/protocol";
@@ -19,12 +20,19 @@ import {
 import { recordAudit, trailOf } from "./audit";
 import type { MemberVariables } from "./auth";
 import type { HubDatabase } from "./db/client";
-import { hubChunks, hubFiles, hubFileVersions } from "./db/schema";
+import {
+  hubChunks,
+  hubDocBlocks,
+  hubDocs,
+  hubFiles,
+  hubFileVersions,
+} from "./db/schema";
 import { chunkStart } from "./files/chunks";
 import { visibleTo } from "./visibility";
 
 /**
- * `POST /hub/v1/search`, stage one: words, not meanings (design §6.1). No model and no vectors —
+ * `POST /hub/v1/search`, stage one: words, not meanings (design §6.1), over team files and team
+ * documents (each block's words are a document's chunks; `kinds` narrows it). No model and no vectors —
  * the substring index, a score from facts the hub has, and the permission inside the query.
  *
  * HOW A QUERY IS READ (`shared/hub/search-words.ts`): words split on spaces, each found when any of
@@ -114,10 +122,14 @@ export function snippetOf(text: string, words: HubSearchWord[]): string {
 }
 
 type Candidate = {
+  kind: HubSearchKind;
   id: string;
   title: string;
   folder: string;
+  /** A file hit's character offset. */
   from: number;
+  /** A document hit's block, or null when the title alone matched. */
+  block: string | null;
   text: string | null;
   score: number;
   at: Date;
@@ -140,9 +152,6 @@ export function searchRoute(options: {
         context.json({ ok: false, code: "laf:request_invalid" }, 413),
     }),
     async (context) => {
-      if (!options.filesDir) {
-        return context.json({ ok: false, code: HUB_FACTS.filesUnset }, 503);
-      }
       const invalid = (field: string) =>
         context.json({ ok: false, code: "laf:request_invalid", field }, 400);
       let input: { [K in keyof HubSearchRequest]?: unknown };
@@ -171,10 +180,30 @@ export function searchRoute(options: {
         return invalid("task");
       }
 
+      const kinds = input.kinds;
+      if (
+        kinds !== undefined &&
+        (!Array.isArray(kinds) ||
+          kinds.length > 16 ||
+          kinds.some((kind) => typeof kind !== "string"))
+      ) {
+        return invalid("kinds");
+      }
+      const asked = (kind: HubSearchKind) =>
+        kinds === undefined || (kinds as string[]).includes(kind);
+      // Files need the hub's file space; documents live in the database and are searched either way.
+      const scope = {
+        files: asked("file") && !!options.filesDir,
+        docs: asked("doc"),
+      };
+      if (!scope.docs && !options.filesDir) {
+        return context.json({ ok: false, code: HUB_FACTS.filesUnset }, 503);
+      }
+
       const me = context.get("member").id;
       let hits: HubSearchHit[];
       try {
-        hits = await search(database, { me, words, limit, task });
+        hits = await search(database, { me, words, limit, task, scope });
       } catch (error) {
         if (isCancelled(error)) {
           return context.json(
@@ -207,6 +236,8 @@ function isCancelled(error: unknown): boolean {
   return false;
 }
 
+type Scope = { files: boolean; docs: boolean };
+
 async function search(
   database: HubDatabase,
   input: {
@@ -214,9 +245,10 @@ async function search(
     words: HubSearchWord[];
     limit: number;
     task: string | null;
+    scope: Scope;
   },
 ): Promise<HubSearchHit[]> {
-  const { me, words, limit, task } = input;
+  const { me, words, limit, task, scope } = input;
   const stemmed = words.map((word) => word.forms.at(-1)).join(" ");
   const readsChunks = words.some((word) => charLength(word.word) >= 3);
   const bonus = (at: AnyPgColumn, taskOf: AnyPgColumn) =>
@@ -234,13 +266,15 @@ async function search(
       }
     };
 
-    if (readsChunks) {
-      // The pool: the newest matching chunks the member may see, from hub_chunks alone. Only these
-      // are scored — `word_similarity` costs about 0.15 ms on a 1,200-character chunk, and a word
-      // in nearly every chunk would otherwise be scored 10,000 times (measured: 3.2 s at 10,000
-      // chunks). Newest first, because for a word that common every chunk scores alike on the
-      // words (one word held is 1.0), and what still separates them is the name — which the names
-      // query below finds whatever the pool held — and how recent.
+    /**
+     * The best chunks of one kind, scored. The pool: the newest matching chunks the member may see,
+     * from hub_chunks alone. Only these are scored — `word_similarity` costs about 0.15 ms on a
+     * 1,200-character chunk, and a word in nearly every chunk would otherwise be scored 10,000 times
+     * (measured: 3.2 s at 10,000 chunks). Newest first, because for a word that common every chunk
+     * scores alike on the words (one word held is 1.0), and what still separates them is the name —
+     * which the names query below finds whatever the pool held — and how recent.
+     */
+    const scoredChunks = (kind: "file" | "doc") => {
       const pool = tx
         .select({
           sourceId: hubChunks.sourceId,
@@ -253,16 +287,16 @@ async function search(
         .from(hubChunks)
         .where(
           and(
-            eq(hubChunks.sourceKind, "file"),
+            eq(hubChunks.sourceKind, kind),
             visibleTo(hubChunks.visibility, me),
             holdsEvery(hubChunks.text, words),
           ),
         )
         .orderBy(desc(hubChunks.at), desc(hubChunks.id))
         .limit(POOL)
-        .as("pool");
+        .as(`${kind}_pool`);
       const nameHolds = holdsEvery(pool.title, words);
-      const scored = tx
+      return tx
         .select({
           sourceId: pool.sourceId,
           ordinal: pool.ordinal,
@@ -276,7 +310,11 @@ async function search(
         .from(pool)
         .orderBy(sql`"score" desc`, desc(pool.at))
         .limit(CANDIDATES)
-        .as("scored");
+        .as(`${kind}_scored`);
+    };
+
+    if (readsChunks && scope.files) {
+      const scored = scoredChunks("file");
       // Only the best few meet the files table, so the join's cost does not grow with the pool.
       const rows = await tx
         .select({
@@ -303,10 +341,54 @@ async function search(
         );
       for (const row of rows) {
         keep({
+          kind: "file",
           id: row.id,
           title: row.title,
           folder: row.folder,
           from: chunkStart(row.ordinal),
+          block: null,
+          text: row.text,
+          score: Number(row.score),
+          at: row.at,
+          by: row.by,
+        });
+      }
+    }
+
+    if (readsChunks && scope.docs) {
+      // A document's chunks are its blocks', `<doc id>/<block id>`: the best block stands for the
+      // document, and the hit says which block to open at.
+      const scored = scoredChunks("doc");
+      const docId = sql<string>`split_part(${scored.sourceId}, '/', 1)`;
+      const blockId = sql<string>`split_part(${scored.sourceId}, '/', 2)`;
+      const rows = await tx
+        .select({
+          id: hubDocs.id,
+          block: hubDocBlocks.id,
+          text: scored.text,
+          title: hubDocs.title,
+          folder: hubDocs.folder,
+          at: scored.at,
+          by: hubDocBlocks.updatedBy,
+          score: scored.score,
+        })
+        .from(scored)
+        .innerJoin(hubDocs, eq(hubDocs.id, docId))
+        .innerJoin(
+          hubDocBlocks,
+          and(eq(hubDocBlocks.docId, hubDocs.id), eq(hubDocBlocks.id, blockId)),
+        )
+        .where(
+          and(isNull(hubDocs.deletedAt), visibleTo(hubDocs.visibility, me)),
+        );
+      for (const row of rows) {
+        keep({
+          kind: "doc",
+          id: row.id,
+          title: row.title,
+          folder: row.folder,
+          from: 0,
+          block: row.block,
           text: row.text,
           score: Number(row.score),
           at: row.at,
@@ -317,47 +399,93 @@ async function search(
 
     // File names, for every query: the only place a two-character word is looked for, and a
     // name that holds every word is a hit even where the words are not in its text.
-    const named = await tx
-      .select({
-        id: hubFiles.id,
-        title: hubFiles.name,
-        folder: hubFiles.folder,
-        at: hubFileVersions.at,
-        by: hubFileVersions.by,
-        score:
-          sql<number>`(word_similarity(${stemmed}, ${hubFiles.name}) + 0.3 + ${bonus(hubFileVersions.at, hubFiles.taskId)})::float8`.as(
-            "score",
+    if (scope.files) {
+      const named = await tx
+        .select({
+          id: hubFiles.id,
+          title: hubFiles.name,
+          folder: hubFiles.folder,
+          at: hubFileVersions.at,
+          by: hubFileVersions.by,
+          score:
+            sql<number>`(word_similarity(${stemmed}, ${hubFiles.name}) + 0.3 + ${bonus(hubFileVersions.at, hubFiles.taskId)})::float8`.as(
+              "score",
+            ),
+        })
+        .from(hubFiles)
+        .innerJoin(
+          hubFileVersions,
+          and(
+            eq(hubFileVersions.fileId, hubFiles.id),
+            eq(hubFileVersions.version, hubFiles.version),
           ),
-      })
-      .from(hubFiles)
-      .innerJoin(
-        hubFileVersions,
-        and(
-          eq(hubFileVersions.fileId, hubFiles.id),
-          eq(hubFileVersions.version, hubFiles.version),
-        ),
-      )
-      .where(
-        and(
-          isNull(hubFiles.deletedAt),
-          visibleTo(hubFiles.visibility, me),
-          holdsEvery(hubFiles.name, words),
-        ),
-      )
-      .orderBy(sql`"score" desc`, sql`${hubFileVersions.at} desc`)
-      .limit(CANDIDATES);
-    for (const row of named) {
-      if (found.has(row.id)) continue;
-      keep({ ...row, from: 0, text: null, score: Number(row.score) });
+        )
+        .where(
+          and(
+            isNull(hubFiles.deletedAt),
+            visibleTo(hubFiles.visibility, me),
+            holdsEvery(hubFiles.name, words),
+          ),
+        )
+        .orderBy(sql`"score" desc`, sql`${hubFileVersions.at} desc`)
+        .limit(CANDIDATES);
+      for (const row of named) {
+        if (found.has(row.id)) continue;
+        keep({
+          ...row,
+          kind: "file",
+          from: 0,
+          block: null,
+          text: null,
+          score: Number(row.score),
+        });
+      }
+    }
+
+    // Document titles, the same way.
+    if (scope.docs) {
+      const titled = await tx
+        .select({
+          id: hubDocs.id,
+          title: hubDocs.title,
+          folder: hubDocs.folder,
+          at: hubDocs.updatedAt,
+          by: hubDocs.updatedBy,
+          score:
+            sql<number>`(word_similarity(${stemmed}, ${hubDocs.title}) + 0.3 + ${bonus(hubDocs.updatedAt, hubDocs.taskId)})::float8`.as(
+              "score",
+            ),
+        })
+        .from(hubDocs)
+        .where(
+          and(
+            isNull(hubDocs.deletedAt),
+            visibleTo(hubDocs.visibility, me),
+            holdsEvery(hubDocs.title, words),
+          ),
+        )
+        .orderBy(sql`"score" desc`, desc(hubDocs.updatedAt))
+        .limit(CANDIDATES);
+      for (const row of titled) {
+        if (found.has(row.id)) continue;
+        keep({
+          ...row,
+          kind: "doc",
+          from: 0,
+          block: null,
+          text: null,
+          score: Number(row.score),
+        });
+      }
     }
 
     const best = [...found.values()]
       .sort((a, b) => b.score - a.score || b.at.getTime() - a.at.getTime())
       .slice(0, limit);
 
-    // A hit found by its name alone shows the start of its text.
+    // A file found by its name alone shows the start of its text.
     const opening = best
-      .filter((hit) => hit.text === null)
+      .filter((hit) => hit.text === null && hit.kind === "file")
       .map((hit) => hit.id);
     if (opening.length > 0) {
       const firsts = await tx
@@ -373,21 +501,58 @@ async function search(
         );
       const firstOf = new Map(firsts.map((row) => [row.id, row.text]));
       for (const hit of best) {
-        if (hit.text === null) hit.text = firstOf.get(hit.id) ?? null;
+        if (hit.text === null && hit.kind === "file") {
+          hit.text = firstOf.get(hit.id) ?? null;
+        }
+      }
+    }
+    // A document found by its title alone shows its first block that has words. The document row
+    // was read visible in the query that found it, in this transaction.
+    const titledDocs = best
+      .filter((hit) => hit.text === null && hit.kind === "doc")
+      .map((hit) => hit.id);
+    if (titledDocs.length > 0) {
+      const firsts = await tx
+        .selectDistinctOn([hubDocBlocks.docId], {
+          id: hubDocBlocks.docId,
+          text: hubDocBlocks.text,
+        })
+        .from(hubDocBlocks)
+        .where(
+          and(
+            inArray(hubDocBlocks.docId, titledDocs),
+            sql`${hubDocBlocks.text} <> ''`,
+          ),
+        )
+        .orderBy(hubDocBlocks.docId, sql`${hubDocBlocks.rank} collate "C"`);
+      const firstOf = new Map(firsts.map((row) => [row.id, row.text]));
+      for (const hit of best) {
+        if (hit.text === null && hit.kind === "doc") {
+          hit.text = firstOf.get(hit.id) ?? null;
+        }
       }
     }
 
-    return best.map(
-      (hit): HubSearchHit => ({
-        kind: "file",
+    return best.map((hit): HubSearchHit => {
+      const common = {
         id: hit.id,
         title: hit.title,
-        where: { folder: hit.folder, from: hit.from },
         snippet: hit.text ? snippetOf(hit.text, words) : "",
         score: Math.round(hit.score * 1000) / 1000,
         at: hit.at.toISOString(),
         by: hit.by,
-      }),
-    );
+      };
+      return hit.kind === "file"
+        ? {
+            kind: "file",
+            ...common,
+            where: { folder: hit.folder, from: hit.from },
+          }
+        : {
+            kind: "doc",
+            ...common,
+            where: { folder: hit.folder, block: hit.block },
+          };
+    });
   });
 }

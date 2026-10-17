@@ -91,6 +91,13 @@ export function eventSocket(input: {
             member: member.id,
             poke: () => void pull(socket),
             close: (code, reason) => socket.close(code, reason),
+            send: (frame) => {
+              try {
+                socket.send(frame);
+              } catch {
+                // A socket that cannot be written to is closing; its close handler runs either way.
+              }
+            },
           });
           heartbeat = setInterval(() => {
             if (Date.now() - heardAt > SILENCE_PINGS * every) {

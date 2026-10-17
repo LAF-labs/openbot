@@ -48,6 +48,14 @@ export const HUB_FACTS = {
   busy: "laf:hub_busy",
   /** The hub holds no file space (`HUB_FILES_DIR` unset): files and search are not offered. */
   filesUnset: "laf:hub_files_unset",
+  /**
+   * A document block is not as the writer last read it: its `version` (a person's save) or its
+   * `expectHash` (라피's change) no longer matches, or it is gone. The answer carries the block as
+   * it is now (`block`, null when deleted); the writer reads again and reapplies.
+   */
+  docBlockChanged: "laf:doc_block_changed",
+  /** Somebody is writing in that block now ("쓰는 중"). The answer names who (`holder`). */
+  docBlockBusy: "laf:doc_block_busy",
 } as const;
 
 export type HubRole = "owner" | "admin" | "member";
@@ -56,7 +64,14 @@ export const HUB_ROLES: readonly HubRole[] = ["owner", "admin", "member"];
 export type HubMemberState = "active" | "left";
 
 /** The kinds of change an event names. A VM drops a type it does not know. */
-export const HUB_EVENT_TYPES = ["member.changed", "file.changed"] as const;
+export const HUB_EVENT_TYPES = [
+  "member.changed",
+  "file.changed",
+  /** A document's title, place or existence changed, or its blocks were renumbered: read it whole. */
+  "doc.changed",
+  /** One block changed; `refId` is `<doc id>/<block id>`: read that block again (404: it is gone). */
+  "doc.block_changed",
+] as const;
 export type HubEventType = (typeof HUB_EVENT_TYPES)[number];
 
 /**
@@ -109,7 +124,23 @@ export type HubSync = {
  * then each new one as it is committed. Pings and pongs are `shared/channel-socket.ts`'s frames:
  * the hub pings every ten seconds and closes a socket it has not heard from in thirty.
  */
-export type HubSocketFrame = { kind: "event" } & HubEvent;
+export type HubSocketFrame = ({ kind: "event" } & HubEvent) | HubDocLockFrame;
+
+/**
+ * A light frame, not an event: who is writing in which block, sent to the sockets of the members who
+ * may see the document each time a hold is taken, renewed or let go. Not numbered and not kept — a
+ * hold lives seconds, and `GET /docs/:id` lists the holds standing when a document is opened. A VM
+ * that does not know the kind drops it. `until` null: let go.
+ */
+export type HubDocLockFrame = {
+  kind: "doc.lock";
+  doc: string;
+  block: string;
+  member: string;
+  name: string | null;
+  /** ISO 8601, or null when the hold was let go. */
+  until: string | null;
+};
 
 /** The internal registry route laf-control signs (`POST /hub/v1/fleet`). */
 export const HUB_FLEET_PATH = `${HUB_PREFIX}/fleet`;
@@ -249,6 +280,11 @@ export const HUB_CHUNK_OVERLAP = 200;
 /** `POST /hub/v1/search` — a POST because what a person looks for is content, kept out of logs. */
 export type HubSearchRequest = {
   q: string;
+  /**
+   * What to look in. Absent: everything this hub can search. A kind this hub does not search yet is
+   * ignored rather than refused, since a VM a version ahead may name one.
+   */
+  kinds?: string[];
   /** Hits wanted, at most `HUB_SEARCH_MAX_HITS`; `HUB_SEARCH_HITS` when absent. */
   limit?: number;
   /** A task the asking run works on: its files rank higher. */
@@ -260,16 +296,232 @@ export const HUB_SEARCH_MAX_HITS = 30;
 /** How much of a chunk a hit carries. */
 export const HUB_SNIPPET_CHARS = 300;
 
-export type HubSearchHit = {
-  kind: "file";
-  /** The file's id: `GET /files/:id/text?from=` reads on from `where.from`. */
-  id: string;
+/** The kinds `POST /search` looks in now. */
+export const HUB_SEARCH_KINDS = ["file", "doc"] as const;
+export type HubSearchKind = (typeof HUB_SEARCH_KINDS)[number];
+
+type HubSearchHitCommon = {
   title: string;
-  where: { folder: string; from: number };
   snippet: string;
   score: number;
   at: string;
   by: string | null;
 };
 
+export type HubSearchHit =
+  | (HubSearchHitCommon & {
+      kind: "file";
+      /** The file's id: `GET /files/:id/text?from=` reads on from `where.from`. */
+      id: string;
+      where: { folder: string; from: number };
+    })
+  | (HubSearchHitCommon & {
+      kind: "doc";
+      /** The document's id; `where.block` is the block the words were found in (null: the title). */
+      id: string;
+      where: { folder: string; block: string | null };
+    });
+
 export type HubSearchResult = { ok: true; hits: HubSearchHit[] };
+
+/* ── Team documents (`/hub/v1/docs`) ─────────────────────────────────────────────────────────── */
+
+/**
+ * A team document is an ordered list of blocks, each one plain text of a fixed kind. People edit a
+ * block at a time; 라피 changes single blocks after reading them. There is no operation that
+ * replaces a whole document.
+ */
+export const HUB_DOC_BLOCK_KINDS = [
+  "paragraph",
+  "heading1",
+  "heading2",
+  "heading3",
+  "list",
+  "check",
+  "quote",
+  "code",
+  "divider",
+  "table",
+  "file",
+  "task-link",
+] as const;
+export type HubDocBlockKind = (typeof HUB_DOC_BLOCK_KINDS)[number];
+
+/**
+ * What a block carries beside its text, by kind; a key another kind does not take is refused.
+ *
+ * - `list`: `ordered` (numbered), `indent` 0–3. `check`: `checked`, `indent` 0–3.
+ * - `code`: `lang` (a short name such as `ts`).
+ * - `table`: `rows`, the cells row by row, the first row the header; its `text` is empty.
+ * - `file`: `fileId` (a team file); `task-link`: `taskId`. Their `text` is the label shown.
+ */
+export type HubDocBlockAttrs = {
+  ordered?: boolean;
+  checked?: boolean;
+  indent?: number;
+  lang?: string;
+  rows?: string[][];
+  fileId?: string;
+  taskId?: string;
+};
+
+export type HubDocBlock = {
+  id: string;
+  kind: HubDocBlockKind;
+  text: string;
+  attrs: HubDocBlockAttrs;
+  /** Counts content changes (kind, text, attrs). A person's save sends the one it read. */
+  version: number;
+  /** A short digest of kind, text and attrs. 라피 sends the one it read as `expectHash`. */
+  hash: string;
+  /** Where the block sits: blocks are in ascending order of `rank`, compared character by character. */
+  rank: string;
+  by: string | null;
+  /** ISO 8601. */
+  at: string;
+};
+
+export type HubDoc = {
+  id: string;
+  title: string;
+  folder: string;
+  visibility: HubVisibility;
+  /** Counts every accepted change to the document (one per batch, rename or snapshot). */
+  rev: number;
+  createdBy: string | null;
+  updatedBy: string | null;
+  /** ISO 8601. */
+  updatedAt: string;
+};
+
+/** A standing hold: `member` is writing in `block` until `until` unless they renew it. */
+export type HubDocLock = {
+  block: string;
+  member: string;
+  name: string | null;
+  until: string;
+};
+
+/** `GET /hub/v1/docs?folder=&cursor=`: newest change first. */
+export type HubDocList = { ok: true; docs: HubDoc[]; next: string | null };
+
+/** `GET /hub/v1/docs/:id`. */
+export type HubDocRead = {
+  ok: true;
+  doc: HubDoc;
+  blocks: HubDocBlock[];
+  locks: HubDocLock[];
+};
+
+/**
+ * `POST /hub/v1/docs` with an `Idempotency-Key`: a new document, its first blocks given as blocks or
+ * as markdown (one empty paragraph when neither).
+ */
+export type HubDocCreate = {
+  title: string;
+  folder?: string;
+  visibility?: HubVisibility;
+  blocks?: { kind: HubDocBlockKind; text?: string; attrs?: HubDocBlockAttrs }[];
+  markdown?: string;
+};
+
+/**
+ * One change in `POST /hub/v1/docs/:id/blocks`. Every op that touches a block names what its writer
+ * read of it: `version` for a person's save, `expectHash` for 라피's. A request that says it is not
+ * a person's (`x-laf-origin` other than `person`) must use `expectHash`.
+ *
+ * - `replace`: the block `id` takes the given `kind`, `text` and `attrs` (an absent one is kept).
+ * - `insert_after`: a new block after `id` (null: at the top). The check names `id`, the anchor, and
+ *   is required of 라피; `newId` lets the writer name the new block (`b_` and 10–40 of a–z, 0–9).
+ * - `delete`: the block `id` goes.
+ * - `move`: the block `id` goes after `after` (null: to the top).
+ *
+ * Ops apply in order and the checks read the document as the earlier ops left it. All or none: the
+ * first op refused refuses the batch, and the answer says which (`op`).
+ */
+export type HubDocOp =
+  | {
+      op: "replace";
+      id: string;
+      version?: number;
+      expectHash?: string;
+      kind?: HubDocBlockKind;
+      text?: string;
+      attrs?: HubDocBlockAttrs;
+    }
+  | {
+      op: "insert_after";
+      id: string | null;
+      version?: number;
+      expectHash?: string;
+      newId?: string;
+      kind?: HubDocBlockKind;
+      text?: string;
+      attrs?: HubDocBlockAttrs;
+    }
+  | { op: "delete"; id: string; version?: number; expectHash?: string }
+  | {
+      op: "move";
+      id: string;
+      after: string | null;
+      version?: number;
+      expectHash?: string;
+    };
+
+/** The answer to an accepted batch: every block it wrote, and the ids it deleted. */
+export type HubDocOpsResult = {
+  ok: true;
+  rev: number;
+  blocks: HubDocBlock[];
+  deleted: string[];
+};
+
+/** The refusal of a batch: which op, and the block as it is now (null when gone). */
+export type HubDocOpsRefusal = {
+  ok: false;
+  code: string;
+  op: number;
+  block?: HubDocBlock | null;
+  holder?: { member: string; name: string | null; until: string };
+};
+
+/** `POST /docs/:id/blocks/:bid/lock`: held until `until`; renew before it, every 5 s. */
+export type HubDocLockResult = {
+  ok: true;
+  until: string;
+  ttlMs: number;
+  /** How often to renew it while the block stays open. */
+  renewMs: number;
+};
+
+/** `GET /docs/:id/markdown`: the blocks drawn as markdown, each after a `<!-- <id> <hash> -->` line. */
+export type HubDocMarkdown = { ok: true; rev: number; markdown: string };
+
+export type HubDocVersionHead = {
+  version: number;
+  title: string;
+  by: string | null;
+  at: string;
+  blocks: number;
+};
+
+/** `GET /docs/:id/versions/:v`: the block list as it was when the snapshot was taken. */
+export type HubDocVersion = {
+  ok: true;
+  version: number;
+  title: string;
+  by: string | null;
+  at: string;
+  blocks: Omit<HubDocBlock, "rank" | "by" | "at">[];
+};
+
+/** How long a hold lasts unless renewed; the editor renews every `HUB_DOC_LOCK_RENEW_MS`. */
+export const HUB_DOC_LOCK_TTL_MS = 15_000;
+export const HUB_DOC_LOCK_RENEW_MS = 5_000;
+/** The most text one block holds, in characters. */
+export const HUB_DOC_BLOCK_MAX_CHARS = 20_000;
+/** The most blocks one document holds. */
+export const HUB_DOC_MAX_BLOCKS = 5_000;
+/** The most ops one batch carries. */
+export const HUB_DOC_MAX_OPS = 200;
+export const HUB_DOCS_PAGE = 100;

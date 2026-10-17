@@ -3,7 +3,7 @@
  * person's VM database, nor restored over one.
  *
  * The registry, the event log, the idempotency ledger and the trail (0000); the team's files and
- * what search reads of them (0001). Skills, memory, rooms, tasks and the vault arrive with the
+ * what search reads of them (0001); team documents, their blocks and their snapshots (0002). Skills, memory, rooms, tasks and the vault arrive with the
  * changes that build them, each with its own migration.
  */
 import { sql } from "drizzle-orm";
@@ -250,4 +250,88 @@ export const hubChunks = pgTable(
   // for a rare word read all 10,000 chunks (measured: 88 ms where the trigram index takes 1 ms).
   // Ids are unique across kinds (`f_…`), so the id finds a source's chunks by itself.
   (table) => [index("hub_chunks_source").on(table.sourceId, table.ordinal)],
+);
+
+/**
+ * A team document: its title, where it sits, who may see it (the three values files take). Its
+ * content is its blocks. `rev` counts accepted changes; every batch of block changes takes this row
+ * `for update` first, so changes to one document are applied one batch at a time and a version or
+ * hash checked in a batch cannot change under it. Deleting sets `deleted_at`.
+ */
+export const hubDocs = pgTable(
+  "hub_docs",
+  {
+    id: text("id").primaryKey(),
+    title: text("title").notNull(),
+    folder: text("folder").notNull().default("/"),
+    visibility: text("visibility").notNull().default("company"),
+    taskId: text("task_id"),
+    rev: integer("rev").notNull().default(0),
+    createdBy: text("created_by").references(() => hubMembers.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedBy: text("updated_by").references(() => hubMembers.id),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    check(
+      "hub_docs_visibility",
+      sql`${table.visibility} = 'company' or ${table.visibility} like 'me:_%' or ${table.visibility} like 'task:_%'`,
+    ),
+    index("hub_docs_updated").on(table.updatedAt, table.id),
+  ],
+);
+
+/**
+ * One block, one row. Ordered by `rank` (`src/docs/rank.ts`), compared byte by byte. `version`
+ * counts content changes and `hash` digests the content (`src/docs/blocks.ts`), the two checks a
+ * writer's change names. No unique index on (doc, rank): batches on one document are serialised by
+ * its row, and a renumbering rewrites every rank in one statement, which a unique index would refuse
+ * halfway through.
+ */
+export const hubDocBlocks = pgTable(
+  "hub_doc_blocks",
+  {
+    docId: text("doc_id")
+      .notNull()
+      .references(() => hubDocs.id, { onDelete: "cascade" }),
+    id: text("id").notNull(),
+    rank: text("rank").notNull(),
+    kind: text("kind").notNull(),
+    text: text("text").notNull().default(""),
+    attrs: jsonb("attrs").notNull().default({}),
+    version: integer("version").notNull().default(1),
+    hash: text("hash").notNull(),
+    updatedBy: text("updated_by").references(() => hubMembers.id),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.docId, table.id] }),
+    check(
+      "hub_doc_blocks_kind",
+      sql`${table.kind} in ('paragraph', 'heading1', 'heading2', 'heading3', 'list', 'check', 'quote', 'code', 'divider', 'table', 'file', 'task-link')`,
+    ),
+  ],
+);
+
+/** A snapshot: the document's block list as it was when somebody saved a version, to look back at. */
+export const hubDocVersions = pgTable(
+  "hub_doc_versions",
+  {
+    docId: text("doc_id")
+      .notNull()
+      .references(() => hubDocs.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    title: text("title").notNull(),
+    blocks: jsonb("blocks").notNull(),
+    by: text("by").references(() => hubMembers.id),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.docId, table.version] })],
 );

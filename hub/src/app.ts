@@ -14,6 +14,8 @@ import type { Logger } from "../../shared/log";
 import { type MemberVariables, requireMember } from "./auth";
 import type { HubDatabase } from "./db/client";
 import { hubMembers, hubWorkspace } from "./db/schema";
+import { createDocLocks } from "./docs/locks";
+import { docRoutes } from "./docs/routes";
 import { createListeners, eventsSince, headSeq } from "./events";
 import { fileRoutes } from "./files/routes";
 import { fleetRoutes } from "./fleet";
@@ -119,6 +121,10 @@ export function createHubApp(options: HubAppOptions) {
       quotaBytes: options.filesQuotaBytes ?? null,
       ...(options.fileMaxBytes ? { fileMaxBytes: options.fileMaxBytes } : {}),
     }),
+  );
+  hub.route(
+    "/docs",
+    docRoutes({ database, listeners, member, locks: createDocLocks() }),
   );
   hub.route("/search", searchRoute({ database, member, filesDir }));
 
