@@ -3327,7 +3327,13 @@ const GROUPS: readonly {
    * shape; another member refused and an admin let; a task a person moved no longer waiting; a
    * stale version and a topic that is not one).
    */
-  { name: "hub", floor: 95, roots: ["hub"] },
+  /*
+   * RAISED 2026-10-17 FOR A SUB-BOT'S TASK WORKED BY ITS RUNNER, from 95 to 100: job-tasks.test.ts
+   * 5 (the runner takes it, the assigner and a third member do not; an assigner who runs the job
+   * does; a 라피's task stays its member's; a move frees the old runner's claim and refuses it after;
+   * a holder the task is no longer for loses its beat and report but may let go).
+   */
+  { name: "hub", floor: 100, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
