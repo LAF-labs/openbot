@@ -3258,6 +3258,15 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `app` by twenty-one (to 2564): which reads a hub frame makes stale, whose a message is, the facts
  * in Korean, and a team file's body (hub-company.test.ts); and `hub` by two (to 48): the roster to
  * any member and behind the pass (members.test.ts).
+ *
+ * RAISED 2026-10-17 FOR 업무판, THE COMPANY'S TASK BOARD: `server` by twenty (to 4789) — its doors
+ * against a fake hub (hub-routes-ui-tasks.test.ts: four doors answering "no company" unasked, the
+ * board read once with the pass and only its named query fields, three bad queries and a climbing
+ * id refused unsent, a new task as the person with only the board's fields, five bad fields refused,
+ * a move with its version and no run, a move with no version refused, a stale move's 409 kept, a
+ * refused pass a 502, a note as the person); `app` by forty-four (to 2608): the columns, the rank
+ * between neighbours and the menu's steps, every note code in words, who a task is given to, the
+ * task frames (hub-tasks.test.ts, 34), and the room's working line (hub-room-working.test.ts, 10).
  */
 const GROUPS: readonly {
   name: string;
@@ -3265,8 +3274,8 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4769, roots: ["server"] },
-  { name: "app", floor: 2564, roots: ["app"] },
+  { name: "server", floor: 4789, roots: ["server"] },
+  { name: "app", floor: 2608, roots: ["app"] },
   {
     name: "agent-computer",
     /*
