@@ -14,9 +14,12 @@
  * READ LENIENTLY, SHAPED STRICTLY, as `wire.ts` reads the hub's other answers: a row that is not
  * the shape is dropped, and a field the VM does not know is not passed on.
  */
+import { asc } from "drizzle-orm";
 import { isSavedOrigin } from "../../../shared/login-origin";
 import { toolResultText } from "../../../shared/prompt/tool-results.ko";
 import type { SavedLoginAnswer } from "../computer/gateway/secrets";
+import type { Database } from "../db/client";
+import { hubVaultOrigins } from "../db/schema";
 import type { HubHttp } from "./http";
 
 /** A company login as the Bot's side may know it: what it is called and where it goes. No value. */
@@ -269,4 +272,44 @@ export function companyLoginResult(
     };
   }
   return null;
+}
+
+/**
+ * The origins of a company login this VM's browser was just signed in with, kept in
+ * `hub_vault_origins` — origins only, never a value, a username or which login — first and last
+ * time. Called by the gateway after a fill (`computer/gateway/secrets.ts`).
+ */
+export async function noteVaultOrigins(
+  database: Database,
+  origins: readonly string[],
+  at: Date = new Date(),
+): Promise<void> {
+  const unique = [...new Set(origins)];
+  if (unique.length === 0) return;
+  await database
+    .insert(hubVaultOrigins)
+    .values(
+      unique.map((origin) => ({
+        origin,
+        firstFilledAt: at,
+        lastFilledAt: at,
+      })),
+    )
+    .onConflictDoUpdate({
+      target: hubVaultOrigins.origin,
+      set: { lastFilledAt: at },
+    });
+}
+
+/**
+ * Every origin a company login was put into on this VM, oldest first. For leaving a company
+ * (`hub/leave.ts`): the browser is signed out of these sites, read here because by then the hub
+ * no longer answers this VM's pass.
+ */
+export async function vaultOriginsUsed(database: Database): Promise<string[]> {
+  const rows = await database
+    .select({ origin: hubVaultOrigins.origin })
+    .from(hubVaultOrigins)
+    .orderBy(asc(hubVaultOrigins.firstFilledAt), asc(hubVaultOrigins.origin));
+  return rows.map((row) => row.origin);
 }

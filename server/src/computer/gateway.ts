@@ -165,6 +165,8 @@ export type ComputerGatewayOptions = {
       "forOrigin" | "lease" | "open" | "release" | "verified" | "memberName"
     >;
     allowLoopbackHttp?: boolean;
+    /** Where the origins it was filled on are kept (`hub_vault_origins`, `noteVaultOrigins`). */
+    noteOrigins?: (origins: readonly string[]) => Promise<void>;
     /** The clock a held lease is renewed by. A test hands in its own. */
     schedule?: (milliseconds: number, run: () => void) => () => void;
   };
@@ -250,6 +252,9 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
       ? {
           company: options.companyLogins.vault,
           allowLoopbackHttp: options.companyLogins.allowLoopbackHttp === true,
+          ...(options.companyLogins.noteOrigins
+            ? { noteOrigins: options.companyLogins.noteOrigins }
+            : {}),
           ...(options.companyLogins.schedule
             ? { schedule: options.companyLogins.schedule }
             : {}),

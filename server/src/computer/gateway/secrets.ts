@@ -246,6 +246,11 @@ export function createSecrets(deps: {
    * by (`shared/login-origin.ts`). A developer's stack passes the loopback opt-in.
    */
   allowLoopbackHttp?: boolean;
+  /**
+   * Keep the origins of a company login the browser was signed in with (`hub_vault_origins`), so
+   * leaving the company can sign the browser out of them when the hub no longer answers.
+   */
+  noteOrigins?: (origins: readonly string[]) => Promise<void>;
   /** The clock a lease is renewed by. A test hands in its own; absent, the process's timers. */
   schedule?: (milliseconds: number, run: () => void) => () => void;
   now?: () => number;
@@ -912,6 +917,19 @@ export function createSecrets(deps: {
   }
 
   /**
+   * The values went into a page: the login's origins are kept for the day the VM leaves its
+   * company. Losing the note does not undo the sign-in; it is said in the log, origins and all —
+   * an origin is not a value.
+   */
+  async function noteOrigins(origins: readonly string[]): Promise<void> {
+    await deps.noteOrigins?.(origins).catch((error: unknown) => {
+      log.warn("company_login_origins_not_kept", {
+        reason: describeFailure(error),
+      });
+    });
+  }
+
+  /**
    * A COMPANY LOGIN INTO THE BOXES, BY THE SAME ACT AS THE PERSON'S OWN (hub design §9.3): judged
    * as `fill_login`, written to the same rows, put in by the same call to the computer, masked
    * and held for the run the same way. What differs is where the values come from — the hub,
@@ -1055,6 +1073,7 @@ export function createSecrets(deps: {
     // ever give this lease back but its clock, nor ask after the sign-in.
     if (options.signal?.aborted) {
       giveBack();
+      await noteOrigins(login.origins);
       return {
         ...(await control()),
         loginFilled: {
@@ -1065,6 +1084,7 @@ export function createSecrets(deps: {
         },
       };
     }
+    await noteOrigins(login.origins);
     const fills = companyFills.get(botId) ?? new Map<string, CompanyFill[]>();
     companyFills.set(botId, fills);
     fills.set(run, [
