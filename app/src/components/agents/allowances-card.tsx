@@ -195,6 +195,9 @@ function tierText(allowance: AgentAllowance): string {
       },
     );
   }
+  if (allowance.tier === "board_task" && when) {
+    return t("Only for one task on the company board, until {when}", { when });
+  }
   if (allowance.tier === "day" && when) {
     return t("Today only, until {when}", { when });
   }

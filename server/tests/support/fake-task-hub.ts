@@ -78,6 +78,20 @@ export function fakeTaskHub() {
     if (parts.length === 2 && method === "GET") {
       return ok({ ok: true, task: view(task), notes: task.notes });
     }
+    if (parts.length === 2 && method === "PATCH" && body.as === undefined) {
+      // A person's edit (#253's member branch): against the version it was made on, any stage,
+      // a person's note, and a claim on it ended by moving it out of `doing`.
+      if (body.version !== task.version) return no(409, "laf:task_stale");
+      const stages = ["todo", "doing", "review", "blocked", "done"] as const;
+      const stage = stages.find((value) => value === body.stage) ?? task.stage;
+      task.stage = stage;
+      if (stage !== "doing") task.checkout = null;
+      task.version += 1;
+      if (typeof body.note === "string" && body.note) {
+        task.notes.push({ by: `m:${as}`, text: body.note, runId: null });
+      }
+      return ok({ ok: true, task: view(task) });
+    }
     if (parts.length === 2 && method === "PATCH") {
       if (body.as !== "bot") return no(400, "laf:request_invalid");
       if (body.stage === "done") return no(403, "laf:task_done_by_person");

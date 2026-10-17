@@ -57,11 +57,22 @@ export type HubMemberState = "active" | "left";
  * - `task.assigned`: a task was given to somebody. `refId` is the task id. Seen by the assigned
  *   member alone (`m:` or `bot:`), whose VM is the one that acts on it; for a `job:` assignee, by
  *   whoever can see the task, since the job's own VM is not a member the hub knows yet.
+ * - `budget.reached`: a reservation was refused because a scope's day is spent. `refId` is the
+ *   scope (`workspace`, `job:<id>`, `task:<id>`). Once per scope per day, and again after its limit
+ *   changes. The workspace's goes to everybody, so every VM stops starting runs; a job's or a task's
+ *   to the owners and admins, the job's owner and runner, and the member who was refused.
+ * - `job.changed`: a sub-Bot was registered, edited or removed. `refId` is the job id. Everybody:
+ *   the register holds no content.
+ * - `job.moved`: a sub-Bot's runner changed (its owner was handed on). `refId` is the job id. Seen
+ *   by the old runner, whose VM drops the job, and the new one, whose VM picks it up.
  */
 export const HUB_EVENT_TYPES = [
   "member.changed",
   "task.changed",
   "task.assigned",
+  "budget.reached",
+  "job.changed",
+  "job.moved",
 ] as const;
 export type HubEventType = (typeof HUB_EVENT_TYPES)[number];
 

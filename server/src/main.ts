@@ -113,12 +113,19 @@ import { deploymentHealthProbes } from "./health";
 import { createLiveScreen, type SocketData } from "./live-screen";
 import { users } from "./db/schema";
 import { createHubRuntime } from "./hub";
+import { createRunBudget } from "./hub/budget";
+import { createHubJobs, type HubJobs, hearJobFrame } from "./hub/jobs";
+import { createTaskAsks } from "./hub/task-asks";
 import {
   createTaskPickup,
   hearFrame,
   type TaskPickup,
 } from "./hub/task-pickup";
-import { createTaskRun, createUnreportedRuns } from "./hub/task-run";
+import {
+  createTaskRun,
+  createUnreportedRuns,
+  deploymentBot,
+} from "./hub/task-run";
 import { log, recentLines } from "./log";
 import { createLoginVault } from "./logins/store";
 import { readApprovalMetrics } from "./notifications/approval-metrics";
@@ -151,6 +158,7 @@ import {
   createRoutineFailureDelivery,
 } from "./routines/deliver";
 import { inTime, LET_GO_MS } from "./routines/run";
+import { mine } from "./routines/ownership";
 import { createRoutineService } from "./routines/service";
 import { createSuggestionDismissalStore } from "./routines/suggestions";
 import { createBotLane } from "./runner/bot-lane";
@@ -404,6 +412,8 @@ const channelEvents = createChannelEventHub();
 let hubFramesSent: Promise<void> = Promise.resolve();
 /** The board's tasks given to this member's 라피, made below once what runs them exists. */
 let taskPickup: TaskPickup | undefined;
+/** The routines registered as the company's sub-Bots, made below once the routines exist. */
+let hubJobs: HubJobs | undefined;
 const hubRuntime = config.hub
   ? createHubRuntime({
       config: config.hub,
@@ -411,6 +421,7 @@ const hubRuntime = config.hub
       // Chained, so frames reach the page in the order the hub numbered them.
       deliver: (frame) => {
         void hearFrame(taskPickup, frame);
+        void hearJobFrame(hubJobs, frame);
         hubFramesSent = hubFramesSent
           .then(() => database.select({ id: users.id }).from(users))
           .then((rows) =>
@@ -423,6 +434,19 @@ const hubRuntime = config.hub
       },
     })
   : undefined;
+/**
+ * The company's budget, asked before every unattended run and told after (`hub/budget.ts`); and a
+ * board task's stops for a person's yes (`hub/task-asks.ts`). Only with a hub: a person on their
+ * own runs exactly as before.
+ */
+const runBudget = hubRuntime
+  ? createRunBudget({
+      http: hubRuntime.http,
+      outbox: hubRuntime.outbox,
+      passRefused: () => hubRuntime.link.status().state === "refused",
+    })
+  : undefined;
+const taskAsks = hubRuntime ? createTaskAsks(database) : undefined;
 /**
  * The partner vendor LAF holds the account at, assembled once.
  *
@@ -963,7 +987,52 @@ const routineService = createRoutineService({
   // A routine runs as its author; one the sign-in list no longer admits is run by no door.
   admission,
   work: workInFlight,
+  // The company's day, and a sub-Bot's own, asked before each run (`hub/budget.ts`).
+  ...(runBudget
+    ? {
+        budget: runBudget,
+        jobOf: async (routineId: string) =>
+          (await hubJobs?.jobOf(routineId)) ?? null,
+      }
+    : {}),
 });
+
+/*
+ * The routines registered as the company's sub-Bots (`hub/jobs.ts`): a moved one is turned off here
+ * and handed on, and one moved to this member is made here from its handoff.
+ */
+if (hubRuntime) {
+  hubJobs = createHubJobs({
+    database,
+    http: hubRuntime.http,
+    outbox: hubRuntime.outbox,
+    memberId: () => hubRuntime.link.me()?.member.id ?? null,
+    mine: (actor, routineId) => mine(database, actor, routineId),
+    install: async (definition) => {
+      const who = await deploymentBot(database);
+      if (!who) throw new Error("laf:bot_not_found");
+      const made = await routineService.create(who.actor, {
+        agentId: who.botId,
+        name: definition.name,
+        instruction: definition.instruction,
+        ...(definition.summary ? { summary: definition.summary } : {}),
+        schedule:
+          definition.schedule.kind === "interval"
+            ? definition.schedule
+            : {
+                kind: "daily",
+                time: definition.schedule.time,
+                timeZone: definition.schedule.timeZone,
+                ...(definition.schedule.days
+                  ? { days: definition.schedule.days }
+                  : {}),
+              },
+        delivery: definition.delivery,
+      });
+      return made.id;
+    },
+  });
+}
 
 /*
  * A task on the company board given to this member's 라피: taken, run as a routine runs — the same
@@ -978,6 +1047,8 @@ if (hubRuntime) {
     run: createTaskRun({
       database,
       ledger: runLedger,
+      ...(runBudget ? { budget: runBudget } : {}),
+      ...(taskAsks ? { asks: taskAsks } : {}),
       lane: botLane,
       work: workInFlight,
       admission,
@@ -1403,6 +1474,19 @@ const app = createApp({
   goals: goalStore,
   logins: loginVault,
   ...(hubRuntime ? { hub: hubRuntime } : {}),
+  ...(hubRuntime && taskAsks
+    ? {
+        hubCompany: {
+          tasks: {
+            database,
+            asks: taskAsks,
+            standing: standingApprovals,
+            auditStore: bootAuditStore,
+          },
+          ...(hubJobs ? { jobs: hubJobs } : {}),
+        },
+      }
+    : {}),
 });
 
 /** The live screen, proxied ahead of the app because an upgrade is not a request. See live-screen.ts. */

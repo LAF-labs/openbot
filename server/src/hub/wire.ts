@@ -344,3 +344,173 @@ export function readTaskDetail(
     })) ?? [];
   return { task, notes };
 }
+
+/* ── the budget ledger and the sub-Bot register ─────────────────────────────────────────────── */
+
+/**
+ * The hub's budget ledger and its register of sub-Bots, as this VM uses them (`budget.ts`,
+ * `jobs.ts`). The hub's side is being written beside this (`/budget`, `/jobs`); the shapes are the
+ * contract its pull request names, and where a route lands with another path the change is here.
+ *
+ * A SCOPE IS ONE STRING: `workspace` (always counted, named or not), `job:<id>` (a sub-Bot) or
+ * `task:<id>` (a task on the board). The hub refuses a reservation that would take any of them over
+ * its day, naming the first one that would.
+ */
+export type HubBudgetScope = "workspace" | `job:${string}` | `task:${string}`;
+
+export const HUB_BUDGET_PATHS = {
+  /** `POST {runId, scopes, amount}` — ok, or 409 `laf:budget_reached {scope}`. */
+  reserve: "/budget/reserve",
+  /** `POST {runId, actual}` — idempotent; a settle with no reservation is taken and recorded. */
+  settle: "/budget/settle",
+} as const;
+
+export const HUB_BUDGET_CODES = {
+  /** A scope's day is spent. The run does not start, and is not asked again. */
+  reached: "laf:budget_reached",
+} as const;
+
+/**
+ * What a run sets aside before it starts: one question's ceiling on this VM (agent-bot's
+ * `MAX_QUESTION_COST_USD`), which is the most a run can spend before the VM's own guard stops it.
+ */
+export const HUB_BUDGET_RESERVE_USD = 0.2;
+
+export const budgetReserveBody = (input: {
+  runId: string;
+  scopes: readonly HubBudgetScope[];
+  amount: number;
+}) => ({ runId: input.runId, scopes: [...input.scopes], amount: input.amount });
+
+/** What the run cost, to the dollar's sixth place: the provider's figure, never rounded up. */
+export const budgetSettleBody = (input: { runId: string; actual: number }) => ({
+  runId: input.runId,
+  actual:
+    Number.isFinite(input.actual) && input.actual > 0
+      ? Math.round(input.actual * 1e6) / 1e6
+      : 0,
+});
+
+export const HUB_JOB_PATHS = {
+  /** `GET` — every sub-Bot in the register: names, members, schedule lines. */
+  list: "/jobs",
+  /** `PUT {name, schedule, dailyUsd}` registers or renames; `GET` reads; `DELETE` takes it off. */
+  job: (id: string) => `/jobs/${segment(id)}`,
+  /**
+   * The sub-Bot's definition on its way from the VM that ran it to the VM that runs it now. `PUT`
+   * by the old runner, `GET` then `DELETE` by the new one. Never part of the register: the register
+   * holds a name, two members, a schedule line and a limit, and this is gone once it is taken.
+   */
+  handoff: (id: string) => `/jobs/${segment(id)}/handoff`,
+} as const;
+
+/** A sub-Bot as the register holds it: no instruction, no result, nothing it found. */
+export type HubJobView = {
+  id: string;
+  name: string;
+  owner: string;
+  runner: string;
+  schedule: string | null;
+};
+
+export const jobRegisterBody = (input: {
+  name: string;
+  schedule: string | null;
+}) => ({ name: input.name, schedule: input.schedule });
+
+export function readJob(body: unknown): HubJobView | null {
+  const held = isObject(body) && isObject(body.job) ? body.job : body;
+  if (!isObject(held)) return null;
+  const id = str(held.id);
+  const owner = str(held.owner);
+  const runner = str(held.runner) ?? owner;
+  if (!id || !owner || !runner) return null;
+  return {
+    id,
+    name: str(held.name) ?? "",
+    owner,
+    runner,
+    schedule: str(held.schedule),
+  };
+}
+
+/**
+ * A routine's definition as it travels between two members' VMs: what the person wrote and when it
+ * runs, and nothing the routine has done — no notepad, no answers, no token.
+ */
+export type JobDefinition = {
+  name: string;
+  instruction: string;
+  summary: string | null;
+  schedule:
+    | { kind: "interval"; minutes: number }
+    | { kind: "daily"; time: string; timeZone: string; days: number[] | null };
+  delivery: "chat" | "feed";
+};
+
+export const jobHandoffBody = (input: {
+  to: string;
+  definition: JobDefinition;
+}) => ({ to: input.to, definition: input.definition });
+
+export function readJobHandoff(body: unknown): JobDefinition | null {
+  const held =
+    isObject(body) && isObject(body.handoff) ? body.handoff : (body ?? null);
+  const definition =
+    isObject(held) && isObject(held.definition) ? held.definition : null;
+  if (!definition) return null;
+  const name = str(definition.name);
+  const instruction = str(definition.instruction);
+  const schedule = isObject(definition.schedule) ? definition.schedule : null;
+  if (!name || !instruction || !schedule) return null;
+  const delivery = definition.delivery === "feed" ? "feed" : "chat";
+  if (schedule.kind === "interval") {
+    const minutes = num(schedule.minutes);
+    if (minutes === null) return null;
+    return {
+      name,
+      instruction,
+      summary: str(definition.summary),
+      schedule: { kind: "interval", minutes },
+      delivery,
+    };
+  }
+  if (schedule.kind === "daily") {
+    const time = str(schedule.time);
+    const timeZone = str(schedule.timeZone);
+    if (!time || !timeZone) return null;
+    const days = Array.isArray(schedule.days)
+      ? schedule.days.filter(
+          (day): day is number =>
+            typeof day === "number" && Number.isInteger(day),
+        )
+      : null;
+    return {
+      name,
+      instruction,
+      summary: str(definition.summary),
+      schedule: { kind: "daily", time, timeZone, days },
+      delivery,
+    };
+  }
+  return null;
+}
+
+/**
+ * The person's "이 일감에서는 해도 돼", as the board is told it: the task goes back to waiting, with
+ * one note saying who allowed what kind of action — the topic, the same facts the stop's own note
+ * gave — and never a value. Sent as the member (no `as: "bot"`), because it is the member's decision;
+ * the note's author on the hub is `m:<member>` and its time is the hub's, which is the who and the
+ * when. `version` is the one the VM just read, so a person's edit in between wins (`laf:task_stale`).
+ */
+export const taskApprovalGrantedBody = (input: {
+  version: number;
+  topic: string;
+}) => ({
+  version: input.version,
+  stage: "todo" as const,
+  note: `laf:task_approval_granted topic:${input.topic}`.slice(
+    0,
+    HUB_TASK_BOT_NOTE_MAX,
+  ),
+});

@@ -85,6 +85,12 @@ export const TURN_FAILURE_CODES = {
    * Seoul, which is the one thing worth telling somebody about to ask again.
    */
   dailyBudgetReached: "laf:turn_daily_budget_reached",
+  /**
+   * The company's budget for the day — the workspace's, a sub-Bot's or a task's — was spent before
+   * this run started, so the hub refused it and the model was never asked (`hub/budget.ts`). Not a
+   * fault: an admin's limit, which opens again the next day.
+   */
+  companyBudgetReached: "laf:turn_company_budget_reached",
 } as const;
 
 export type TurnFailureCode =
@@ -160,6 +166,10 @@ export function classifyTurnFailure(error: string | null): TurnFailureCode {
   }
   if (said.includes("laf:daily_budget_reached")) {
     return TURN_FAILURE_CODES.dailyBudgetReached;
+  }
+  // The hub's refusal (`hub/budget.ts`). Not a substring of the trial's code above, nor it of this.
+  if (said.includes("laf:budget_reached")) {
+    return TURN_FAILURE_CODES.companyBudgetReached;
   }
 
   /*

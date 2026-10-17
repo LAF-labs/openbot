@@ -27,6 +27,8 @@ import type { AgentActor } from "../agents/profile-types";
 import type { DeploymentAdmission } from "../auth/admission";
 import { DEV_ACTOR } from "../auth/dev-actor";
 import { taskConversation } from "../channels/conversations";
+import type { AllowanceScope } from "../computer/standing-approvals";
+import { topicOf } from "../computer/ask-topic";
 import type { AskSubject } from "../computer/approvals";
 import { laneOfBrowser } from "../computer/bot-id";
 import type { ActionActor } from "../computer/gateway";
@@ -45,7 +47,10 @@ import {
   runUnattended,
   type UnattendedToolkit,
 } from "../runner/unattended";
+import { createRunMeter } from "../telemetry/run-meter";
 import { turnFailureOf } from "../turns/engine";
+import type { RunBudget } from "./budget";
+import type { TaskAsks } from "./task-asks";
 import type { TaskRun, TaskRunOutcome, UnreportedRun } from "./task-pickup";
 import type { HubTaskView } from "./wire";
 
@@ -81,6 +86,16 @@ export type TaskRunDeps = {
   };
   /** Whose 라피 this is. Absent: `deploymentBot`. */
   owner?: () => Promise<{ actor: AgentActor; botId: string } | null>;
+  /**
+   * The company's budget (`budget.ts`): a task's run is asked about before the Bot is, against the
+   * workspace's day and the task's own, and what it cost is told after.
+   */
+  budget?: RunBudget;
+  /**
+   * Where a stop for a person's yes is kept (`task-asks.ts`), so "이 일감에서는 해도 돼" can be
+   * granted from what the run actually met. Absent: the stop is noted on the board and nowhere else.
+   */
+  asks?: TaskAsks;
   timeoutMs?: number;
   maxSteps?: number;
 };
@@ -128,27 +143,42 @@ export function taskInstruction(task: HubTaskView): string {
   return description ? `${title}\n\n${description}` : title;
 }
 
-/**
- * The topic of a question nobody was there to answer: what kind of action, and where — the site, or
- * the connected service and its tool. Never the element's label, a path or the arguments: those are
- * the page's and the Bot's words, and the note leaves the VM for the whole company's board.
- */
-export function topicOf(subject: unknown): string {
-  const ask = subject as Partial<AskSubject> | null;
-  if (!ask || typeof ask !== "object") return "action";
-  const kind = typeof ask.kind === "string" ? ask.kind : "action";
-  const intent = typeof ask.intent === "string" ? `/${ask.intent}` : "";
-  const where =
-    typeof ask.host === "string" && ask.host
-      ? `@${ask.host}`
-      : ask.tool && typeof ask.tool.server === "string"
-        ? `@${ask.tool.server}/${ask.tool.name}`
-        : "";
-  return `${kind}${intent}${where}`.replace(/[^\p{L}\p{N}@/._:-]/gu, "");
-}
+/** The topic of a question nobody was there to answer: kind of action and where (`ask-topic.ts`). */
+export { topicOf };
 
 /** What a run stopped for a person on, read off the first outcome that said so. */
-type Waiting = { kind: "approval"; topic: string } | { kind: "login" };
+type Waiting =
+  | {
+      kind: "approval";
+      topic: string;
+      /** The stop's own rule, scope and subject, where the boundary named them. */
+      ask: { rule: string; scope: AllowanceScope; subject: AskSubject } | null;
+    }
+  | { kind: "login" };
+
+/** The rule, scope and subject a stop carried (`runner/unattended.ts`, `outcomeOfError`). */
+function askOf(outcome: Record<string, unknown>): {
+  rule: string;
+  scope: AllowanceScope;
+  subject: AskSubject;
+} | null {
+  const scope = outcome.scope as Partial<AllowanceScope> | undefined;
+  const subject = outcome.subject as AskSubject | undefined;
+  if (
+    !scope ||
+    (scope.kind !== "host" && scope.kind !== "file" && scope.kind !== "tool") ||
+    typeof scope.value !== "string" ||
+    !subject ||
+    typeof subject !== "object"
+  ) {
+    return null;
+  }
+  return {
+    rule: typeof outcome.rule === "string" ? outcome.rule : "",
+    scope: { kind: scope.kind, value: scope.value },
+    subject,
+  };
+}
 
 /** The toolkit, with the first stop for a person noted on the way past. Nothing else changes. */
 function watching(
@@ -163,7 +193,11 @@ function watching(
         noted(
           outcome.code === "laf:login_not_saved"
             ? { kind: "login" }
-            : { kind: "approval", topic: topicOf(outcome.subject) },
+            : {
+                kind: "approval",
+                topic: topicOf(outcome.subject),
+                ask: askOf(outcome as Record<string, unknown>),
+              },
         );
       }
       return outcome;
@@ -232,7 +266,23 @@ export function createTaskRun(deps: TaskRunDeps): TaskRun {
     let target: LoopAgent | undefined;
     let waiting: Waiting | null = null;
     let outcome: TaskRunOutcome;
+    const meter = createRunMeter();
+    /*
+     * THE COMPANY'S DAY, ASKED BEFORE THE BOT IS — the workspace's and this task's (`budget.ts`).
+     * After the ledger row, so the refused run is in the task's conversation with its fact, and
+     * before the lane and the model: a refused run sends nothing to the model.
+     */
+    const verdict = deps.budget
+      ? await deps.budget.reserve({
+          runId,
+          scopes: [`task:${task.id}`],
+          origin: "job",
+        })
+      : null;
     try {
+      if (verdict && !verdict.go) {
+        throw new BudgetRefused(verdict.code);
+      }
       outcome = await inLane<TaskRunOutcome>(deps, botId, async () => {
         const agents = await deps.resolveAgents(actor);
         const agent = agents[botId];
@@ -253,6 +303,8 @@ export function createTaskRun(deps: TaskRunDeps): TaskRun {
             ...(actor.id === DEV_ACTOR.id ? {} : { userId: actor.id }),
             runKey,
             runId,
+            // The task it works: an allowance its person gave for this task answers here alone.
+            boardTaskThreadId: threadId,
           },
           deps.browser ? { browser: deps.browser.name } : undefined,
         );
@@ -265,10 +317,29 @@ export function createTaskRun(deps: TaskRunDeps): TaskRun {
             maxSteps: deps.maxSteps ?? TASK_MAX_STEPS,
             mode: "routine",
             signal: stopping.signal,
+            observe: meter.observe,
           });
           const steps = run.steps.length;
           const stoppedOn = waiting as Waiting | null;
           if (stoppedOn?.kind === "approval") {
+            if (deps.asks && stoppedOn.ask) {
+              // Kept so its person can answer it for this task. A write that fails loses the
+              // button, not the run: the board is still told, and the next run stops again.
+              await deps.asks
+                .record({
+                  taskId: task.id,
+                  runId,
+                  botId,
+                  topic: stoppedOn.topic,
+                  ...stoppedOn.ask,
+                })
+                .catch((error: unknown) => {
+                  log.warn("task_ask_not_kept", {
+                    task: task.id,
+                    reason: describeFailure(error),
+                  });
+                });
+            }
             return { kind: "approval", topic: stoppedOn.topic, steps };
           }
           if (stoppedOn?.kind === "login" || run.awaiting) {
@@ -286,7 +357,9 @@ export function createTaskRun(deps: TaskRunDeps): TaskRun {
         error && typeof error === "object" && "steps" in error
           ? ((error as { steps: unknown[] }).steps?.length ?? 0)
           : 0;
-      if (signal.aborted) outcome = { kind: "lost" };
+      if (error instanceof BudgetRefused) {
+        outcome = { kind: "failed", code: error.code, steps: 0 };
+      } else if (signal.aborted) outcome = { kind: "lost" };
       else if (error instanceof RunStopped || stopping.signal.aborted) {
         outcome = { kind: "stopped", steps };
       } else {
@@ -299,6 +372,7 @@ export function createTaskRun(deps: TaskRunDeps): TaskRun {
     } finally {
       signal.removeEventListener("abort", cut);
       done?.();
+      meter.end();
     }
 
     /*
@@ -329,6 +403,7 @@ export function createTaskRun(deps: TaskRunDeps): TaskRun {
           outcome.kind === "approval" ||
           outcome.kind === "login" ||
           outcome.kind === "person",
+        measure: meter.read(),
       })
       .catch((error: unknown) => {
         log.warn("task_run_not_settled", {
@@ -336,8 +411,21 @@ export function createTaskRun(deps: TaskRunDeps): TaskRun {
           reason: describeFailure(error),
         });
       });
+    // What it cost, to the hub's ledger through the outbox — also where the hub did not answer the
+    // reservation. A refused run spent nothing and set nothing aside.
+    if (deps.budget && verdict?.go) {
+      await deps.budget.settle({ runId, actual: meter.read().costUsd });
+    }
     return outcome;
   };
+}
+
+/** The company's day was spent before the run started: nothing was asked of the model. */
+class BudgetRefused extends Error {
+  constructor(readonly code: string) {
+    super(code);
+    this.name = "BudgetRefused";
+  }
 }
 
 /** In the lane of the browser the run's pages are in, or the Bot's where there is none. */
