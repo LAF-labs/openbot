@@ -440,6 +440,18 @@ const deploymentKeyRuntime = createDeploymentKeyRuntime({
   listBots: () => allLiveBots(database),
   // The weather asked about with no place named is the person's own place's (`kma-weather-rest.ts`).
   whereaboutsOf: whereaboutsStore.read,
+  // The company hub's tools speak through its line and outbox (`hub/tools.ts`).
+  ...(hubRuntime
+    ? {
+        hub: {
+          http: hubRuntime.http,
+          outbox: hubRuntime.outbox,
+          database,
+          passRefused: () => hubRuntime.link.status().state === "refused",
+          onPassRefused: () => hubRuntime.link.passRefused("tool"),
+        },
+      }
+    : {}),
 });
 /**
  * The package's own skills (`tenant/<package>/skills/*.md`): written at boot, handed to every Bot.

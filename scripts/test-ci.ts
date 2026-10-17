@@ -3258,6 +3258,14 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `app` by twenty-one (to 2564): which reads a hub frame makes stale, whose a message is, the facts
  * in Korean, and a team file's body (hub-company.test.ts); and `hub` by two (to 48): the roster to
  * any member and behind the pass (members.test.ts).
+ *
+ * RAISED 2026-10-16 FOR 라피'S TWO HUB TOOLS: `server` by twenty-eight (to 4775) — the reads against
+ * a scripted hub, what is refused before anybody is asked, and the hub's mark on a stored result
+ * (hub-tools.test.ts, 22); the writes through the outbox on a real Postgres (hub-tools
+ * .integration.test.ts, 3: a post sent once with its row's key, a write kept through an outage and
+ * sent once after, a refusal ended); and the head of the prompt the same bytes with and without
+ * the hub, and no hub tool without the pass (hub-tools-head.test.ts, 3). 4747 and 28.
+ * Merged onto 회사 (laf/hub-docs-ui): 4769 and 28, so 4797.
  */
 const GROUPS: readonly {
   name: string;
@@ -3265,7 +3273,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4769, roots: ["server"] },
+  { name: "server", floor: 4797, roots: ["server"] },
   { name: "app", floor: 2564, roots: ["app"] },
   {
     name: "agent-computer",

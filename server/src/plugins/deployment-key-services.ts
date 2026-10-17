@@ -6,10 +6,16 @@
  * Adding one is three things, and the types hold the first two: a family in `catalogue.ts` with its
  * environment name in `shared-clients.ts`, the entry in the catalogue, and a line here.
  */
+import { HUB_SERVICE } from "../hub/tools";
 import type { DeploymentKeyService } from "./deployment-key-runtime";
 import { KMA_WEATHER_SERVICE } from "./kma-weather-rest";
 import { PUBLIC_DATA_SERVICE } from "./public-data-rest";
 import { WEB_SEARCH_SERVICE } from "./web-search-rest";
 
 export const DEPLOYMENT_KEY_SERVICES: readonly DeploymentKeyService[] =
-  Object.freeze([PUBLIC_DATA_SERVICE, WEB_SEARCH_SERVICE, KMA_WEATHER_SERVICE]);
+  Object.freeze([
+    PUBLIC_DATA_SERVICE,
+    WEB_SEARCH_SERVICE,
+    KMA_WEATHER_SERVICE,
+    HUB_SERVICE,
+  ]);
