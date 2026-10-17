@@ -30,7 +30,7 @@ export function TableBlock({
   const grid = rows.map((row) =>
     Array.from({ length: width }, (_, index) => row[index] ?? ""),
   );
-  const holder = useRef<HTMLDivElement>(null);
+  const holder = useRef<HTMLFieldSetElement>(null);
 
   const change = (rowIndex: number, cellIndex: number, value: string) => {
     onRows(
@@ -43,9 +43,9 @@ export function TableBlock({
   };
 
   return (
-    <div
+    <fieldset
       aria-label={t("Table")}
-      className="flex flex-col gap-1"
+      className="m-0 flex min-w-0 flex-col gap-1 border-0 p-0"
       data-doc-table
       onBlur={(event) => {
         // Moving between cells is still writing in the table; leaving it is not.
@@ -54,7 +54,6 @@ export function TableBlock({
         }
       }}
       ref={holder}
-      role="group"
     >
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-sm">
@@ -117,7 +116,7 @@ export function TableBlock({
           </button>
         </div>
       )}
-    </div>
+    </fieldset>
   );
 }
 

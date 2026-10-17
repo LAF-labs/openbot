@@ -14,6 +14,8 @@ import {
   lockBlock,
   openDocQueryOptions,
   readDoc,
+  readDocBlock,
+  readHold,
   saveBlocks,
   unlockBlock,
 } from "@/lib/hub/docs";
@@ -21,6 +23,7 @@ import { t } from "@/lib/i18n";
 import { DocBlockView } from "./doc-block";
 import {
   createDocController,
+  type DocController,
   type DocNotice,
   WRITABLE,
 } from "./doc-controller";
@@ -53,6 +56,7 @@ export function DocEditor({
       meId,
       doors: {
         read: () => readDoc(docId),
+        readBlock: (blockId) => readDocBlock(docId, blockId),
         save: (ops, key) => saveBlocks(docId, ops, key),
         lock: (blockId) => lockBlock(docId, blockId),
         unlock: (blockId) => unlockBlock(docId, blockId),
@@ -71,8 +75,7 @@ export function DocEditor({
 
   useEffect(() => {
     const onFrame = (event: Event) => {
-      const frame = (event as CustomEvent<HubFrame>).detail;
-      if (isAboutDoc(frame, docId)) controller.changed();
+      routeFrame(controller, (event as CustomEvent<HubFrame>).detail, docId);
     };
     const onHide = () => {
       if (document.visibilityState === "hidden") controller.leave();
@@ -101,9 +104,11 @@ export function DocEditor({
     );
   }
 
+  /** The colleague writing in a block, by the name the hub gave, or the roster's. */
   const holderOf = (blockId: string): string | null => {
     const hold = state.holds.find((one) => one.blockId === blockId);
-    return hold ? memberName(hold.memberId, members) : null;
+    if (!hold) return null;
+    return hold.name?.trim() ? hold.name : memberName(hold.memberId, members);
   };
   const last = state.rows.at(-1);
 
@@ -115,7 +120,7 @@ export function DocEditor({
           data-doc-notice={state.notice.kind}
           role="status"
         >
-          <span>{noticeText(state.notice, members)}</span>
+          <span>{noticeText(state.notice)}</span>
           <button
             className="shrink-0 text-muted-foreground hover:text-foreground"
             onClick={() => controller.dismiss()}
@@ -161,25 +166,49 @@ export function DocEditor({
   );
 }
 
-/** A `hub.doc.*` frame that names this document, or names none (an older hub: read to be sure). */
-export function isAboutDoc(frame: HubFrame, docId: string): boolean {
-  if (!frame.kind.startsWith("hub.doc.")) return false;
+/**
+ * A company frame, to the part of the editor it is about: a block a colleague saved (`refId`
+ * `<doc>/<block>`) is read again alone, the document changed whole is read whole, and a hold taken
+ * or let go is drawn at once from the frame itself. Frames about other documents are not ours.
+ */
+export function routeFrame(
+  controller: Pick<DocController, "blockChanged" | "changed" | "held">,
+  frame: HubFrame,
+  docId: string,
+): void {
   const ref = typeof frame.refId === "string" ? frame.refId : null;
-  return ref === null || ref === docId || ref.startsWith(`${docId}:`);
+  switch (frame.kind) {
+    case "hub.doc.block_changed": {
+      const at = ref ? ref.indexOf("/") : -1;
+      if (!ref || at === -1) {
+        controller.changed();
+      } else if (ref.slice(0, at) === docId) {
+        void controller.blockChanged(ref.slice(at + 1));
+      }
+      return;
+    }
+    case "hub.doc.changed":
+      if (ref === null || ref === docId) controller.changed();
+      return;
+    case "hub.doc.lock": {
+      if (frame.doc !== docId || typeof frame.block !== "string") return;
+      // `until` null is a hold let go; anything else is one taken or renewed.
+      controller.held(
+        frame.block,
+        frame.until === null ? null : readHold(frame),
+      );
+      return;
+    }
+  }
 }
 
-function noticeText(
-  notice: DocNotice,
-  members: readonly CompanyMember[] | undefined,
-): string {
+function noticeText(notice: DocNotice): string {
   switch (notice.kind) {
     case "stale":
       return t("Somebody changed this block first. It now shows theirs.");
     case "busy":
-      return notice.memberId
-        ? t("{name} is writing in this block.", {
-            name: memberName(notice.memberId, members),
-          })
+      return notice.name
+        ? t("{name} is writing in this block.", { name: notice.name })
         : t("Somebody is writing in this block.");
     case "lost":
       return t("Somebody else started writing in this block.");

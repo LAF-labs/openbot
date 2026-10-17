@@ -2554,7 +2554,6 @@ export const ko: Record<string, string> = {
     "다른 분이 먼저 고쳤어요. 고친 내용으로 다시 열었어요.",
   "Somebody else started writing in this block.":
     "다른 분이 이 블록을 쓰기 시작했어요.",
-  "This document is gone.": "없어진 문서예요.",
   "Could not save. Try again.": "저장하지 못했어요. 다시 해 주세요.",
   "Type / for a block kind": "/를 눌러 블록 종류 고르기",
   "Block kind": "블록 종류",

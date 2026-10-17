@@ -15,6 +15,7 @@ import type { HubLink } from "./link";
  *   GET  /api/hub/docs                              the team's documents
  *   POST /api/hub/docs                              a new one, `{title}`
  *   GET  /api/hub/docs/:id                          one document: its blocks in order, who holds which
+ *   GET  /api/hub/docs/:id/blocks/:block            one block, read again after a colleague saved it
  *   POST /api/hub/docs/:id/blocks                   a batch of block changes, all or none
  *   POST /api/hub/docs/:id/blocks/:block/lock       "쓰는 중": take or renew the hold on one block
  *   POST /api/hub/docs/:id/blocks/:block/unlock     let go of it
@@ -63,6 +64,8 @@ const TITLE_MAX = 200;
 const ATTRS_MAX_BYTES = 20_000;
 
 const ID_SHAPE = /^[A-Za-z0-9_-]{1,100}$/;
+/** A block id a writer may name for a new block, as the hub takes one. */
+const NEW_BLOCK_ID = /^b_[a-z0-9]{10,40}$/;
 const KEY_SHAPE = /^[A-Za-z0-9_.:-]{8,128}$/;
 const WHOLE = (value: unknown): value is number =>
   typeof value === "number" && Number.isInteger(value) && value >= 0;
@@ -150,9 +153,16 @@ export function personOp(value: unknown): Record<string, unknown> | null {
     case "insert_after": {
       if (op.id !== null && !isId(op.id)) return null;
       if (!isKind(op.kind)) return null;
+      if (
+        op.newId !== undefined &&
+        !(typeof op.newId === "string" && NEW_BLOCK_ID.test(op.newId))
+      ) {
+        return null;
+      }
       return {
         op: "insert_after",
         id: op.id,
+        ...(op.newId !== undefined ? { newId: op.newId } : {}),
         kind: op.kind,
         text: text ?? "",
         ...(attrs !== undefined ? { attrs } : {}),
@@ -254,6 +264,17 @@ export function createHubUiDocRoutes(
     const id = docId(context);
     if (id === null) return invalid(context, "path");
     return ask(context, { path: `/docs/${id}`, retry: false }, false);
+  });
+
+  routes.get("/docs/:id/blocks/:block", requireUser, async (context) => {
+    const id = docId(context);
+    const block = context.req.param("block");
+    if (id === null || !isId(block)) return invalid(context, "path");
+    return ask(
+      context,
+      { path: `/docs/${id}/blocks/${block}`, retry: false },
+      false,
+    );
   });
 
   routes.post("/docs/:id/blocks", requireUser, async (context) => {
