@@ -175,9 +175,8 @@ function ShownText({
         focusRingBare,
       )}
       data-doc-text
-      onClick={() => {
-        if (!isHeld) onOpen();
-      }}
+      // A held block is pressed too: the editor refuses it and says who is writing there.
+      onClick={onOpen}
       onKeyDown={(event) => {
         if (!isHeld && event.key === "Enter") {
           event.preventDefault();

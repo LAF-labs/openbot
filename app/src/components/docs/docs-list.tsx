@@ -84,7 +84,8 @@ export function DocsList({
               >
                 <ItemContent>
                   <ItemTitle>{doc.title || t("Untitled")}</ItemTitle>
-                  {doc.updatedBy ? (
+                  {/* Said only once the roster has answered: before it, every name would read "떠난 멤버". */}
+                  {doc.updatedBy && members ? (
                     <ItemDescription>
                       {t("Last changed by {name}", {
                         name: memberName(
