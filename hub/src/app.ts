@@ -12,11 +12,13 @@ import {
 } from "../../shared/hub/protocol";
 import type { Logger } from "../../shared/log";
 import { type MemberVariables, requireMember } from "./auth";
+import { budgetRoutes } from "./budget";
 import type { HubDatabase } from "./db/client";
 import { hubMembers, hubWorkspace } from "./db/schema";
 import { createListeners, eventsSince, headSeq } from "./events";
 import { fleetRoutes } from "./fleet";
 import { countIdempotency } from "./idempotency";
+import { jobRoutes } from "./jobs";
 import { eventSocket } from "./socket";
 import { taskRoutes } from "./tasks";
 
@@ -141,6 +143,8 @@ export function createHubApp(options: HubAppOptions) {
   });
 
   hub.route("/tasks", taskRoutes({ database, listeners, member }));
+  hub.route("/budget", budgetRoutes({ database, listeners, member }));
+  hub.route("/jobs", jobRoutes({ database, listeners, member }));
 
   hub.get(
     "/events",
