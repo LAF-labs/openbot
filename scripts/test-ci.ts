@@ -3264,6 +3264,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * line delivers); and the run on a real Postgres (hub-task-run.integration.test.ts, 5: a routine's
  * run in a project named after the task, its head a routine's byte for byte, a stop on a yes kept
  * to its topic, one conversation for two runs, an unsettled run not reported). 4775 and 21.
+ *
+ * RAISED 2026-10-17 FOR THE COMPANY'S BUDGET, A TASK'S OWN YES AND SUB-BOTS: `server` by
+ * twenty-seven (to 4823) — the reservation's verdict by what the hub said and the settle's row
+ * (hub-budget.test.ts, 7); a routine refused before the model, run and settled after a hub outage,
+ * run when the hub does not answer, and run as before with no hub (hub-budget.integration.test.ts,
+ * 4); a board-task allowance for its task and topic only, never past a deny, the switch or its week
+ * (settle-board-task.test.ts, 9); the acceptance on a real Postgres — blocked, allowed, finished, a
+ * sibling still blocked; a task refused before the model; a yes for a task already moved on, and
+ * through the outbox when the hub is away; only the owner says yes
+ * (hub-task-allowance.integration.test.ts, 4); a sub-Bot registered and handed on
+ * (hub-jobs.integration.test.ts, 3). `app` by six (to 2549): the board task's lines and refusals,
+ * and the company's day as its own failure (board-task.test.ts, 6). 4796/2543 and 27/6.
  */
 const GROUPS: readonly {
   name: string;
@@ -3271,8 +3283,8 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4796, roots: ["server"] },
-  { name: "app", floor: 2543, roots: ["app"] },
+  { name: "server", floor: 4823, roots: ["server"] },
+  { name: "app", floor: 2549, roots: ["app"] },
   {
     name: "agent-computer",
     /*
