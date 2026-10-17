@@ -43,6 +43,13 @@
       "when": 1792222475009,
       "tag": "0005_hub_vault",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792222656446,
+      "tag": "0006_hub_budget",
+      "breakpoints": true
     }
   ]
 }
