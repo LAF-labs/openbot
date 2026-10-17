@@ -234,12 +234,17 @@ export const HUB_TASK_FACTS = {
   doneByPerson: "laf:task_done_by_person",
   /** A yes for a task that is not waiting on one: a person moved it already. Not retried. */
   notBlocked: "laf:task_not_blocked",
+  /**
+   * A yes from anybody but the member whose 라피 run blocked the task, an owner or admin included:
+   * only that member's VM keeps and judges the yes, so one said elsewhere would loop.
+   */
+  notYours: "laf:task_not_yours",
 } as const;
 
 /**
  * `POST /tasks/:id/approvals {topic, version?}` — a yes for a blocked task, for the one topic it
- * stopped on (`kind/intent@place`, never a value). Said by the member whose 라피 run moved it to
- * `blocked`, or an owner/admin. The task goes back to `todo` with the note
+ * stopped on (`kind/intent@place`, never a value). Said only by the member whose 라피 run moved it to
+ * `blocked` (`laf:task_not_yours` for anybody else, admins included). The task goes back to `todo` with the note
  * `laf:task_approval_granted topic:<topic>`, and `task.approval_granted` names it.
  */
 export type HubTaskApproval = {

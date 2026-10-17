@@ -70,10 +70,12 @@ import { audienceOf, visibleTo } from "./visibility";
  *
  * A YES FOR A BLOCKED TASK. A 라피's run that met an action a person has to allow moves the task to
  * `blocked` with the action's topic (`kind/intent@place`). `POST /tasks/:id/approvals {topic}` is
- * that person saying yes, for that task and that topic: the member whose run blocked it, or an
- * owner/admin. The task goes back to `todo` for the next run, the note says which topic, and
- * `task.approval_granted` names who and when. The yes itself is the VM's to keep and its boundary's
- * to judge; the hub records that it was given.
+ * that person saying yes, for that task and that topic: the member whose run blocked it, and nobody
+ * else — not an owner or admin either. The yes is kept and judged only by that member's VM, whose
+ * 라피 runs the task; a yes said anywhere else would put the task back in `todo`, its run would meet
+ * the same action with no allowance on its VM, and block again, round and round. The task goes back
+ * to `todo` for the next run, the note says which topic, and `task.approval_granted` names who and
+ * when; the hub records that the yes was given.
  *
  * THE TRAIL HOLDS NO WORDS. A task's audit row says who did what to which id, in which run and
  * with what result — the fields changed by name, a note's length — never a title, a description or
@@ -1114,9 +1116,12 @@ export function taskRoutes(options: TaskRouteOptions) {
           body: { ok: false, code: HUB_TASK_FACTS.notBlocked },
         };
       }
-      if (row.blockedBy !== self.id && !isManager(self)) {
-        await audit(HUB_FACTS.forbidden);
-        return forbidden;
+      if (row.blockedBy !== self.id) {
+        await audit(HUB_TASK_FACTS.notYours);
+        return {
+          status: 403,
+          body: { ok: false, code: HUB_TASK_FACTS.notYours },
+        };
       }
       if (version !== undefined && version !== row.version) {
         await audit(HUB_TASK_FACTS.stale);

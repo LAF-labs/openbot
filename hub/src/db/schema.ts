@@ -173,7 +173,7 @@ export const hubTasks = pgTable(
     lockExpiresAt: timestamp("lock_expires_at", { withTimezone: true }),
     /**
      * The member whose 라피 run moved it to `blocked`, while it stays there: who may say yes for it
-     * (`POST /tasks/:id/approvals`) beside an owner/admin. Null for one a person blocked.
+     * (`POST /tasks/:id/approvals`), and the only one. Null for one a person blocked.
      */
     blockedBy: text("blocked_by").references(() => hubMembers.id),
     version: integer("version").notNull().default(1),

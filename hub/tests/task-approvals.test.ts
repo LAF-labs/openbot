@@ -140,17 +140,26 @@ test("the member whose run stopped says yes: back to todo, the topic noted, task
   expect(JSON.stringify(trail)).not.toContain("shop.example.test");
 });
 
-test("a member whose run did not stop on it is refused; an admin may say yes", async () => {
+test("only the member whose run stopped may say yes: another member and an admin are refused, and nothing moves", async () => {
   const task = await blockedByAnnsRun();
-  const refused = await approve(ben.pass, task.id, { topic: TOPIC });
-  expect(refused.status).toBe(403);
-  expect(refused.body.code).toBe("laf:hub_forbidden");
+  const before = await headSeq();
+  for (const pass of [ben.pass, cho.pass]) {
+    const refused = await approve(pass, task.id, { topic: TOPIC });
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe("laf:task_not_yours");
+  }
   const still = (await call(ann.pass, "GET", `/tasks/${task.id}`))
     .body as unknown as HubTaskDetail;
   expect(still.task.stage).toBe("blocked");
-  const admin = await approve(cho.pass, task.id, { topic: TOPIC });
-  expect(admin.status).toBe(200);
-  expect((admin.body.approval as HubTaskApproval).by).toBe(choId);
+  expect(still.task.version).toBe(task.version);
+  expect(await seen(ann.pass, before)).toEqual([]);
+  const refusals = await hub.database.execute<{ member: string }>(
+    sql`select member from hub_audit where action = 'task.approval_granted' and target = ${task.id} and outcome = 'laf:task_not_yours'`,
+  );
+  expect(refusals.map((row) => row.member)).toContain(choId);
+  const yes = await approve(ann.pass, task.id, { topic: TOPIC });
+  expect(yes.status).toBe(200);
+  expect((yes.body.approval as HubTaskApproval).by).toBe(annId);
 });
 
 test("a task a person moved is no longer waiting on that run's yes", async () => {
