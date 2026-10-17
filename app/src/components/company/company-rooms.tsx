@@ -12,6 +12,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { RoomWorkingLine } from "./room-working-line";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -28,6 +29,7 @@ import {
   roomColleagues,
   type WriteKey,
 } from "@/lib/hub/company";
+import { asksLafi, LAFI_MENTION } from "@/lib/hub/room-working";
 import { t } from "@/lib/i18n";
 import { isImeKey } from "@/lib/ime";
 import { cn } from "@/lib/utils";
@@ -299,6 +301,12 @@ function OpenRoom({
         )}
       </div>
 
+      <RoomWorkingLine
+        lines={messages.data}
+        meId={meId}
+        members={members}
+        roomId={roomId}
+      />
       <RoomComposer roomId={roomId} />
     </div>
   );
@@ -364,7 +372,8 @@ function RoomComposer({ roomId }: { roomId: string }) {
       return companyWrite(
         `/api/hub/rooms/${encodeURIComponent(roomId)}/messages`,
         "POST",
-        { text: written },
+        // "@라피" asks the writer's own 라피, which answers from their VM (#259).
+        { text: written, mentions: asksLafi(written) ? [LAFI_MENTION] : [] },
         held.current.key,
       );
     },
