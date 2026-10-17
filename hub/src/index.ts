@@ -1,6 +1,7 @@
 import { HUB_PROTOCOL } from "../../shared/hub/protocol";
 import { buildOf, createLogger, reportCrashes } from "../../shared/log";
 import { createHubApp } from "./app";
+import { startBudgetSweeper } from "./budget";
 import { readHubConfig } from "./config";
 import { createHubDatabase, migrateHub } from "./db/client";
 import { createBlobMirror } from "./files/mirror";
@@ -73,6 +74,11 @@ const sweep = setInterval(
 const tasks = startTaskSweeper({ database, listeners, log });
 void tasks.sweep();
 
+// A reservation nobody settled in thirty minutes is marked expired (it keeps counting); once at
+// boot too, for the ones that ran out while the hub was down.
+const budget = startBudgetSweeper({ database, log });
+void budget.sweep();
+
 log.info("boot", {
   ...buildOf(process.env),
   port: server.port,
@@ -93,6 +99,7 @@ log.info("boot", {
 process.on("SIGTERM", () => {
   clearInterval(sweep);
   tasks.stop();
+  budget.stop();
   listeners.closeAll(1001, "laf:hub_stopping");
   void Promise.race([
     Promise.all([server.stop(), mirror?.stop(), closeUploads(uploads)]),

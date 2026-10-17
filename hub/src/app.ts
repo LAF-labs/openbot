@@ -12,6 +12,7 @@ import {
 } from "../../shared/hub/protocol";
 import type { Logger } from "../../shared/log";
 import { type MemberVariables, requireMember } from "./auth";
+import { budgetRoutes } from "./budget";
 import type { HubDatabase } from "./db/client";
 import { hubMembers, hubWorkspace } from "./db/schema";
 import { createListeners, eventsSince, headSeq } from "./events";
@@ -19,6 +20,7 @@ import { type BlobMirror, countUnmirrored } from "./files/mirror";
 import { fileRoutes } from "./files/routes";
 import { fleetRoutes } from "./fleet";
 import { countIdempotency } from "./idempotency";
+import { jobRoutes } from "./jobs";
 import { memberRoutes } from "./members";
 import { memoryRoutes } from "./memory";
 import { roomRoutes } from "./rooms";
@@ -208,6 +210,8 @@ export function createHubApp(options: HubAppOptions) {
       ...(options.vaultLeaseMs ? { leaseMs: options.vaultLeaseMs } : {}),
     }),
   );
+  hub.route("/budget", budgetRoutes({ database, listeners, member }));
+  hub.route("/jobs", jobRoutes({ database, listeners, member }));
 
   hub.get(
     "/events",

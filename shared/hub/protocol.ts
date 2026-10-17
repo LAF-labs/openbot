@@ -96,6 +96,14 @@ export type HubMemberState = "active" | "left";
  *   whoever can see the task, since the job's own VM is not a member the hub knows yet.
  * - `vault.changed`: a company login was stored or changed, who may use it changed, or a VM
  *   verified itself on it. `refId` is the login id. Never a value: the VM asks `GET /vault`.
+ * - `budget.reached`: a reservation was refused because a scope's day is spent. `refId` is the
+ *   scope (`workspace`, `job:<id>`, `task:<id>`). Once per scope per day, and again after its limit
+ *   changes. The workspace's goes to everybody, so every VM stops starting runs; a job's or a task's
+ *   to the owners and admins, the job's owner and runner, and the member who was refused.
+ * - `job.changed`: a sub-Bot was registered, edited or removed. `refId` is the job id. Everybody:
+ *   the register holds no content.
+ * - `job.moved`: a sub-Bot's runner changed (its owner was handed on). `refId` is the job id. Seen
+ *   by the old runner, whose VM drops the job, and the new one, whose VM picks it up.
  */
 export const HUB_EVENT_TYPES = [
   "member.changed",
@@ -109,6 +117,9 @@ export const HUB_EVENT_TYPES = [
   "task.changed",
   "task.assigned",
   "vault.changed",
+  "budget.reached",
+  "job.changed",
+  "job.moved",
 ] as const;
 export type HubEventType = (typeof HUB_EVENT_TYPES)[number];
 
@@ -719,3 +730,119 @@ export type HubFleetLeft = {
   seq?: number;
   vault: { origins: string[] };
 };
+
+/**
+ * THE BUDGET LEDGER (`/hub/v1/budget`).
+ *
+ * The cost happens on a VM and is guarded there (a question's requests and dollars, the VM key's
+ * day). The hub keeps two numbers per run — what was set aside before it started and what it cost
+ * after — against a daily limit per scope, and says no before a run starts when any scope would go
+ * over. It never sees what a run did.
+ *
+ * A scope is `workspace` (the company, always counted, whether or not a reservation names it),
+ * `job:<id>` (a sub-Bot) or `task:<id>` (a task on the board). A day is a calendar day in Seoul.
+ */
+export type HubBudgetScope = "workspace" | `job:${string}` | `task:${string}`;
+
+/** The workspace's daily limit when an admin has set none: this much per active seat. */
+export const HUB_BUDGET_SEAT_DAILY_USD = 0.6;
+
+/** The day a reservation counts against. */
+export const HUB_BUDGET_TIME_ZONE = "Asia/Seoul";
+
+/**
+ * A reservation not settled within this long is marked expired by the sweep. It keeps counting at
+ * the amount reserved until its settle arrives: the VM may have spent it before it went quiet, and
+ * its settle comes through an outbox that outlives the hub and the network being down.
+ */
+export const HUB_BUDGET_RESERVATION_MS = 30 * 60 * 1000;
+
+/** How often the hub marks reservations that ran out. */
+export const HUB_BUDGET_SWEEP_MS = 60 * 1000;
+
+export const HUB_BUDGET_LIMITS = {
+  /** The most one reservation sets aside; a question's ceiling on the VM is $0.2. */
+  reserve: 10,
+  /** The most one settle may say a run cost. */
+  actual: 1_000,
+  /** The most a daily limit may be. */
+  daily: 100_000,
+  /** Scopes in one reservation: the workspace, a job and a task, with room for one more. */
+  scopes: 4,
+  /** Limits in one `PUT /budget/limits`. */
+  limits: 100,
+} as const;
+
+/** The facts the budget routes answer with, beside `HUB_FACTS`. */
+export const HUB_BUDGET_FACTS = {
+  /** A scope's day is spent: the run does not start. The answer names the scope. Not retried. */
+  reached: "laf:budget_reached",
+} as const;
+
+/** `POST /hub/v1/budget/reserve` refused: `scope` is the first scope that would go over. */
+export type HubBudgetReached = {
+  ok: false;
+  code: typeof HUB_BUDGET_FACTS.reached;
+  scope: HubBudgetScope;
+};
+
+export type HubBudgetEntryState = "reserved" | "settled" | "expired";
+
+/** One run's two numbers, as the reserve and settle routes answer. */
+export type HubBudgetEntry = {
+  runId: string;
+  scopes: HubBudgetScope[];
+  reserved: number;
+  actual: number | null;
+  state: HubBudgetEntryState;
+  /** `YYYY-MM-DD` in Seoul. */
+  day: string;
+};
+
+/**
+ * Today's numbers for one scope. `spent` is what settled runs cost plus what expired reservations
+ * set aside; `reserved` is what runs still going set aside. `limit` is null for a job or task with
+ * none, which means it is held only by the workspace's.
+ */
+export type HubBudgetLine = {
+  limit: number | null;
+  spent: number;
+  reserved: number;
+};
+
+/**
+ * `GET /hub/v1/budget`. The workspace's total is everybody's; `members` and `scopes` are every
+ * member's for an owner or admin, and only the asking member's own runs for anybody else.
+ */
+export type HubBudget = {
+  ok: true;
+  day: string;
+  workspace: HubBudgetLine & { limit: number; seats: number };
+  members: ({ member: string } & Omit<HubBudgetLine, "limit">)[];
+  scopes: ({ scope: HubBudgetScope } & HubBudgetLine)[];
+};
+
+/**
+ * A SUB-BOT (`/hub/v1/jobs`): a named, scheduled job that runs on one member's VM. The hub keeps
+ * only the register — who owns it, whose VM runs it, when, and its daily limit — never what it is
+ * told to do or what it found.
+ */
+export type HubJob = {
+  id: string;
+  name: string;
+  /** The member responsible for it. */
+  owner: string;
+  /** The member whose VM runs it; it follows the owner unless set apart. */
+  runner: string;
+  /** When it runs, as its VM writes it (a cron line or a sentence). */
+  schedule: string | null;
+  /** Its own daily limit (`job:<id>` in the ledger), or null for none. */
+  dailyUsd: number | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export const HUB_JOB_LIMITS = {
+  name: 100,
+  schedule: 200,
+} as const;
