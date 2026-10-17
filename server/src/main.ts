@@ -113,6 +113,7 @@ import { deploymentHealthProbes } from "./health";
 import { createLiveScreen, type SocketData } from "./live-screen";
 import { users } from "./db/schema";
 import { createHubRuntime } from "./hub";
+import { createCompanyVault } from "./hub/vault";
 import { log, recentLines } from "./log";
 import { createLoginVault } from "./logins/store";
 import { readApprovalMetrics } from "./notifications/approval-metrics";
@@ -832,6 +833,18 @@ const computerGateway = computerClient
       client: computerClient,
       projectOf: threadProjects.of,
       logins: loginVault,
+      // The company's logins, on a VM that belongs to one: leased from its hub for a run.
+      ...(hubRuntime
+        ? {
+            companyLogins: {
+              vault: createCompanyVault({
+                http: hubRuntime.http,
+                allowLoopbackHttp: config.computer?.allowPrivateHosts ?? false,
+              }),
+              allowLoopbackHttp: config.computer?.allowPrivateHosts ?? false,
+            },
+          }
+        : {}),
       /*
        * The trail, with one ear on it.
        *
