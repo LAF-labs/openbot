@@ -113,7 +113,7 @@ export function DocEditor({
   const last = state.rows.at(-1);
 
   return (
-    <div className="flex flex-col" data-doc-editor={docId}>
+    <div className="mt-6 flex flex-col" data-doc-editor={docId}>
       {state.notice ? (
         <div
           className="mb-3 flex items-start justify-between gap-3 rounded-md bg-muted px-3 py-2 text-sm"

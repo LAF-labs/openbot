@@ -41,19 +41,23 @@ function DocPage() {
   }
 
   return (
-    <PageShell title={doc.data?.doc.title || t("Document")}>
-      <Link
-        className={cn(
-          "mt-1 mb-8 inline-flex w-fit items-center gap-1 text-muted-foreground text-sm hover:text-foreground",
-          focusRingBare,
-        )}
-        data-doc-back
-        search={{ tab: "docs" }}
-        to="/company"
-      >
-        <IconArrowLeft className="size-4" />
-        {t("All documents")}
-      </Link>
+    <PageShell
+      back={
+        <Link
+          className={cn(
+            "inline-flex w-fit items-center gap-1 text-muted-foreground text-sm hover:text-foreground",
+            focusRingBare,
+          )}
+          data-doc-back
+          search={{ tab: "docs" }}
+          to="/company"
+        >
+          <IconArrowLeft className="size-4" />
+          {t("All documents")}
+        </Link>
+      }
+      title={doc.data?.doc.title || t("Document")}
+    >
       {configured ? (
         <DocEditor
           docId={docId}
