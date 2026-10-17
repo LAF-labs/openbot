@@ -456,6 +456,8 @@
   "server/tests/hub-outbox.integration.test.ts",
   "server/tests/hub-routes-ui.test.ts",
   "server/tests/hub-routes.test.ts",
+  "server/tests/hub-task-pickup.test.ts",
+  "server/tests/hub-task-run.integration.test.ts",
   "server/tests/hub-tools-head.test.ts",
   "server/tests/hub-tools.integration.test.ts",
   "server/tests/hub-tools.test.ts",

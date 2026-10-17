@@ -128,7 +128,7 @@ const runKeyOf = (runId: string) => `routine:${runId}`;
  * the letting-go does to the whole browser, and a browser that was not let go of is let go of by
  * the next run before it opens its own.
  */
-const LET_GO_MS = 15_000;
+export const LET_GO_MS = 15_000;
 
 /**
  * Something said to the computer on the run's way out, within the time allowed: the computer is
@@ -136,7 +136,7 @@ const LET_GO_MS = 15_000;
  * ignores its time goes on without the run and is sorted out by the gateway (`handovers.ts`,
  * `release`; `secrets.ts`, `runEnded`). Never throws.
  */
-async function inTime(
+export async function inTime(
   ms: number,
   said: (within: AbortSignal) => Promise<unknown>,
 ): Promise<void> {
