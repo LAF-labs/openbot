@@ -20,7 +20,13 @@
  * version it was typed against, and if somebody else saved meanwhile the save is refused (409) —
  * then the block is read again, reopened with theirs, and the person is told in one line.
  */
-import type { DocBlock, DocBlockKind, DocHold, DocOp, OpenDoc } from "@/lib/hub/docs";
+import type {
+  DocBlock,
+  DocBlockKind,
+  DocHold,
+  DocOp,
+  OpenDoc,
+} from "@/lib/hub/docs";
 import { isStaleSave } from "@/lib/hub/docs";
 import { RequestRefusedError } from "@/lib/refusals";
 import {
@@ -65,7 +71,11 @@ export type DocDoors = {
   unlock: (blockId: string) => Promise<void>;
 };
 
-type Patch = { text?: string; kind?: DocBlockKind; attrs?: Record<string, unknown> };
+type Patch = {
+  text?: string;
+  kind?: DocBlockKind;
+  attrs?: Record<string, unknown>;
+};
 
 export type DocTimers = LockClock & {
   setTimeout: (run: () => void, ms: number) => unknown;
@@ -110,13 +120,18 @@ export function tableRows(block: Pick<DocBlock, "text" | "attrs">): string[][] {
     Array.isArray(rows) &&
     rows.length > 0 &&
     rows.every(
-      (row) => Array.isArray(row) && row.every((cell) => typeof cell === "string"),
+      (row) =>
+        Array.isArray(row) && row.every((cell) => typeof cell === "string"),
     )
   ) {
     return rows as string[][];
   }
   const lines = block.text.split("\n").filter((line) => line.trim() !== "");
-  if (lines.length === 0) return [["", ""], ["", ""]];
+  if (lines.length === 0)
+    return [
+      ["", ""],
+      ["", ""],
+    ];
   return lines.map((line) => line.split("|").map((cell) => cell.trim()));
 }
 
@@ -127,7 +142,13 @@ export function tableText(rows: readonly (readonly string[])[]): string {
 
 function attrsFor(kind: DocBlockKind): Record<string, unknown> {
   if (kind === "check") return { checked: false };
-  if (kind === "table") return { rows: [["", ""], ["", ""]] };
+  if (kind === "table")
+    return {
+      rows: [
+        ["", ""],
+        ["", ""],
+      ],
+    };
   return {};
 }
 
@@ -166,7 +187,6 @@ export function createDocController(options: {
   let composing = false;
   let queue: Promise<void> = Promise.resolve();
   let readTimer: unknown = null;
-  let disposed = false;
 
   const set = (next: Partial<DocState>) => {
     state = { ...state, ...next };
@@ -176,7 +196,9 @@ export function createDocController(options: {
   const rowOf = (key: string) => state.rows.find((row) => row.key === key);
 
   const updateRow = (key: string, change: (row: DocRow) => DocRow) => {
-    set({ rows: state.rows.map((row) => (row.key === key ? change(row) : row)) });
+    set({
+      rows: state.rows.map((row) => (row.key === key ? change(row) : row)),
+    });
   };
 
   const holderOf = (blockId: string): string | null =>
@@ -204,7 +226,6 @@ export function createDocController(options: {
     undo: () => void = () => {},
   ) => {
     queue = queue.then(async () => {
-      if (disposed) return;
       const ops = build();
       if (!ops || ops.length === 0) return;
       try {
@@ -272,7 +293,12 @@ export function createDocController(options: {
     const patch = drafts.get(key);
     if (!row || row.isNew || !patch) return null;
     drafts.delete(key);
-    return { op: "replace", id: row.block.id, version: row.block.version, ...patch };
+    return {
+      op: "replace",
+      id: row.block.id,
+      version: row.block.version,
+      ...patch,
+    };
   };
 
   const save = (key: string) => {
@@ -368,7 +394,7 @@ export function createDocController(options: {
           refused(error);
           return;
         }
-      } while (readAgain && !disposed);
+      } while (readAgain);
     })();
     await reading;
     reading = null;
@@ -443,38 +469,38 @@ export function createDocController(options: {
 
   /** A new block after `key`, drawn now and sent in turn; the caret goes into it. */
   const insertAfter = (
-    key: string,
+    key: string | null,
     kind: DocBlockKind,
     text: string,
     attrs: Record<string, unknown> = attrsFor(kind),
   ) => {
-    const row = rowOf(key);
-    if (!row) return;
+    if (key !== null && !rowOf(key)) return;
     const fresh: DocRow = {
       key: newKey(),
       block: { id: "", kind, text, attrs, version: 0, hash: "" },
       isNew: true,
       reset: 0,
     };
-    const index = state.rows.findIndex((one) => one.key === key);
+    const index =
+      key === null ? -1 : state.rows.findIndex((one) => one.key === key);
     const rows = [...state.rows];
     rows.splice(index + 1, 0, fresh);
     lock.release();
     set({ rows, activeKey: WRITABLE.has(kind) ? fresh.key : null, caret: 0 });
-    cancelSave(key);
+    if (key !== null) cancelSave(key);
     enqueue(
       () => {
-        const anchor = rowOf(key);
+        const anchor = key === null ? null : rowOf(key);
         const now = rowOf(fresh.key);
-        if (!anchor || anchor.isNew || !now) return null;
+        if ((key !== null && (!anchor || anchor.isNew)) || !now) return null;
         const ops: DocOp[] = [];
-        const replace = replaceOp(key);
+        const replace = key === null ? null : replaceOp(key);
         if (replace) ops.push(replace);
         const typed = drafts.get(fresh.key);
         drafts.delete(fresh.key);
         ops.push({
           op: "insert_after",
-          id: anchor.block.id,
+          id: anchor ? anchor.block.id : null,
           kind: typed?.kind ?? now.block.kind,
           text: typed?.text ?? now.block.text,
           attrs: typed?.attrs ?? now.block.attrs,
@@ -482,10 +508,11 @@ export function createDocController(options: {
         return ops;
       },
       (blocks) => {
-        const anchorId = rowOf(key)?.block.id;
-        const made = blocks.find((block) => block.id !== anchorId) ?? blocks.at(-1);
+        const anchorId = key === null ? null : rowOf(key)?.block.id;
+        const made =
+          blocks.find((block) => block.id !== anchorId) ?? blocks.at(-1);
         const replaced = blocks.find((block) => block.id === anchorId);
-        if (replaced) took(key, replaced);
+        if (key !== null && replaced) took(key, replaced);
         took(fresh.key, made);
         if (state.activeKey === fresh.key) holdFor(fresh.key);
         if (drafts.has(fresh.key)) scheduleSave(fresh.key);
@@ -526,7 +553,9 @@ export function createDocController(options: {
     enqueue(
       () => {
         const last = known.get(key);
-        return last ? [{ op: "delete", id: last.id, version: last.version }] : null;
+        return last
+          ? [{ op: "delete", id: last.id, version: last.version }]
+          : null;
       },
       () => {},
     );
@@ -559,10 +588,15 @@ export function createDocController(options: {
         const replace = replaceOp(above.key);
         const ops: DocOp[] = replace ? [replace] : [];
         const last = known.get(key);
-        if (last) ops.push({ op: "delete", id: last.id, version: last.version });
+        if (last)
+          ops.push({ op: "delete", id: last.id, version: last.version });
         return ops;
       },
-      (blocks) => took(above.key, blocks.find((block) => block.id === above.block.id)),
+      (blocks) =>
+        took(
+          above.key,
+          blocks.find((block) => block.id === above.block.id),
+        ),
     );
   };
 
@@ -579,18 +613,24 @@ export function createDocController(options: {
     updateRow(key, (one) => ({ ...one, reset: one.reset + 1 }));
     void save(key);
     // A divider has no box: writing goes on in a new block under it, as in Notion.
-    if (!WRITABLE.has(kind) && kind !== "table") insertAfter(key, "paragraph", "");
+    if (!WRITABLE.has(kind) && kind !== "table")
+      insertAfter(key, "paragraph", "");
   };
 
   const toggleCheck = (key: string) => {
     const row = rowOf(key);
     if (!row || holderOf(row.block.id)) return;
-    draft(key, { attrs: { ...row.block.attrs, checked: row.block.attrs.checked !== true } });
+    draft(key, {
+      attrs: { ...row.block.attrs, checked: row.block.attrs.checked !== true },
+    });
     void save(key);
   };
 
   const setTable = (key: string, rows: string[][]) => {
-    draft(key, { attrs: { ...rowOf(key)?.block.attrs, rows }, text: tableText(rows) });
+    draft(key, {
+      attrs: { ...rowOf(key)?.block.attrs, rows },
+      text: tableText(rows),
+    });
     scheduleSave(key);
   };
 
@@ -642,11 +682,16 @@ export function createDocController(options: {
     },
     /** Waits until everything queued so far has been answered (for tests and for leaving). */
     settled: () => queue,
-    dispose() {
-      for (const key of [...saveTimers.keys()]) void save(key);
+    /**
+     * The page is going: what was typed is sent now and the hold let go. Not final — React's
+     * strict mode closes a page's effects and opens them again, and the same controller goes on.
+     */
+    close() {
+      for (const key of [...drafts.keys()]) void save(key);
       lock.release();
-      disposed = true;
+      if (state.activeKey) set({ activeKey: null });
       if (readTimer !== null) timers.clearTimeout(readTimer);
+      readTimer = null;
     },
   };
 }

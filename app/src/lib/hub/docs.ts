@@ -171,17 +171,21 @@ export const docListQueryOptions = () =>
     },
   });
 
+/** One document, asked now — the editor's own read after a frame or a refused save. */
+export async function readDoc(id: string): Promise<OpenDoc> {
+  return readOpenDoc(
+    await requestOrRefusal(
+      `/api/hub/docs/${encodeURIComponent(id)}`,
+      undefined,
+    ),
+  );
+}
+
 export const openDocQueryOptions = (id: string) =>
   queryOptions({
     retry: RETRIES,
     queryKey: docKeys.doc(id),
-    queryFn: async () =>
-      readOpenDoc(
-        await requestOrRefusal(
-          `/api/hub/docs/${encodeURIComponent(id)}`,
-          undefined,
-        ),
-      ),
+    queryFn: () => readDoc(id),
   });
 
 /* ── the screen's writes ─────────────────────────────────────────────────────────────────────── */
@@ -220,7 +224,8 @@ export async function saveBlocks(
     { ops },
     key,
   );
-  const blocks = isRecord(body) && Array.isArray(body.blocks) ? body.blocks : [];
+  const blocks =
+    isRecord(body) && Array.isArray(body.blocks) ? body.blocks : [];
   return blocks
     .map(readBlock)
     .filter((block): block is DocBlock => block !== null);

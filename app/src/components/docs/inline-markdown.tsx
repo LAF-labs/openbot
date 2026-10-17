@@ -69,7 +69,11 @@ export function inlinePieces(source: string): InlinePiece[] {
         const href = source.slice(close + 2, end);
         if (SAFE_HREF.test(href)) {
           flush();
-          pieces.push({ kind: "link", text: source.slice(at + 1, close), href });
+          pieces.push({
+            kind: "link",
+            text: source.slice(at + 1, close),
+            href,
+          });
           at = end + 1;
           continue;
         }
