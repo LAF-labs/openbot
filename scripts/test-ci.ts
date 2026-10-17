@@ -3391,6 +3391,18 @@ const GROUPS: readonly {
    * where to read on, ranking, a Latin word's case, wildcards as characters, old versions and
    * deleted files, the trail, five bad requests); visibility-property.test.ts 3 (three seeds of
    * members, tasks and files, every way of asking). 46 and 65 is 111.
+   *
+   * RAISED 2026-10-17 FOR TEAM DOCUMENTS, from 111 to 184: docs.test.ts 23 (made from markdown and
+   * read back, two members on two blocks at once, two and eight saves racing on one block, a held
+   * block refusing 라피 and another member, a stale hash, a run without a hash, all or none,
+   * inserts, a move and a delete, a renumbering, search right after a save, a snapshot, a private
+   * document by every route, holds on the sockets that may see them, events and the trail, a
+   * repeated key, deleting, renaming, the list's pages, four bad documents); doc-markdown.test.ts 40 (every kind
+   * back as it went, one document of every kind, eleven paragraphs that look like syntax, a list
+   * item with a box, marker-like lines, a paragraph with list lines, the marker, unmarked reading,
+   * a hash that does not move, seven refusals, a table squared); doc-rank.test.ts 10 (the first
+   * ranks, 500 inserts at one place, out of order, a full digit, four even spreads, two holds).
+   * 111 and 73 is 184.
    */
   /*
    * RAISED 2026-10-16 FOR THE HUB'S FIX ROUND, from 46 to 50: a ping that throws kept inside its
