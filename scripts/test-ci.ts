@@ -3255,6 +3255,15 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * .integration.test.ts, 3: a post sent once with its row's key, a write kept through an outage and
  * sent once after, a refusal ended); and the head of the prompt the same bytes with and without
  * the hub, and no hub tool without the pass (hub-tools-head.test.ts, 3). 4747 and 28.
+ *
+ * RAISED 2026-10-17 FOR 라피 TAKING THE TASKS GIVEN TO IT: `server` by twenty-one (to 4796) — the
+ * pickup against an in-memory board that keeps the hub's claim rules (hub-task-pickup.test.ts, 16:
+ * taken, run once and moved with its note; blocked on a yes; not somebody else's; two VMs racing;
+ * a crash mid-run, the sweep and the next boot; a finished run reported and not run again; a claim
+ * lost under the run; its own release not taken again; the six notes and the one-line cut; what the
+ * line delivers); and the run on a real Postgres (hub-task-run.integration.test.ts, 5: a routine's
+ * run in a project named after the task, its head a routine's byte for byte, a stop on a yes kept
+ * to its topic, one conversation for two runs, an unsettled run not reported). 4775 and 21.
  */
 const GROUPS: readonly {
   name: string;
@@ -3262,7 +3271,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4775, roots: ["server"] },
+  { name: "server", floor: 4796, roots: ["server"] },
   { name: "app", floor: 2543, roots: ["app"] },
   {
     name: "agent-computer",
