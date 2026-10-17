@@ -15,6 +15,13 @@
       "when": 1792140189412,
       "tag": "0001_hub_tasks",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792218413919,
+      "tag": "0002_hub_budget",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1079 @@
+{
+  "id": "6163b740-3fa0-4ef8-97ee-f1d7b6f13ee8",
+  "prevId": "da2cec4a-de72-416d-9163-eaf7997c62f4",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.hub_audit": {
+      "name": "hub_audit",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "member": {
+          "name": "member",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vm_origin": {
+          "name": "vm_origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target": {
+          "name": "target",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "hub_audit_at": {
+          "name": "hub_audit_at",
+          "columns": [
+            {
+              "expression": "at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.hub_budget_entries": {
+      "name": "hub_budget_entries",
+      "schema": "",
+      "columns": {
+        "member": {
+          "name": "member",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scopes": {
+          "name": "scopes",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reserved": {
+          "name": "reserved",
+          "type": "numeric(14, 6)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actual": {
+          "name": "actual",
+          "type": "numeric(14, 6)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "day": {
+          "name": "day",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reserved_at": {
+          "name": "reserved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "settled_at": {
+          "name": "settled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expired_at": {
+          "name": "expired_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "hub_budget_entries_day": {
+          "name": "hub_budget_entries_day",
+          "columns": [
+            {
+              "expression": "day",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "hub_budget_entries_open": {
+          "name": "hub_budget_entries_open",
+          "columns": [
+            {
+              "expression": "reserved_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"hub_budget_entries\".\"state\" = 'reserved'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "hub_budget_entries_member_hub_members_id_fk": {
+          "name": "hub_budget_entries_member_hub_members_id_fk",
+          "tableFrom": "hub_budget_entries",
+          "tableTo": "hub_members",
+          "columnsFrom": ["member"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "hub_budget_entries_member_run_id_pk": {
+          "name": "hub_budget_entries_member_run_id_pk",
+          "columns": ["member", "run_id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "hub_budget_entries_state": {
+          "name": "hub_budget_entries_state",
+          "value": "\"hub_budget_entries\".\"state\" in ('reserved', 'settled', 'expired')"
+        },
+        "hub_budget_entries_settled": {
+          "name": "hub_budget_entries_settled",
+          "value": "(\"hub_budget_entries\".\"state\" = 'settled') = (\"hub_budget_entries\".\"actual\" is not null)"
+        },
+        "hub_budget_entries_amounts": {
+          "name": "hub_budget_entries_amounts",
+          "value": "\"hub_budget_entries\".\"reserved\" >= 0 and (\"hub_budget_entries\".\"actual\" is null or \"hub_budget_entries\".\"actual\" >= 0)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.hub_budget_limits": {
+      "name": "hub_budget_limits",
+      "schema": "",
+      "columns": {
+        "scope_kind": {
+          "name": "scope_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scope_id": {
+          "name": "scope_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "daily_usd": {
+          "name": "daily_usd",
+          "type": "numeric(14, 6)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "hub_budget_limits_updated_by_hub_members_id_fk": {
+          "name": "hub_budget_limits_updated_by_hub_members_id_fk",
+          "tableFrom": "hub_budget_limits",
+          "tableTo": "hub_members",
+          "columnsFrom": ["updated_by"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "hub_budget_limits_scope_kind_scope_id_pk": {
+          "name": "hub_budget_limits_scope_kind_scope_id_pk",
+          "columns": ["scope_kind", "scope_id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "hub_budget_limits_kind": {
+          "name": "hub_budget_limits_kind",
+          "value": "\"hub_budget_limits\".\"scope_kind\" in ('workspace', 'job', 'task')"
+        },
+        "hub_budget_limits_id": {
+          "name": "hub_budget_limits_id",
+          "value": "(\"hub_budget_limits\".\"scope_kind\" = 'workspace') = (\"hub_budget_limits\".\"scope_id\" = '')"
+        },
+        "hub_budget_limits_usd": {
+          "name": "hub_budget_limits_usd",
+          "value": "\"hub_budget_limits\".\"daily_usd\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.hub_events": {
+      "name": "hub_events",
+      "schema": "",
+      "columns": {
+        "seq": {
+          "name": "seq",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ref_id": {
+          "name": "ref_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor": {
+          "name": "actor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "visible_to": {
+          "name": "visible_to",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "hub_events_budget_reached": {
+          "name": "hub_events_budget_reached",
+          "columns": [
+            {
+              "expression": "ref_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"hub_events\".\"type\" = 'budget.reached'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "hub_events_actor_hub_members_id_fk": {
+          "name": "hub_events_actor_hub_members_id_fk",
+          "tableFrom": "hub_events",
+          "tableTo": "hub_members",
+          "columnsFrom": ["actor"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.hub_idempotency": {
+      "name": "hub_idempotency",
+      "schema": "",
+      "columns": {
+        "member": {
+          "name": "member",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "body": {
+          "name": "body",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "hub_idempotency_at": {
+          "name": "hub_idempotency_at",
+          "columns": [
+            {
+              "expression": "at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "hub_idempotency_member_key_pk": {
+          "name": "hub_idempotency_member_key_pk",
+          "columns": ["member", "key"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.hub_jobs": {
+      "name": "hub_jobs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner": {
+          "name": "owner",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "runner": {
+          "name": "runner",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "schedule": {
+          "name": "schedule",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "hub_jobs_runner": {
+          "name": "hub_jobs_runner",
+          "columns": [
+            {
+              "expression": "runner",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "hub_jobs_owner_hub_members_id_fk": {
+          "name": "hub_jobs_owner_hub_members_id_fk",
+          "tableFrom": "hub_jobs",
+          "tableTo": "hub_members",
+          "columnsFrom": ["owner"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "hub_jobs_runner_hub_members_id_fk": {
+          "name": "hub_jobs_runner_hub_members_id_fk",
+          "tableFrom": "hub_jobs",
+          "tableTo": "hub_members",
+          "columnsFrom": ["runner"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "hub_jobs_created_by_hub_members_id_fk": {
+          "name": "hub_jobs_created_by_hub_members_id_fk",
+          "tableFrom": "hub_jobs",
+          "tableTo": "hub_members",
+          "columnsFrom": ["created_by"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.hub_members": {
+      "name": "hub_members",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vm_origin": {
+          "name": "vm_origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vm_key_hash": {
+          "name": "vm_key_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prev_key_hash": {
+          "name": "prev_key_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "prev_key_until": {
+          "name": "prev_key_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "joined_at": {
+          "name": "joined_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "left_at": {
+          "name": "left_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "hub_members_prev_key_hash": {
+          "name": "hub_members_prev_key_hash",
+          "columns": [
+            {
+              "expression": "prev_key_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "hub_members_email_unique": {
+          "name": "hub_members_email_unique",
+          "nullsNotDistinct": false,
+          "columns": ["email"]
+        },
+        "hub_members_vm_origin_unique": {
+          "name": "hub_members_vm_origin_unique",
+          "nullsNotDistinct": false,
+          "columns": ["vm_origin"]
+        },
+        "hub_members_vm_key_hash_unique": {
+          "name": "hub_members_vm_key_hash_unique",
+          "nullsNotDistinct": false,
+          "columns": ["vm_key_hash"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "hub_members_role": {
+          "name": "hub_members_role",
+          "value": "\"hub_members\".\"role\" in ('owner', 'admin', 'member')"
+        },
+        "hub_members_state": {
+          "name": "hub_members_state",
+          "value": "\"hub_members\".\"state\" in ('active', 'left')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.hub_task_members": {
+      "name": "hub_task_members",
+      "schema": "",
+      "columns": {
+        "task_id": {
+          "name": "task_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "member_id": {
+          "name": "member_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "hub_task_members_member": {
+          "name": "hub_task_members_member",
+          "columns": [
+            {
+              "expression": "member_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "hub_task_members_member_id_hub_members_id_fk": {
+          "name": "hub_task_members_member_id_hub_members_id_fk",
+          "tableFrom": "hub_task_members",
+          "tableTo": "hub_members",
+          "columnsFrom": ["member_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "hub_task_members_task_id_member_id_pk": {
+          "name": "hub_task_members_task_id_member_id_pk",
+          "columns": ["task_id", "member_id"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.hub_task_notes": {
+      "name": "hub_task_notes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "by": {
+          "name": "by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "text": {
+          "name": "text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "hub_task_notes_task": {
+          "name": "hub_task_notes_task",
+          "columns": [
+            {
+              "expression": "task_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "hub_task_notes_task_id_hub_tasks_id_fk": {
+          "name": "hub_task_notes_task_id_hub_tasks_id_fk",
+          "tableFrom": "hub_task_notes",
+          "tableTo": "hub_tasks",
+          "columnsFrom": ["task_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.hub_tasks": {
+      "name": "hub_tasks",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stage": {
+          "name": "stage",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'todo'"
+        },
+        "visibility": {
+          "name": "visibility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'company'"
+        },
+        "assignee": {
+          "name": "assignee",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "assigned_by": {
+          "name": "assigned_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "checkout_run_id": {
+          "name": "checkout_run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "checkout_by": {
+          "name": "checkout_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lock_expires_at": {
+          "name": "lock_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "rank": {
+          "name": "rank",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "done_at": {
+          "name": "done_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "hub_tasks_created": {
+          "name": "hub_tasks_created",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "hub_tasks_lock": {
+          "name": "hub_tasks_lock",
+          "columns": [
+            {
+              "expression": "lock_expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"hub_tasks\".\"checkout_run_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "hub_tasks_assigned_by_hub_members_id_fk": {
+          "name": "hub_tasks_assigned_by_hub_members_id_fk",
+          "tableFrom": "hub_tasks",
+          "tableTo": "hub_members",
+          "columnsFrom": ["assigned_by"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "hub_tasks_created_by_hub_members_id_fk": {
+          "name": "hub_tasks_created_by_hub_members_id_fk",
+          "tableFrom": "hub_tasks",
+          "tableTo": "hub_members",
+          "columnsFrom": ["created_by"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "hub_tasks_checkout_by_hub_members_id_fk": {
+          "name": "hub_tasks_checkout_by_hub_members_id_fk",
+          "tableFrom": "hub_tasks",
+          "tableTo": "hub_members",
+          "columnsFrom": ["checkout_by"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "hub_tasks_stage": {
+          "name": "hub_tasks_stage",
+          "value": "\"hub_tasks\".\"stage\" in ('todo', 'doing', 'review', 'blocked', 'done')"
+        },
+        "hub_tasks_visibility": {
+          "name": "hub_tasks_visibility",
+          "value": "\"hub_tasks\".\"visibility\" = 'company' or \"hub_tasks\".\"visibility\" like 'me:_%' or \"hub_tasks\".\"visibility\" like 'task:_%'"
+        },
+        "hub_tasks_assignee": {
+          "name": "hub_tasks_assignee",
+          "value": "\"hub_tasks\".\"assignee\" is null or \"hub_tasks\".\"assignee\" like 'm:_%' or \"hub_tasks\".\"assignee\" like 'bot:_%' or \"hub_tasks\".\"assignee\" like 'job:_%'"
+        },
+        "hub_tasks_checkout": {
+          "name": "hub_tasks_checkout",
+          "value": "(\"hub_tasks\".\"checkout_run_id\" is null) = (\"hub_tasks\".\"lock_expires_at\" is null) and (\"hub_tasks\".\"checkout_run_id\" is null) = (\"hub_tasks\".\"checkout_by\" is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.hub_workspace": {
+      "name": "hub_workspace",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "one": {
+          "name": "one",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "plan": {
+          "name": "plan",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "hub_workspace_one_unique": {
+          "name": "hub_workspace_one_unique",
+          "nullsNotDistinct": false,
+          "columns": ["one"]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "hub_workspace_one": {
+          "name": "hub_workspace_one",
+          "value": "\"hub_workspace\".\"one\""
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
