@@ -3285,6 +3285,15 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `server` by two more (to 4883 on top of 4881): a write meeting a refused pass is said as that,
  * not as kept — with no row when it was known before (hub-tools.test.ts), the row waiting when the
  * hub's 401 came during the write (hub-tools.integration.test.ts).
+ *
+ * RAISED 2026-10-17 FOR 업무판, THE COMPANY'S TASK BOARD: `server` by twenty (to 4789) — its doors
+ * against a fake hub (hub-routes-ui-tasks.test.ts: four doors answering "no company" unasked, the
+ * board read once with the pass and only its named query fields, three bad queries and a climbing
+ * id refused unsent, a new task as the person with only the board's fields, five bad fields refused,
+ * a move with its version and no run, a move with no version refused, a stale move's 409 kept, a
+ * refused pass a 502, a note as the person); `app` by forty-four (to 2608): the columns, the rank
+ * between neighbours and the menu's steps, every note code in words, who a task is given to, the
+ * task frames (hub-tasks.test.ts, 34), and the room's working line (hub-room-working.test.ts, 10).
  */
 const GROUPS: readonly {
   name: string;
