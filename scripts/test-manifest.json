@@ -317,6 +317,7 @@
   "hub/tests/events-socket.test.ts",
   "hub/tests/fleet.test.ts",
   "hub/tests/job-handoff.test.ts",
+  "hub/tests/job-tasks.test.ts",
   "hub/tests/sync.test.ts",
   "hub/tests/task-approvals.test.ts",
   "hub/tests/tasks.test.ts",

@@ -21,6 +21,7 @@ import type { HubDatabase, HubTransaction } from "./db/client";
 import { hubBudgetLimits, hubJobs, hubMembers } from "./db/schema";
 import { emitEvent, type Listeners } from "./events";
 import { addHandoffRoutes, noteJobMove } from "./job-handoff";
+import { freeMovedJobClaims } from "./tasks";
 
 /**
  * The sub-Bot register: which named, scheduled jobs exist, who owns each, whose VM runs it, when,
@@ -285,6 +286,7 @@ export function jobRoutes(options: JobRouteOptions) {
         });
         if (runner !== row.runner) {
           await noteJobMove(tx, id, row.runner, runner);
+          await freeMovedJobClaims(tx, id, row.runner, self.id);
           seq = await emitEvent(tx, {
             type: "job.moved",
             refId: id,
