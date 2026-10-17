@@ -133,6 +133,8 @@ export type Listener = {
   close(code: number, reason: string): void;
   /** Close the socket when its pass stops working. */
   expireAt(until: Date): void;
+  /** Sends a light frame as it is (a document hold): not an event, not numbered, not kept. */
+  send(frame: string): void;
 };
 
 export function createListeners() {
@@ -165,6 +167,17 @@ export function createListeners() {
           // A pass the row no longer holds at all — the grace hash a second rotation displaced.
           // HTTP refuses it from this commit on, so its socket goes now, not at its old timer.
           listener.close(code, reason);
+        }
+      }
+    },
+    /**
+     * A light frame to the sockets of `audience` (null: every member). Only what can be lost — a
+     * VM that misses one learns the same from its next read.
+     */
+    sendTo(audience: readonly string[] | null, frame: string): void {
+      for (const listener of listeners) {
+        if (audience === null || audience.includes(listener.member)) {
+          listener.send(frame);
         }
       }
     },

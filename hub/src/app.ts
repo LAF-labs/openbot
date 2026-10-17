@@ -15,6 +15,8 @@ import { type MemberVariables, requireMember } from "./auth";
 import { budgetRoutes } from "./budget";
 import type { HubDatabase } from "./db/client";
 import { hubMembers, hubWorkspace } from "./db/schema";
+import { createDocLocks } from "./docs/locks";
+import { docRoutes } from "./docs/routes";
 import { createListeners, eventsSince, headSeq } from "./events";
 import { type BlobMirror, countUnmirrored } from "./files/mirror";
 import { fileRoutes } from "./files/routes";
@@ -145,6 +147,10 @@ export function createHubApp(options: HubAppOptions) {
       ...(options.fileMaxBytes ? { fileMaxBytes: options.fileMaxBytes } : {}),
       ...(options.mirror ? { onBlobWritten: options.mirror.kick } : {}),
     }),
+  );
+  hub.route(
+    "/docs",
+    docRoutes({ database, listeners, member, locks: createDocLocks() }),
   );
   hub.route("/search", searchRoute({ database, member, filesDir }));
 

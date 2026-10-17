@@ -168,6 +168,13 @@ export function eventSocket(input: {
             poke: () => void pull(socket),
             close: (code, reason) => closeSafely(socket, code, reason),
             expireAt,
+            send: (frame) => {
+              try {
+                socket.send(frame);
+              } catch {
+                // A socket that cannot be written to is closing; its close handler runs either way.
+              }
+            },
           });
           if (member.passUntil) expireAt(member.passUntil);
           pings = startPings({
