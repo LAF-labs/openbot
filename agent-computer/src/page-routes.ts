@@ -8,6 +8,7 @@
  */
 import type { Page } from "playwright";
 import type { BotRoute } from "./computer";
+import { stepDeadline } from "./core-share";
 import { actionFailure } from "./failures";
 import { holdsFilled } from "./filled-values";
 import { arrivalNote, arrivalOf, pictureOf } from "./page-arrival";
@@ -119,7 +120,7 @@ async function pictureOfTab(target: Page): Promise<Buffer | undefined> {
     try {
       return await target.screenshot({
         type: "png",
-        timeout: SCREENSHOT_WAIT_MS,
+        timeout: stepDeadline(SCREENSHOT_WAIT_MS),
       });
     } catch (error) {
       if (!(error instanceof Error && error.name === "TimeoutError")) {

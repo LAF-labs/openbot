@@ -12,6 +12,7 @@ import {
   resolvedNavigationTarget,
 } from "../../shared/net/navigation-target";
 import type { BotRoute } from "./computer";
+import { stepDeadline } from "./core-share";
 import { deploymentEgress } from "./egress";
 import { log } from "./log";
 import {
@@ -355,7 +356,8 @@ export const navigate: BotRoute = async (
     opening = true;
     const response = await target.goto(asked.url, {
       waitUntil: "domcontentloaded",
-      timeout: config.navigationTimeoutMs,
+      // Longer on a machine the hypervisor is holding back (core-share.ts).
+      timeout: stepDeadline(config.navigationTimeoutMs),
       ...(referer ? { referer } : {}),
     });
     opening = false;

@@ -19,6 +19,7 @@ import {
   withNames,
 } from "./aria-snapshot";
 import { VIEWPORT } from "./browser-identity";
+import { stepDeadline } from "./core-share";
 import {
   type Arrival,
   arrivalNote,
@@ -176,7 +177,8 @@ export async function snapshotPage(
   target: Page,
   tabs: () => Promise<TabSummary[]>,
 ): Promise<Snapshot> {
-  const deadline = Date.now() + SNAPSHOT_DEADLINE_MS;
+  // Longer on a machine the hypervisor is holding back (core-share.ts); the same everywhere else.
+  const deadline = Date.now() + stepDeadline(SNAPSHOT_DEADLINE_MS);
   session.snapshotId += 1;
   // A tab that opened a moment ago is still `about:blank`, and an aria snapshot of that is an empty
   // list — which reads as "there is nothing on this page you can act on".
