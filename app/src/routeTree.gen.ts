@@ -53,6 +53,7 @@ import { Route as AuthedAppAgentsIndexRouteImport } from './routes/_authed/_app/
 import { Route as AuthedAppApproveApprovalIdRouteImport } from './routes/_authed/_app/approve/$approvalId'
 import { Route as AuthedAppChannelChannelIdRouteImport } from './routes/_authed/_app/channel/$channelId'
 import { Route as AuthedAppChannelNewRouteImport } from './routes/_authed/_app/channel/new'
+import { Route as AuthedAppCompanyTasksRouteImport } from './routes/_authed/_app/company.tasks'
 
 const AuthedRoute = AuthedRouteImport.update({
   id: '/_authed',
@@ -275,6 +276,11 @@ const AuthedAppChannelNewRoute = AuthedAppChannelNewRouteImport.update({
   path: '/channel/new',
   getParentRoute: () => AuthedAppRoute,
 } as any)
+const AuthedAppCompanyTasksRoute = AuthedAppCompanyTasksRouteImport.update({
+  id: '/tasks',
+  path: '/tasks',
+  getParentRoute: () => AuthedAppCompanyRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthedAppIndexRoute
@@ -289,7 +295,7 @@ export interface FileRoutesByFullPath {
   '/welcome': typeof AuthedWelcomeRoute
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/terms': typeof LegalTermsRoute
-  '/company': typeof AuthedAppCompanyRoute
+  '/company': typeof AuthedAppCompanyRouteWithChildren
   '/feed': typeof AuthedAppFeedRoute
   '/goals': typeof AuthedAppGoalsRoute
   '/help': typeof AuthedAppHelpRoute
@@ -318,6 +324,7 @@ export interface FileRoutesByFullPath {
   '/approve/$approvalId': typeof AuthedAppApproveApprovalIdRoute
   '/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
   '/channel/new': typeof AuthedAppChannelNewRoute
+  '/company/tasks': typeof AuthedAppCompanyTasksRoute
   '/agents/': typeof AuthedAppAgentsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -331,7 +338,7 @@ export interface FileRoutesByTo {
   '/welcome': typeof AuthedWelcomeRoute
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/terms': typeof LegalTermsRoute
-  '/company': typeof AuthedAppCompanyRoute
+  '/company': typeof AuthedAppCompanyRouteWithChildren
   '/feed': typeof AuthedAppFeedRoute
   '/goals': typeof AuthedAppGoalsRoute
   '/help': typeof AuthedAppHelpRoute
@@ -360,6 +367,7 @@ export interface FileRoutesByTo {
   '/approve/$approvalId': typeof AuthedAppApproveApprovalIdRoute
   '/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
   '/channel/new': typeof AuthedAppChannelNewRoute
+  '/company/tasks': typeof AuthedAppCompanyTasksRoute
   '/agents': typeof AuthedAppAgentsIndexRoute
 }
 export interface FileRoutesById {
@@ -377,7 +385,7 @@ export interface FileRoutesById {
   '/_authed/welcome': typeof AuthedWelcomeRoute
   '/legal/privacy': typeof LegalPrivacyRoute
   '/legal/terms': typeof LegalTermsRoute
-  '/_authed/_app/company': typeof AuthedAppCompanyRoute
+  '/_authed/_app/company': typeof AuthedAppCompanyRouteWithChildren
   '/_authed/_app/feed': typeof AuthedAppFeedRoute
   '/_authed/_app/goals': typeof AuthedAppGoalsRoute
   '/_authed/_app/help': typeof AuthedAppHelpRoute
@@ -407,6 +415,7 @@ export interface FileRoutesById {
   '/_authed/_app/approve/$approvalId': typeof AuthedAppApproveApprovalIdRoute
   '/_authed/_app/channel/$channelId': typeof AuthedAppChannelChannelIdRoute
   '/_authed/_app/channel/new': typeof AuthedAppChannelNewRoute
+  '/_authed/_app/company/tasks': typeof AuthedAppCompanyTasksRoute
   '/_authed/_app/agents/': typeof AuthedAppAgentsIndexRoute
 }
 export interface FileRouteTypes {
@@ -453,6 +462,7 @@ export interface FileRouteTypes {
     | '/approve/$approvalId'
     | '/channel/$channelId'
     | '/channel/new'
+    | '/company/tasks'
     | '/agents/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -495,6 +505,7 @@ export interface FileRouteTypes {
     | '/approve/$approvalId'
     | '/channel/$channelId'
     | '/channel/new'
+    | '/company/tasks'
     | '/agents'
   id:
     | '__root__'
@@ -541,6 +552,7 @@ export interface FileRouteTypes {
     | '/_authed/_app/approve/$approvalId'
     | '/_authed/_app/channel/$channelId'
     | '/_authed/_app/channel/new'
+    | '/_authed/_app/company/tasks'
     | '/_authed/_app/agents/'
   fileRoutesById: FileRoutesById
 }
@@ -865,6 +877,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAppChannelNewRouteImport
       parentRoute: typeof AuthedAppRoute
     }
+    '/_authed/_app/company/tasks': {
+      id: '/_authed/_app/company/tasks'
+      path: '/tasks'
+      fullPath: '/company/tasks'
+      preLoaderRoute: typeof AuthedAppCompanyTasksRouteImport
+      parentRoute: typeof AuthedAppCompanyRoute
+    }
   }
 }
 
@@ -914,8 +933,19 @@ const AuthedSettingsRouteRouteChildren: AuthedSettingsRouteRouteChildren = {
 const AuthedSettingsRouteRouteWithChildren =
   AuthedSettingsRouteRoute._addFileChildren(AuthedSettingsRouteRouteChildren)
 
+interface AuthedAppCompanyRouteChildren {
+  AuthedAppCompanyTasksRoute: typeof AuthedAppCompanyTasksRoute
+}
+
+const AuthedAppCompanyRouteChildren: AuthedAppCompanyRouteChildren = {
+  AuthedAppCompanyTasksRoute: AuthedAppCompanyTasksRoute,
+}
+
+const AuthedAppCompanyRouteWithChildren =
+  AuthedAppCompanyRoute._addFileChildren(AuthedAppCompanyRouteChildren)
+
 interface AuthedAppRouteChildren {
-  AuthedAppCompanyRoute: typeof AuthedAppCompanyRoute
+  AuthedAppCompanyRoute: typeof AuthedAppCompanyRouteWithChildren
   AuthedAppFeedRoute: typeof AuthedAppFeedRoute
   AuthedAppGoalsRoute: typeof AuthedAppGoalsRoute
   AuthedAppHelpRoute: typeof AuthedAppHelpRoute
@@ -935,7 +965,7 @@ interface AuthedAppRouteChildren {
 }
 
 const AuthedAppRouteChildren: AuthedAppRouteChildren = {
-  AuthedAppCompanyRoute: AuthedAppCompanyRoute,
+  AuthedAppCompanyRoute: AuthedAppCompanyRouteWithChildren,
   AuthedAppFeedRoute: AuthedAppFeedRoute,
   AuthedAppGoalsRoute: AuthedAppGoalsRoute,
   AuthedAppHelpRoute: AuthedAppHelpRoute,

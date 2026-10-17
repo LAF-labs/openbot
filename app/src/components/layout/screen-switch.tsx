@@ -57,7 +57,8 @@ export function ScreenSwitch() {
   const hasUnread = projects.some((project) => project.unread === true);
   const hub = useQuery(hubStatusQueryOptions());
   const hasCompany = hub.data?.configured === true;
-  const isOnCompany = pathname === "/company";
+  const isOnCompany =
+    pathname === "/company" || pathname.startsWith("/company/");
 
   return (
     <nav

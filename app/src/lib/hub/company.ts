@@ -87,6 +87,9 @@ export const companyKeys = {
   skill: (slug: string) => [...hubKeys.all, "skills", slug] as const,
   memory: [...hubKeys.all, "memory"] as const,
   proposals: [...hubKeys.all, "memory", "proposals"] as const,
+  /** 업무판 (`lib/hub/tasks.ts`): the board, and one task with its notes. */
+  tasks: [...hubKeys.all, "tasks"] as const,
+  task: (taskId: string) => [...hubKeys.all, "task", taskId] as const,
 };
 
 type Key = readonly unknown[];
@@ -128,6 +131,12 @@ export function hubKeysForFrame(frame: {
       return [companyKeys.memory, companyKeys.proposals];
     case "hub.memory.proposals":
       return [companyKeys.proposals];
+    case "hub.task.changed":
+    case "hub.task.assigned":
+      // Made, moved, noted, taken or freed: the board, and that task's notes if it is open.
+      return ref
+        ? [companyKeys.tasks, companyKeys.task(ref)]
+        : [companyKeys.tasks];
     default:
       return [];
   }

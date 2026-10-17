@@ -52,8 +52,8 @@ export type HubMemberState = "active" | "left";
  *
  * Beside `member.changed`, the kinds the 회사 screen redraws on (`app/src/lib/hub/company.ts`):
  * the rooms' (#250, `laf/hub-rooms`), the team files' (`laf/hub-files`) and the skills' and team
- * memory's (`laf/hub-skills-memory`). Each of those branches adds its own here; at rebase the list
- * is their union.
+ * memory's (`laf/hub-skills-memory`), and the task board's (#253, `laf/hub-tasks`). Each of those
+ * branches adds its own here; at rebase the list is their union.
  */
 export const HUB_EVENT_TYPES = [
   "member.changed",
@@ -64,6 +64,8 @@ export const HUB_EVENT_TYPES = [
   "skill.changed",
   "memory.changed",
   "memory.proposals",
+  "task.changed",
+  "task.assigned",
 ] as const;
 export type HubEventType = (typeof HUB_EVENT_TYPES)[number];
 

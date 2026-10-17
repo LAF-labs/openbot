@@ -1,5 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Link,
+  Outlet,
+  useRouterState,
+} from "@tanstack/react-router";
+import { Fragment } from "react";
 import { z } from "zod";
 import { CompanyFiles } from "@/components/company/company-files";
 import { CompanyMembers } from "@/components/company/company-members";
@@ -57,6 +63,10 @@ function tabLabel(tab: Tab): string {
 
 function CompanyPage() {
   const search = Route.useSearch();
+  // 업무판 is a route of its own (`company.tasks.tsx`), drawn here under the same title and tabs.
+  const isOnTasks = useRouterState({
+    select: (state) => state.location.pathname.startsWith("/company/tasks"),
+  });
   const status = useQuery(hubStatusQueryOptions());
   const configured = status.data?.configured === true;
   const me = useQuery({ ...companyMeQueryOptions(), enabled: configured });
@@ -85,7 +95,11 @@ function CompanyPage() {
   }
 
   return (
-    <PageShell title={workspace ?? t("Company")}>
+    // 업무판's five columns are a board you scan, not prose: the wide measure, as 목표 has.
+    <PageShell
+      title={workspace ?? t("Company")}
+      width={isOnTasks ? "wide" : "prose"}
+    >
       {line?.note ? (
         <p
           className="mt-1 text-muted-foreground text-sm"
@@ -101,26 +115,44 @@ function CompanyPage() {
         data-company-tabs
       >
         {shown.map((one) => (
-          <Link
-            aria-current={one === tab ? "page" : undefined}
-            className={cn(
-              "flex h-7 shrink-0 items-center rounded-full px-3 font-medium transition-colors",
-              one === tab
-                ? "bg-background text-link"
-                : "text-muted-foreground hover:text-foreground",
-              focusRingBare,
-            )}
-            data-company-tab={one}
-            key={one}
-            search={{ tab: one }}
-            to="/company"
-          >
-            {tabLabel(one)}
-          </Link>
+          <Fragment key={one}>
+            <Link
+              aria-current={one === tab && !isOnTasks ? "page" : undefined}
+              className={cn(
+                "flex h-7 shrink-0 items-center rounded-full px-3 font-medium transition-colors",
+                one === tab && !isOnTasks
+                  ? "bg-background text-link"
+                  : "text-muted-foreground hover:text-foreground",
+                focusRingBare,
+              )}
+              data-company-tab={one}
+              search={{ tab: one }}
+              to="/company"
+            >
+              {tabLabel(one)}
+            </Link>
+            {one === "rooms" ? (
+              <Link
+                aria-current={isOnTasks ? "page" : undefined}
+                className={cn(
+                  "flex h-7 shrink-0 items-center rounded-full px-3 font-medium transition-colors",
+                  isOnTasks
+                    ? "bg-background text-link"
+                    : "text-muted-foreground hover:text-foreground",
+                  focusRingBare,
+                )}
+                data-company-tab="tasks"
+                to="/company/tasks"
+              >
+                {t("Task board")}
+              </Link>
+            ) : null}
+          </Fragment>
         ))}
       </nav>
 
-      {tab === "rooms" ? (
+      {isOnTasks ? <Outlet /> : null}
+      {isOnTasks ? null : tab === "rooms" ? (
         <CompanyRooms
           meId={me.data?.member.id}
           members={members.data}

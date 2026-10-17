@@ -48,9 +48,10 @@ describe("a hub frame makes stale only what it names", () => {
   });
 
   test("a kind this build does not know asks nothing again", () => {
-    expect(hubKeysForFrame({ kind: "hub.task.changed", refId: "t_1" })).toEqual(
-      [],
-    );
+    // `hub.task.changed` was the example until the board learned it (`hub-tasks.test.ts`).
+    expect(
+      hubKeysForFrame({ kind: "hub.vault.changed", refId: "v_1" }),
+    ).toEqual([]);
   });
 
   test("one room's key is not another's, and not the files'", () => {
