@@ -750,6 +750,9 @@ describe("a request for a value that a rule asks about first", () => {
     for (const [code, label] of [
       ["laf:login_filled", "From a saved login"],
       ["laf:login_choice", "Several saved logins"],
+      // A company login is not one the person saved, and one in use put nothing in.
+      ["laf:company_login_filled", "From a company login"],
+      ["laf:vault_busy", "Company login in use"],
     ] as const) {
       function Answered() {
         useActiveBot(`agent-${code}`);
