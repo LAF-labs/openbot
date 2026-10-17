@@ -517,20 +517,20 @@ export function readJobHandoff(body: unknown): JobDefinition | null {
 }
 
 /**
- * The person's "이 일감에서는 해도 돼", as the board is told it: the task goes back to waiting, with
- * one note saying who allowed what kind of action — the topic, the same facts the stop's own note
- * gave — and never a value. Sent as the member (no `as: "bot"`), because it is the member's decision;
- * the note's author on the hub is `m:<member>` and its time is the hub's, which is the who and the
- * when. `version` is the one the VM just read, so a person's edit in between wins (`laf:task_stale`).
+ * The person's "이 일감에서는 해도 돼", as the board is told it: `POST /tasks/:id/approvals {topic}`.
+ * The hub takes it only from the member whose 라피 run blocked the task (or an admin), moves the
+ * task back to `todo`, leaves the member's note `laf:task_approval_granted topic:<topic>` and says
+ * `task.changed` then `task.approval_granted` — who, what kind of action, when, and never a value.
+ * A task a person already moved on is `409 laf:task_not_blocked`. No `version`: the hub's own
+ * `blocked` check is the condition that matters, and a person's edit to the title in between must
+ * not cost the yes.
  */
-export const taskApprovalGrantedBody = (input: {
-  version: number;
-  topic: string;
-}) => ({
-  version: input.version,
-  stage: "todo" as const,
-  note: `laf:task_approval_granted topic:${input.topic}`.slice(
-    0,
-    HUB_TASK_BOT_NOTE_MAX,
-  ),
+export const HUB_TASK_APPROVAL_PATH = (id: string) =>
+  `/tasks/${segment(id)}/approvals`;
+
+export const taskApprovalBody = (input: { topic: string }) => ({
+  topic: input.topic,
 });
+
+/** The hub's answer when the task is no longer waiting on a yes. */
+export const HUB_TASK_NOT_BLOCKED = "laf:task_not_blocked";
