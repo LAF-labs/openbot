@@ -52,6 +52,7 @@ import {
 import { BOTS_OWN_LOOK, readFileInputOf } from "../computer/schema";
 import { snapshotForModel } from "../computer/snapshot-lines";
 import { describeFailure } from "../failure-text";
+import { companyLoginResult } from "../hub/vault";
 import { log } from "../log";
 import { createShownGuard } from "../logins/shown";
 import type { LoginVault } from "../logins/store";
@@ -765,6 +766,9 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
               signal,
               { nobodyToAsk: true },
             );
+            // A company login, or the fact that it could not be had (`hub/vault.ts`).
+            const company = companyLoginResult(asked);
+            if (company) return company;
             if (asked.loginFilled) {
               return {
                 ok: true,

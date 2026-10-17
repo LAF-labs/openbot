@@ -63,6 +63,9 @@ export function serviceLabel(server: string): string | undefined {
       return t("Web search");
     case "kma-weather":
       return t("Korea Meteorological Administration");
+    // The company hub, read and written on this VM's own pass.
+    case "hub":
+      return t("Company");
     // Not a service at all: this deployment's own goal tools, behind the bridge by their name.
     case "goals":
       return t("Goals");

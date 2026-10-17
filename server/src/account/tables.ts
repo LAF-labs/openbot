@@ -186,6 +186,22 @@ export const TABLE_LIFECYCLE: Readonly<Record<string, TableLifecycle>> = {
   mcp_servers: { exported: null, deletion: "pseudonymised" },
   mcp_tools: { exported: null, deletion: "deployment" },
   sandboxed_components: { exported: null, deletion: "pseudonymised" },
+  // ---- the company hub (hub/) ----
+  hub_cursor: {
+    exported: null,
+    deletion: "deployment",
+    why: "how far this VM has read its company hub's events: one number, nothing of a person",
+  },
+  hub_outbox: {
+    exported: null,
+    deletion: "deployment",
+    why: "writes on their way to the company hub, which is where they belong once taken; answered rows go after seven days. Nothing writes here yet — the first writer (a room, a task) decides what a leaver's unsent rows become",
+  },
+  hub_vault_origins: {
+    exported: null,
+    deletion: "deployment",
+    why: "the sites this VM's browser signed in to with a company login, origins only, for signing it out of them when the VM leaves its company",
+  },
 };
 
 /**

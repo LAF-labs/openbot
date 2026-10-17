@@ -130,6 +130,7 @@ import {
 import { RoutineError } from "../routines/errors";
 import type { RoutineSchedule } from "../routines/schedule";
 import type { RoutineService } from "../routines/service";
+import { companyLoginResult } from "../hub/vault";
 import { createShownGuard } from "../logins/shown";
 import type { LoginVault } from "../logins/store";
 import {
@@ -1127,6 +1128,9 @@ export function createChatTools(deps: ChatToolsDeps) {
            * The boxes are filled, or the site has several saved logins and the Bot is handed
            * what each is called to choose by — never anything of what one holds.
            */
+          // A company login, or the fact that it could not be had (`hub/vault.ts`).
+          const company = companyLoginResult(asked);
+          if (company) return company;
           if (asked.loginFilled) {
             return {
               ok: true,
