@@ -29,7 +29,7 @@ import {
 } from "../src/db/schema";
 import { createRunBudget } from "../src/hub/budget";
 import { createHubRoutes } from "../src/hub/routes";
-import type { HubAnswer, HubRequest } from "../src/hub/http";
+import type { HubAnswer, HubHttp, HubRequest } from "../src/hub/http";
 import type { HubOutboxWrite } from "../src/hub/outbox";
 import { allowForTask, createTaskAsks } from "../src/hub/task-asks";
 import { createTaskPickup } from "../src/hub/task-pickup";
@@ -277,7 +277,7 @@ function scriptedBots(botId: string, calls: { count: number }) {
 }
 
 /** The outbox, delivering at once — the real one's row and retries are `hub-budget`'s to prove. */
-function directOutbox(http: ReturnType<ReturnType<typeof fakeTaskHub>["as"]>) {
+function directOutbox(http: HubHttp) {
   const sent: HubOutboxWrite[] = [];
   return {
     sent,
@@ -357,7 +357,7 @@ describe("a board task stopped for a yes, and the yes for that task only", () =>
       botId: who.botId,
     });
 
-    // The person's yes, on their own VM: the allowance, and the board told through the outbox.
+    // The person's yes, on their own VM: the allowance, and the board told (`POST …/approvals`).
     const allowed = await allowForTask(
       { database, asks, standing, hub: { http, outbox } },
       who.actor,
@@ -369,6 +369,17 @@ describe("a board task stopped for a yes, and the yes for that task only", () =>
       board: "queued",
     });
     expect(hub.tasks.get(first)?.stage).toBe("todo");
+    expect(
+      hub.requests.filter((request) => request.path.endsWith("/approvals")),
+    ).toMatchObject([
+      {
+        method: "POST",
+        path: `/tasks/${first}/approvals`,
+        body: { topic: "browser/activate@shop.example.test" },
+        origin: "person",
+        as: ME,
+      },
+    ]);
     expect(hub.tasks.get(first)?.notes.at(-1)).toEqual({
       by: `m:${ME}`,
       text: "laf:task_approval_granted topic:browser/activate@shop.example.test",
@@ -468,6 +479,77 @@ describe("a board task stopped for a yes, and the yes for that task only", () =>
     expect(classifyTurnFailure(run?.error ?? null)).toBe(
       "laf:turn_company_budget_reached",
     );
+  });
+
+  test("a task a person already moved on is said as such; a hub that is away gets the yes later", async () => {
+    const who = await person();
+    const stop = (id: string) =>
+      asks.record({
+        taskId: id,
+        runId: randomUUID(),
+        botId: who.botId,
+        rule: RULE,
+        scope: SCOPE,
+        subject: ORDER,
+        topic: "browser/activate@shop.example.test",
+      });
+    const hub = fakeTaskHub();
+    const http = hub.as(ME);
+    const outbox = directOutbox(http);
+
+    const moved = taskId();
+    hub.add({ id: moved, assignee: `bot:${ME}`, stage: "review" });
+    await stop(moved);
+    expect(
+      await allowForTask(
+        { database, asks, standing, hub: { http, outbox } },
+        who.actor,
+        moved,
+      ),
+    ).toMatchObject({ ok: true, board: "not_blocked" });
+    expect(hub.tasks.get(moved)?.stage).toBe("review");
+    expect(outbox.sent).toEqual([]);
+
+    const away = taskId();
+    hub.add({
+      id: away,
+      assignee: `bot:${ME}`,
+      stage: "blocked",
+      blockedBy: ME,
+    });
+    await stop(away);
+    let up = false;
+    hub.intercepting(() =>
+      up
+        ? undefined
+        : ({
+            ok: false,
+            status: null,
+            code: "laf:hub_unreachable",
+          } as HubAnswer<never>),
+    );
+    const queued = directOutbox({
+      request: async (request) => {
+        up = true;
+        return http.request(request);
+      },
+      socket: http.socket,
+    });
+    expect(
+      await allowForTask(
+        { database, asks, standing, hub: { http, outbox: queued } },
+        who.actor,
+        away,
+      ),
+    ).toMatchObject({ ok: true, board: "queued" });
+    expect(queued.sent).toMatchObject([
+      {
+        method: "POST",
+        path: `/tasks/${away}/approvals`,
+        body: { topic: "browser/activate@shop.example.test" },
+      },
+    ]);
+    expect(hub.tasks.get(away)?.stage).toBe("todo");
   });
 
   test("somebody who does not own the Bot cannot say yes for it", async () => {

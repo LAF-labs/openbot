@@ -11,13 +11,14 @@
  * past; any other task, any other topic, any `deny`, and any deployment that switched allowances off
  * (`settleWithoutAsking`) are asked or refused exactly as before.
  *
- * WHAT THE HUB HEARS. The task goes back to `todo` with one note from the member:
- * `laf:task_approval_granted topic:<topic>` — who (the note's author, `m:<member>`), what (the
- * topic, the same facts the stop's note already put on the board), when (the note's time). No value,
- * no rule, no page. Through the outbox, so a hub that is away hears it when it is back; with the
- * version just read, so a person's edit made in between wins and the note is not forced over it.
+ * WHAT THE HUB HEARS. `POST /tasks/:id/approvals {topic}`: the task goes back to `todo` with the
+ * member's note `laf:task_approval_granted topic:<topic>`, and the hub says `task.approval_granted`
+ * — who, what kind of action (the same facts the stop's note already put on the board), when. No
+ * value, no rule, no page. A hub that is away hears it through the outbox when it is back.
  */
+import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
+import { HUB_FACTS } from "../../../shared/hub/protocol";
 import type { AgentActor } from "../agents/profile-types";
 import { type AuditStore, auditRowLost, recordAuditEvent } from "../audit";
 import { DEV_ACTOR } from "../auth/dev-actor";
@@ -33,9 +34,9 @@ import type { HubHttp } from "./http";
 import type { HubOutbox } from "./outbox";
 import { taskThreadOf } from "./task-run";
 import {
-  HUB_TASK_PATHS,
-  readTaskDetail,
-  taskApprovalGrantedBody,
+  HUB_TASK_APPROVAL_PATH,
+  HUB_TASK_NOT_BLOCKED,
+  taskApprovalBody,
 } from "./wire";
 
 /** A stop for a person's yes, as the run that met it saw it. */
@@ -135,8 +136,9 @@ export type AllowTaskResult =
       topic: string;
       allowance: string;
       /**
-       * What became of the board: the move on its way through the outbox (`queued`), a task a
-       * person had already moved (`not_blocked`), or a hub that could not be read (`unreachable`).
+       * What became of the board: the task back in `todo`, or that move on its way through the
+       * outbox (`queued`); a task a person had already moved (`not_blocked`); or a board that did
+       * not take it and will not (`unreachable`: no hub, or the hub refused it).
        */
       board: "queued" | "not_blocked" | "unreachable";
     }
@@ -212,28 +214,38 @@ export async function allowForTask(
   return { ok: true, topic: ask.topic, allowance: granted.id, board };
 }
 
-/** The task back to waiting, with the member's one note. Never throws: the yes already stands. */
+/**
+ * The task back to waiting, with the member's one note (`POST /tasks/:id/approvals`). Never throws:
+ * the yes already stands on this VM.
+ *
+ * Asked directly, so a task a person already moved on is said as such (`laf:task_not_blocked`). A
+ * hub that does not answer gets the same request through the outbox, which offers it until the hub
+ * takes it — still guarded by the hub's own `blocked` check when it lands.
+ */
 async function tellTheBoard(
   hub: { http: HubHttp; outbox: Pick<HubOutbox, "enqueue"> },
   taskId: string,
   topic: string,
 ): Promise<"queued" | "not_blocked" | "unreachable"> {
   try {
-    const read = await hub.http.request({
-      path: HUB_TASK_PATHS.task(taskId),
-      retry: false,
+    const request = {
+      method: "POST" as const,
+      path: HUB_TASK_APPROVAL_PATH(taskId),
+      body: taskApprovalBody({ topic }),
+      origin: "person" as const,
+    };
+    const answer = await hub.http.request({
+      ...request,
+      idempotencyKey: `approval-${randomUUID()}`,
     });
-    const detail = read.ok ? readTaskDetail(read.body) : null;
-    if (!detail) return "unreachable";
-    // A person moved it already — to `todo`, to `done` — and that is theirs to have decided.
-    if (detail.task.stage !== "blocked") return "not_blocked";
-    await hub.outbox.enqueue({
-      method: "PATCH",
-      path: HUB_TASK_PATHS.move(taskId),
-      body: taskApprovalGrantedBody({ version: detail.task.version, topic }),
-      origin: "person",
-    });
-    return "queued";
+    if (answer.ok) return "queued";
+    if (answer.code === HUB_TASK_NOT_BLOCKED) return "not_blocked";
+    if (answer.code === HUB_FACTS.unreachable) {
+      await hub.outbox.enqueue(request);
+      return "queued";
+    }
+    log.warn("hub_task_allow_not_told", { task: taskId, code: answer.code });
+    return "unreachable";
   } catch (error) {
     log.warn("hub_task_allow_not_told", {
       task: taskId,

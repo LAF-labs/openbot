@@ -16,6 +16,8 @@ export type FakeTask = {
   title: string;
   description: string | null;
   stage: "todo" | "doing" | "review" | "blocked" | "done";
+  /** The member whose 라피 run moved it to `blocked`: whose yes it waits for (#267). */
+  blockedBy?: string | null;
   assignee: string | null;
   version: number;
   checkout: { runId: string; by: string; until: number } | null;
@@ -104,12 +106,35 @@ export function fakeTaskHub() {
         return no(400, "laf:request_invalid");
       }
       task.stage = body.stage;
+      task.blockedBy = body.stage === "blocked" ? as : null;
       task.checkout = null;
       task.version += 1;
       if (note) task.notes.push({ by: `bot:${as}`, text: note, runId });
       return ok({ ok: true, task: view(task) });
     }
     switch (parts[2]) {
+      case "approvals": {
+        // #267's yes: only for a blocked task, only from the member whose run blocked it.
+        if (method !== "POST") return no(404, "laf:hub_not_found");
+        if (typeof body.topic !== "string" || !body.topic) {
+          return no(400, "laf:request_invalid");
+        }
+        if (task.stage !== "blocked") return no(409, "laf:task_not_blocked");
+        if (task.blockedBy !== as) return no(403, "laf:hub_forbidden");
+        task.stage = "todo";
+        task.blockedBy = null;
+        task.version += 1;
+        task.notes.push({
+          by: `m:${as}`,
+          text: `laf:task_approval_granted topic:${body.topic}`,
+          runId: null,
+        });
+        return ok({
+          ok: true,
+          approval: { taskId: task.id, by: as, topic: body.topic, at: "now" },
+          task: view(task),
+        });
+      }
       case "checkout": {
         const waiting = task.stage === "todo" && task.checkout === null;
         const runOut =
