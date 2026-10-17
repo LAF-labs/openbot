@@ -167,6 +167,7 @@ export const ko: Record<string, string> = {
   "Used a tool": "도구 사용",
   "Public tenders and support programmes": "나라장터·기업마당",
   "Web search": "웹 검색",
+  Company: "회사",
   "It wants to list what is in the workspace.":
     "봇 폴더에 무엇이 있는지 보려 해요.",
   "It wants to list what is in {path}.": "{path} 안에 무엇이 있는지 보려 해요.",
@@ -464,6 +465,12 @@ export const ko: Record<string, string> = {
     "기상청의 지금 날씨와 며칠 뒤까지의 예보.",
   "Tells you the weather where you are, or anywhere in Korea you name — now, the next few hours and the next few days.":
     "지금 계신 곳이나 말씀하신 곳의 날씨를 알려 줘요 — 지금, 몇 시간 뒤, 며칠 뒤까지.",
+  // 회사 — 이 VM의 출입증으로 회사 허브를 읽고 쓰는 엔트리(server/src/hub/tools.ts). 연결할 것 없음.
+  회사: "회사",
+  "This person's company: team files, rooms, skills and memory.":
+    "내가 속한 회사의 팀 파일·단체방·스킬·팀 기억.",
+  "Finds and reads your team's files, rooms, skills and confirmed memory, posts to a team room, and suggests a line for the team to remember.":
+    "팀 파일·단체방·스킬·팀이 확인한 사실을 찾아 읽고, 단체방에 글을 올리고, 팀이 기억할 한 줄을 제안해요.",
   "Offered to every Bot on this deployment on the fleet's own key. Nothing to connect.":
     "LAF의 키로 이 배포의 모든 봇에 제공돼요. 연결할 것이 없어요.",
   "Connected to {name}.": "{name}에 연결했어요.",
@@ -1995,6 +2002,8 @@ export const ko: Record<string, string> = {
   "Allow this tool for this conversation": "이 대화 동안 이 도구 허용",
   "For one conversation only, until {when}": "한 대화에서만 · {when}까지",
   "For one conversation only": "한 대화에서만",
+  "For one company board task only, until {when}":
+    "회사 업무판의 일감 하나에서만 · {when}까지",
   "Each of these was a question somebody answered with “always” or “for this conversation”. Until it is taken back or runs out, every action it covers is allowed without anybody being asked — the audit trail records them as allowed by the allowance rather than by a person.":
     "각 항목은 누군가 “항상” 또는 “이 대화 동안”으로 답한 질문이에요. 취소하거나 기한이 끝나기 전까지, 여기 해당하는 행동은 아무에게도 묻지 않고 허용돼요 — 감사 기록에는 사람이 아니라 이 허용 때문에 통과했다고 남아요.",
 
@@ -2477,6 +2486,34 @@ export const ko: Record<string, string> = {
   "The free trial has ended.": "무료 체험이 끝났어요.",
   "Today's free trial allowance is used up. It opens again at midnight, Korean time.":
     "오늘 무료 체험에서 쓸 수 있는 양을 다 썼어요. 내일 0시(한국 시간)부터 다시 쓸 수 있어요.",
+  "Your company's budget for today is used up, so this did not start. It opens again tomorrow.":
+    "회사에서 정한 오늘 예산을 다 써서 시작하지 않았어요. 내일 다시 쓸 수 있어요.",
+  // 회사 — 회사 허브에 붙은 VM의 설정 한 줄과, 허브가 알린 사실의 문장(server/src/hub/).
+  "Company: {name} · {state}": "회사: {name} · {state}",
+  "Company · {state}": "회사 · {state}",
+  Connecting: "연결 중",
+  Disconnected: "끊김",
+  "Cannot reach the company server · trying again":
+    "회사 서버에 연결할 수 없어요 · 다시 시도 중",
+  "The link to your company was undone. Let the operator know.":
+    "회사 연결이 풀렸어요. 운영에 알려 주세요.",
+  "Your company does not allow this.": "회사에서 허락되지 않은 일이에요.",
+  "Your company does not have that.": "회사에서 찾을 수 없어요.",
+  // 회사 업무판의 일감 — 승인이 필요해서 멈춘 일감을 그 일감에서만 허용하는 한 줄(server/src/hub/task-asks.ts).
+  "This task stopped for your OK on {place}.":
+    "{place}에서 하려던 일 때문에 일감이 멈췄어요. 허락이 필요해요.",
+  "This task stopped for your OK.": "허락이 필요해서 일감이 멈췄어요.",
+  "Allow it for this task": "이 일감에서는 해도 돼",
+  "Allowed for this task. It goes back to the board's to-do list and runs again.":
+    "이 일감에서만 허용했어요. 업무판의 할 일로 돌아가서 다시 시작해요.",
+  "Allowed for this task. It was already moved on the board, so it stays where it is.":
+    "이 일감에서만 허용했어요. 업무판에서 이미 옮겨져 있어서 그대로 두었어요.",
+  "Allowed for this task. The board could not be reached, so move it back to to-do there.":
+    "이 일감에서만 허용했어요. 업무판에 닿지 못했으니 거기서 할 일로 옮겨 주세요.",
+  "Nothing in this task is waiting for your OK any more.":
+    "이 일감에서 허락을 기다리는 일이 이제 없어요.",
+  "Only the person this Bot belongs to can allow this.":
+    "이 봇의 주인만 허락할 수 있어요.",
   // 오늘 사용량 — 설정의 한 줄과, 80%부터 입력창 위에 뜨는 한 줄. 거절당하기 전에 남은 양을 알린다.
   "Free trial": "무료 체험",
   "Today's usage": "오늘 사용량",
@@ -2870,6 +2907,8 @@ export const ko: Record<string, string> = {
   "Running any small program it wrote":
     "직접 짠 작은 프로그램이면 무엇이든 돌리기",
   "Only in one conversation, until {when}": "한 대화에서만 · {when}까지",
+  "Only for one task on the company board, until {when}":
+    "회사 업무판의 일감 하나에서만 · {when}까지",
   "Allowed on {date}, until you take it back":
     "{date}에 허락함 · 되돌릴 때까지",
   "Saved. The Bot goes ahead with what this says.":

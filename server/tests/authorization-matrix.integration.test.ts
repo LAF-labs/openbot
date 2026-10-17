@@ -809,6 +809,9 @@ const B_ALLOWED = [
   // 목표: the person's own goals. A goal's own doors name it by id, and the matrix's id is nobody's.
   "GET /api/goals",
   "GET /api/health",
+  // 회사: whether this VM belongs to a company hub, and whether its line is up. The deployment's
+  // fact, the same for every account here; `/api/hub/me` is a 404 where there is no hub.
+  "GET /api/hub/status",
   // 아이디어: the person's own cards, in their order — keys and connection states, nobody else's.
   "GET /api/ideas",
   // 로그인 보관함: the person's own saved logins — what each is called, never a value. A login's

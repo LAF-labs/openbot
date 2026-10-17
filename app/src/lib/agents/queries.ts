@@ -62,7 +62,7 @@ export type AgentAllowance = {
   scopeValue: string;
   subject?: AskSubject;
   grantedAt: string;
-  tier: "always" | "thread" | "task" | "day";
+  tier: "always" | "thread" | "task" | "day" | "board_task";
   expiresAt?: string;
 };
 

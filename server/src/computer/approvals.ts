@@ -893,6 +893,8 @@ export function tierGiven(
   tier: AllowanceTier | undefined,
 ): AllowanceTier | undefined {
   if (!tier || !approval.scope) return undefined;
+  // Never from a card: it is given on the board task's own screen, for the topic it stopped on.
+  if (tier === "board_task") return undefined;
   if (tier === "thread" && !approval.threadId) return undefined;
   if (tier === "task" && !(approval.threadId && approval.taskId)) {
     return undefined;

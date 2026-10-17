@@ -27,6 +27,7 @@ import { own } from "@/lib/own";
 export const TURN_FAILURE_CODES = [
   "laf:turn_bot_dropped",
   "laf:turn_budget_spent",
+  "laf:turn_company_budget_reached",
   "laf:turn_daily_budget_reached",
   "laf:turn_failed",
   "laf:turn_interrupted",
@@ -128,6 +129,12 @@ export const TURN_FAILURE_SENTENCES: Record<string, string> = {
    */
   "laf:turn_daily_budget_reached":
     "Today's free trial allowance is used up. It opens again at midnight, Korean time.",
+  /*
+   * The company hub refused the run before it started: the day the company set for its work — the
+   * whole company's, a sub-Bot's or a task's — is spent. Nothing was asked of the model.
+   */
+  "laf:turn_company_budget_reached":
+    "Your company's budget for today is used up, so this did not start. It opens again tomorrow.",
   "laf:turn_failed": "No answer came back.",
   /*
    * The server restarted while this ran. Not a fault of the model's and not the person's: the run
@@ -263,6 +270,9 @@ function classifyLive(reported: unknown): TurnFailureCode {
   }
   if (said.includes("laf:daily_budget_reached")) {
     return "laf:turn_daily_budget_reached";
+  }
+  if (said.includes("laf:budget_reached")) {
+    return "laf:turn_company_budget_reached";
   }
   // The stall guard sends its fact now; the two substrings are the English sentence it sent before.
   if (

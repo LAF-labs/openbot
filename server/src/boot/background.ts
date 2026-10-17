@@ -5,6 +5,7 @@ import type { ConversationStore } from "../context/conversations";
 import type { Database } from "../db/client";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
+import { HUB_OUTBOX_RESEND_MS, type HubOutbox } from "../hub/outbox";
 import type { NotificationOutbox } from "../notifications/outbox";
 import type { BuiltInSkillsRuntime } from "../plugins/built-in-skill-sync";
 import type { DeploymentKeyRuntime } from "../plugins/deployment-key-runtime";
@@ -50,6 +51,8 @@ export function startBackgroundWork(input: {
   auditRetentionDays: number;
   /** Present only with a fleet webhook: on a laptop there is nothing to tell. */
   fleetOutbox: Pick<NotificationOutbox, "redeliver"> | undefined;
+  /** Present only when this VM belongs to a company hub (`hub/outbox.ts`). */
+  hubOutbox?: Pick<HubOutbox, "sweep">;
   /** Every entry the fleet's keys open (`plugins/deployment-key-runtime.ts`). */
   deploymentKeys: Pick<DeploymentKeyRuntime, "reconcile">;
   /** The package's skills. Optional so a boot without a package, a test's, starts without them. */
@@ -103,6 +106,18 @@ export function startBackgroundWork(input: {
       () => void fleetOutbox.redeliver(),
       FLEET_REDELIVERY_MS,
     ).unref();
+  }
+
+  /*
+   * Writes to the company hub it has not taken yet, offered again — at boot, because a process that
+   * died between a write's row and its request left the row, and on a clock, because a hub that was
+   * down should be caught up even if the socket's return was missed. The line offers them too, the
+   * moment the hub answers again (`hub/link.ts`); a sweep already running absorbs the others.
+   */
+  const hubOutbox = input.hubOutbox;
+  if (hubOutbox) {
+    void hubOutbox.sweep();
+    setInterval(() => void hubOutbox.sweep(), HUB_OUTBOX_RESEND_MS).unref();
   }
 
   /*

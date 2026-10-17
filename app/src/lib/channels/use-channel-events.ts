@@ -16,6 +16,7 @@ import {
   type NotificationFrame,
   notificationFrames,
 } from "@/lib/notifications/outbox";
+import { hubKeys } from "@/lib/hub/status";
 import { OUTAGE_CAP_MS } from "@/lib/polling";
 import { type ChannelSummary, channelKeys } from "./queries";
 
@@ -99,6 +100,26 @@ function setTrouble(next: SocketTrouble) {
   if (trouble === next) return;
   trouble = next;
   socketState.dispatchEvent(new Event(SOCKET_TROUBLE));
+}
+
+/**
+ * The company hub's frames (`server/src/hub/link.ts`), for whichever screen draws what changed.
+ *
+ * `hub.status` is the server's line to the hub going up or down; any other `hub.<type>` is an event
+ * the hub numbered — it names what changed and never carries it, so a screen that cares asks again.
+ */
+export const hubFrames = new EventTarget();
+export const HUB_FRAME = "hub-frame";
+
+export type HubFrame = { kind: `hub.${string}` } & Record<string, unknown>;
+
+export function isHubFrame(value: unknown): value is HubFrame {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { kind?: unknown }).kind === "string" &&
+    (value as { kind: string }).kind.startsWith("hub.")
+  );
 }
 
 /**
@@ -343,6 +364,14 @@ function openConnection(queryClient: QueryClient): Connection {
           new CustomEvent<NotificationFrame>(NOTIFICATION_FRAME, {
             detail: parsed,
           }),
+        );
+        return;
+      }
+      // The company hub: its line changed, or something in the company did.
+      if (isHubFrame(parsed)) {
+        void queryClient.invalidateQueries({ queryKey: hubKeys.all });
+        hubFrames.dispatchEvent(
+          new CustomEvent<HubFrame>(HUB_FRAME, { detail: parsed }),
         );
         return;
       }
