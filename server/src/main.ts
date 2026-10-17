@@ -111,6 +111,14 @@ import { createFleetNotifier } from "./fleet/notify";
 import { createGoalStore } from "./goals/store";
 import { deploymentHealthProbes } from "./health";
 import { createLiveScreen, type SocketData } from "./live-screen";
+import { users } from "./db/schema";
+import { createHubRuntime } from "./hub";
+import {
+  createTaskPickup,
+  hearFrame,
+  type TaskPickup,
+} from "./hub/task-pickup";
+import { createTaskRun, createUnreportedRuns } from "./hub/task-run";
 import { log, recentLines } from "./log";
 import { createLoginVault } from "./logins/store";
 import { readApprovalMetrics } from "./notifications/approval-metrics";
@@ -142,6 +150,7 @@ import {
   createRoutineDelivery,
   createRoutineFailureDelivery,
 } from "./routines/deliver";
+import { inTime, LET_GO_MS } from "./routines/run";
 import { createRoutineService } from "./routines/service";
 import { createSuggestionDismissalStore } from "./routines/suggestions";
 import { createBotLane } from "./runner/bot-lane";
@@ -387,6 +396,34 @@ const runMeter = {
  */
 const channelEvents = createChannelEventHub();
 /**
+ * The company hub, when this VM belongs to one (`hub/`). Its events reach the app as `hub.*`
+ * frames on the same socket, addressed to every account here — which is the one person this
+ * deployment is for (`docs/laf/deployment-model.md`), read per frame rather than captured at boot,
+ * so a first sign-in after boot hears the next frame.
+ */
+let hubFramesSent: Promise<void> = Promise.resolve();
+/** The board's tasks given to this member's 라피, made below once what runs them exists. */
+let taskPickup: TaskPickup | undefined;
+const hubRuntime = config.hub
+  ? createHubRuntime({
+      config: config.hub,
+      database,
+      // Chained, so frames reach the page in the order the hub numbered them.
+      deliver: (frame) => {
+        void hearFrame(taskPickup, frame);
+        hubFramesSent = hubFramesSent
+          .then(() => database.select({ id: users.id }).from(users))
+          .then((rows) =>
+            channelEvents.deliverFrame({
+              ...frame,
+              memberIds: rows.map((row) => row.id),
+            }),
+          )
+          .catch(() => undefined);
+      },
+    })
+  : undefined;
+/**
  * The partner vendor LAF holds the account at, assembled once.
  *
  * BEFORE THE OUTBOX AND BEFORE THE PLUGIN STORE, because both take something from it: the AlimTalk
@@ -413,6 +450,18 @@ const deploymentKeyRuntime = createDeploymentKeyRuntime({
   listBots: () => allLiveBots(database),
   // The weather asked about with no place named is the person's own place's (`kma-weather-rest.ts`).
   whereaboutsOf: whereaboutsStore.read,
+  // The company hub's tools speak through its line and outbox (`hub/tools.ts`).
+  ...(hubRuntime
+    ? {
+        hub: {
+          http: hubRuntime.http,
+          outbox: hubRuntime.outbox,
+          database,
+          passRefused: () => hubRuntime.link.status().state === "refused",
+          onPassRefused: () => hubRuntime.link.passRefused("tool"),
+        },
+      }
+    : {}),
 });
 /**
  * The package's own skills (`tenant/<package>/skills/*.md`): written at boot, handed to every Bot.
@@ -917,6 +966,49 @@ const routineService = createRoutineService({
 });
 
 /*
+ * A task on the company board given to this member's 라피: taken, run as a routine runs — the same
+ * toolkit, browser and lane, nobody asked — and handed back for a person (`hub/task-pickup.ts`).
+ */
+if (hubRuntime) {
+  const gateway = computerGateway;
+  taskPickup = createTaskPickup({
+    http: hubRuntime.http,
+    memberId: () => hubRuntime.link.me()?.member.id ?? null,
+    unreported: createUnreportedRuns(database),
+    run: createTaskRun({
+      database,
+      ledger: runLedger,
+      lane: botLane,
+      work: workInFlight,
+      admission,
+      resolveAgents: resolveAgentsFor,
+      tools: unattendedTools,
+      ...(gateway
+        ? {
+            // Its pages in the routines' background browser, let go of at its end as a routine's are.
+            browser: {
+              name: ROUTINE_BROWSER,
+              ended: async (botId: string, runKey: string, opened: boolean) => {
+                await inTime(LET_GO_MS, (within) =>
+                  gateway.runEnded(botId, runKey, {
+                    browser: ROUTINE_BROWSER,
+                    within,
+                  }),
+                );
+                if (opened) {
+                  await inTime(LET_GO_MS, (within) =>
+                    gateway.releaseBrowser(botId, ROUTINE_BROWSER, within),
+                  );
+                }
+              },
+            },
+          }
+        : {}),
+    }),
+  });
+}
+
+/*
  * The runs the last process died on, told to the people they belonged to.
  *
  * Here rather than inside the runner's boot, because the outbox and the failure mark are built
@@ -1310,6 +1402,7 @@ const app = createApp({
   // 목표: the goals the person set, and their timelines.
   goals: goalStore,
   logins: loginVault,
+  ...(hubRuntime ? { hub: hubRuntime } : {}),
 });
 
 /** The live screen, proxied ahead of the app because an upgrade is not a request. See live-screen.ts. */
@@ -1360,6 +1453,7 @@ sayBooted({
   model: tenantPackage.model,
   port: server.port,
   fleetWebhook: Boolean(fleetNotifier),
+  hub: Boolean(hubRuntime),
   harness: { version: HARNESS_VERSION, conversations: conversationsLoaded },
   ...(botsBroughtHome === undefined ? {} : { botsBroughtHome }),
 });
@@ -1430,6 +1524,8 @@ startBackgroundWork({
   auditRetentionDays: config.auditRetentionDays,
   // Only with a fleet: on a laptop there is nothing to tell.
   fleetOutbox: fleetNotifier ? notificationOutbox : undefined,
+  // Only with a hub: writes it has not taken yet, offered at boot and every five minutes.
+  ...(hubRuntime ? { hubOutbox: hubRuntime.outbox } : {}),
   deploymentKeys: deploymentKeyRuntime,
   builtInSkills,
   pluginStore,
@@ -1452,3 +1548,6 @@ startBackgroundWork({
     now: () => conversations.now(),
   }),
 });
+
+// The line to the company hub, once the port is open: its frames go to sockets this server holds.
+hubRuntime?.link.start();
