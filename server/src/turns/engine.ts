@@ -121,6 +121,22 @@ export type SendInput = {
   tools: readonly Tool[] | null;
   /** The device's clock and language, as the window's CopilotKit properties carried them. */
   device?: unknown;
+  /**
+   * What started the turn: the person in a window (`chat`, when absent), or the person asking
+   * their own 라피 in a team room (`room`, `hub/room-answers.ts`) — said wherever a turn going on
+   * is listed. The ledger's row stays `chat`: its column is an enum of `chat`, `routine` and
+   * `wake`, and a turn answering the person in a room is still a turn of the person's own
+   * conversation.
+   */
+  origin?: "chat" | "room";
+  /**
+   * The turn's first step, decided by the caller rather than asked of the decisions model: a READ
+   * the server makes for the Bot before its model is asked, filed exactly as a first move is
+   * (below). A room's turn starts with the room's newest messages this way, so they reach the
+   * model as a tool result and never as part of the head. Made only when the turn's toolkit holds
+   * the tool; otherwise the turn starts as any other does.
+   */
+  firstMove?: { tool: string; args: Record<string, unknown> };
 };
 
 export type TurnEngineOptions = {
@@ -195,6 +211,7 @@ type LiveTurn = {
   botId: string;
   /** What the person asked, as 오늘 names the turn. */
   label: string | null;
+  origin: "chat" | "room";
   startedAt: Date;
   status: TurnStatus;
   asked: string[];
@@ -1159,19 +1176,27 @@ export function createTurnEngine(options: TurnEngineOptions) {
        * was out — the turn goes on as the turn it would have been.
        */
       const decidingAt = now();
-      const decision =
-        (await options
-          .firstMove?.({
-            owner,
-            botId,
-            asked: input.messages,
-            tools: toolkit.tools,
-          })
-          .catch((error: unknown) => {
-            log.warn("first_move_failed", { reason: describeFailure(error) });
-            return null;
-          })) ?? null;
-      const move = decision?.move ?? null;
+      const given =
+        input.firstMove &&
+        toolkit.tools.some((tool) => tool.name === input.firstMove?.tool)
+          ? input.firstMove
+          : null;
+      // A step the caller decided asks nobody: the decisions model is for the person's own words.
+      const decision = given
+        ? null
+        : ((await options
+            .firstMove?.({
+              owner,
+              botId,
+              asked: input.messages,
+              tools: toolkit.tools,
+            })
+            .catch((error: unknown) => {
+              log.warn("first_move_failed", { reason: describeFailure(error) });
+              return null;
+            })) ?? null);
+      const move: { tool: string; args: Record<string, unknown> } | null =
+        given ?? decision?.move ?? null;
       /*
        * ON THE TURN'S OWN MEASURE, whenever the decisions model was asked (`run-meter.ts`,
        * `FirstMoveMeasure`). This wait used to be inside the turn's queued time with no name, and
@@ -1188,7 +1213,7 @@ export function createTurnEngine(options: TurnEngineOptions) {
         meter.firstMove({
           asked: decision.asked,
           verdict: decision.verdict,
-          kind: move?.kind ?? null,
+          kind: decision.move?.kind ?? null,
           decisionMs: now() - decidingAt,
         });
       }
@@ -1540,6 +1565,7 @@ export function createTurnEngine(options: TurnEngineOptions) {
         ownerId: input.owner.id,
         botId: input.botId,
         label: chatLabelOf(input.messages),
+        origin: input.origin ?? "chat",
         startedAt: new Date(),
         status: "queued",
         asked: input.messages.map((message) => message.id),
@@ -1700,7 +1726,7 @@ export function createTurnEngine(options: TurnEngineOptions) {
         .filter((turn) => turn.ownerId === userId)
         .map((turn) => ({
           agentId: turn.botId,
-          origin: "chat",
+          origin: turn.origin,
           label: turn.label,
           startedAt: turn.startedAt.toISOString(),
         }));

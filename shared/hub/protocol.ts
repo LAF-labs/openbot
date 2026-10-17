@@ -68,6 +68,14 @@ export type HubMemberState = "active" | "left";
  * - `task.approval_granted`: a person let a blocked task go on past the one kind of action it
  *   stopped on (`POST /tasks/:id/approvals`). `refId` is the task id, `actor` who said yes, `at`
  *   when. The topic is in the note the yes leaves on the task. Seen by whoever can see the task.
+ * - `room.changed`: a room was made, or somebody was added to or taken out of it. `refId` is the
+ *   room id. Seen by the room's members after the change and by whoever was taken out, so a VM
+ *   learns of a room it was added to and drops one it left.
+ * - `room.message`: a message was posted. `refId` is `<room id>:<seq>` (`roomMessageRef`). Seen by
+ *   the room's members.
+ * - `room.mention`: a message mentions somebody. Same `refId`. A member mention is seen by that
+ *   member; a `lafi` mention is seen by the message's author ONLY, because the 라피 that answers is
+ *   the one on the caller's own VM — the others are never asked.
  */
 export const HUB_EVENT_TYPES = [
   "member.changed",
@@ -77,6 +85,9 @@ export const HUB_EVENT_TYPES = [
   "job.changed",
   "job.moved",
   "task.approval_granted",
+  "room.changed",
+  "room.message",
+  "room.mention",
 ] as const;
 export type HubEventType = (typeof HUB_EVENT_TYPES)[number];
 
@@ -131,6 +142,85 @@ export type HubSync = {
  * the hub pings every ten seconds and closes a socket it has not heard from in thirty.
  */
 export type HubSocketFrame = { kind: "event" } & HubEvent;
+
+/** What a message mentions to ask the author's own 라피, beside member ids. */
+export const HUB_LAFI_MENTION = "lafi";
+
+/** Bounds on what a room and a message may hold. A message is chat, not a document. */
+export const HUB_ROOM_LIMITS = {
+  /** Characters in a room's name. */
+  name: 100,
+  /** Characters in a message. Longer goes in a file. */
+  text: 4_000,
+  /** Distinct mentions in one message, `lafi` included. */
+  mentions: 20,
+  /** File ids attached to one message. */
+  files: 10,
+  /** Members named when a room is made, or added in one call. */
+  members: 50,
+  /** Messages in one page of `GET /rooms/:id/messages`, and the page with no `limit`. */
+  page: 200,
+  pageDefault: 50,
+} as const;
+
+/** `room.message` and `room.mention` name one message: its room and its number there. */
+export const roomMessageRef = (roomId: string, seq: number): string =>
+  `${roomId}:${seq}`;
+
+export type HubRoom = {
+  id: string;
+  name: string;
+  /** Member ids, the caller among them. */
+  members: string[];
+  /** The newest message's number in this room, 0 when it has none. */
+  lastSeq: number;
+  createdBy: string | null;
+  /** ISO 8601. */
+  createdAt: string;
+};
+
+/** `GET /hub/v1/rooms`: the rooms the caller is in, and only those. */
+export type HubRooms = { ok: true; rooms: HubRoom[] };
+
+export type HubRoomMessage = {
+  seq: number;
+  /** `m:<member id>` for a person, `bot:<member id>` for that person's 라피. */
+  by: string;
+  text: string;
+  /** Member ids and `lafi`. */
+  mentions: string[];
+  runId: string | null;
+  files: string[];
+  /** ISO 8601. */
+  at: string;
+};
+
+/**
+ * `GET /hub/v1/rooms/:id/messages`, oldest first.
+ *
+ * `?since=<seq>` is the messages after it, and `seq` is where the next call starts; `more` says
+ * the page was full. `?before=<seq>` is the page just before it, for reading back. Neither is the
+ * newest page, which is what a 라피 reads before it answers in a room.
+ */
+export type HubRoomMessages = {
+  ok: true;
+  messages: HubRoomMessage[];
+  seq: number;
+  more: boolean;
+};
+
+/**
+ * `POST /hub/v1/rooms/:id/messages`, with an `Idempotency-Key`. `as: "bot"` is the author's 라피
+ * posting (stored as `bot:<member>`); a 라피 cannot mention `lafi`, or two VMs' answers could call
+ * each other forever.
+ */
+export type HubRoomPost = {
+  text: string;
+  mentions?: string[];
+  as?: "member" | "bot";
+  runId?: string | null;
+  files?: string[];
+};
 
 /** The internal registry route laf-control signs (`POST /hub/v1/fleet`). */
 export const HUB_FLEET_PATH = `${HUB_PREFIX}/fleet`;

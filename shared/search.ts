@@ -15,7 +15,7 @@ export const SEARCH_TERMS_MAX = 5;
 
 export type SearchHit = {
   channelId: string;
-  /** `main` or `project` (`channels.kind`): which of the person's conversations it was said in. */
+  /** `main`, `project` or `room` (`channels.kind`): which of the person's conversations it was said in. */
   kind: string;
   /** The conversation's stored name: a project's is the person's own; a main one's is the Bot's. */
   channelName: string;

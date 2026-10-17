@@ -6,7 +6,7 @@ import {
   type AgentProfileStore,
 } from "../agents/profile-store";
 import type { AgentActor, AgentProfile } from "../agents/profile-types";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import {
   channelAgents,
@@ -20,6 +20,7 @@ import { soloConversationOf } from "./solo-channel";
 import type { ThreadIdentity } from "./thread-identity";
 import type { AgentChannel } from "./types";
 import { cutOnGraphemes } from "../../../shared/sound-text";
+import { roomConversationId } from "../../../shared/hub/room-answers";
 
 const PRIVATE_AGENT_CHANNEL_DESCRIPTION = "Private agent channel.";
 const MAX_CHANNEL_NAME_CODE_POINTS = 120;
@@ -177,6 +178,69 @@ export function createProject(
 }
 
 /**
+ * THE CONVERSATION A BOT ANSWERS ITS PERSON'S TEAM ROOM IN: one per room, made the first time the
+ * person asks their 라피 there and found again every time after (`hub/room-answers.ts`).
+ *
+ * ITS ID IS MADE FROM THE ROOM AND THE BOT (`roomConversationId`), so no table holds which room it
+ * is: the VM finds it again by the id, and a room's screen links to it from what it already knows.
+ * The Bot is in the id because a Bot can be deleted and another made; the new one starts a room's
+ * conversation of its own rather than being handed the old one's channel.
+ *
+ * NEITHER `main` NOR A PROJECT. It is not counted against the fifty, it is never taken for the main
+ * conversation (`solo-channel.ts` reads `main` only), and what it writes goes in the Bot's own
+ * folder — the person asked for it from their own account, with their own permissions.
+ *
+ * The advisory lock keeps two first questions from making it twice; the room's questions are taken
+ * one at a time anyway, so it is a fence and not a queue.
+ */
+export function openRoomConversation(
+  { database, profileStore, threadIdentity }: ConversationDeps,
+  actor: AgentActor,
+  agentId: string,
+  room: { id: string; name: string },
+): Promise<AgentChannel> {
+  const id = roomConversationId(room.id, agentId);
+  return database.transaction(
+    async (transaction) => {
+      await transaction.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${`laf_room_conversation:${id}`}))`,
+      );
+      await lockProfiles(transaction, profileStore, actor, [agentId]);
+      const [found] = await transaction
+        .select({ name: channels.name, threadId: channelThreads.threadId })
+        .from(channels)
+        .innerJoin(
+          channelThreads,
+          and(
+            eq(channelThreads.channelId, channels.id),
+            eq(channelThreads.userId, actor.id),
+          ),
+        )
+        .where(eq(channels.id, id))
+        .limit(1);
+      if (found) {
+        return {
+          id,
+          name: found.name,
+          agentIds: [agentId],
+          threadId: found.threadId,
+          active: true,
+          kind: "room",
+        };
+      }
+      return writeConversation(
+        transaction,
+        threadIdentity,
+        actor,
+        { name: room.name, kind: "room", agentIds: [agentId] },
+        id,
+      );
+    },
+    { isolationLevel: "read committed" },
+  );
+}
+
+/**
  * Every Bot the conversation will hold, read and locked on the caller's transaction.
  *
  * Validated on this transaction, not through `profileStore.get`: the read has to share the
@@ -212,8 +276,9 @@ async function writeConversation(
   threadIdentity: ThreadIdentity | { named: string },
   actor: AgentActor,
   { name, kind, agentIds }: Pick<AgentChannel, "name" | "kind" | "agentIds">,
+  /** A room's conversation is found again by its id; every other one is given a fresh one. */
+  id = `channel_${crypto.randomUUID()}`,
 ): Promise<AgentChannel> {
-  const id = `channel_${crypto.randomUUID()}`;
   // Minted rather than a bare random id, so the thread says which deployment it belongs to
   // in a project that may hold more than one. See thread-identity.ts. A task's is named by the
   // task (`taskConversation`), so the run that works it finds it again.

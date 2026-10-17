@@ -126,6 +126,9 @@ import {
   createUnreportedRuns,
   deploymentBot,
 } from "./hub/task-run";
+import { answererOf, createRoomAnswers } from "./hub/room-answers";
+import { openRoomConversation } from "./channels/conversations";
+import type { HubEvent } from "../../shared/hub/protocol";
 import { log, recentLines } from "./log";
 import { createLoginVault } from "./logins/store";
 import { readApprovalMetrics } from "./notifications/approval-metrics";
@@ -414,10 +417,17 @@ let hubFramesSent: Promise<void> = Promise.resolve();
 let taskPickup: TaskPickup | undefined;
 /** The routines registered as the company's sub-Bots, made below once the routines exist. */
 let hubJobs: HubJobs | undefined;
+/**
+ * What this server does itself with a hub event, beside passing it to the app: answering the
+ * person's "@라피" in a team room (`hub/room-answers.ts`). Bound once the turn engine exists, which
+ * is after the hub; the line starts last, so no event comes before it.
+ */
+let onHubEvent: ((event: HubEvent) => void) | undefined;
 const hubRuntime = config.hub
   ? createHubRuntime({
       config: config.hub,
       database,
+      onEvent: (event) => onHubEvent?.(event),
       // Chained, so frames reach the page in the order the hub numbered them.
       deliver: (frame) => {
         void hearFrame(taskPickup, frame);
@@ -1222,6 +1232,31 @@ const turnEngine = createTurnEngine({
       at: new Date(),
     }),
 });
+/*
+ * The person's "@라피" in a team room, answered here through the same engine (`hub/room-answers.ts`):
+ * only this VM hears of it, the turn is theirs like any chat's, and its last words go to the room.
+ */
+if (hubRuntime) {
+  const roomAnswers = createRoomAnswers({
+    database,
+    http: hubRuntime.http,
+    outbox: hubRuntime.outbox,
+    me: () => hubRuntime.link.me()?.member.id ?? null,
+    answerer: () => answererOf(database),
+    conversation: async ({ owner, botId }, room) => {
+      const opened = await openRoomConversation(
+        { database, profileStore: agentProfileStore, threadIdentity },
+        owner,
+        botId,
+        room,
+      );
+      return { channelId: opened.id, threadId: opened.threadId };
+    },
+    engine: turnEngine,
+    turns: turnHub,
+  });
+  onHubEvent = roomAnswers.onEvent;
+}
 /*
  * A project's deletion, and the one gate its mark is read at (`channels/deleting.ts`). The list of
  * writes in flight is its own and this process's, which is the deployment's: one API server per VM.

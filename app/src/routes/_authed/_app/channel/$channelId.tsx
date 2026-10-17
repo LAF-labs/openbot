@@ -30,6 +30,7 @@ import {
 } from "@/lib/computer/screen-panel";
 import { CopilotProvider } from "@/lib/copilot/provider";
 import { isProject, projectName } from "@/lib/channels/projects";
+import { roomConversationName } from "@/lib/hub/rooms";
 import { t } from "@/lib/i18n";
 
 const chatSearchSchema = z
@@ -247,7 +248,9 @@ function RouteComponent() {
         name={
           isProject(channel.data)
             ? projectName(channel.data ?? {})
-            : (headerAgent?.name ?? channel.data?.name ?? t("Channel"))
+            : channel.data?.kind === "room"
+              ? roomConversationName(channel.data)
+              : (headerAgent?.name ?? channel.data?.name ?? t("Channel"))
         }
         pill={(presence) =>
           agentId ? (

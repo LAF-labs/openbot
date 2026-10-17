@@ -2514,6 +2514,12 @@ export const ko: Record<string, string> = {
     "이 일감에서 허락을 기다리는 일이 이제 없어요.",
   "Only the person this Bot belongs to can allow this.":
     "이 봇의 주인만 허락할 수 있어요.",
+  // 단체방에서 부른 라피 — 답하는 동안의 한 줄, 라피가 쓴 글의 이름, 그 방의 내 대화(lib/hub/rooms.ts).
+  "{name}'s Lafi": "{name}의 라피",
+  "{name}'s Lafi is looking into it": "{name}의 라피가 알아보는 중",
+  "A teammate": "팀원",
+  "Team room · {name}": "단체방 · {name}",
+  "A team room": "단체방",
   // 오늘 사용량 — 설정의 한 줄과, 80%부터 입력창 위에 뜨는 한 줄. 거절당하기 전에 남은 양을 알린다.
   "Free trial": "무료 체험",
   "Today's usage": "오늘 사용량",
