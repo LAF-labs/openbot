@@ -54,6 +54,13 @@ export type HubJobs = {
     actor: AgentActor,
     routineId: string,
   ): Promise<{ ok: true; jobId: string } | { ok: false; code: string }>;
+  /**
+   * The routine this VM works a board task given to the job as (`task-pickup.ts`), or null: it must
+   * be linked here AND the hub must name this member the job's runner now. Both, because either alone
+   * is a window for two VMs to work one job's tasks — the link outlives the move until `job.moved` is
+   * heard, and the register names a runner whose VM has no routine until the handoff is collected.
+   */
+  routineFor(jobId: string): Promise<string | null>;
   /** An event off the hub's line. Only the jobs' are looked at. */
   heard(event: { type: string; refId: string | null }): void;
   /** Every job this VM runs now and has no routine for: its handoff looked for. At boot and on reconnect. */
@@ -72,6 +79,11 @@ export type HubJobsOptions = {
   mine: (actor: AgentActor, routineId: string) => Promise<unknown>;
   /** Make the routine on this VM, for its person and their 라피. Answers its id. */
   install: (definition: JobDefinition) => Promise<string>;
+  /**
+   * A job became this VM's (its handoff collected and its routine made): the board is read for the
+   * tasks already given to it, which were waiting for a VM to run them (`task-pickup.ts`, `scan`).
+   */
+  onTaken?: (jobId: string) => void;
   now?: () => Date;
 };
 
@@ -189,6 +201,7 @@ export function createHubJobs(options: HubJobsOptions): HubJobs {
       origin: "job",
     });
     log.info("hub_job_taken_over", { job: jobId, routine: routineId });
+    options.onTaken?.(jobId);
   };
 
   const look = async (jobId: string): Promise<void> => {
@@ -252,6 +265,28 @@ export function createHubJobs(options: HubJobsOptions): HubJobs {
         .values({ jobId, routineId })
         .onConflictDoNothing();
       return { ok: true, jobId };
+    },
+
+    async routineFor(jobId) {
+      const me = options.memberId();
+      if (!me) return null;
+      // A hand-on or a take-over of this job under way decides the answer: it is waited for.
+      await busy.get(jobId);
+      const local = await localOf(jobId);
+      if (!local) return null;
+      const read = await http.request({
+        path: HUB_JOB_PATHS.job(jobId),
+        retry: false,
+      });
+      const job = read.ok ? readJob(read.body) : null;
+      // A hub that does not answer runs nothing: the task waits on the board for the next look.
+      if (!job) return null;
+      if (job.runner !== me) {
+        // Moved, and `job.moved` not heard yet (the line was down): handed on now.
+        void consider(jobId);
+        return null;
+      }
+      return local;
     },
 
     heard(event) {

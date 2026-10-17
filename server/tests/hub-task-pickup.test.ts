@@ -396,3 +396,94 @@ describe("what the line delivers", () => {
     expect(started.map((one) => one.split(":")[0])).toEqual(["t_10", "t_11"]);
   });
 });
+
+describe("a task given to a sub-Bot (`job:<id>`)", () => {
+  /** A run that keeps which job each task was run as. */
+  function asJob() {
+    const ran: { task: string; job: unknown }[] = [];
+    const run: TaskRun = async ({ task, job }) => {
+      ran.push({ task: task.id, job: job ?? null });
+      return { kind: "done", steps: 1 };
+    };
+    return { run, ran };
+  }
+
+  test("is run where the job's routine runs, as that routine, and never asked for by a VM that does not run it", async () => {
+    const hub = fakeTaskHub();
+    hub.jobs.set("j_1", {
+      id: "j_1",
+      name: "거래처 정리",
+      owner: ME,
+      runner: ME,
+      schedule: null,
+    });
+    hub.add({ id: "t_j1", assignee: "job:j_1" });
+    const runner = asJob();
+    const other = asJob();
+    const asked: string[] = [];
+    const mine = createTaskPickup({
+      http: hub.as(ME),
+      memberId: () => ME,
+      run: runner.run,
+      jobs: {
+        routineFor: async (jobId) => {
+          asked.push(jobId);
+          return jobId === "j_1" ? "routine-1" : null;
+        },
+      },
+      newRunId: () => "run-j",
+    });
+    const theirs = createTaskPickup({
+      http: hub.as("m_other"),
+      memberId: () => "m_other",
+      run: other.run,
+      jobs: { routineFor: async () => null },
+      newRunId: () => "run-x",
+    });
+
+    // The event reaches everybody who can see a job's task; both VMs hear it.
+    theirs.heard({ type: "task.assigned", refId: "t_j1" });
+    mine.heard({ type: "task.assigned", refId: "t_j1" });
+    await Promise.all([theirs.idle(), mine.idle()]);
+
+    expect(asked).toEqual(["j_1"]);
+    expect(runner.ran).toEqual([
+      { task: "t_j1", job: { id: "j_1", routineId: "routine-1" } },
+    ]);
+    expect(other.ran).toEqual([]);
+    expect(
+      hub.requests
+        .filter((request) => request.as === "m_other")
+        .map((request) => `${request.method ?? "GET"} ${request.path}`),
+    ).toEqual(["GET /tasks/t_j1"]);
+    expect(hub.tasks.get("t_j1")?.stage).toBe("review");
+  });
+
+  test("a VM without the sub-Bots takes no job's task, and still takes its own 라피's", async () => {
+    const hub = fakeTaskHub();
+    hub.jobs.set("j_2", {
+      id: "j_2",
+      name: "주간 보고",
+      owner: ME,
+      runner: ME,
+      schedule: null,
+    });
+    hub.add({ id: "t_j2", assignee: "job:j_2" });
+    hub.add({ id: "t_b2", assignee: `bot:${ME}` });
+    const { run, ran } = asJob();
+    const pickup = createTaskPickup({
+      http: hub.as(ME),
+      memberId: () => ME,
+      run,
+      newRunId: runIds,
+    });
+
+    await pickup.scan();
+
+    expect(ran).toEqual([{ task: "t_b2", job: null }]);
+    expect(hub.tasks.get("t_j2")?.stage).toBe("todo");
+    expect(
+      hub.requests.some((request) => request.path === "/tasks/t_j2/checkout"),
+    ).toBe(false);
+  });
+});

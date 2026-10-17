@@ -440,6 +440,7 @@
   "server/tests/hub-budget.integration.test.ts",
   "server/tests/hub-budget.test.ts",
   "server/tests/hub-http.test.ts",
+  "server/tests/hub-job-tasks.integration.test.ts",
   "server/tests/hub-jobs.integration.test.ts",
   "server/tests/hub-link.integration.test.ts",
   "server/tests/hub-outbox.integration.test.ts",

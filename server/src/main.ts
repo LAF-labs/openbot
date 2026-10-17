@@ -1041,6 +1041,8 @@ if (hubRuntime) {
       });
       return made.id;
     },
+    // The tasks already given to a job that just became this VM's, waiting for it.
+    onTaken: () => void taskPickup?.scan(),
   });
 }
 
@@ -1053,6 +1055,8 @@ if (hubRuntime) {
   taskPickup = createTaskPickup({
     http: hubRuntime.http,
     memberId: () => hubRuntime.link.me()?.member.id ?? null,
+    // A task given to a sub-Bot is taken here when this VM runs it (`hub/jobs.ts`, `routineFor`).
+    ...(hubJobs ? { jobs: hubJobs } : {}),
     unreported: createUnreportedRuns(database),
     run: createTaskRun({
       database,
@@ -1254,6 +1258,8 @@ if (hubRuntime) {
     },
     engine: turnEngine,
     turns: turnHub,
+    // The company's day, asked before each question's turn and told after (`hub/budget.ts`).
+    ...(runBudget ? { budget: { runs: runBudget, ledger: runLedger } } : {}),
   });
   onHubEvent = roomAnswers.onEvent;
 }

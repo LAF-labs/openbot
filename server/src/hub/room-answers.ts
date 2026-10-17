@@ -21,11 +21,21 @@
  * ONE QUESTION AT A TIME PER ROOM, in the order they were asked: two at once would be two turns on
  * one conversation, which the engine refuses. Different rooms go on side by side.
  *
+ * THE COMPANY'S DAY, ASKED BEFORE THE TURN (lafi-dev-design §7, `budget.ts`). A room's question is an
+ * unattended run as far as the company's ledger goes — nobody chose to spend on it but the asker,
+ * and the room sees the answer — so it reserves against the workspace's day before the engine is
+ * handed anything, under an id made from the room and the message's number (a question heard again
+ * gets its reservation back, never a second one), and what the turn cost is settled after, through
+ * the outbox, however the turn ended. Refused, nothing reaches the model and nothing reaches the
+ * room: the question is filed in the room's conversation with the refusal as its run's fact, which
+ * the asker's own screen puts into words (`turn-failures.ts`, `laf:turn_company_budget_reached`).
+ *
  * NEVER TWICE. The person's message is filed in the conversation under an id made from the room
  * and the message's number, so a mention heard again — a restart that replays the line from its
  * cursor — finds it there and starts nothing. And when the Bot already posted to the room itself
  * during the turn (`mcp__hub__write`), its last words are not posted again.
  */
+import { randomUUID } from "node:crypto";
 import type { Message } from "@ag-ui/client";
 import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import {
@@ -48,13 +58,16 @@ import {
   agentProfiles,
   agents,
   lafThreadMessages,
+  lafThreadRuns,
   userRoles,
 } from "../db/schema";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
-import { messagesFor } from "../runner/thread-store";
+import { chatLabelOf, type RunLedger } from "../runner/run-ledger";
+import { appendMessages, messagesFor } from "../runner/thread-store";
 import { CHAT_TURN_TIMEOUT_MS, type TurnEngine } from "../turns/engine";
 import type { TurnHub, TurnStatus } from "../turns/hub";
+import type { RunBudget } from "./budget";
 import type { HubHttp } from "./http";
 import type { HubOutbox } from "./outbox";
 import { HUB_TOOLS_KEY } from "./tools";
@@ -74,6 +87,9 @@ const ROOM_ID = /^[A-Za-z0-9_-]{1,80}$/;
 
 /** How often a room's question looks again whether its conversation is free. */
 const IDLE_POLL_MS = 500;
+
+/** How long the turn's ledger row is waited for after its end is heard: the engine settles it after. */
+const COST_WAIT_MS = 5_000;
 
 /** Longer than any turn may run: past this the turn's end was never heard, and nothing is posted. */
 const TURN_WAIT_MS = CHAT_TURN_TIMEOUT_MS + 60_000;
@@ -96,6 +112,14 @@ export type RoomAnswersDeps = {
   ) => Promise<{ channelId: string; threadId: string }>;
   engine: Pick<TurnEngine, "send" | "busy">;
   turns: Pick<TurnHub, "subscribe">;
+  /**
+   * The company's budget (`budget.ts`), asked before each question's turn and told after, and the
+   * ledger a refused question is filed in. Absent: a question is answered as it was before.
+   */
+  budget?: {
+    runs: RunBudget;
+    ledger: Pick<RunLedger, "begin" | "settle">;
+  };
   now?: () => number;
   sleep?: (milliseconds: number) => Promise<void>;
 };
@@ -242,7 +266,7 @@ export function createRoomAnswers(deps: RoomAnswersDeps) {
     threadId: string;
     roomId: string;
     question: Message;
-  }): Promise<{ turnId: string; status: TurnStatus } | null> => {
+  }): Promise<{ turnId: string; status: TurnStatus | null } | null> => {
     const ended = new Map<string, TurnStatus>();
     let heard: (() => void) | null = null;
     const unsubscribe = deps.turns.subscribe(
@@ -286,7 +310,7 @@ export function createRoomAnswers(deps: RoomAnswersDeps) {
       const until = now() + TURN_WAIT_MS;
       while (!ended.has(turnId)) {
         const left = until - now();
-        if (left <= 0) return null;
+        if (left <= 0) return { turnId, status: null };
         await new Promise<void>((resolve) => {
           heard = resolve;
           setTimeout(resolve, Math.min(left, 60_000)).unref?.();
@@ -297,6 +321,52 @@ export function createRoomAnswers(deps: RoomAnswersDeps) {
     } finally {
       unsubscribe();
     }
+  };
+
+  /**
+   * What the turn cost, off its ledger row — which the engine settles just after the end it
+   * announces, so a row still `running` is looked at again for a few seconds. Zero for a row that
+   * never appears: the hub's day then counts the reservation's release, never a guess.
+   */
+  const spentBy = async (turnId: string): Promise<number> => {
+    const giveUpAt = now() + COST_WAIT_MS;
+    for (;;) {
+      const [row] = await deps.database
+        .select({ status: lafThreadRuns.status, cost: lafThreadRuns.costUsd })
+        .from(lafThreadRuns)
+        .where(eq(lafThreadRuns.runId, turnId))
+        .limit(1);
+      if (row && row.status !== "running") return row.cost;
+      if (now() > giveUpAt) return row?.cost ?? 0;
+      await sleep(IDLE_POLL_MS);
+    }
+  };
+
+  /**
+   * A question the company's budget refused: filed in the room's conversation under a run of its
+   * own that ended on the hub's fact and asked the model nothing. A failure is not a message
+   * (`channels/turn-failures.ts`): the asker's screen reads it off the run, beside their question,
+   * and the question's id keeps it from being taken again when the line is heard twice.
+   */
+  const refused = async (
+    ledger: Pick<RunLedger, "begin" | "settle">,
+    input: { answerer: RoomAnswerer; threadId: string; question: Message },
+    code: string,
+  ): Promise<void> => {
+    const runId = randomUUID();
+    await ledger.begin({
+      runId,
+      threadId: input.threadId,
+      agentId: input.answerer.botId,
+      userId: input.answerer.owner.id,
+      origin: "chat",
+      // What the person asked, for 오늘 to name the run by, as a chat turn's is.
+      label: chatLabelOf([input.question]),
+    });
+    await appendMessages(deps.database, input.threadId, [input.question], {
+      runId,
+    });
+    await ledger.settle(runId, { status: "error", error: code, eventCount: 0 });
   };
 
   const answer = async (roomId: string, seq: number): Promise<void> => {
@@ -331,13 +401,42 @@ export function createRoomAnswers(deps: RoomAnswersDeps) {
       log.info("room_answer_already", { room: roomId, seq });
       return;
     }
+    const question: Message = {
+      id: questionId,
+      role: "user",
+      content: line.text,
+    };
+    const verdict = deps.budget
+      ? await deps.budget.runs.reserve({
+          runId: questionId,
+          scopes: [],
+          origin: "room",
+        })
+      : null;
+    if (verdict && !verdict.go && deps.budget) {
+      await refused(
+        deps.budget.ledger,
+        { answerer, threadId: conversation.threadId, question },
+        verdict.code,
+      );
+      log.info("room_answer_refused", { room: roomId, seq });
+      return;
+    }
     log.info("room_answer_started", { room: roomId, seq });
     const run = await runTurn({
       answerer,
       ...conversation,
       roomId,
-      question: { id: questionId, role: "user", content: line.text },
+      question,
     });
+    // What it cost, however it ended — a turn never started cost nothing and frees what was set aside.
+    if (deps.budget && verdict?.go) {
+      await deps.budget.runs.settle({
+        runId: questionId,
+        actual: run ? await spentBy(run.turnId) : 0,
+        origin: "room",
+      });
+    }
     if (run?.status !== "done") {
       // Stopped by the person, or failed: they see why in the conversation; the room is not told.
       log.info("room_answer_not_posted", {

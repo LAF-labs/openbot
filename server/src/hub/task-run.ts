@@ -14,6 +14,12 @@
  * a person for every question, and its run carries no mode, so a task there would be a
  * conversation the Bot believes somebody is watching.
  *
+ * A SUB-BOT'S TASK (`job:<id>`) RUNS AS ITS ROUTINE (lafi-dev-design §6). The routine linked to the
+ * job on this VM (`jobs.ts`) says who acts and with which Bot — its author, its Bot, as its
+ * scheduled run does — and what the Bot is told first: the routine's instruction, then the task as
+ * it was given. The toolkit, the mode, the steps and the time are the ones above, which are a
+ * routine's. Its day is counted against the job's as well as the task's and the workspace's.
+ *
  * WHERE IT CAN BE READ. The task's own conversation, `task:<id>`, a project of the Bot's named after
  * the task (`channels/conversations.ts`, `taskConversation`): the task as it was given, as the
  * person's message, and every step the run took, filed when the run ends. The ledger row is opened
@@ -33,7 +39,12 @@ import type { AskSubject } from "../computer/approvals";
 import { laneOfBrowser } from "../computer/bot-id";
 import type { ActionActor } from "../computer/gateway";
 import type { Database } from "../db/client";
-import { agentProfiles, lafThreadRuns, userRoles } from "../db/schema";
+import {
+  agentProfiles,
+  lafRoutines,
+  lafThreadRuns,
+  userRoles,
+} from "../db/schema";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
 import { ROUTINE_RUN_TIMEOUT_MS } from "../routines/run";
@@ -51,7 +62,12 @@ import { createRunMeter } from "../telemetry/run-meter";
 import { turnFailureOf } from "../turns/engine";
 import type { RunBudget } from "./budget";
 import type { TaskAsks } from "./task-asks";
-import type { TaskRun, TaskRunOutcome, UnreportedRun } from "./task-pickup";
+import type {
+  TaskJob,
+  TaskRun,
+  TaskRunOutcome,
+  UnreportedRun,
+} from "./task-pickup";
 import type { HubTaskView } from "./wire";
 
 /** The conversation a task is worked in. */
@@ -143,6 +159,49 @@ export function taskInstruction(task: HubTaskView): string {
   return description ? `${title}\n\n${description}` : title;
 }
 
+/**
+ * What a sub-Bot's run is told: its routine's instruction — what its person wrote it to do — and
+ * then the task, as for any task. Both are a person's words; nothing is added between them.
+ */
+export function jobTaskInstruction(
+  routineInstruction: string,
+  task: HubTaskView,
+): string {
+  const standing = routineInstruction.trim();
+  const asked = taskInstruction(task);
+  return standing ? `${standing}\n\n${asked}` : asked;
+}
+
+/**
+ * Who a sub-Bot's task runs as: the routine's author and its Bot, as the routine's own run reads
+ * them (`routines/run.ts`). Null where the routine is gone or its author's account is.
+ */
+async function routineRunner(
+  database: Database,
+  job: TaskJob,
+): Promise<{
+  actor: AgentActor;
+  botId: string;
+  instruction: string;
+} | null> {
+  const [row] = await database
+    .select({
+      agentId: lafRoutines.agentId,
+      author: lafRoutines.createdById,
+      role: lafRoutines.createdByRole,
+      instruction: lafRoutines.instruction,
+    })
+    .from(lafRoutines)
+    .where(eq(lafRoutines.id, job.routineId))
+    .limit(1);
+  if (!row?.author) return null;
+  return {
+    actor: { id: row.author, role: row.role === "admin" ? "admin" : "user" },
+    botId: row.agentId,
+    instruction: row.instruction,
+  };
+}
+
 /** The topic of a question nobody was there to answer: kind of action and where (`ask-topic.ts`). */
 export { topicOf };
 
@@ -207,12 +266,19 @@ function watching(
 
 export function createTaskRun(deps: TaskRunDeps): TaskRun {
   const owner = deps.owner ?? (() => deploymentBot(deps.database));
-  return async ({ task, runId, signal }): Promise<TaskRunOutcome> => {
-    const who = await owner();
+  return async ({ task, job, runId, signal }): Promise<TaskRunOutcome> => {
+    const asRoutine = job ? await routineRunner(deps.database, job) : null;
+    if (job && !asRoutine) {
+      return { kind: "failed", code: "laf:routine_not_found", steps: 0 };
+    }
+    const who = asRoutine ?? (await owner());
     if (!who) {
       return { kind: "failed", code: "laf:bot_not_found", steps: 0 };
     }
     const { actor, botId } = who;
+    const instruction = asRoutine
+      ? jobTaskInstruction(asRoutine.instruction, task)
+      : taskInstruction(task);
     /*
      * NOBODY THE DEPLOYMENT NO LONGER ADMITS ACTS THROUGH A TASK — the rule a routine keeps
      * (`routines/run.ts`, `authorIsAdmitted`), and for the same reason: a lookup that fails counts
@@ -261,21 +327,24 @@ export function createTaskRun(deps: TaskRunDeps): TaskRun {
     const asked: Message = {
       id: randomUUID(),
       role: "user",
-      content: taskInstruction(task),
+      content: instruction,
     };
     let target: LoopAgent | undefined;
     let waiting: Waiting | null = null;
     let outcome: TaskRunOutcome;
     const meter = createRunMeter();
     /*
-     * THE COMPANY'S DAY, ASKED BEFORE THE BOT IS — the workspace's and this task's (`budget.ts`).
+     * THE COMPANY'S DAY, ASKED BEFORE THE BOT IS — the workspace's, this task's, and for a sub-Bot's
+     * task the job's (`budget.ts`).
      * After the ledger row, so the refused run is in the task's conversation with its fact, and
      * before the lane and the model: a refused run sends nothing to the model.
      */
     const verdict = deps.budget
       ? await deps.budget.reserve({
           runId,
-          scopes: [`task:${task.id}`],
+          scopes: job
+            ? [`job:${job.id}`, `task:${task.id}`]
+            : [`task:${task.id}`],
           origin: "job",
         })
       : null;
@@ -309,7 +378,7 @@ export function createTaskRun(deps: TaskRunDeps): TaskRun {
           deps.browser ? { browser: deps.browser.name } : undefined,
         );
         try {
-          const run = await runUnattended(agent, taskInstruction(task), {
+          const run = await runUnattended(agent, instruction, {
             toolkit: watching(toolkit, (seen) => {
               waiting ??= seen;
             }),

@@ -1,6 +1,13 @@
 /**
- * A task on the company board given to this member's 라피 (`bot:<member>`): taken, worked, and
- * handed back for a person to look at.
+ * A task on the company board given to this member's 라피 (`bot:<member>`), or to a sub-Bot this VM
+ * runs (`job:<id>`): taken, worked, and handed back for a person to look at.
+ *
+ * A SUB-BOT'S TASK IS ITS RUNNER'S (lafi-dev-design §6, the `job:<id>` row). `task.assigned` for a
+ * job reaches everybody who can see the task, so every VM hears it and exactly one acts: the one
+ * where a routine is linked to the job AND whose member the hub names the job's runner now
+ * (`jobs.ts`, `routineFor`). It runs as that routine — its instruction, its Bot, its limits — and
+ * against the job's day as well as the task's (`task-run.ts`). After `job.moved` takes the job
+ * away, the link is gone here and the next task is the new runner's.
  *
  * THE SHAPE (lafi-dev-design §6). `task.assigned` names a task given to this member — and at boot,
  * and every time the line comes back, the board is read for tasks already given and still waiting.
@@ -69,8 +76,13 @@ export type TaskRunOutcome =
   /** The claim went from under it: a person moved the task, or the sweep freed it. Nothing is said. */
   | { kind: "lost" };
 
+/** The sub-Bot a task was given to, and the routine on this VM that it runs as. */
+export type TaskJob = { id: string; routineId: string };
+
 export type TaskRun = (input: {
   task: HubTaskView;
+  /** Given to a sub-Bot this VM runs; absent for a task given to this member's 라피. */
+  job?: TaskJob;
   /** The claim's id on the hub, which is also the run's id here (the ledger, the thread). */
   runId: string;
   /** Aborted when the claim is lost. */
@@ -88,6 +100,8 @@ export type TaskPickupOptions = {
   /** This VM's member id on the hub, from the last `/me` that answered; null before one did. */
   memberId: () => string | null;
   run: TaskRun;
+  /** The sub-Bots this VM runs (`jobs.ts`). Absent: a task given to a job is never taken here. */
+  jobs?: { routineFor(jobId: string): Promise<string | null> };
   unreported?: UnreportedRun;
   heartbeatMs?: number;
   newRunId?: () => string;
@@ -157,6 +171,13 @@ export function taskReport(
 const stepsOf = (outcome: { steps?: number }) =>
   outcome.steps === undefined ? "" : ` steps:${outcome.steps}`;
 
+/** The job a task is given to (`job:<id>`), or null. */
+export function jobOf(assignee: string | null): string | null {
+  if (!assignee?.startsWith("job:")) return null;
+  const id = assignee.slice("job:".length);
+  return id ? id : null;
+}
+
 const TASK_EVENTS: ReadonlySet<string> = new Set([
   "task.assigned",
   "task.changed",
@@ -223,12 +244,28 @@ export function createTaskPickup(options: TaskPickupOptions): TaskPickup {
     return false;
   };
 
-  /** Whether the task is this 라피's and waiting to be taken. */
+  /**
+   * Whether the task is waiting to be taken and might be this VM's: given to this 라피, or to a job
+   * (whether the job is this VM's is asked after, by `runsAs` — it takes a read).
+   */
   const waiting = (task: HubTaskView, me: string) =>
-    task.assignee === `bot:${me}` &&
+    (task.assignee === `bot:${me}` ||
+      (options.jobs !== undefined && jobOf(task.assignee) !== null)) &&
     task.stage === "todo" &&
     task.checkout === null &&
     (leftAt.get(task.id) ?? -1) < task.version;
+
+  /** What this VM runs the task as: its 라피 (`{}`), a sub-Bot it runs, or nothing (null). */
+  const runsAs = async (
+    task: HubTaskView,
+    me: string,
+  ): Promise<{ job?: TaskJob } | null> => {
+    if (task.assignee === `bot:${me}`) return {};
+    const jobId = jobOf(task.assignee);
+    if (!jobId || !options.jobs) return null;
+    const routineId = await options.jobs.routineFor(jobId);
+    return routineId ? { job: { id: jobId, routineId } } : null;
+  };
 
   const work = async (taskId: string, seen?: HubTaskView): Promise<void> => {
     const me = options.memberId();
@@ -247,6 +284,8 @@ export function createTaskPickup(options: TaskPickupOptions): TaskPickup {
     }
     const detail = readTaskDetail(read.body);
     if (!detail || !waiting(detail.task, me)) return;
+    const as = await runsAs(detail.task, me);
+    if (!as) return;
 
     const noted = new Set(
       detail.notes
@@ -318,6 +357,7 @@ export function createTaskPickup(options: TaskPickupOptions): TaskPickup {
       try {
         outcome = await options.run({
           task: claimed,
+          ...as,
           runId,
           signal: lost.signal,
         });

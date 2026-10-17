@@ -55,7 +55,12 @@ export type RunBudget = {
     origin: BudgetOrigin;
   }): Promise<BudgetVerdict>;
   /** What the run cost, sent through the outbox. Never throws: a lost settle is a log line. */
-  settle(input: { runId: string; actual: number }): Promise<void>;
+  settle(input: {
+    runId: string;
+    actual: number;
+    /** Which kind of run it was, as its reservation said. A job's, unless told. */
+    origin?: BudgetOrigin;
+  }): Promise<void>;
 };
 
 export function createRunBudget(input: {
@@ -100,13 +105,13 @@ export function createRunBudget(input: {
       return { go: true, reserved: false };
     },
 
-    async settle({ runId, actual }) {
+    async settle({ runId, actual, origin = "job" }) {
       await input.outbox
         .enqueue({
           method: "POST",
           path: HUB_BUDGET_PATHS.settle,
           body: budgetSettleBody({ runId, actual }),
-          origin: "job",
+          origin,
           runId,
         })
         .catch((error: unknown) => {

@@ -9,6 +9,12 @@ import type { HubAnswer, HubHttp, HubRequest } from "../../src/hub/http";
  * frees every claim run out. Every write moves the version, as the hub's does.
  *
  * Each VM gets its own `HubHttp` by member id (`as`). The clock is the test's (`advance`).
+ *
+ * The sub-Bot register and the budget, as far as a job's task meets them: `/jobs` reads a job and
+ * its runner, `/jobs/:id/handoff` holds a definition for the member it names until that member takes
+ * it; a task given to `job:<id>` is taken only by the job's runner (lafi-dev-design §6); a
+ * reservation naming a scope in `spent` is `laf:budget_reached`, and every reservation and settle is
+ * kept.
  */
 
 export type FakeTask = {
@@ -26,9 +32,25 @@ export type FakeTask = {
 
 export const LOCK_MS = 5 * 60 * 1000;
 
+export type FakeJob = {
+  id: string;
+  name: string;
+  owner: string;
+  runner: string;
+  schedule: string | null;
+};
+
 export function fakeTaskHub() {
   let now = 1_000_000;
   const tasks = new Map<string, FakeTask>();
+  const jobs = new Map<string, FakeJob>();
+  const handoffs = new Map<string, { to: string; definition: unknown }>();
+  const budget = {
+    /** Scopes whose day is spent: a reservation naming one is refused. */
+    spent: new Set<string>(),
+    reserved: [] as { as: string; runId: string; scopes: string[] }[],
+    settled: [] as { as: string; runId: string; actual: number }[],
+  };
   /** Every request, with who sent it. */
   const requests: (HubRequest & { as: string })[] = [];
   /** Answers a request before the board does, when it returns one: a hub that is away, say. */
@@ -59,6 +81,34 @@ export function fakeTaskHub() {
     const parts = url.pathname.split("/").filter(Boolean);
     const body = (request.body ?? {}) as Record<string, unknown>;
     const method = request.method ?? "GET";
+    if (parts[0] === "budget" && method === "POST") {
+      const runId = String(body.runId);
+      if (parts[1] === "settle") {
+        budget.settled.push({ as, runId, actual: Number(body.actual) });
+        return ok({ ok: true });
+      }
+      const scopes = Array.isArray(body.scopes) ? body.scopes.map(String) : [];
+      const spent = scopes.find((scope) => budget.spent.has(scope));
+      if (spent) return no(409, "laf:budget_reached");
+      budget.reserved.push({ as, runId, scopes });
+      return ok({ ok: true });
+    }
+    if (parts[0] === "jobs") {
+      if (!parts[1]) return ok({ ok: true, jobs: [...jobs.values()] });
+      const job = jobs.get(parts[1]);
+      if (!job) return no(404, "laf:hub_not_found");
+      if (parts[2] === "handoff") {
+        if (method === "PUT") {
+          handoffs.set(job.id, body as { to: string; definition: unknown });
+          return ok({ ok: true });
+        }
+        const held = handoffs.get(job.id);
+        if (!held || held.to !== as) return no(404, "laf:hub_not_found");
+        if (method === "DELETE") handoffs.delete(job.id);
+        return ok({ ok: true, handoff: held });
+      }
+      return ok({ ok: true, job });
+    }
     if (parts[0] !== "tasks") return no(404, "laf:hub_not_found");
     if (parts.length === 1 && method === "GET") {
       const stage = url.searchParams.get("stage");
@@ -144,7 +194,9 @@ export function fakeTaskHub() {
         const forMe =
           task.assignee === null ||
           task.assignee === `bot:${as}` ||
-          task.assignee === `m:${as}`;
+          task.assignee === `m:${as}` ||
+          (task.assignee.startsWith("job:") &&
+            jobs.get(task.assignee.slice("job:".length))?.runner === as);
         if (!runId) return no(400, "laf:request_invalid");
         if (forMe && (waiting || runOut)) {
           task.stage = "doing";
@@ -174,6 +226,9 @@ export function fakeTaskHub() {
 
   return {
     tasks,
+    jobs,
+    handoffs,
+    budget,
     requests,
     intercepting(by: typeof intercept) {
       intercept = by;

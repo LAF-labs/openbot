@@ -12,6 +12,7 @@ import { roomConversationId } from "../../shared/hub/room-answers";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import type { AgentActor } from "../src/agents/profile-types";
 import { openRoomConversation } from "../src/channels/conversations";
+import { createTurnFailureReader } from "../src/channels/turn-failures";
 import { createThreadIdentity } from "../src/channels/thread-identity";
 import { createDatabase } from "../src/db/client";
 import {
@@ -25,6 +26,7 @@ import {
   users,
 } from "../src/db/schema";
 import type { HubAnswer, HubHttp, HubRequest } from "../src/hub/http";
+import { createRunBudget } from "../src/hub/budget";
 import { createHubOutbox } from "../src/hub/outbox";
 import { createRoomAnswers, roomQuestionId } from "../src/hub/room-answers";
 import { createRunLedger } from "../src/runner/run-ledger";
@@ -192,15 +194,39 @@ type Line = {
   at: string;
 };
 
-/** A hub with one room, scripted: what it was asked is kept. */
-function scriptedHub(room: string, lines: Line[]) {
+/**
+ * A hub with one room, scripted: what it was asked is kept. Its budget refuses every reservation
+ * when the workspace's day is `spent`, and keeps each reservation and settle apart from the posts.
+ */
+function scriptedHub(
+  room: string,
+  lines: Line[],
+  budget: { spent: boolean } = { spent: false },
+) {
   const asked: HubRequest[] = [];
   const posted: HubRequest[] = [];
+  const reserved: HubRequest[] = [];
+  const settled: HubRequest[] = [];
   const http: HubHttp = {
     async request(request) {
       asked.push(request);
       const ok = (body: unknown): HubAnswer<never> =>
         ({ ok: true, status: 200, body }) as HubAnswer<never>;
+      if (request.path === "/budget/reserve") {
+        if (budget.spent) {
+          return {
+            ok: false,
+            status: 409,
+            code: "laf:budget_reached",
+          } as HubAnswer<never>;
+        }
+        reserved.push(request);
+        return ok({ ok: true });
+      }
+      if (request.path === "/budget/settle") {
+        settled.push(request);
+        return ok({ ok: true });
+      }
       if (request.method === "POST") {
         posted.push(request);
         return ok({ ok: true, seq: lines.length + posted.length });
@@ -241,7 +267,7 @@ function scriptedHub(room: string, lines: Line[]) {
     },
     socket: () => ({ url: "ws://unused", headers: {} }),
   };
-  return { http, asked, posted };
+  return { http, asked, posted, reserved, settled };
 }
 
 const READ = "mcp__hub__read";
@@ -254,8 +280,11 @@ function answering(input: {
   /** What the turn's hub tools are, as its toolkit offers them; both, unless a case says. */
   offered?: string[];
   now?: number;
+  /** The company's budget, asked before each question: spent, or with room. Absent: no budget. */
+  budget?: { spent: boolean };
 }) {
-  const hub = scriptedHub(input.room, input.lines);
+  const hub = scriptedHub(input.room, input.lines, input.budget);
+  const ledger = createRunLedger(database);
   const outbox = createHubOutbox({
     database,
     http: hub.http,
@@ -267,7 +296,7 @@ function answering(input: {
   const engine = createTurnEngine({
     database,
     persistRetryMs: [5, 5, 5],
-    ledger: createRunLedger(database),
+    ledger,
     hub: turns,
     resolveAgents: async () => ({ [BOT]: input.bot as unknown as LoopAgent }),
     tools: async (): Promise<ChatToolkit> => ({
@@ -318,6 +347,14 @@ function answering(input: {
     engine,
     turns,
     ...(input.now === undefined ? {} : { now: () => input.now as number }),
+    ...(input.budget
+      ? {
+          budget: {
+            runs: createRunBudget({ http: hub.http, outbox }),
+            ledger,
+          },
+        }
+      : {}),
   });
   const mention = (seq: number) =>
     answers.onEvent({
@@ -573,5 +610,87 @@ describe("the room's conversation (openRoomConversation)", () => {
       .from(channels)
       .where(eq(channels.id, first.id));
     expect(rows).toHaveLength(1);
+  });
+});
+
+describe("a room's question and the company's budget", () => {
+  test("over the limit: the model is never asked, the room gets nothing, and the asker's conversation holds the question with the company's fact", async () => {
+    const room = roomOf();
+    const bot = scriptedBot("안 불려야 해요.");
+    const { settled, mention, hub, calls, thread } = answering({
+      room,
+      bot,
+      lines: [line(1, `m:${MEMBER}`, "@라피 오늘 매출 정리해줘", ["lafi"])],
+      budget: { spent: true },
+    });
+    mention(1);
+    await settled();
+
+    expect(bot.runs).toBe(0);
+    expect(calls).toEqual([]);
+    expect(hub.posted).toEqual([]);
+    expect(hub.settled).toEqual([]);
+    // The question is in the room's conversation, and the failure under it is the company's day.
+    const stored = (await thread()) ?? [];
+    expect(stored.map((message) => [message.id, message.role])).toEqual([
+      [roomQuestionId(room, 1), "user"],
+    ]);
+    const [row] = await database
+      .select({ threadId: channelThreads.threadId })
+      .from(channelThreads)
+      .where(eq(channelThreads.channelId, roomConversationId(room, BOT)));
+    const failures = await createTurnFailureReader(database)(
+      row?.threadId ?? "",
+    );
+    expect(
+      failures.map(({ messageId, code }) => ({ messageId, code })),
+    ).toEqual([
+      {
+        messageId: roomQuestionId(room, 1),
+        code: "laf:turn_company_budget_reached",
+      },
+    ]);
+
+    // Heard again, it is not asked again: the question is filed.
+    mention(1);
+    await settled();
+    expect(bot.runs).toBe(0);
+    expect(
+      hub.asked.filter((request) => request.path === "/budget/reserve"),
+    ).toHaveLength(1);
+  });
+
+  test("with room: reserved on the workspace alone before the turn, under the question's id, and settled after through the outbox", async () => {
+    const room = roomOf();
+    const bot = scriptedBot("정리했어요.");
+    const { settled, mention, hub } = answering({
+      room,
+      bot,
+      lines: [line(1, `m:${MEMBER}`, "@라피 오늘 매출 정리해줘", ["lafi"])],
+      budget: { spent: false },
+    });
+    // How many times the model had been asked when the hub was asked for the reservation.
+    const asksAtReserve: number[] = [];
+    const sent = hub.http.request.bind(hub.http);
+    hub.http.request = ((request: HubRequest) => {
+      if (request.path === "/budget/reserve") asksAtReserve.push(bot.runs);
+      return sent(request);
+    }) as HubHttp["request"];
+    mention(1);
+    await settled();
+
+    expect(asksAtReserve).toEqual([0]);
+    expect(bot.runs).toBe(1);
+    expect(hub.reserved).toHaveLength(1);
+    expect(hub.reserved[0]).toMatchObject({
+      body: { runId: roomQuestionId(room, 1), scopes: ["workspace"] },
+      origin: "room",
+    });
+    expect(hub.settled).toHaveLength(1);
+    expect(hub.settled[0]?.body).toEqual({
+      runId: roomQuestionId(room, 1),
+      actual: 0,
+    });
+    expect(hub.posted).toHaveLength(1);
   });
 });
