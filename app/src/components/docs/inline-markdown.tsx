@@ -104,10 +104,7 @@ export function InlineMarkdown({ text }: { text: string }): ReactNode {
         );
       case "code":
         return (
-          <code
-            className="rounded bg-muted px-1 py-0.5 font-mono"
-            key={key}
-          >
+          <code className="rounded bg-muted px-1 py-0.5 font-mono" key={key}>
             {piece.text}
           </code>
         );
