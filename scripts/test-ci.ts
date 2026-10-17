@@ -3299,6 +3299,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * run's task given back to todo is worked, not reported again (hub-task-pickup.test.ts, 1), and
  * what a task's run files goes in its project's folder (hub-task-run.integration.test.ts, 1).
  * 4902 and 2.
+ *
+ * RAISED 2026-10-17 FOR THE COMPANY'S BUDGET, A TASK'S OWN YES AND SUB-BOTS: `server` by
+ * twenty-seven (to 4823) — the reservation's verdict by what the hub said and the settle's row
+ * (hub-budget.test.ts, 7); a routine refused before the model, run and settled after a hub outage,
+ * run when the hub does not answer, and run as before with no hub (hub-budget.integration.test.ts,
+ * 4); a board-task allowance for its task and topic only, never past a deny, the switch or its week
+ * (settle-board-task.test.ts, 9); the acceptance on a real Postgres — blocked, allowed, finished, a
+ * sibling still blocked; a task refused before the model; a yes for a task already moved on, and
+ * through the outbox when the hub is away; only the owner says yes
+ * (hub-task-allowance.integration.test.ts, 4); a sub-Bot registered and handed on
+ * (hub-jobs.integration.test.ts, 3). `app` by six (to 2549): the board task's lines and refusals,
+ * and the company's day as its own failure (board-task.test.ts, 6). 4796/2543 and 27/6.
  */
 const GROUPS: readonly {
   name: string;
