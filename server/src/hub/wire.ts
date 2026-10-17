@@ -21,6 +21,8 @@ export const HUB_TOOL_PATHS = {
    * its files and nothing else (`hub/src/search.ts`): every hit is a file, and it takes no `kinds`.
    */
   search: "/search",
+  /** `PUT /files` — multipart: `meta`, `text` (optional), `blob` (`upload.ts`). */
+  files: "/files",
   /** `GET /files/:id/text?from=&limit=` — the file's extracted text, a range of it. */
   fileText: (id: string, from: number, limit: number) =>
     `/files/${segment(id)}/text?from=${from}&limit=${limit}`,

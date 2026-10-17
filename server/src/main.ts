@@ -1,5 +1,10 @@
 import { serve } from "bun";
-import { OLDER_COPIES_PER_CALL, PERSON_SCOPE } from "../../shared/file-scope";
+import {
+  MAIN_SCOPE,
+  OLDER_COPIES_PER_CALL,
+  PERSON_SCOPE,
+  projectScope,
+} from "../../shared/file-scope";
 import { HARNESS_VERSION } from "../../shared/prompt/harness";
 import { createConsentStore } from "./account/consent";
 import { createAccountDeletion } from "./account/deletion";
@@ -368,13 +373,14 @@ const threadIdentity = createThreadIdentity(tenantPackage.tenantId);
  * Files the owner hands their Bot (attachments/): the bytes kept here, what the Bot can read of them
  * filed on its computer, and photos refused where the model cannot see.
  */
+/** Every uploaded byte is read outside this process: the sidecar, or a local child on a laptop. */
+const converter = createConverter(converterSettingFor(config.converter));
 const attachmentService = createAttachmentService({
   database,
   ...(computerClient ? { computer: computerClient } : {}),
   scopeOfChannel: threadProjects.scopeOfChannel,
   imagesAccepted: tenantPackage.model.supportsImages !== false,
-  // Every uploaded byte is read outside this process: the sidecar, or a local child on a laptop.
-  converter: createConverter(converterSettingFor(config.converter)),
+  converter,
 });
 /** 소식's posts: the page's reads and presses, and a quoted post read again for the model. */
 const feedStore = createFeedStore({ database });
@@ -407,6 +413,31 @@ const hubRuntime = config.hub
   ? createHubRuntime({
       config: config.hub,
       database,
+      // A file goes up from the Bot's folder, its words read by the same converter as an
+      // attachment's (`hub/upload.ts`). The gateway is made further down; asked only once a call
+      // arrives.
+      ...(computerClient
+        ? {
+            files: {
+              converter,
+              readFolder: ({ botId, scope, path }) =>
+                computerClient.forBot(botId, null, scope).fileBytes(path),
+              readJudged: ({ botId, actor, path }) => {
+                if (!computerGateway)
+                  throw new Error("laf:computer_unreachable");
+                return computerGateway.readWholeFile(botId, botId, actor, {
+                  path,
+                });
+              },
+              scopeOfThread: async (threadId) => {
+                const projectId = threadId
+                  ? await threadProjects.of(threadId)
+                  : null;
+                return projectId ? projectScope(projectId) : MAIN_SCOPE;
+              },
+            },
+          }
+        : {}),
       // Chained, so frames reach the page in the order the hub numbered them.
       deliver: (frame) => {
         hubFramesSent = hubFramesSent
@@ -457,6 +488,7 @@ const deploymentKeyRuntime = createDeploymentKeyRuntime({
           database,
           passRefused: () => hubRuntime.link.status().state === "refused",
           onPassRefused: () => hubRuntime.link.passRefused("tool"),
+          ...(hubRuntime.uploads ? { uploads: hubRuntime.uploads } : {}),
         },
       }
     : {}),

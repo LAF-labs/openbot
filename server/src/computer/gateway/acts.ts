@@ -320,6 +320,34 @@ export function createActs(deps: {
     },
 
     /**
+     * One file's bytes, whole, read FOR A BOT and judged as its own read is: the same decision,
+     * row and rules about paths as `computer_read_file`, under the run's scope. For work this
+     * server does on the whole of a file outside the computer — the company hub's upload
+     * (`hub/upload.ts`) — so a file no rule would let the Bot read is not taken out another way.
+     * Answers the path as judged, which is the one the bytes came from.
+     */
+    async readWholeFile(
+      computerId: string,
+      botId: string,
+      actor: ActionActor,
+      input: { path: string },
+    ): Promise<{ path: string; bytes: Uint8Array<ArrayBuffer> }> {
+      let path = input.path;
+      const bytes = await govern(
+        computerId,
+        "computer_read_file",
+        botId,
+        actor,
+        { filePath: input.path },
+        (_judged, judgedPath) => {
+          path = judgedPath ?? input.path;
+          return as(computerId, botId).fileBytes(path);
+        },
+      );
+      return { path, bytes };
+    },
+
+    /**
      * Listing is governed too, and for the same reason the read is: what a Bot has accumulated over
      * every task it has run is worth being able to restrict. A rule denying a folder hides it from the
      * listing as well as from reads, which is the consistent answer.

@@ -62,10 +62,27 @@ export type HubRawAnswer =
   | { ok: true; response: Response }
   | { ok: false; status: number | null; code: string };
 
+/** `PUT /files`: a multipart body, read as it is sent (`upload.ts` builds it). */
+export type HubUploadRequest = {
+  /** Under `HUB_PREFIX`. */
+  path: string;
+  body: ReadableStream<Uint8Array>;
+  /** `multipart/form-data; boundary=…`. */
+  contentType: string;
+  idempotencyKey: string;
+  run?: string;
+  origin?: string;
+};
+
 export type HubHttp = {
   request<T = unknown>(request: HubRequest): Promise<HubAnswer<T>>;
   /** Bytes in or out, one attempt. A refusal is read into a fact the way `request` reads it. */
   raw?(request: HubRawRequest): Promise<HubRawAnswer>;
+  /**
+   * One attempt, never retried here: the body is a stream and is spent by the first try. Whoever
+   * holds the file tries again — the outbox, which reads it again (`upload.ts`).
+   */
+  upload<T = unknown>(request: HubUploadRequest): Promise<HubAnswer<T>>;
   /** The `ws(s)://…/events?since=` address and the headers its upgrade carries. */
   socket(since: number): { url: string; headers: Record<string, string> };
 };
@@ -75,6 +92,13 @@ export const HUB_RETRY_MS = [500, 2_000, 8_000] as const;
 
 /** One attempt's bound. A hub that has not answered in this long is not answering. */
 const ATTEMPT_TIMEOUT_MS = 5_000;
+
+/**
+ * One upload's bound. Not the five seconds a JSON call gets: a file is as long as the line is slow.
+ * Half an hour carries the hub's gigabyte at about 600 KB/s; a Bot's file (the computer's ten
+ * megabytes) is seconds.
+ */
+const UPLOAD_TIMEOUT_MS = 30 * 60_000;
 
 /** The longest `Retry-After` honoured. Longer is a hub that is not coming back in this call. */
 const RETRY_AFTER_CAP_MS = 30_000;
@@ -89,6 +113,9 @@ export type HubHttpOptions = {
   fetchImpl?: typeof fetch;
   sleep?: (milliseconds: number) => Promise<void>;
 };
+
+/** The hub's file space is full (`laf:hub_full` on the hub's side, #251). */
+export const HUB_UPLOAD_FULL = "laf:hub_full";
 
 /** What a status the hub answered with says, as a fact. */
 export function factOfStatus(status: number, body: unknown): string {
@@ -218,6 +245,62 @@ export function createHubHttp(options: HubHttpOptions): HubHttp {
               : response.status === 429
                 ? HUB_FACTS.unreachable
                 : factOfStatus(response.status, parsed),
+        };
+      } catch {
+        return { ok: false, status: null, code: HUB_FACTS.unreachable };
+      }
+    },
+
+    async upload<T>(request: HubUploadRequest): Promise<HubAnswer<T>> {
+      try {
+        const response = await send(`${base}${request.path}`, {
+          method: "PUT",
+          headers: {
+            ...identity,
+            accept: "application/json",
+            "content-type": request.contentType,
+            [HUB_HEADERS.idempotencyKey]: request.idempotencyKey,
+            ...(request.run ? { [HUB_HEADERS.run]: request.run } : {}),
+            ...(request.origin ? { [HUB_HEADERS.origin]: request.origin } : {}),
+          },
+          body: request.body,
+          // A streamed request body: required by the fetch standard, unknown to the DOM types.
+          duplex: "half",
+          /*
+           * A connection of its own, never one from the pool. A body refused or cut off part-way
+           * can leave unread bytes on the socket, and the next upload written into it is then
+           * answered by whatever reads them — a 400 here, which ends a row as a refusal. Seen
+           * through a local stand-in for the hub's front door, not through Caddy; a handshake per
+           * file is cheap insurance that one upload's failure never becomes the next one's.
+           */
+          keepalive: false,
+          signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+        } as RequestInit);
+        const parsed: unknown = await response.json().catch(() => null);
+        if (response.ok) {
+          return { ok: true, status: response.status, body: parsed as T };
+        }
+        // A full disk is the hub answering, not the hub away: the same file gets the same answer
+        // until somebody makes room, so it ends the row rather than being offered every five minutes.
+        const code = (parsed as { code?: unknown } | null)?.code;
+        if (response.status === 507) {
+          return {
+            ok: false,
+            status: 507,
+            code:
+              typeof code === "string" && code.startsWith("laf:")
+                ? code
+                : HUB_UPLOAD_FULL,
+          };
+        }
+        // 429 and 503 (`laf:hub_busy`, `laf:hub_blob_restoring`) ask to be tried again.
+        if (response.status === 429) {
+          return { ok: false, status: 429, code: HUB_FACTS.unreachable };
+        }
+        return {
+          ok: false,
+          status: response.status,
+          code: factOfStatus(response.status, parsed),
         };
       } catch {
         return { ok: false, status: null, code: HUB_FACTS.unreachable };

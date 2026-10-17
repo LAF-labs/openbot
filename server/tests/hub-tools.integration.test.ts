@@ -63,6 +63,8 @@ const made: string[] = [];
 
 function hubAnswering(answer: () => HubAnswer<unknown>) {
   const http: HubHttp = {
+    upload: async () =>
+      ({ ok: false, status: null, code: "laf:hub_unreachable" }) as never,
     async request(request) {
       sent.push(request);
       return answer() as never;

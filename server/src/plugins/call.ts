@@ -908,6 +908,8 @@ export function createCallPath(
             actorId: input.actorId,
             botId: input.botId,
             drawnOn,
+            ...(input.threadId ? { threadId: input.threadId } : {}),
+            ...(input.runId ? { runId: input.runId } : {}),
             ...(timeZone ? { timeZone } : {}),
           },
           toolName,
