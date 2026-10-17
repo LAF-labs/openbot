@@ -3288,6 +3288,16 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * raise, 4823 + 28 = 4851. `app` by five (to 2548 on its own branch, 2549 + 5 = 2554 merged): the room's words
  * for who wrote what and whose 라피 is working, and the room's conversation found and named
  * (hub-rooms.test.ts). 2543 and 5.
+ *
+ * RAISED 2026-10-17 FOR A SUB-BOT'S TASKS AND A ROOM'S QUESTION AGAINST THE BUDGET: `server` by
+ * eight (to 4859) — a job's task taken where the job's routine runs and never asked for by another
+ * VM, and none taken without the sub-Bots (hub-task-pickup.test.ts, 2); on a real Postgres, run on
+ * the runner's VM only as its routine with the job's scope reserved and settled, its head a
+ * routine's byte for byte, refused before the Bot when the job's day is spent, and handed on and
+ * taken by the new runner after a move (hub-job-tasks.integration.test.ts, 4); a room's question
+ * over the limit asking the model nothing and posting nothing, the company's fact under the
+ * question, and one with room reserved on the workspace before the model and settled after
+ * (room-answers.integration.test.ts, 2). 4851 and 8.
  */
 const GROUPS: readonly {
   name: string;
@@ -3295,7 +3305,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4851, roots: ["server"] },
+  { name: "server", floor: 4859, roots: ["server"] },
   { name: "app", floor: 2554, roots: ["app"] },
   {
     name: "agent-computer",
