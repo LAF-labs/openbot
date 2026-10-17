@@ -73,7 +73,7 @@ async function taskMembers(
  * can see the row (`hub_events.visible_to`).
  */
 export async function audienceOf(
-  tx: HubTransaction,
+  tx: HubDatabase | HubTransaction,
   visibility: string,
 ): Promise<string[] | null> {
   if (visibility === "company") return null;

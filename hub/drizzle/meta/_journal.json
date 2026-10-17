@@ -50,6 +50,13 @@
       "when": 1792222656446,
       "tag": "0006_hub_budget",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792222918559,
+      "tag": "0007_hub_docs",
+      "breakpoints": true
     }
   ]
 }
