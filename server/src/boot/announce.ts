@@ -257,6 +257,11 @@ export function sayBooted(input: {
    * is handed here is not said — see `botEndpoints` below, which decides.
    */
   botsBroughtHome?: number | null;
+  /**
+   * Whether this VM belongs to a company hub (`LAF_HUB_URL`). Said as set or unset and never as
+   * the address: whether the line came up is the hub line's own to say (`hub/link.ts`).
+   */
+  hub?: boolean;
 }): void {
   const { config } = input;
   const botEndpoints = botEndpointsTaken(config);
@@ -297,5 +302,6 @@ export function sayBooted(input: {
      */
     botEndpoints,
     ...(botEndpoints ? {} : { botsBroughtHome: input.botsBroughtHome ?? null }),
+    ...(input.hub === undefined ? {} : { hub: input.hub ? "set" : "unset" }),
   });
 }

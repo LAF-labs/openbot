@@ -3234,6 +3234,39 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * the same file had passed for two weeks with the group in one process, on machines as quick.
  * What it costs: the group is the run's longest piece, about 175 s on its own worker beside the
  * others, against about 135 s spread — the gate still ends when it does.
+ *
+ * RAISED 2026-10-16 FOR THE VM'S LINE TO ITS COMPANY HUB: `server` by thirty-five (to 4746) — the
+ * one HTTP door's retries and facts (hub-http.test.ts, 10: a 5xx tried again, a silent hub four
+ * tries 0.5/2/8 s apart, 401/403/404 never retried, another 4xx's own code, a 429's Retry-After,
+ * one attempt when asked, the headers, the socket's address); the outbox on a real Postgres
+ * (hub-outbox.integration.test.ts, 4: a row kept through an outage and sent with one key, a refusal
+ * ended, a refused pass said once, two senders sending each row once); the line against the real
+ * hub of `hub/` (hub-link.integration.test.ts, 5: two VMs hearing each other within a second and
+ * the cursor kept, a gap caught up from the cursor, an unknown pass refused once, a departure's
+ * 4401, a hub that does not answer); the two doors (hub-routes.test.ts, 6); and the two `.env`
+ * lines (config.test.ts, 10). And `app` by nine (to 2543): the settings line, the hub's four facts
+ * in Korean, and the socket telling a hub frame from a roster patch (hub-status.test.ts). 4711 and
+ * 35; 2534 and 9. Then `server` by one more (to 4747): a door that takes the socket and drops it
+ * at once is not asked faster for it (hub-link.integration.test.ts).
+ *
+ * RAISED 2026-10-16 FOR 회사, THE COMPANY'S SCREEN: `server` by twenty-two (to 4769) — its doors
+ * against a fake hub (hub-routes-ui.test.ts: seven doors answering "no company" unasked, the pass
+ * and `person` sent and never handed back, a failed read asked once, a refused pass a 502, a named
+ * refusal kept, a refused line not asked, a message as the person with its key and only its
+ * fields, a key made or refused, three ids and cursors refused unsent, the query spelled again, a
+ * file saved never drawn, an upload byte for byte past the megabyte, a full hub said, the session);
+ * `app` by twenty-one (to 2564): which reads a hub frame makes stale, whose a message is, the facts
+ * in Korean, and a team file's body (hub-company.test.ts); and `hub` by two (to 48): the roster to
+ * any member and behind the pass (members.test.ts).
+ *
+ * RAISED 2026-10-17 FOR 업무판, THE COMPANY'S TASK BOARD: `server` by twenty (to 4789) — its doors
+ * against a fake hub (hub-routes-ui-tasks.test.ts: four doors answering "no company" unasked, the
+ * board read once with the pass and only its named query fields, three bad queries and a climbing
+ * id refused unsent, a new task as the person with only the board's fields, five bad fields refused,
+ * a move with its version and no run, a move with no version refused, a stale move's 409 kept, a
+ * refused pass a 502, a note as the person); `app` by forty-four (to 2608): the columns, the rank
+ * between neighbours and the menu's steps, every note code in words, who a task is given to, the
+ * task frames (hub-tasks.test.ts, 34), and the room's working line (hub-room-working.test.ts, 10).
  */
 const GROUPS: readonly {
   name: string;
@@ -3241,8 +3274,8 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4711, roots: ["server"] },
-  { name: "app", floor: 2534, roots: ["app"] },
+  { name: "server", floor: 4789, roots: ["server"] },
+  { name: "app", floor: 2608, roots: ["app"] },
   {
     name: "agent-computer",
     /*
@@ -3281,6 +3314,20 @@ const GROUPS: readonly {
     processes: 1,
   },
   { name: "root", floor: 1744, roots: ["tests", "agent-bot"] },
+  /*
+   * ADDED 2026-10-16 WITH THE COMPANY HUB, at forty-six: its own process on its own VM, so its own
+   * floor rather than a share of another's. auth.test.ts 11 (a pass opening /me as its member, a
+   * refused one a single line with nothing logged, four malformed headers, a pass used from
+   * another VM, a member who left and came back, a rotation's ten minutes, health and the
+   * metrics' counts); fleet.test.ts 16 (signatures, the per-hub key, another hub's body, a stale
+   * body, four bad fields, one write for a repeated or racing id, no event for no change, a
+   * conflict, an unknown departure, the trail, an unset key, one workspace row); sync.test.ts 9
+   * (paging, `visible_to` both ways, a cursor past hidden events, four bad cursors, a number
+   * committed late never skipped, an event's fields); events-socket.test.ts 6 (live delivery,
+   * catch-up on reconnect, per-member delivery, heartbeat, a departure closing the socket, no
+   * socket without a pass); audit.test.ts 4 (insert, and update, delete and truncate refused).
+   */
+  { name: "hub", floor: 48, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
