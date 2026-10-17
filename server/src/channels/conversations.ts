@@ -209,14 +209,16 @@ async function lockProfiles(
  */
 async function writeConversation(
   transaction: Executor,
-  threadIdentity: ThreadIdentity,
+  threadIdentity: ThreadIdentity | { named: string },
   actor: AgentActor,
   { name, kind, agentIds }: Pick<AgentChannel, "name" | "kind" | "agentIds">,
 ): Promise<AgentChannel> {
   const id = `channel_${crypto.randomUUID()}`;
   // Minted rather than a bare random id, so the thread says which deployment it belongs to
-  // in a project that may hold more than one. See thread-identity.ts.
-  const threadId = threadIdentity.mint();
+  // in a project that may hold more than one. See thread-identity.ts. A task's is named by the
+  // task (`taskConversation`), so the run that works it finds it again.
+  const threadId =
+    "named" in threadIdentity ? threadIdentity.named : threadIdentity.mint();
 
   await transaction.insert(channels).values({
     id,
@@ -238,4 +240,41 @@ async function writeConversation(
   });
 
   return { id, name, agentIds, threadId, active: true, kind };
+}
+
+/**
+ * The conversation a task on the company board is worked in (`hub/task-run.ts`): the thread named
+ * `task:<hub task id>`, in a project of the Bot's named after the task, so the person opens it from
+ * where projects are and reads what the run did. Made by the first run of the task and found by
+ * every later one.
+ *
+ * Not through `createProject`: that is a person pressing a button, refused at the fiftieth; a task
+ * handed over on the board is not refused here for the number of projects the person made.
+ * Serialised on the thread's name, so two runs reaching it at once make one.
+ */
+export function taskConversation(
+  database: Database,
+  actor: AgentActor,
+  agentId: string,
+  threadId: string,
+  name: string,
+): Promise<{ channelId: string; threadId: string }> {
+  return database.transaction(async (transaction) => {
+    await transaction.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${`laf_task_thread:${threadId}`}))`,
+    );
+    const [found] = await transaction
+      .select({ channelId: channelThreads.channelId })
+      .from(channelThreads)
+      .where(eq(channelThreads.threadId, threadId))
+      .limit(1);
+    if (found) return { channelId: found.channelId, threadId };
+    const made = await writeConversation(
+      transaction,
+      { named: threadId },
+      actor,
+      { name: channelName([name]), kind: "project", agentIds: [agentId] },
+    );
+    return { channelId: made.id, threadId };
+  });
 }

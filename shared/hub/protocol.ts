@@ -47,8 +47,22 @@ export const HUB_ROLES: readonly HubRole[] = ["owner", "admin", "member"];
 
 export type HubMemberState = "active" | "left";
 
-/** The kinds of change an event names. A VM drops a type it does not know. */
-export const HUB_EVENT_TYPES = ["member.changed"] as const;
+/**
+ * The kinds of change an event names. A VM drops a type it does not know.
+ *
+ * - `member.changed`: a member joined, changed or left. `refId` is the member id.
+ * - `task.changed`: a task was made, edited, noted, taken, let go or freed by the sweep. `refId` is
+ *   the task id. Seen by whoever can see the task — and, when its visibility or members narrow, by
+ *   those who could see it a moment ago, so a board drops what it may no longer show.
+ * - `task.assigned`: a task was given to somebody. `refId` is the task id. Seen by the assigned
+ *   member alone (`m:` or `bot:`), whose VM is the one that acts on it; for a `job:` assignee, by
+ *   whoever can see the task, since the job's own VM is not a member the hub knows yet.
+ */
+export const HUB_EVENT_TYPES = [
+  "member.changed",
+  "task.changed",
+  "task.assigned",
+] as const;
 export type HubEventType = (typeof HUB_EVENT_TYPES)[number];
 
 /**

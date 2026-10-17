@@ -113,6 +113,12 @@ import { deploymentHealthProbes } from "./health";
 import { createLiveScreen, type SocketData } from "./live-screen";
 import { users } from "./db/schema";
 import { createHubRuntime } from "./hub";
+import {
+  createTaskPickup,
+  hearFrame,
+  type TaskPickup,
+} from "./hub/task-pickup";
+import { createTaskRun, createUnreportedRuns } from "./hub/task-run";
 import { log, recentLines } from "./log";
 import { createLoginVault } from "./logins/store";
 import { readApprovalMetrics } from "./notifications/approval-metrics";
@@ -144,6 +150,7 @@ import {
   createRoutineDelivery,
   createRoutineFailureDelivery,
 } from "./routines/deliver";
+import { inTime, LET_GO_MS } from "./routines/run";
 import { createRoutineService } from "./routines/service";
 import { createSuggestionDismissalStore } from "./routines/suggestions";
 import { createBotLane } from "./runner/bot-lane";
@@ -395,12 +402,15 @@ const channelEvents = createChannelEventHub();
  * so a first sign-in after boot hears the next frame.
  */
 let hubFramesSent: Promise<void> = Promise.resolve();
+/** The board's tasks given to this member's 라피, made below once what runs them exists. */
+let taskPickup: TaskPickup | undefined;
 const hubRuntime = config.hub
   ? createHubRuntime({
       config: config.hub,
       database,
       // Chained, so frames reach the page in the order the hub numbered them.
       deliver: (frame) => {
+        void hearFrame(taskPickup, frame);
         hubFramesSent = hubFramesSent
           .then(() => database.select({ id: users.id }).from(users))
           .then((rows) =>
@@ -954,6 +964,49 @@ const routineService = createRoutineService({
   admission,
   work: workInFlight,
 });
+
+/*
+ * A task on the company board given to this member's 라피: taken, run as a routine runs — the same
+ * toolkit, browser and lane, nobody asked — and handed back for a person (`hub/task-pickup.ts`).
+ */
+if (hubRuntime) {
+  const gateway = computerGateway;
+  taskPickup = createTaskPickup({
+    http: hubRuntime.http,
+    memberId: () => hubRuntime.link.me()?.member.id ?? null,
+    unreported: createUnreportedRuns(database),
+    run: createTaskRun({
+      database,
+      ledger: runLedger,
+      lane: botLane,
+      work: workInFlight,
+      admission,
+      resolveAgents: resolveAgentsFor,
+      tools: unattendedTools,
+      ...(gateway
+        ? {
+            // Its pages in the routines' background browser, let go of at its end as a routine's are.
+            browser: {
+              name: ROUTINE_BROWSER,
+              ended: async (botId: string, runKey: string, opened: boolean) => {
+                await inTime(LET_GO_MS, (within) =>
+                  gateway.runEnded(botId, runKey, {
+                    browser: ROUTINE_BROWSER,
+                    within,
+                  }),
+                );
+                if (opened) {
+                  await inTime(LET_GO_MS, (within) =>
+                    gateway.releaseBrowser(botId, ROUTINE_BROWSER, within),
+                  );
+                }
+              },
+            },
+          }
+        : {}),
+    }),
+  });
+}
 
 /*
  * The runs the last process died on, told to the people they belonged to.
