@@ -80,6 +80,10 @@ import {
 import { createIdeaRoutes } from "./ideas/routes";
 import { createIdeaService } from "./ideas/service";
 import { log } from "./log";
+import type { HubHttp } from "./hub/http";
+import type { HubLink } from "./hub/link";
+import type { HubOutbox } from "./hub/outbox";
+import { createHubRoutes } from "./hub/routes";
 import { createLoginRoutes } from "./logins/routes";
 import type { LoginVault } from "./logins/store";
 import { createSecurityMiddleware, RATE_LIMITED } from "./middleware/security";
@@ -450,6 +454,13 @@ export type CreateAppOptions = {
    * `/api/logins` unmounted.
    */
   logins?: LoginVault;
+  /**
+   * The company hub this VM belongs to (hub/), or absent when its person is on their own. The
+   * `/api/hub` doors are mounted either way, so the app can ask and be told `configured: false`.
+   */
+  hub?: { http: HubHttp; link: HubLink; outbox?: HubOutbox };
+  /** A board task's stop and the person's yes, and the sub-Bot register (`hub/`). With `hub`. */
+  hubCompany?: Parameters<typeof createHubRoutes>[2];
 };
 
 export function createApp({
@@ -503,6 +514,8 @@ export function createApp({
   feed,
   goals,
   logins,
+  hub,
+  hubCompany,
 }: CreateAppOptions) {
   const app = new Hono<{ Variables: AppVariables }>();
   app.use("*", createSecurityMiddleware());
@@ -1049,6 +1062,8 @@ export function createApp({
   if (logins) {
     app.route("/api/logins", createLoginRoutes(logins, requireUser));
   }
+
+  app.route("/api/hub", createHubRoutes(hub, requireUser, hubCompany));
 
   if (feed) {
     app.route("/api/feed", createFeedRoutes(feed, requireUser));

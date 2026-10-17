@@ -128,6 +128,12 @@ export type ActionActor = {
    * a conversation's turn has none. Absent where no run of the ledger's is behind the call.
    */
   runId?: string;
+  /**
+   * The company board's task the run is working, as its conversation (`task:<id>`), where the run
+   * is one (`hub/task-run.ts`). An allowance a person gave for that task answers here and nowhere
+   * else (`settle.ts`). Named by the server that opened the run, never read off a request.
+   */
+  boardTaskThreadId?: string;
   /** The Bot's tool call the action carries out, when the surface named it. See TOOL_CALL_HEADER. */
   toolCallId?: string;
 };

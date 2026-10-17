@@ -235,6 +235,8 @@ export function createCallPath(
     toolCallId: string | undefined;
     /** The run the call is a step of, so its question is counted as that run's. */
     runId: string | undefined;
+    /** The board task the run is working, where it is one. See `ActionActor.boardTaskThreadId`. */
+    boardTaskThreadId: string | undefined;
     ref: string;
     serverId: string;
     toolName: string;
@@ -280,6 +282,9 @@ export function createCallPath(
             }
           : {}),
         ...(question.runId ? { runId: question.runId } : {}),
+        ...(question.boardTaskThreadId
+          ? { boardTaskThreadId: question.boardTaskThreadId }
+          : {}),
         policyVerdict: question.verdict,
         forcedAsk: question.forcedAsk,
       },
@@ -398,6 +403,8 @@ export function createCallPath(
       toolCallId?: string | undefined;
       /** The run this is a step of, as the ledger names it. See `ActionActor.runId`. */
       runId?: string | undefined;
+      /** The board task the run is working. See `ActionActor.boardTaskThreadId`. */
+      boardTaskThreadId?: string | undefined;
       /**
        * Whether this person governs the whole deployment.
        *
@@ -782,6 +789,7 @@ export function createCallPath(
               threadId: input.threadId,
               toolCallId: input.toolCallId,
               runId: input.runId,
+              boardTaskThreadId: input.boardTaskThreadId,
               ref: input.ref,
               serverId,
               toolName,

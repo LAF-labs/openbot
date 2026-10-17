@@ -101,6 +101,12 @@ export const CATALOGUE_COPY: Readonly<
       "Current weather and the forecast for the next few days, from 기상청.",
     can: "Tells you the weather where you are, or anywhere in Korea you name — now, the next few hours and the next few days.",
   },
+  // The company hub, on this VM's own pass (`server/src/hub/tools.ts`): nothing to turn on either.
+  hub: {
+    mark: GENERIC_MARK,
+    summary: "This person's company: team files, rooms, skills and memory.",
+    can: "Finds and reads your team's files, rooms, skills and confirmed memory, posts to a team room, and suggests a line for the team to remember.",
+  },
 };
 
 /**
@@ -113,6 +119,7 @@ export const NOT_A_SWITCH: readonly string[] = [
   "public-data",
   "web-search",
   "kma-weather",
+  "hub",
 ];
 
 /**

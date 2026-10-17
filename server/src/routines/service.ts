@@ -1,3 +1,4 @@
+import type { RunBudget } from "../hub/budget";
 import type { GoalStore } from "../goals/store";
 import type { AbstractAgent } from "@ag-ui/client";
 import { and, eq, isNull } from "drizzle-orm";
@@ -191,6 +192,10 @@ export type RoutineServiceOptions = {
    * Absent in the suites that never stop a routine.
    */
   work?: WorkInFlight;
+  /** The company's budget, when this VM belongs to a company hub. See `RoutineRunOptions`. */
+  budget?: RunBudget;
+  /** The sub-Bot a routine is registered as on the hub. See `RoutineRunOptions`. */
+  jobOf?: (routineId: string) => Promise<string | null>;
 };
 
 /** What firing a routine outside the clock needs: the table, the time, and the run. */

@@ -130,6 +130,9 @@ export const DEPLOYMENT_KEY_ENV: Readonly<Record<DeploymentKeyFamily, string>> =
     "data-go-kr": "DATA_GO_KR_SERVICE_KEY",
     perplexity: "PERPLEXITY_API_KEY",
     "kma-apihub": "KMA_APIHUB_AUTH_KEY",
+    // The company hub's pass: the same line `config.ts` reads for the hub's client, which refuses
+    // to start with it alone or misspelt, so here it only says whether the hub's tools are offered.
+    "laf-hub": "LAF_HUB_VM_KEY",
   });
 
 /** How a caller asks for a key. The same seam shape as {@link SharedClientLookup}. */
@@ -175,6 +178,7 @@ const KEY_SPELLING: Partial<
   // The hub's key rides on the query string through `URLSearchParams`, which encodes it, so there
   // is no encoded-or-decoded question as there is for the portal's. A paste can still break a line.
   "kma-apihub": withoutWhitespace,
+  "laf-hub": withoutWhitespace,
 };
 
 /** Every deployment key this environment carries, refusing a spelling that cannot work. */
