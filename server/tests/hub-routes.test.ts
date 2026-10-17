@@ -50,6 +50,8 @@ function surface(
   const refusals: string[] = [];
   const asked: string[] = [];
   const http: HubHttp = {
+    upload: async () =>
+      ({ ok: false, status: null, code: "laf:hub_unreachable" }) as never,
     request: async (request) => {
       asked.push(request.path);
       return (options.answer ?? {

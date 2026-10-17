@@ -19,6 +19,8 @@ const segment = (value: string) => encodeURIComponent(value);
 export const HUB_TOOL_PATHS = {
   /** `POST /search {q, kinds?, limit}` — a read, sent as a POST because it carries a body. */
   search: "/search",
+  /** `PUT /files` — multipart: `meta`, `text` (optional), `blob` (`upload.ts`). */
+  files: "/files",
   /** `GET /files/:id/text?from=&limit=` — the file's extracted text, a range of it. */
   fileText: (id: string, from: number, limit: number) =>
     `/files/${segment(id)}/text?from=${from}&limit=${limit}`,

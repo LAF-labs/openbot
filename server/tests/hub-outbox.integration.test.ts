@@ -40,6 +40,8 @@ function scriptedHub(
 ) {
   const seen: HubRequest[] = [];
   const http: HubHttp = {
+    upload: async () =>
+      ({ ok: false, status: null, code: "laf:hub_unreachable" }) as never,
     async request(request) {
       seen.push(request);
       return (await answer(request)) as never;

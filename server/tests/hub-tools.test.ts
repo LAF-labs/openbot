@@ -28,6 +28,8 @@ const NO_OUTBOX: HubOutbox = {
 function scripted(answer: (request: HubRequest) => unknown) {
   const seen: HubRequest[] = [];
   const http: HubHttp = {
+    upload: async () =>
+      ({ ok: false, status: null, code: "laf:hub_unreachable" }) as never,
     async request(request) {
       seen.push(request);
       const body = answer(request);

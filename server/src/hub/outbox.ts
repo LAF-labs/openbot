@@ -24,7 +24,12 @@ import { HUB_FACTS } from "../../../shared/hub/protocol";
 import type { Database } from "../db/client";
 import { hubOutbox } from "../db/schema";
 import { log } from "../log";
-import { HUB_RETRY_MS, type HubHttp } from "./http";
+import { HUB_RETRY_MS, type HubAnswer, type HubHttp } from "./http";
+import {
+  HUB_UPLOAD_SOURCE_AWAY,
+  type HubUploadReference,
+  uploadReferenceOf,
+} from "./upload";
 
 /** How often rows the hub has not taken are offered again (`boot/background.ts` runs it). */
 export const HUB_OUTBOX_RESEND_MS = 5 * 60_000;
@@ -49,7 +54,16 @@ export type HubOutbox = {
   sweep(): Promise<HubSweep>;
 };
 
-type Attempt = "delivered" | "refused" | "unreachable" | "pass_refused";
+/**
+ * `waiting`: an upload whose file could not be read again because the computer did not answer.
+ * The row stays, but the hub is not away, so the rows behind it are still offered.
+ */
+type Attempt =
+  | "delivered"
+  | "refused"
+  | "unreachable"
+  | "pass_refused"
+  | "waiting";
 
 export function createHubOutbox(input: {
   database: Database;
@@ -59,6 +73,15 @@ export function createHubOutbox(input: {
   /** Told when the hub refuses the pass, so the link says so once and stops too. */
   onPassRefused?: () => void;
   sleep?: (milliseconds: number) => Promise<void>;
+  /**
+   * A row that holds an upload's reference, sent (`upload.ts`, `sendReference`): the file read
+   * again and checked against what was judged. Absent, such a row waits like one whose file is
+   * out of reach.
+   */
+  sendUpload?: (
+    reference: HubUploadReference,
+    request: { idempotencyKey: string; origin: string; run?: string },
+  ) => Promise<HubAnswer<unknown>>;
 }): HubOutbox {
   const { database, http } = input;
   const sleep =
@@ -95,17 +118,27 @@ export function createHubOutbox(input: {
         .limit(1)
         .for("update", { skipLocked: true });
       if (!row) return null;
-      const answer = await http.request({
-        method: row.method as HubOutboxWrite["method"],
-        path: row.path,
-        ...(row.body === null || row.body === undefined
-          ? {}
-          : { body: row.body }),
-        idempotencyKey: row.id,
-        origin: row.origin,
-        ...(row.runId ? { run: row.runId } : {}),
-        retry: false,
-      });
+      // An upload's row holds where its file is, never the bytes: read again for each attempt.
+      const upload = uploadReferenceOf(row.body);
+      const answer: HubAnswer<unknown> = upload
+        ? input.sendUpload
+          ? await input.sendUpload(upload, {
+              idempotencyKey: row.id,
+              origin: row.origin,
+              ...(row.runId ? { run: row.runId } : {}),
+            })
+          : { ok: false, status: null, code: HUB_UPLOAD_SOURCE_AWAY }
+        : await http.request({
+            method: row.method as HubOutboxWrite["method"],
+            path: row.path,
+            ...(row.body === null || row.body === undefined
+              ? {}
+              : { body: row.body }),
+            idempotencyKey: row.id,
+            origin: row.origin,
+            ...(row.runId ? { run: row.runId } : {}),
+            retry: false,
+          });
       const now = new Date();
       const outcome: Attempt = answer.ok
         ? "delivered"
@@ -113,7 +146,9 @@ export function createHubOutbox(input: {
           ? "pass_refused"
           : answer.code === HUB_FACTS.unreachable
             ? "unreachable"
-            : "refused";
+            : upload && answer.code === HUB_UPLOAD_SOURCE_AWAY
+              ? "waiting"
+              : "refused";
       await tx
         .update(hubOutbox)
         .set({
@@ -155,6 +190,12 @@ export function createHubOutbox(input: {
       }
       const outcome = result?.[1];
       if (!outcome) {
+        skipped.push(id);
+        continue;
+      }
+      // Its own file was out of reach, not the hub: it waits for the next sweep, the rest go on.
+      if (outcome === "waiting") {
+        tally.kept += 1;
         skipped.push(id);
         continue;
       }

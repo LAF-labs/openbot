@@ -89,6 +89,13 @@ export type VendorTransport = {
       botId?: string;
       /** Where what this call answers will be drawn (`DrawnOn`). Absent is `nowhere`. */
       drawnOn?: DrawnOn;
+      /**
+       * The conversation the call was raised from and the run it is a step of, never a model's
+       * words. Read by a transport that touches the Bot's folder (the hub's `upload`), whose file
+       * scope is the run's conversation's (`shared/file-scope.ts`).
+       */
+      threadId?: string;
+      runId?: string;
       /** The zone the person's days are counted in. Read by the calendar alone. */
       timeZone?: string;
     },

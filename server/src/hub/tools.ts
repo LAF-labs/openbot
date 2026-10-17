@@ -43,6 +43,11 @@ import type { PartnerToolSpec } from "../plugins/partner-tools";
 import { PluginRefusedError } from "../plugins/store";
 import type { DrawnOn, VendorTransport } from "../plugins/transport";
 import type { HubHttp } from "./http";
+import {
+  type HubUploadActor,
+  HubUploadRefused,
+  type HubUploads,
+} from "./upload";
 import type { HubOutbox, HubOutboxWrite } from "./outbox";
 import {
   HUB_SEARCH_KINDS,
@@ -73,7 +78,12 @@ export const HUB_READ_KINDS = [
   "memory",
   "members",
 ] as const;
-export const HUB_WRITE_KINDS = ["post", "propose_memory", "skill"] as const;
+export const HUB_WRITE_KINDS = [
+  "post",
+  "propose_memory",
+  "skill",
+  "upload",
+] as const;
 type ReadKind = (typeof HUB_READ_KINDS)[number];
 type WriteKind = (typeof HUB_WRITE_KINDS)[number];
 
@@ -135,7 +145,7 @@ export const HUB_TOOLS: readonly PartnerToolSpec[] = Object.freeze([
   },
   {
     name: "write",
-    description: `이 사람의 회사에 쓴다. kind post: 단체방(room)에 글(text)을 이 사람의 라피로서 올린다 — 팀원을 부르려면 members의 id를 mentions에 넣는다. kind propose_memory: 팀이 기억할 사실 한 줄(content)을 올린다 — 팀의 관리자가 확인해야 팀 기억이 되고, evidence에는 그 근거가 된 이 사람의 말을 그대로 넣는다. kind skill: 이 사람의 스킬을 팀 스킬로 올린다(id, title, summary, instructions). 회사 서버에 닿지 않으면 이 컴퓨터에 두었다가 다시 이어질 때 보낸다.`,
+    description: `이 사람의 회사에 쓴다. kind post: 단체방(room)에 글(text)을 이 사람의 라피로서 올린다 — 팀원을 부르려면 members의 id를 mentions에 넣는다. kind propose_memory: 팀이 기억할 사실 한 줄(content)을 올린다 — 팀의 관리자가 확인해야 팀 기억이 되고, evidence에는 그 근거가 된 이 사람의 말을 그대로 넣는다. kind skill: 이 사람의 스킬을 팀 스킬로 올린다(id, title, summary, instructions). kind upload: 너의 폴더에 있는 파일(path)을 팀 파일로 올린다 — folder는 팀 폴더(/로 시작, 없으면 맨 위), name은 팀에서 보일 이름(없으면 파일 이름). 표·PDF·글 파일은 속의 글도 함께 올라가 팀 search에 걸린다. 회사 서버에 닿지 않으면 이 컴퓨터에 두었다가 다시 이어질 때 보낸다.`,
     inputSchema: {
       type: "object",
       properties: {
@@ -143,7 +153,7 @@ export const HUB_TOOLS: readonly PartnerToolSpec[] = Object.freeze([
           type: "string",
           enum: [...HUB_WRITE_KINDS],
           description:
-            "post 단체방에 글, propose_memory 팀 기억 제안, skill 팀 스킬 올리기",
+            "post 단체방에 글, propose_memory 팀 기억 제안, skill 팀 스킬 올리기, upload 파일 올리기",
         },
         room: {
           type: "string",
@@ -170,6 +180,16 @@ export const HUB_TOOLS: readonly PartnerToolSpec[] = Object.freeze([
         title: { type: "string", description: "skill의 이름" },
         summary: { type: "string", description: "skill이 무엇인지 한 줄" },
         instructions: { type: "string", description: "skill의 본문" },
+        path: {
+          type: "string",
+          description:
+            "upload할 파일: 너의 폴더 안의 경로, 파일 도구가 준 그대로",
+        },
+        folder: {
+          type: "string",
+          description: "upload할 팀 폴더, 예: /영업/2026",
+        },
+        name: { type: "string", description: "upload한 파일의 팀에서의 이름" },
       },
       required: ["kind"],
       additionalProperties: false,
@@ -188,6 +208,11 @@ export type HubToolRuntime = {
   /** Told when a read meets a refused pass, so the line says so once and stops (`link.ts`). */
   onPassRefused?: () => void;
   sleep?: (milliseconds: number) => Promise<void>;
+  /**
+   * Files into the team's files (`upload.ts`). Absent on a VM with no computer to read the Bot's
+   * folder from: an upload is then refused as the computer being out of reach.
+   */
+  uploads?: HubUploads;
 };
 
 /** A refusal the Bot reads as Korean (`shared/prompt/tool-results.ko.ts`). */
@@ -246,6 +271,14 @@ export function checkHubArgs(
       if (!SLUG.test(needed(args, "id"))) refuse(ARGUMENTS_INVALID);
       needed(args, "title");
       needed(args, "instructions");
+    }
+    if (kind === "upload") {
+      needed(args, "path");
+      // The hub's own reading of a folder, the part that can be known here: absolute.
+      const folder = text(args, "folder");
+      if (folder !== null && !folder.startsWith("/")) refuse(ARGUMENTS_INVALID);
+      const name = text(args, "name");
+      if (name !== null && /[/\\]/.test(name)) refuse(ARGUMENTS_INVALID);
     }
     return;
   }
@@ -450,7 +483,11 @@ export function createHubToolTransport(
     kind: WriteKind,
     write: HubOutboxWrite,
   ): Promise<McpCallResult> {
-    const id = await runtime.outbox.enqueue(write);
+    return settle(kind, await runtime.outbox.enqueue(write));
+  }
+
+  /** A row already written: the first offer, and — for a moment — whether the hub took it. */
+  async function settle(kind: WriteKind, id: string): Promise<McpCallResult> {
     await Promise.race([runtime.outbox.sweep(), sleep(HUB_WRITE_WAIT_MS)]);
     const [row] = await runtime.database
       .select({
@@ -465,9 +502,45 @@ export function createHubToolTransport(
     return resultOf({ kind, sent: false, note: toolResultText(HUB_QUEUED) });
   }
 
+  /**
+   * A file from the Bot's folder: its read judged by the gateway under the run's scope, then a row
+   * that holds where it is and which bytes were judged (`upload.ts`). The write itself was judged
+   * before this, as every hub write is (`plugins/call.ts`).
+   */
+  async function upload(
+    args: Record<string, unknown>,
+    origin: HubOutboxWrite["origin"],
+    caller: { botId?: string; actor: HubUploadActor | null },
+  ): Promise<McpCallResult> {
+    if (!runtime.uploads || !caller.botId || !caller.actor) {
+      return refuse("laf:computer_unreachable");
+    }
+    if (runtime.passRefused?.()) refuse(HUB_FACTS.passRefused);
+    const name = text(args, "name");
+    const folder = text(args, "folder");
+    let queued: { queued: string } | { answer: unknown };
+    try {
+      queued = await runtime.uploads.uploadToHub({
+        path: needed(args, "path"),
+        botId: caller.botId,
+        actor: caller.actor,
+        ...(name ? { name } : {}),
+        ...(folder ? { folder } : {}),
+        origin,
+        ...(caller.actor.runId ? { runId: caller.actor.runId } : {}),
+      });
+    } catch (error) {
+      if (error instanceof HubUploadRefused) refuse(error.code);
+      throw error;
+    }
+    if (!("queued" in queued)) return refuse(ARGUMENTS_INVALID);
+    return settle("upload", queued.queued);
+  }
+
   async function write(
     args: Record<string, unknown>,
     origin: HubOutboxWrite["origin"],
+    caller: { botId?: string; actor: HubUploadActor | null },
   ): Promise<McpCallResult> {
     const kind = args.kind as WriteKind;
     switch (kind) {
@@ -502,6 +575,8 @@ export function createHubToolTransport(
           }),
           origin,
         });
+      case "upload":
+        return upload(args, origin, caller);
     }
     return refuse(ARGUMENTS_INVALID);
   }
@@ -520,7 +595,17 @@ export function createHubToolTransport(
       // transport is a door of its own and refuses what it was never meant to send.
       checkHubArgs(toolName, args);
       const origin = originOf(connection.drawnOn);
-      return toolName === "read" ? read(args, origin) : write(args, origin);
+      if (toolName === "read") return read(args, origin);
+      return write(args, origin, {
+        ...(connection.botId ? { botId: connection.botId } : {}),
+        actor: connection.actorId
+          ? {
+              id: connection.actorId,
+              ...(connection.threadId ? { threadId: connection.threadId } : {}),
+              ...(connection.runId ? { runId: connection.runId } : {}),
+            }
+          : null,
+      });
     },
   };
 }
