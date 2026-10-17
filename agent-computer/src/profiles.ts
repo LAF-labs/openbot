@@ -701,6 +701,34 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
     },
 
     /**
+     * Sign the browser out of these origins and nothing else: every cookie the browser would send
+     * to one of them is deleted, and every other cookie stays. What a person leaving their company
+     * asks for — the company's shared logins go, their own bank and marketplace do not
+     * (`server/src/hub/leave.ts`). `reset` is the whole jar and is not that.
+     *
+     * "Would send" is the browser's own rule (`context.cookies(urls)`): a cookie set for the
+     * site's parent domain is sent to the origin and goes with it, because that is often where a
+     * site keeps its session. A browser that is not running is started for it: the cookies are on
+     * disk in the profile, and only the browser reads that file. Answers how many went.
+     */
+    async forgetCookies(
+      botId: string,
+      origins: readonly string[],
+    ): Promise<number> {
+      if (origins.length === 0) return 0;
+      const context = await browserFor(botId);
+      const found = await context.cookies([...origins]);
+      for (const cookie of found) {
+        await context.clearCookies({
+          name: cookie.name,
+          domain: cookie.domain,
+          path: cookie.path,
+        });
+      }
+      return found.length;
+    },
+
+    /**
      * Every Bot this computer holds something for, whether or not it has a tab open.
      *
      * Read from disk rather than from memory, because after a restart nothing is open and everything

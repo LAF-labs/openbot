@@ -9,9 +9,10 @@
 import { isBotId } from "./authorisation";
 import type { BotRoute, Computer } from "./computer";
 import { type CoreShareSampler, machineCoreShare } from "./core-share";
+import { actionFailure } from "./failures";
 import { forgetFilled } from "./filled-values";
 import { stopViewer } from "./live-screen";
-import { bodyOf, json } from "./respond";
+import { bodyOf, invalid, json } from "./respond";
 import { forgetSecretFields } from "./secret-fields";
 
 /**
@@ -145,4 +146,53 @@ export const resetComputer: BotRoute = async (
     scope: "deployment",
     ...(emptied === undefined ? {} : { emptied }),
   });
+};
+
+/** The most origins one call forgets: a company's shared logins are a handful, never a crawl. */
+export const FORGET_ORIGINS_MAX = 100;
+
+/**
+ * The origins a forget names, each exactly an `http(s)://host[:port]` origin and nothing more —
+ * or null. A path, a query, a bare host or another scheme is refused rather than read as the
+ * nearest origin: the call deletes logins, and it deletes exactly what it was told or nothing.
+ */
+export function originsOf(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length > FORGET_ORIGINS_MAX) return null;
+  const origins = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "string") return null;
+    let url: URL;
+    try {
+      url = new URL(item);
+    } catch {
+      return null;
+    }
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    if (url.origin !== item) return null;
+    origins.add(url.origin);
+  }
+  return [...origins];
+}
+
+/**
+ * Sign the browser out of the origins named, and only those (`profiles.ts`, `forgetCookies`).
+ *
+ * THE WHOLE COMPUTER'S, like a reset: the profile is every Bot's, so the Bot on the header is who
+ * asked. Its own endpoint for a reset's reason — a person leaving their company must never be able
+ * to sign out of everything by a parameter missing (`server/src/hub/leave.ts`).
+ */
+export const forgetCookies: BotRoute = async (
+  { botId, request },
+  { profiles },
+) => {
+  const body = await bodyOf<{ origins?: unknown }>(request);
+  const origins = originsOf(body?.origins);
+  if (!origins) return invalid("origins");
+  try {
+    const forgotten = await profiles.forgetCookies(botId, origins);
+    return json({ forgotten, origins: origins.length, scope: "deployment" });
+  } catch (error) {
+    // A browser that would not start is a fact for the server, never Playwright's own message.
+    return actionFailure(error);
+  }
 };

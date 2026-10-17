@@ -18,6 +18,7 @@ import {
 import { BROWSER_HEADER, type Browsers, isBrowserName } from "./browsers";
 import type { BotRoute } from "./computer";
 import {
+  forgetCookies,
   health,
   listComputers,
   resetComputer,
@@ -66,6 +67,7 @@ const BOT_ROUTES = new Map<string, BotRoute>([
   ["POST /login/fill", fillLogin],
   ["POST /computers/stop", stopComputer],
   ["POST /computers/reset", resetComputer],
+  ["POST /computers/cookies/forget", forgetCookies],
   ["POST /navigate", navigate],
   ["GET /screenshot", screenshot],
   ["POST /files/read", readFile],
