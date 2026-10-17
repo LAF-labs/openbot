@@ -3285,6 +3285,17 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `server` by two more (to 4883 on top of 4881): a write meeting a refused pass is said as that,
  * not as kept — with no row when it was known before (hub-tools.test.ts), the row waiting when the
  * hub's 401 came during the write (hub-tools.integration.test.ts).
+ *
+ * the hub, and no hub tool without the pass (hub-tools-head.test.ts, 3). 4747 and 28.
+ *
+ * RAISED 2026-10-17 FOR 라피 TAKING THE TASKS GIVEN TO IT: `server` by twenty-one (to 4796) — the
+ * pickup against an in-memory board that keeps the hub's claim rules (hub-task-pickup.test.ts, 16:
+ * taken, run once and moved with its note; blocked on a yes; not somebody else's; two VMs racing;
+ * a crash mid-run, the sweep and the next boot; a finished run reported and not run again; a claim
+ * lost under the run; its own release not taken again; the six notes and the one-line cut; what the
+ * line delivers); and the run on a real Postgres (hub-task-run.integration.test.ts, 5: a routine's
+ * run in a project named after the task, its head a routine's byte for byte, a stop on a yes kept
+ * to its topic, one conversation for two runs, an unsettled run not reported). 4775 and 21.
  */
 const GROUPS: readonly {
   name: string;
