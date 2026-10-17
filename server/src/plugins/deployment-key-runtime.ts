@@ -10,6 +10,7 @@
  * vendor would be the copies drifting on the order of a revoke, which is the one thing here that
  * must not.
  */
+import { DEFERRED_TOOL_PREFIX } from "../../../shared/tools/bridge";
 import type { Whereabouts } from "../../../shared/whereabouts";
 import { describeFailure } from "../failure-text";
 import type { HubToolRuntime } from "../hub/tools";
@@ -72,6 +73,12 @@ export type DeploymentKeyRuntime = {
   has: (catalogueKey: string) => boolean;
   /** Every tool the keys this VM holds put in front of a Bot, by its bare name. */
   toolNames: string[];
+  /**
+   * The same tools by the name a Bot calls them (`mcp__hub__write`, `store.ts` `toolNameFor`): what a
+   * skill names in `requires:` when the bare name says nothing on its own — the hub's `read` and
+   * `write` (`plugins/built-in-skill-sync.ts`).
+   */
+  wireToolNames: string[];
   /** For the catalogue listing, which hides a deployment-key entry whose key is absent. */
   keys: DeploymentKeyLookup;
   /** For `createPluginStore`. A family with no key has no transport, and its entry refuses. */
@@ -192,6 +199,11 @@ export function createDeploymentKeyRuntime(input: {
     has: (catalogueKey) => held.some((service) => service.key === catalogueKey),
     toolNames: held.flatMap((service) =>
       service.tools.map((tool) => tool.name),
+    ),
+    wireToolNames: held.flatMap((service) =>
+      service.tools.map(
+        (tool) => `${DEFERRED_TOOL_PREFIX}${service.key}__${tool.name}`,
+      ),
     ),
     keys: keyLookupOver(input.keys),
     transports,
