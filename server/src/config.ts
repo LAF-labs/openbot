@@ -134,6 +134,9 @@ export const ENVIRONMENT = {
   LAF_ALERT_WEBHOOK_URL: "compose",
   LAF_FLEET_WEBHOOK_URL: "compose",
   LAF_FLEET_WEBHOOK_SECRET: "compose",
+  // The company hub this VM's person belongs to, written by laf-control when they join one.
+  LAF_HUB_URL: "compose",
+  LAF_HUB_VM_KEY: "compose",
   // What the fleet holds an application or a key for.
   CAFE24_CLIENT_ID: "compose",
   CAFE24_CLIENT_SECRET: "compose",
@@ -409,6 +412,24 @@ export type DeploymentConfig = {
     webhookUrl: string;
     secret: string;
     origin: string;
+  };
+  /**
+   * The company hub this deployment's person belongs to (`server/src/hub/`), or absent.
+   *
+   * Absent is every VM whose person is on their own, and then nothing about a hub is started,
+   * drawn or said beyond one field on the boot line. laf-control writes both lines when the person
+   * joins a company and removes both when they leave.
+   *
+   * `vmKey` is the pass this VM made for itself (`openssl rand -hex 32`); the hub holds only its
+   * SHA-256. It is sent to the hub and to nothing else, and never logged. `vmOrigin` is
+   * `PUBLIC_ORIGIN` when there is one: sent as `x-laf-vm`, so a pass copied off this VM and used
+   * from another is refused by the hub even though the pass itself is good.
+   */
+  hub?: {
+    /** The hub's origin, scheme included, no trailing slash. */
+    url: string;
+    vmKey: string;
+    vmOrigin?: string;
   };
   /**
    * What this deployment can offer as a one-press 연결, and how a vendor gets the browser back.
@@ -948,6 +969,58 @@ function fleetConfig(environment: Environment): DeploymentConfig["fleet"] {
   }
 
   return { webhookUrl, secret, origin };
+}
+
+/** A hub pass is what `openssl rand -hex 32` prints, as the hub checks it (`hub/src/auth.ts`). */
+const HUB_PASS_SHAPE = /^[0-9a-f]{64}$/;
+
+/**
+ * The company hub, or a refusal to start.
+ *
+ * Optional as a whole and strict once either line exists, the shape of `fleetConfig`: laf-control
+ * writes the two together, so one without the other is a push that half-landed, and a VM that
+ * booted on it would show 끊김 forever for a reason nobody could read off the screen. A pass in
+ * any other spelling is one the hub refuses before it looks anything up, so it is refused here, at
+ * boot, where the operator is watching.
+ *
+ * The URL is an origin and nothing more: the routes are the protocol's (`HUB_PREFIX`), and a path
+ * written after the host would be silently joined into every call.
+ */
+function hubConfig(environment: Environment): DeploymentConfig["hub"] {
+  const written = optional(environment, "LAF_HUB_URL");
+  const vmKey = optional(environment, "LAF_HUB_VM_KEY");
+  if (!written && !vmKey) return undefined;
+  if (!written) {
+    throw new Error(
+      "LAF_HUB_VM_KEY is set, so LAF_HUB_URL must be too: a pass with no hub to show it to joins nothing",
+    );
+  }
+  if (!vmKey) {
+    throw new Error(
+      "LAF_HUB_URL is set, so LAF_HUB_VM_KEY must be too: the hub answers nothing without this VM's pass",
+    );
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(written);
+  } catch {
+    throw new Error("LAF_HUB_URL must be an http(s) origin");
+  }
+  if (
+    (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+    parsed.pathname.replace(/\/+$/, "") !== "" ||
+    parsed.search ||
+    parsed.hash ||
+    parsed.username ||
+    parsed.password
+  ) {
+    throw new Error("LAF_HUB_URL must be an http(s) origin");
+  }
+  if (!HUB_PASS_SHAPE.test(vmKey)) {
+    throw new Error("LAF_HUB_VM_KEY must be 64 lowercase hex characters");
+  }
+  const vmOrigin = optional(environment, "PUBLIC_ORIGIN")?.replace(/\/+$/, "");
+  return { url: parsed.origin, vmKey, ...(vmOrigin ? { vmOrigin } : {}) };
 }
 
 /**
@@ -1527,6 +1600,7 @@ export function loadConfig(
     devNoAuth: devAuthEnabled(environment),
     computer: computerConfig(environment),
     fleet: fleetConfig(environment),
+    hub: hubConfig(environment),
     connectors: connectorsConfig(environment),
     partners: partnersConfig(environment),
     // Read after everything above, so a refusal that existed before these did still comes first.

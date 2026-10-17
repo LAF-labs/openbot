@@ -561,6 +561,66 @@ describe("telling the fleet about a withdrawal", () => {
 });
 
 /**
+ * The company hub: optional as a whole, strict once either line exists, since laf-control writes the
+ * two together and a VM booted on half of them would show 끊김 forever for no reason it could say.
+ */
+describe("the company hub", () => {
+  const pass = "0123456789abcdef".repeat(4);
+  const withHub = {
+    ...baseEnvironment,
+    LAF_HUB_URL: "https://acme.hub.agent.laf-co.com/",
+    LAF_HUB_VM_KEY: pass,
+  };
+
+  test("is absent when neither line is there", () => {
+    expect(loadConfig(baseEnvironment).hub).toBeUndefined();
+  });
+
+  test("is the hub's origin and the pass, with PUBLIC_ORIGIN as the VM it is used from", () => {
+    expect(loadConfig(withHub).hub).toEqual({
+      url: "https://acme.hub.agent.laf-co.com",
+      vmKey: pass,
+    });
+    expect(
+      loadConfig({ ...withHub, PUBLIC_ORIGIN: "https://kim.agent.laf-co.com/" })
+        .hub,
+    ).toEqual({
+      url: "https://acme.hub.agent.laf-co.com",
+      vmKey: pass,
+      vmOrigin: "https://kim.agent.laf-co.com",
+    });
+  });
+
+  test("refuses to start with one line and not the other", () => {
+    const { LAF_HUB_VM_KEY: _key, ...urlOnly } = withHub;
+    expect(() => loadConfig(urlOnly)).toThrow("LAF_HUB_VM_KEY must be too");
+    const { LAF_HUB_URL: _url, ...keyOnly } = withHub;
+    expect(() => loadConfig(keyOnly)).toThrow("LAF_HUB_URL must be too");
+  });
+
+  test.each([
+    "acme.hub.example",
+    "ftp://acme.hub.example",
+    "https://acme.hub.example/hub/v1",
+    "https://acme.hub.example/?x=1",
+  ])("refuses LAF_HUB_URL=%p, which is not an origin", (value) => {
+    expect(() => loadConfig({ ...withHub, LAF_HUB_URL: value })).toThrow(
+      "LAF_HUB_URL must be an http(s) origin",
+    );
+  });
+
+  test.each([
+    "short",
+    "0123456789ABCDEF".repeat(4),
+    `${"0123456789abcdef".repeat(4)}0`,
+  ])("refuses a pass the hub would refuse: %p", (value) => {
+    expect(() => loadConfig({ ...withHub, LAF_HUB_VM_KEY: value })).toThrow(
+      "LAF_HUB_VM_KEY must be 64 lowercase hex characters",
+    );
+  });
+});
+
+/**
  * The partner vendor LAF holds the ACCOUNT at, and the boot-time refusal over half of it.
  *
  * The same rule the shared OAuth clients keep, for the same reason: a connector configured halfway
@@ -688,6 +748,8 @@ describe("what loadConfig reads", () => {
     PUBLIC_ORIGIN: "https://shop1.agent.laf-co.com",
     LAF_FLEET_WEBHOOK_URL: "https://fleet.laf-co.test/hooks",
     LAF_FLEET_WEBHOOK_SECRET: "fleet-secret",
+    LAF_HUB_URL: "https://acme.hub.agent.laf-co.com",
+    LAF_HUB_VM_KEY: "ab".repeat(32),
     CAFE24_CLIENT_ID: "cafe24-id",
     CAFE24_CLIENT_SECRET: "cafe24-secret",
     LAF_OAUTH_RELAY_URL: "https://auth.agent.laf-co.com/oauth/relay",
