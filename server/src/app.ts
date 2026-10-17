@@ -82,6 +82,7 @@ import { createIdeaService } from "./ideas/service";
 import { log } from "./log";
 import type { HubHttp } from "./hub/http";
 import type { HubLink } from "./hub/link";
+import type { HubOutbox } from "./hub/outbox";
 import { createHubRoutes } from "./hub/routes";
 import { createHubUiRoutes } from "./hub/routes-ui";
 import { createLoginRoutes } from "./logins/routes";
@@ -461,7 +462,9 @@ export type CreateAppOptions = {
    * The company hub this VM belongs to (hub/), or absent when its person is on their own. The
    * `/api/hub` doors are mounted either way, so the app can ask and be told `configured: false`.
    */
-  hub?: { http: HubHttp; link: HubLink };
+  hub?: { http: HubHttp; link: HubLink; outbox?: HubOutbox };
+  /** A board task's stop and the person's yes, and the sub-Bot register (`hub/`). With `hub`. */
+  hubCompany?: Parameters<typeof createHubRoutes>[2];
 };
 
 export function createApp({
@@ -517,6 +520,7 @@ export function createApp({
   goals,
   logins,
   hub,
+  hubCompany,
 }: CreateAppOptions) {
   const app = new Hono<{ Variables: AppVariables }>();
   app.use("*", createSecurityMiddleware());
@@ -1064,7 +1068,7 @@ export function createApp({
     app.route("/api/logins", createLoginRoutes(logins, requireUser));
   }
 
-  app.route("/api/hub", createHubRoutes(hub, requireUser));
+  app.route("/api/hub", createHubRoutes(hub, requireUser, hubCompany));
   // The 회사 screen's doors: members, rooms, team files, skills and team memory, through the pass.
   app.route("/api/hub", createHubUiRoutes(hub, requireUser));
 

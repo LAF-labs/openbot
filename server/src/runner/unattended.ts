@@ -542,6 +542,10 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
             ...(actor.threadId ? { threadId: actor.threadId } : {}),
             // And the same run: a question about this call is this run's (`ActionActor.runId`).
             ...(actor.runId ? { runId: actor.runId } : {}),
+            // And the board task it works, whose allowance answers for it (`settle.ts`).
+            ...(actor.boardTaskThreadId
+              ? { boardTaskThreadId: actor.boardTaskThreadId }
+              : {}),
             ...(approvalId ? { approvalId } : {}),
             /*
              * NOTHING OF A ROUTINE'S CALL IS DRAWN: what it found reaches the person as the Bot's

@@ -36,6 +36,16 @@
  * the second is a clock with no conversation at all, running out at midnight where the person is.
  * Four answers between "this once" and "for good", each one a sentence a person can check against
  * the list afterwards, and each one's end enforced here rather than by the card that offered it.
+ *
+ * AND ONE FOR THE COMPANY'S BOARD (lafi-dev-design §7): "이 일감에서는 해도 돼". A task on the board
+ * runs with nobody at the screen, so an action it reaches that asks stops it, and the task goes to
+ * `blocked` with the topic. Its person answers on their own VM, for that task and that topic only:
+ * the row is bound to the task's conversation (`task:<id>`) and to the topic — the kind of action
+ * and where, worked out of the action by the same function that wrote the note (`ask-topic.ts`) —
+ * and to the rule and scope that stopped it, as every allowance is. Another task, or another topic
+ * in the same task, is asked again. Only the run of that task looks it up (`settle.ts`, handed the
+ * task's conversation by the server that runs it, never by a request), so a conversation, a room or
+ * a routine never meets it.
  */
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
@@ -106,7 +116,7 @@ export function scopeKeyOf(scope: AllowanceScope): string {
  * latest). `day` is wider than `thread` and bound to nothing but the clock: every conversation and
  * every routine, until midnight in the Bot's time zone.
  */
-export type AllowanceTier = "always" | "thread" | "task" | "day";
+export type AllowanceTier = "always" | "thread" | "task" | "day" | "board_task";
 
 /** Every tier, widest first — the order `find` prefers them in. */
 export const ALLOWANCE_TIERS: readonly AllowanceTier[] = [
@@ -114,7 +124,16 @@ export const ALLOWANCE_TIERS: readonly AllowanceTier[] = [
   "day",
   "thread",
   "task",
+  "board_task",
 ];
+
+/**
+ * How long "이 일감에서는 해도 돼" stands at most. A week: a task blocked on a Friday and allowed on
+ * Monday still has it when it runs, and one nobody touches again does not keep it for good. The task
+ * leaving the board, or its conversation being deleted, ends nothing sooner by itself — but nothing
+ * runs that task again either, and the conversation's deletion withdraws it (`endThread`).
+ */
+export const BOARD_TASK_ALLOWANCE_TTL_MS = 7 * 24 * 60 * 60_000;
 
 /**
  * How long a task-bound allowance stands at most, when the person never writes again.
@@ -195,9 +214,15 @@ export type StandingApproval = {
   scopeKind: AllowanceScope["kind"];
   scopeValue: string;
   tier: AllowanceTier;
-  /** The conversation it answers for. Present exactly when the tier is `thread` or `task`. */
+  /**
+   * The conversation it answers for. Present exactly when the tier is `thread`, `task` or
+   * `board_task` (the board task's own conversation, `task:<id>`).
+   */
   threadId?: string;
-  /** The person's message whose task it answers for. Present exactly when the tier is `task`. */
+  /**
+   * The person's message whose task it answers for, when the tier is `task`; the topic it answers
+   * for, when the tier is `board_task`. Absent otherwise.
+   */
   taskId?: string;
   /** When it stops standing on its own. Present for every tier but `always`. */
   expiresAt?: string;
@@ -244,6 +269,12 @@ export type AllowanceLookup = {
    * ({@link StandingApprovalStore.currentTask}), never taken from the request.
    */
   taskId?: string | undefined;
+  /**
+   * The board task a run is working, and the topic of the action in front of it: what a
+   * `board_task` allowance answers for. Named by the server that runs the task (`ActionActor`),
+   * never by a request; absent everywhere else, where no such allowance answers.
+   */
+  boardTask?: { threadId: string; topic: string } | undefined;
 };
 
 export type StandingApprovalStore = {
@@ -353,6 +384,14 @@ function boundTo(input: StandingGrant, at: number, timeZone: string): Bound {
   if (!taskId) {
     throw new Error("an allowance for this task needs to know which task");
   }
+  if (tier === "board_task") {
+    return {
+      tier,
+      threadId,
+      taskId,
+      expiresAt: at + BOARD_TASK_ALLOWANCE_TTL_MS,
+    };
+  }
   return { tier, threadId, taskId, expiresAt: at + TASK_ALLOWANCE_TTL_MS };
 }
 
@@ -362,6 +401,14 @@ function answersWhere(
   where: AllowanceLookup,
 ): boolean {
   if (row.tier === "always" || row.tier === "day") return true;
+  // Its own lookup and no other: a person chatting in the task's conversation is not the task.
+  if (row.tier === "board_task") {
+    return (
+      where.boardTask !== undefined &&
+      row.threadId === where.boardTask.threadId &&
+      row.taskId === where.boardTask.topic
+    );
+  }
   if (!where.threadId || row.threadId !== where.threadId) return false;
   if (row.tier === "thread") return true;
   return where.taskId !== undefined && row.taskId === where.taskId;
@@ -669,12 +716,15 @@ export function createDatabaseStandingApprovalStore(
           eq(computerStandingApprovals.botId, botId),
           eq(computerStandingApprovals.rule, rule),
           eq(computerStandingApprovals.scope, scope),
-          where.threadId
-            ? or(
-                isNull(computerStandingApprovals.threadId),
-                eq(computerStandingApprovals.threadId, where.threadId),
-              )
-            : isNull(computerStandingApprovals.threadId),
+          or(
+            isNull(computerStandingApprovals.threadId),
+            where.threadId
+              ? eq(computerStandingApprovals.threadId, where.threadId)
+              : undefined,
+            where.boardTask
+              ? eq(computerStandingApprovals.threadId, where.boardTask.threadId)
+              : undefined,
+          ),
           standing(),
         ),
       );

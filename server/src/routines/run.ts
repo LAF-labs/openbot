@@ -18,6 +18,7 @@ import {
   UnattendedRunError,
   type UnattendedToolkit,
 } from "../runner/unattended";
+import type { RunBudget } from "../hub/budget";
 import { createRunMeter, type RunMeter } from "../telemetry/run-meter";
 import { isSilentAnswer } from "./deliver";
 import {
@@ -186,6 +187,14 @@ export type RoutineRunOptions = SettlementOptions & {
    * one would let this one start a second later.
    */
   work?: WorkInFlight;
+  /**
+   * The company's budget, when this VM belongs to a company hub (`hub/budget.ts`): asked before
+   * the Bot is, told what the run cost after. Absent — a person on their own — and a run is exactly
+   * what it was before there were companies.
+   */
+  budget?: RunBudget;
+  /** The sub-Bot this routine is registered as on the hub, so its own day is counted too. */
+  jobOf?: (routineId: string) => Promise<string | null>;
 };
 
 type RoutineRow = typeof lafRoutines.$inferSelect;
@@ -366,15 +375,39 @@ async function executeNow(
    */
   const author = row.createdById;
   const ledgerRunId = await openLedger(options, row, author, runId);
-  const attempt = await askTheBot(
-    options,
-    row,
-    author,
-    signal,
-    meter.observe,
-    runId,
-    scheduledFor,
-  );
+  /*
+   * THE COMPANY'S DAY, ASKED BEFORE THE BOT IS (`hub/budget.ts`). Inside the lane, after the
+   * ledger row — so the run that was refused is a run in the conversation, with the fact that
+   * stopped it — and before anything reaches the model: a refused run sends no request at all.
+   */
+  const verdict = options.budget
+    ? await options.budget.reserve({
+        runId,
+        scopes: await jobScopeOf(options, row),
+        origin: "job",
+      })
+    : null;
+  const attempt: Attempt =
+    verdict && !verdict.go
+      ? {
+          ok: false,
+          answer: "",
+          failure: verdict.code,
+          steps: null,
+          awaiting: false,
+          notepad: null,
+          feed: null,
+          stopped: false,
+        }
+      : await askTheBot(
+          options,
+          row,
+          author,
+          signal,
+          meter.observe,
+          runId,
+          scheduledFor,
+        );
   meter.end();
 
   /*
@@ -417,6 +450,21 @@ async function executeNow(
     silent,
     settled,
   });
+
+  // What it cost, to the hub's ledger through the outbox — also where the hub did not answer the
+  // reservation, so its day catches up. A refused run spent nothing and set nothing aside.
+  if (options.budget && verdict?.go) {
+    await options.budget.settle({ runId, actual: meter.read().costUsd });
+  }
+}
+
+/** The routine's own scope on the hub's ledger, where it is registered as a sub-Bot. */
+async function jobScopeOf(
+  options: RoutineRunOptions,
+  row: RoutineRow,
+): Promise<`job:${string}`[]> {
+  const job = await options.jobOf?.(row.id).catch(() => null);
+  return job ? [`job:${job}`] : [];
 }
 
 /**
