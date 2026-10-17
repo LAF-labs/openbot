@@ -34,6 +34,7 @@ import { recordAudit } from "./audit";
 import type { AuthedMember, MemberVariables } from "./auth";
 import type { HubDatabase, HubTransaction } from "./db/client";
 import {
+  hubJobs,
   hubMembers,
   hubTaskMembers,
   hubTaskNotes,
@@ -59,7 +60,8 @@ import { audienceOf, visibleTo } from "./visibility";
  *
  * THE CLAIM. `POST /tasks/:id/checkout {runId}` is one conditional UPDATE: it takes the task only
  * if it is waiting (`todo`, unclaimed) or its holder's time ran out, and only for a member it is
- * assigned to (or anybody, when it is assigned to nobody). Postgres makes a second UPDATE of the
+ * assigned to (or anybody, when it is assigned to nobody; for a sub-Bot's `job:<id>`, the job's
+ * runner now — `mayWork`). Postgres makes a second UPDATE of the
  * same row wait for the first to commit and then test its WHERE against the row the first wrote,
  * which no longer matches — so of any number of runs asking at once exactly one is told yes and
  * the rest `laf:task_taken`, with no lock of our own. A run that is told no stops; it does not
@@ -113,6 +115,64 @@ const notHeld: Answer = {
 const isString = (value: unknown): value is string => typeof value === "string";
 const isManager = (member: AuthedMember) =>
   member.role === "owner" || member.role === "admin";
+
+/**
+ * Whose run may hold the task: anybody's who sees it when it is given to nobody; the member for
+ * `m:<member>` and `bot:<member>`; and for `job:<id>`, the member whose VM runs that job NOW
+ * (`hub_jobs.runner`) — never whoever gave it to the job, and never a runner it moved away from.
+ * Read inside the same statement as the claim, so a job moving between the read and the write
+ * cannot let the old runner in.
+ */
+const mayWork = (member: string) =>
+  sql`(${hubTasks.assignee} is null or ${hubTasks.assignee} = ${`m:${member}`} or ${hubTasks.assignee} = ${`bot:${member}`} or ${hubTasks.assignee} in (select 'job:' || ${hubJobs.id} from ${hubJobs} where ${hubJobs.runner} = ${member}))`;
+
+/**
+ * A job moved (`jobs.ts`): every claim its old runner holds on the job's tasks ends now, and those
+ * tasks go back to `todo` for the new runner. The old VM turns the job off on `job.moved`; a run
+ * still going there hears `laf:task_not_held` at its next beat or report and stops, as for any claim
+ * it lost. Waiting out the claim instead would leave the task stuck for the lock's length with its
+ * owner unable to work it.
+ */
+export async function freeMovedJobClaims(
+  tx: HubTransaction,
+  jobId: string,
+  from: string,
+  actor: string,
+): Promise<number> {
+  const freed = await tx
+    .update(hubTasks)
+    .set({
+      checkoutRunId: null,
+      checkoutBy: null,
+      lockExpiresAt: null,
+      stage: sql`case when ${hubTasks.stage} = 'doing' then 'todo' else ${hubTasks.stage} end`,
+      version: sql`${hubTasks.version} + 1`,
+      updatedAt: sql`now()`,
+    })
+    .where(
+      and(eq(hubTasks.assignee, `job:${jobId}`), eq(hubTasks.checkoutBy, from)),
+    )
+    .returning({
+      id: hubTasks.id,
+      visibility: hubTasks.visibility,
+    });
+  for (const row of freed) {
+    await emitEvent(tx, {
+      type: "task.changed",
+      refId: row.id,
+      actor,
+      visibleTo: await audienceOf(tx, row.visibility),
+    });
+    await recordAudit(tx, {
+      action: "task.claim_moved",
+      member: from,
+      target: row.id,
+      outcome: "freed",
+      payload: { job: jobId },
+    });
+  }
+  return freed.length;
+}
 
 /** The SQL for "the claim lasts this long from now", from the database's clock, never the VM's. */
 const lockUntil = () =>
@@ -637,10 +697,15 @@ export function taskRoutes(options: TaskRouteOptions) {
           throw new Invalid("stage");
         if (stage === null && note === null) throw new Invalid("body");
         if (runId === null) throw new Invalid("runId");
+        const [entitled] = await tx
+          .select({ id: hubTasks.id })
+          .from(hubTasks)
+          .where(and(eq(hubTasks.id, id), mayWork(self.id)));
         if (
           row.checkoutRunId !== runId ||
           row.checkoutBy !== self.id ||
-          row.stage !== "doing"
+          row.stage !== "doing" ||
+          !entitled
         ) {
           await audit(HUB_TASK_FACTS.notHeld);
           return notHeld;
@@ -900,8 +965,8 @@ export function taskRoutes(options: TaskRouteOptions) {
           outcome,
         });
       // A task given to somebody is theirs to take; one given to nobody is anybody's who sees it.
-      // A job's task is taken on the VM of whoever gave it to the job.
-      const forMe = sql`(${hubTasks.assignee} is null or ${hubTasks.assignee} = ${`m:${self.id}`} or ${hubTasks.assignee} = ${`bot:${self.id}`} or (${hubTasks.assignee} like 'job:%' and ${hubTasks.assignedBy} = ${self.id}))`;
+      // A job's task is taken on the VM that runs the job now (`mayWork`).
+      const forMe = mayWork(self.id);
       const [claimed] = await tx
         .update(hubTasks)
         .set({
@@ -986,6 +1051,9 @@ export function taskRoutes(options: TaskRouteOptions) {
             eq(hubTasks.stage, "doing"),
             eq(hubTasks.checkoutRunId, runId),
             eq(hubTasks.checkoutBy, self.id),
+            // A holder the task is no longer for (its job moved, it was given to somebody else)
+            // keeps nothing alive.
+            mayWork(self.id),
           ),
         )
         .returning({ until: hubTasks.lockExpiresAt });
