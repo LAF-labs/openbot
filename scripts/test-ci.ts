@@ -3255,6 +3255,14 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * .integration.test.ts, 3: a post sent once with its row's key, a write kept through an outage and
  * sent once after, a refusal ended); and the head of the prompt the same bytes with and without
  * the hub, and no hub tool without the pass (hub-tools-head.test.ts, 3). 4747 and 28.
+ *
+ * RAISED 2026-10-17 FOR JOINING AND LEAVING A COMPANY: `server` by four (to 4779) — the leave on a
+ * real Postgres, serialised with no company file or room name left and the person's own kept, a VM
+ * attached or never attached left alone, a browser that cannot sign out keeping the cursor
+ * (hub-leave.integration.test.ts, 3), and 팀에-올리기 carried only with the hub pass
+ * (built-in-skills.test.ts, 1). And `agent-computer` by eleven (to 643): which origins a forget
+ * takes, and a real Chromium signed out of one origin and still signed in to another
+ * (forget-cookies.test.ts). 4775 and 4; 632 and 11.
  */
 const GROUPS: readonly {
   name: string;
@@ -3262,7 +3270,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4775, roots: ["server"] },
+  { name: "server", floor: 4779, roots: ["server"] },
   { name: "app", floor: 2543, roots: ["app"] },
   {
     name: "agent-computer",
@@ -3297,7 +3305,7 @@ const GROUPS: readonly {
      * in `korean-sites.test.ts`, a real download landing in the folder of the run whose page
      * sent it.
      */
-    floor: 632,
+    floor: 643,
     roots: ["agent-computer"],
     processes: 1,
   },
