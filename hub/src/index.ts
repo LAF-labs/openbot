@@ -5,6 +5,7 @@ import { startBudgetSweeper } from "./budget";
 import { readHubConfig } from "./config";
 import { createHubDatabase, migrateHub } from "./db/client";
 import { sweepIdempotency } from "./idempotency";
+import { startHandoffSweeper } from "./job-handoff";
 import { startTaskSweeper } from "./task-sweeper";
 
 const log = createLogger("hub");
@@ -53,6 +54,10 @@ void tasks.sweep();
 const budget = startBudgetSweeper({ database, log });
 void budget.sweep();
 
+// A sub-Bot's handoff nobody came for in a week is dropped; once at boot too.
+const handoffs = startHandoffSweeper({ database, log });
+void handoffs.sweep();
+
 log.info("boot", {
   ...buildOf(process.env),
   port: server.port,
@@ -67,6 +72,7 @@ process.on("SIGTERM", () => {
   clearInterval(sweep);
   tasks.stop();
   budget.stop();
+  handoffs.stop();
   listeners.closeAll(1001, "laf:hub_stopping");
   void Promise.race([server.stop(), Bun.sleep(5_000)])
     .then(() => database.close())

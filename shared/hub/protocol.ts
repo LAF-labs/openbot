@@ -64,7 +64,13 @@ export type HubMemberState = "active" | "left";
  * - `job.changed`: a sub-Bot was registered, edited or removed. `refId` is the job id. Everybody:
  *   the register holds no content.
  * - `job.moved`: a sub-Bot's runner changed (its owner was handed on). `refId` is the job id. Seen
- *   by the old runner, whose VM drops the job, and the new one, whose VM picks it up.
+ *   by the old runner, whose VM drops the job, and the new one, whose VM picks it up. Said again to
+ *   the new runner alone when the old one's handoff is there to collect (`PUT /jobs/:id/handoff`),
+ *   so a VM that looked before it came looks again.
+ * - `task.approval_granted`: a person let a blocked task go on past the one kind of action it
+ *   stopped on (`POST /tasks/:id/approvals`). `refId` is the task id, `actor` who said yes, `at`
+ *   when. The topic is in the note the yes leaves on the task, read over HTTP like everything an
+ *   event names. Seen by whoever can see the task.
  */
 export const HUB_EVENT_TYPES = [
   "member.changed",
@@ -73,6 +79,7 @@ export const HUB_EVENT_TYPES = [
   "budget.reached",
   "job.changed",
   "job.moved",
+  "task.approval_granted",
 ] as const;
 export type HubEventType = (typeof HUB_EVENT_TYPES)[number];
 
@@ -225,7 +232,27 @@ export const HUB_TASK_FACTS = {
   notHeld: "laf:task_not_held",
   /** A 라피 tried to set `done`, which only a person does. */
   doneByPerson: "laf:task_done_by_person",
+  /** A yes for a task that is not waiting on one: a person moved it already. Not retried. */
+  notBlocked: "laf:task_not_blocked",
 } as const;
+
+/**
+ * `POST /tasks/:id/approvals {topic, version?}` — a yes for a blocked task, for the one topic it
+ * stopped on (`kind/intent@place`, never a value). Said by the member whose 라피 run moved it to
+ * `blocked`, or an owner/admin. The task goes back to `todo` with the note
+ * `laf:task_approval_granted topic:<topic>`, and `task.approval_granted` names it.
+ */
+export type HubTaskApproval = {
+  taskId: string;
+  /** The member who said yes. */
+  by: string;
+  topic: string;
+  /** ISO 8601, the hub's clock. */
+  at: string;
+};
+
+/** What a topic may hold: letters, digits and `@/._:-`, as the VM's `topicOf` leaves it. */
+export const HUB_TASK_TOPIC_SHAPE = /^[\p{L}\p{N}@/._:-]{1,200}$/u;
 
 export const HUB_TASK_LIMITS = {
   title: 200,
@@ -407,4 +434,32 @@ export type HubJob = {
 export const HUB_JOB_LIMITS = {
   name: 100,
   schedule: 200,
+  /** The handoff's definition, as JSON, in bytes. */
+  handoffBytes: 64 * 1024,
 } as const;
+
+/** How long a handoff waits for its new runner before the sweep drops it. */
+export const HUB_JOB_HANDOFF_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** The facts the job routes answer with, beside `HUB_FACTS`. */
+export const HUB_JOB_FACTS = {
+  /** A handoff from a member the job was not moved away from, or with no move pending. */
+  notMoving: "laf:job_not_moving",
+} as const;
+
+/**
+ * A SUB-BOT'S HANDOFF (`/hub/v1/jobs/:id/handoff`): the definition the old runner's VM hands the new
+ * one when the job moves. The register holds no content, and this is no part of it: one slot per
+ * job, written by the member the job moved away from (`PUT {to?, definition}`), read only by the
+ * member it moved to (`GET`), cleared by them or an owner/admin (`DELETE`), and dropped a week after
+ * it was written if nobody came for it. The hub keeps `definition` as it was sent and never reads,
+ * logs or audits it.
+ */
+export type HubJobHandoff = {
+  jobId: string;
+  from: string;
+  to: string;
+  definition: unknown;
+  createdAt: string;
+  expiresAt: string;
+};
