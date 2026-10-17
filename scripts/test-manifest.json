@@ -437,6 +437,7 @@
   "server/tests/high-risk.test.ts",
   "server/tests/history-page.test.ts",
   "server/tests/hub-http.test.ts",
+  "server/tests/hub-leave.integration.test.ts",
   "server/tests/hub-link.integration.test.ts",
   "server/tests/hub-outbox.integration.test.ts",
   "server/tests/hub-routes.test.ts",

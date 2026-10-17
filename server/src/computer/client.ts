@@ -949,6 +949,24 @@ export function createComputerClient(options: ComputerClientOptions) {
       },
 
       /**
+       * Sign the browser out of these origins and nothing else: every cookie it would send to one
+       * of them goes, every other login stays (`agent-computer/src/profiles.ts`). The browser is
+       * the whole deployment's, so the Bot is who asks, not whose cookies go. For a person
+       * leaving their company (`hub/leave.ts`); a reset is the whole jar and is not this.
+       */
+      async forgetCookies(
+        origins: readonly string[],
+      ): Promise<{ forgotten: number }> {
+        const answer = (await post("/computers/cookies/forget", {
+          origins: [...origins],
+        })) as { forgotten?: unknown };
+        return {
+          forgotten:
+            typeof answer.forgotten === "number" ? answer.forgotten : 0,
+        };
+      },
+
+      /**
        * Take back values this server asked for, for a caller that stopped before anybody
        * answered. Only that one ask — by its boxes, in order, and the snapshot it was made with —
        * and never a hand somebody else is waiting on (`gateway/secrets.ts`).

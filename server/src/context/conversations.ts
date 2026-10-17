@@ -108,7 +108,12 @@ export type EpochReason =
   | "memory_forgotten"
   | "compaction"
   /** The owner's local day turned: the history before it became a summary (`./day-close`). */
-  | "day_boundary";
+  | "day_boundary"
+  /**
+   * This VM left its company hub (`hub/leave.ts`): the frozen layer names the hub's tools, and the
+   * tools are gone. The deferred tools are not the head, so the key alone would never move for it.
+   */
+  | "company_left";
 
 /** What an epoch is frozen against. Any of them changing starts a new one. */
 export type EpochKey = {
@@ -142,6 +147,12 @@ type Epoch = EpochKey & {
    */
   closeFailures?: number;
   closeFailedDay?: string;
+  /**
+   * A new epoch asked for from outside and not taken yet, kept with the epoch so a restart before
+   * the conversation's next message does not lose it — `pending` is memory. Only `beginEpochEverywhere`
+   * writes it; the next epoch is frozen without it.
+   */
+  due?: EpochReason;
 };
 
 type Conversation = {
@@ -258,6 +269,13 @@ export type ConversationStore = {
   ): UsageContext | null;
   /** Start a new epoch on the conversation's next run. The compaction hook. */
   beginEpoch(threadId: string, reason: EpochReason): void;
+  /**
+   * Start a new epoch on the next run of every kept conversation, and keep that asked-for in the
+   * row, so a restart before the next message still takes it. For what changes the frozen layer of
+   * every conversation at once and is not in the epoch's key — leaving a company (`hub/leave.ts`).
+   * Resolves, with how many were asked, once the rows are written.
+   */
+  beginEpochEverywhere(reason: EpochReason): Promise<number>;
   /**
    * Decide a compaction for the conversation now, whatever its size, and wait for it. What the
    * threshold does on its own; exposed for the eval and the tests. Resolves to whether anything new
@@ -1485,6 +1503,19 @@ export function createConversationStore(
       if (conversation) conversation.pending = reason;
     },
 
+    async beginEpochEverywhere(reason) {
+      let asked = 0;
+      for (const conversation of conversations.values()) {
+        if (!conversation.kept) continue;
+        conversation.pending = reason;
+        conversation.epoch = { ...conversation.epoch, due: reason };
+        keep(conversation);
+        asked += 1;
+      }
+      await Promise.all(writes.values());
+      return asked;
+    },
+
     async tick() {
       if (!days) return 0;
       const now = clock();
@@ -1682,6 +1713,8 @@ export function createConversationStore(
           lastUserMessageId: row.lastUserMessageId,
           compaction: planOf(row.compaction),
           ...unkept(),
+          // An epoch asked for before the restart and not taken yet is still asked for.
+          pending: epoch.due ?? null,
           question: { messageId: row.lastUserMessageId, costUsd: 0 },
           touchedAt: clock(),
         });
