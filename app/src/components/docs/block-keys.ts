@@ -75,12 +75,11 @@ export function blockKeyAction(input: BlockKeyInput): BlockKeyAction {
     if (input.alt) return NONE;
     if (kind === "code") {
       // Code has lines: ⌘/Ctrl+Enter leaves it for a new block, plain Enter is a line.
-      return input.mod
-        ? { type: "split", head: value, tail: "" }
-        : NONE;
+      return input.mod ? { type: "split", head: value, tail: "" } : NONE;
     }
     if (input.shift) return NONE;
-    if (value === "" && ENDS_ON_EMPTY.has(kind)) return { type: "to-paragraph" };
+    if (value === "" && ENDS_ON_EMPTY.has(kind))
+      return { type: "to-paragraph" };
     return {
       type: "split",
       head: value.slice(0, selectionStart),
@@ -132,7 +131,8 @@ export function kindFromMarkdownStart(
     ["```", "code"],
   ];
   for (const [start, kind] of starts) {
-    if (value.startsWith(start)) return { kind, rest: value.slice(start.length) };
+    if (value.startsWith(start))
+      return { kind, rest: value.slice(start.length) };
   }
   if (value === "---") return { kind: "divider", rest: "" };
   return null;
