@@ -12,6 +12,7 @@
  */
 import type { Whereabouts } from "../../../shared/whereabouts";
 import { describeFailure } from "../failure-text";
+import type { HubToolRuntime } from "../hub/tools";
 import { log } from "../log";
 import type { DeploymentKeyFamily } from "./catalogue";
 import type { PartnerToolSpec } from "./partner-tools";
@@ -46,6 +47,11 @@ export type DeploymentKeyService = {
     fetchImpl?: typeof fetch;
     now?: () => Date;
     whereaboutsOf?: WhereaboutsReader;
+    /**
+     * The company hub's line and outbox, which the hub's tools speak through (`hub/tools.ts`) —
+     * a thing of this process, not a key. Absent on a VM with no hub, where that entry has no key.
+     */
+    hub?: HubToolRuntime;
   }) => VendorTransport;
 };
 
@@ -92,6 +98,8 @@ export function createDeploymentKeyRuntime(input: {
   now?: () => Date;
   /** Absent in a test that asks about no person; then a call naming no place is told nobody's is known. */
   whereaboutsOf?: WhereaboutsReader;
+  /** The company hub's runtime, for its tools. See `DeploymentKeyService.transport`. */
+  hub?: HubToolRuntime;
 }): DeploymentKeyRuntime {
   const held = input.services.filter((service) => input.keys[service.family]);
   const transports: Partial<Record<DeploymentKeyFamily, VendorTransport>> = {};
@@ -102,6 +110,7 @@ export function createDeploymentKeyRuntime(input: {
       ...(input.fetchImpl ? { fetchImpl: input.fetchImpl } : {}),
       ...(input.now ? { now: input.now } : {}),
       ...(input.whereaboutsOf ? { whereaboutsOf: input.whereaboutsOf } : {}),
+      ...(input.hub ? { hub: input.hub } : {}),
     });
   }
 

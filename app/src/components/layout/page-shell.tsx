@@ -37,6 +37,7 @@ type ShellWidth = "prose" | "wide";
 
 export function PageShell({
   action,
+  back,
   children,
   className,
   description,
@@ -45,6 +46,11 @@ export function PageShell({
 }: {
   /** Sits on the title's baseline. For the page's one primary verb, if it has one. */
   action?: React.ReactNode;
+  /**
+   * The way back to the list a detail page was opened from, drawn above the title — so the title
+   * stays the page's first heading and the link is not squeezed under it.
+   */
+  back?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
   /**
@@ -86,6 +92,7 @@ export function PageShell({
          * The header is its own component now, so the three sibling pages cannot drift apart: they
          * all reach it through this shell, and it reaches the tokens in `ui/page-header.ts`.
          */}
+        {back ? <div className="mb-4">{back}</div> : null}
         <PageHeader action={action} description={description} title={title} />
         {children}
       </div>

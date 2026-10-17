@@ -236,6 +236,8 @@ export const FAMILY_LABELS_KO: Readonly<Record<string, string>> = Object.freeze(
     // 서버가 실행한다. "프로젝트"로만 서 있던 동안 봇은 요약에 없는 지난 일을 여기서 찾지 않았다
     // (`shared/prompt/context.ko.ts` `earlierSummaryText`의 주석); 요약의 머리말이 이 낱말로 가리킨다.
     projects: `프로젝트·${PAST_TALK_LOOKUP}`,
+    // 이 사람이 속한 회사의 허브(`server/src/hub/tools.ts`) — 이 배포의 서버가 허브 출입증으로 부른다.
+    hub: "회사",
   },
 );
 
@@ -289,6 +291,7 @@ export const DEPLOYMENT_FAMILIES: ReadonlySet<string> = new Set([
   "public-data",
   "web-search",
   "kma-weather",
+  "hub",
 ]);
 
 /** 사람이 연결한 서비스들, 처음 나온 순서로, 한국어로. 이 배포의 것은 세지 않는다. */

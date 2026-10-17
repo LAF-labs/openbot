@@ -90,8 +90,16 @@ export type PartnerFamily = "kakao-alimtalk";
  * `kma-apihub` is the third, the same day: 기상청's API hub. Public data again, on a key of the
  * hub's own (`authKey`) — the portal lists the same forecast service under data.go.kr's key, and
  * the hub is the one this fleet applied to.
+ *
+ * `laf-hub` is the fourth (2026-10-16), and the one whose key is not LAF's: it is the pass this VM
+ * made for itself when its person joined a company hub. The arrangement is the same — nobody
+ * consents, nothing is the person's to connect, the key alone says whether the tools exist.
  */
-export type DeploymentKeyFamily = "data-go-kr" | "perplexity" | "kma-apihub";
+export type DeploymentKeyFamily =
+  | "data-go-kr"
+  | "perplexity"
+  | "kma-apihub"
+  | "laf-hub";
 
 /**
  * How a server is authenticated, and whose credential does it.
@@ -902,6 +910,34 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
     auth: { kind: "deployment-key", key: "kma-apihub" },
     writeTools: Object.freeze([]),
     docsUrl: "https://apihub.kma.go.kr/",
+  },
+  /*
+   * THE COMPANY HUB, on this VM's own pass: the fourth deployment-key entry (`hub/tools.ts`).
+   *
+   * Not a vendor. The hub is the company's own server, and the key is the pass laf-control wrote
+   * into this VM's environment when its person joined (`LAF_HUB_VM_KEY`). Nobody consents and
+   * nothing is connected, which is the deployment-key arrangement: with the pass, the Bot holds both
+   * tools from boot; without it there is no row and no tool.
+   *
+   * THE HOST BELOW IS THE ADDRESS OF RECORD, NOT WHERE THE CALL GOES. Each company has a hub of its
+   * own (`<회사>.hub.agent.laf-co.com`), and the call goes to `LAF_HUB_URL` through the hub client
+   * (`hub/http.ts`), the way the 알림톡 entry above names its vendor and calls where its environment
+   * says.
+   *
+   * `write` posts to a room, proposes a team memory line or publishes a skill — all inside the
+   * company, none destructive, so no guard floor; the written policy decides, and asks about
+   * nothing by default (hub design §9.1). A proposal is only a proposal: an admin confirms it.
+   */
+  {
+    key: "hub",
+    title: "회사",
+    vendor: "LAF",
+    summary: "This person's company: team files, rooms, skills and memory.",
+    host: "https://hub.agent.laf-co.com",
+    path: "/hub/v1",
+    auth: { kind: "deployment-key", key: "laf-hub" },
+    writeTools: Object.freeze(["write"]),
+    docsUrl: "https://agent.laf-co.com/",
   },
 ]);
 

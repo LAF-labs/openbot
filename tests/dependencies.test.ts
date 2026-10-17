@@ -112,6 +112,15 @@ const DECIDED: Record<string, Record<string, string>> = {
   desktop: {
     "@tauri-apps/cli": "builds the shell",
   },
+  // Packages the server already carries, at the server's ranges: the hub adds a workspace, not a
+  // package (bun.lock gains the workspace's entry and nothing else).
+  hub: {
+    "drizzle-orm": "the hub's database",
+    hono: "the hub's API",
+    postgres: "the Postgres driver",
+    "drizzle-kit":
+      "writes the hub's migrations (applied by the hub itself at boot)",
+  },
 };
 
 // SPDX identifiers that ask only for attribution. An `OR` expression is allowed when any side is;

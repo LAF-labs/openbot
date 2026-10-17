@@ -16,6 +16,8 @@ import {
   type NotificationFrame,
   notificationFrames,
 } from "@/lib/notifications/outbox";
+import { hubKeysForFrame } from "@/lib/hub/company";
+import { hubKeys } from "@/lib/hub/status";
 import { OUTAGE_CAP_MS } from "@/lib/polling";
 import { type ChannelSummary, channelKeys } from "./queries";
 
@@ -99,6 +101,26 @@ function setTrouble(next: SocketTrouble) {
   if (trouble === next) return;
   trouble = next;
   socketState.dispatchEvent(new Event(SOCKET_TROUBLE));
+}
+
+/**
+ * The company hub's frames (`server/src/hub/link.ts`), for whichever screen draws what changed.
+ *
+ * `hub.status` is the server's line to the hub going up or down; any other `hub.<type>` is an event
+ * the hub numbered — it names what changed and never carries it, so a screen that cares asks again.
+ */
+export const hubFrames = new EventTarget();
+export const HUB_FRAME = "hub-frame";
+
+export type HubFrame = { kind: `hub.${string}` } & Record<string, unknown>;
+
+export function isHubFrame(value: unknown): value is HubFrame {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { kind?: unknown }).kind === "string" &&
+    (value as { kind: string }).kind.startsWith("hub.")
+  );
 }
 
 /**
@@ -306,6 +328,8 @@ function openConnection(queryClient: QueryClient): Connection {
         // And what the polls would have learned meanwhile, once rather than on their next tick.
         void queryClient.invalidateQueries({ queryKey: workingKeys.all });
         void queryClient.invalidateQueries({ queryKey: dayKeys.all });
+        // The company's frames missed meanwhile: a room open on screen would otherwise stay as it was.
+        void queryClient.invalidateQueries({ queryKey: hubKeys.all });
         socketState.dispatchEvent(new Event(SOCKET_RECONNECTED));
       }
       opened = true;
@@ -343,6 +367,17 @@ function openConnection(queryClient: QueryClient): Connection {
           new CustomEvent<NotificationFrame>(NOTIFICATION_FRAME, {
             detail: parsed,
           }),
+        );
+        return;
+      }
+      // The company hub: its line changed, or something in the company did — only what that names
+      // is asked again, so a message in one room does not refetch the files and every other room.
+      if (isHubFrame(parsed)) {
+        for (const queryKey of hubKeysForFrame(parsed)) {
+          void queryClient.invalidateQueries({ queryKey });
+        }
+        hubFrames.dispatchEvent(
+          new CustomEvent<HubFrame>(HUB_FRAME, { detail: parsed }),
         );
         return;
       }
