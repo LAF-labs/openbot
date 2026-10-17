@@ -3285,6 +3285,16 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `server` by two more (to 4883 on top of 4881): a write meeting a refused pass is said as that,
  * not as kept — with no row when it was known before (hub-tools.test.ts), the row waiting when the
  * hub's 401 came during the write (hub-tools.integration.test.ts).
+ *
+ * the hub, and no hub tool without the pass (hub-tools-head.test.ts, 3). 4747 and 28.
+ *
+ * RAISED 2026-10-17 FOR 라피'S UPLOAD TO THE TEAM'S FILES: `server` by twenty-one (to 4796) — the
+ * words read out of a sheet, a PDF, a CSV and plain text, the multipart body, the scope a run's
+ * read is refused by, the reference a row holds and what an attempt says when the file changed or
+ * went, a person's stream, and the hub's answers to an upload (hub-upload.test.ts, 16); and the
+ * upload through the outbox on a real Postgres — sent at once, kept through an outage and sent once
+ * after, a file written over before the retry, a missing file, a computer away while a message
+ * behind it still goes (hub-upload.integration.test.ts, 5). 4775 and 21.
  */
 const GROUPS: readonly {
   name: string;
