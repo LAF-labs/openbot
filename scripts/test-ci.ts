@@ -3309,7 +3309,16 @@ const GROUPS: readonly {
    * refused and none at all; four of visibility — kept to the maker, members, narrowing, and
    * task.assigned to its member alone; the list's pages and the trail holding no words).
    */
-  { name: "hub", floor: 70, roots: ["hub"] },
+  /*
+   * RAISED 2026-10-17 FOR THE BUDGET LEDGER AND THE SUB-BOT REGISTER, from 70 to 83: budget.test.ts
+   * 13 (ten racing $0.2 reservations against $1 with exactly five passing; the default day from the
+   * seat count; a job's own limit refusing with its scope and budget.reached said once; a job only
+   * its runner reserves for; a task only who sees it; limits set by an admin only; settle twice;
+   * settle with no reservation; expiry still counting and a late settle; a member reading only
+   * their own spend; a handed-on job moving with job.moved to its two runners; a member refused a
+   * job's limit; the register refusing a prompt).
+   */
+  { name: "hub", floor: 83, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
