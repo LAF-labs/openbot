@@ -28,6 +28,7 @@
   "agent-computer/tests/file-handoff.test.ts",
   "agent-computer/tests/filled-values-site.test.ts",
   "agent-computer/tests/filled-values.test.ts",
+  "agent-computer/tests/forget-cookies.test.ts",
   "agent-computer/tests/fixture-site.test.ts",
   "agent-computer/tests/get-form-secret.test.ts",
   "agent-computer/tests/hung-site.test.ts",
