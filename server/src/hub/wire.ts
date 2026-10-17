@@ -39,11 +39,18 @@ export const HUB_TOOL_PATHS = {
 export const HUB_SEARCH_KINDS = ["file", "skill", "room", "memory"] as const;
 export type HubSearchKind = (typeof HUB_SEARCH_KINDS)[number];
 
+/**
+ * Where in its source a hit was found, as the hub sends it (`shared/hub/protocol.ts`): the folder,
+ * and for a file the character `from` that `read` with `kind: "file"` takes to read on. The hub
+ * sends an object; reading it as a string dropped it, and every hit reached 라피 with no place.
+ */
+export type HubSearchWhere = { folder: string; from?: number };
+
 export type HubSearchHit = {
   kind: string;
   id: string;
   title: string;
-  where: string;
+  where: HubSearchWhere | null;
   snippet: string;
   at: string | null;
   by: string | null;
@@ -139,6 +146,16 @@ function listOf<T>(
     .filter((item): item is T => item !== null);
 }
 
+function readWhere(value: unknown): HubSearchWhere | null {
+  if (!isObject(value)) return null;
+  const folder = str(value.folder);
+  if (folder === null) return null;
+  const from = value.from;
+  return typeof from === "number" && Number.isInteger(from) && from >= 0
+    ? { folder, from }
+    : { folder };
+}
+
 export const readSearchHits = (body: unknown): HubSearchHit[] | null =>
   listOf(body, "hits", (hit) => {
     const id = str(hit.id);
@@ -148,7 +165,7 @@ export const readSearchHits = (body: unknown): HubSearchHit[] | null =>
       kind,
       id,
       title: str(hit.title) ?? "",
-      where: str(hit.where) ?? "",
+      where: readWhere(hit.where),
       snippet: str(hit.snippet) ?? "",
       at: str(hit.at),
       by: str(hit.by),
