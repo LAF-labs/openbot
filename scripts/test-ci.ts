@@ -3266,6 +3266,16 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * sent once after, a refusal ended); and the head of the prompt the same bytes with and without
  * the hub, and no hub tool without the pass (hub-tools-head.test.ts, 3). 4747 and 28.
  * Merged onto 회사 (laf/hub-docs-ui): 4769 and 28, so 4797.
+ *
+ * RAISED 2026-10-17 FOR 회사 → 문서: `server` by thirty-eight (to 4835) — the document doors
+ * against a fake hub (hub-routes-ui-docs.test.ts, 20: no company unasked, the pass and `person`,
+ * a read asked once, the four ops spelled again without a hash, seven malformed batches unsent,
+ * the two 409s kept, the hold's doors, a title only, the session, a move to the top), 라피's
+ * document kinds (hub-tools-docs.test.ts, 13: marked markdown, the list, ops sent now under a key,
+ * the two 409s with Korean, seven refused unasked, the bound) and the hold frame on the line
+ * (hub-doc-hold-frame.test.ts, 5); `app` by forty-two (to 2606) — the keys (doc-block-keys
+ * .test.ts, 23), the hold, queue, stale save and frames (doc-controller.test.ts, 15) and Korean
+ * composition in a block (doc-block-ime.test.tsx, 4). 4797 and 38; 2564 and 42.
  */
 const GROUPS: readonly {
   name: string;
@@ -3273,8 +3283,8 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4797, roots: ["server"] },
-  { name: "app", floor: 2564, roots: ["app"] },
+  { name: "server", floor: 4835, roots: ["server"] },
+  { name: "app", floor: 2606, roots: ["app"] },
   {
     name: "agent-computer",
     /*
