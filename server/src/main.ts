@@ -111,6 +111,11 @@ import { createFleetNotifier } from "./fleet/notify";
 import { createGoalStore } from "./goals/store";
 import { deploymentHealthProbes } from "./health";
 import { createLiveScreen, type SocketData } from "./live-screen";
+import { users } from "./db/schema";
+import { createHubRuntime } from "./hub";
+import { answererOf, createRoomAnswers } from "./hub/room-answers";
+import { openRoomConversation } from "./channels/conversations";
+import type { HubEvent } from "../../shared/hub/protocol";
 import { log, recentLines } from "./log";
 import { createLoginVault } from "./logins/store";
 import { readApprovalMetrics } from "./notifications/approval-metrics";
@@ -387,6 +392,38 @@ const runMeter = {
  */
 const channelEvents = createChannelEventHub();
 /**
+ * The company hub, when this VM belongs to one (`hub/`). Its events reach the app as `hub.*`
+ * frames on the same socket, addressed to every account here — which is the one person this
+ * deployment is for (`docs/laf/deployment-model.md`), read per frame rather than captured at boot,
+ * so a first sign-in after boot hears the next frame.
+ */
+let hubFramesSent: Promise<void> = Promise.resolve();
+/**
+ * What this server does itself with a hub event, beside passing it to the app: answering the
+ * person's "@라피" in a team room (`hub/room-answers.ts`). Bound once the turn engine exists, which
+ * is after the hub; the line starts last, so no event comes before it.
+ */
+let onHubEvent: ((event: HubEvent) => void) | undefined;
+const hubRuntime = config.hub
+  ? createHubRuntime({
+      config: config.hub,
+      database,
+      onEvent: (event) => onHubEvent?.(event),
+      // Chained, so frames reach the page in the order the hub numbered them.
+      deliver: (frame) => {
+        hubFramesSent = hubFramesSent
+          .then(() => database.select({ id: users.id }).from(users))
+          .then((rows) =>
+            channelEvents.deliverFrame({
+              ...frame,
+              memberIds: rows.map((row) => row.id),
+            }),
+          )
+          .catch(() => undefined);
+      },
+    })
+  : undefined;
+/**
  * The partner vendor LAF holds the account at, assembled once.
  *
  * BEFORE THE OUTBOX AND BEFORE THE PLUGIN STORE, because both take something from it: the AlimTalk
@@ -413,6 +450,18 @@ const deploymentKeyRuntime = createDeploymentKeyRuntime({
   listBots: () => allLiveBots(database),
   // The weather asked about with no place named is the person's own place's (`kma-weather-rest.ts`).
   whereaboutsOf: whereaboutsStore.read,
+  // The company hub's tools speak through its line and outbox (`hub/tools.ts`).
+  ...(hubRuntime
+    ? {
+        hub: {
+          http: hubRuntime.http,
+          outbox: hubRuntime.outbox,
+          database,
+          passRefused: () => hubRuntime.link.status().state === "refused",
+          onPassRefused: () => hubRuntime.link.passRefused("tool"),
+        },
+      }
+    : {}),
 });
 /**
  * The package's own skills (`tenant/<package>/skills/*.md`): written at boot, handed to every Bot.
@@ -1060,6 +1109,31 @@ const turnEngine = createTurnEngine({
     }),
 });
 /*
+ * The person's "@라피" in a team room, answered here through the same engine (`hub/room-answers.ts`):
+ * only this VM hears of it, the turn is theirs like any chat's, and its last words go to the room.
+ */
+if (hubRuntime) {
+  const roomAnswers = createRoomAnswers({
+    database,
+    http: hubRuntime.http,
+    outbox: hubRuntime.outbox,
+    me: () => hubRuntime.link.me()?.member.id ?? null,
+    answerer: () => answererOf(database),
+    conversation: async ({ owner, botId }, room) => {
+      const opened = await openRoomConversation(
+        { database, profileStore: agentProfileStore, threadIdentity },
+        owner,
+        botId,
+        room,
+      );
+      return { channelId: opened.id, threadId: opened.threadId };
+    },
+    engine: turnEngine,
+    turns: turnHub,
+  });
+  onHubEvent = roomAnswers.onEvent;
+}
+/*
  * A project's deletion, and the one gate its mark is read at (`channels/deleting.ts`). The list of
  * writes in flight is its own and this process's, which is the deployment's: one API server per VM.
  */
@@ -1310,6 +1384,7 @@ const app = createApp({
   // 목표: the goals the person set, and their timelines.
   goals: goalStore,
   logins: loginVault,
+  ...(hubRuntime ? { hub: hubRuntime } : {}),
 });
 
 /** The live screen, proxied ahead of the app because an upgrade is not a request. See live-screen.ts. */
@@ -1360,6 +1435,7 @@ sayBooted({
   model: tenantPackage.model,
   port: server.port,
   fleetWebhook: Boolean(fleetNotifier),
+  hub: Boolean(hubRuntime),
   harness: { version: HARNESS_VERSION, conversations: conversationsLoaded },
   ...(botsBroughtHome === undefined ? {} : { botsBroughtHome }),
 });
@@ -1430,6 +1506,8 @@ startBackgroundWork({
   auditRetentionDays: config.auditRetentionDays,
   // Only with a fleet: on a laptop there is nothing to tell.
   fleetOutbox: fleetNotifier ? notificationOutbox : undefined,
+  // Only with a hub: writes it has not taken yet, offered at boot and every five minutes.
+  ...(hubRuntime ? { hubOutbox: hubRuntime.outbox } : {}),
   deploymentKeys: deploymentKeyRuntime,
   builtInSkills,
   pluginStore,
@@ -1452,3 +1530,6 @@ startBackgroundWork({
     now: () => conversations.now(),
   }),
 });
+
+// The line to the company hub, once the port is open: its frames go to sockets this server holds.
+hubRuntime?.link.start();

@@ -167,6 +167,7 @@ export const ko: Record<string, string> = {
   "Used a tool": "도구 사용",
   "Public tenders and support programmes": "나라장터·기업마당",
   "Web search": "웹 검색",
+  Company: "회사",
   "It wants to list what is in the workspace.":
     "봇 폴더에 무엇이 있는지 보려 해요.",
   "It wants to list what is in {path}.": "{path} 안에 무엇이 있는지 보려 해요.",
@@ -464,6 +465,12 @@ export const ko: Record<string, string> = {
     "기상청의 지금 날씨와 며칠 뒤까지의 예보.",
   "Tells you the weather where you are, or anywhere in Korea you name — now, the next few hours and the next few days.":
     "지금 계신 곳이나 말씀하신 곳의 날씨를 알려 줘요 — 지금, 몇 시간 뒤, 며칠 뒤까지.",
+  // 회사 — 이 VM의 출입증으로 회사 허브를 읽고 쓰는 엔트리(server/src/hub/tools.ts). 연결할 것 없음.
+  회사: "회사",
+  "This person's company: team files, rooms, skills and memory.":
+    "내가 속한 회사의 팀 파일·단체방·스킬·팀 기억.",
+  "Finds and reads your team's files, rooms, skills and confirmed memory, posts to a team room, and suggests a line for the team to remember.":
+    "팀 파일·단체방·스킬·팀이 확인한 사실을 찾아 읽고, 단체방에 글을 올리고, 팀이 기억할 한 줄을 제안해요.",
   "Offered to every Bot on this deployment on the fleet's own key. Nothing to connect.":
     "LAF의 키로 이 배포의 모든 봇에 제공돼요. 연결할 것이 없어요.",
   "Connected to {name}.": "{name}에 연결했어요.",
@@ -2477,6 +2484,23 @@ export const ko: Record<string, string> = {
   "The free trial has ended.": "무료 체험이 끝났어요.",
   "Today's free trial allowance is used up. It opens again at midnight, Korean time.":
     "오늘 무료 체험에서 쓸 수 있는 양을 다 썼어요. 내일 0시(한국 시간)부터 다시 쓸 수 있어요.",
+  // 회사 — 회사 허브에 붙은 VM의 설정 한 줄과, 허브가 알린 사실의 문장(server/src/hub/).
+  "Company: {name} · {state}": "회사: {name} · {state}",
+  "Company · {state}": "회사 · {state}",
+  Connecting: "연결 중",
+  Disconnected: "끊김",
+  "Cannot reach the company server · trying again":
+    "회사 서버에 연결할 수 없어요 · 다시 시도 중",
+  "The link to your company was undone. Let the operator know.":
+    "회사 연결이 풀렸어요. 운영에 알려 주세요.",
+  "Your company does not allow this.": "회사에서 허락되지 않은 일이에요.",
+  "Your company does not have that.": "회사에서 찾을 수 없어요.",
+  // 단체방에서 부른 라피 — 답하는 동안의 한 줄, 라피가 쓴 글의 이름, 그 방의 내 대화(lib/hub/rooms.ts).
+  "{name}'s Lafi": "{name}의 라피",
+  "{name}'s Lafi is looking into it": "{name}의 라피가 알아보는 중",
+  "A teammate": "팀원",
+  "Team room · {name}": "단체방 · {name}",
+  "A team room": "단체방",
   // 오늘 사용량 — 설정의 한 줄과, 80%부터 입력창 위에 뜨는 한 줄. 거절당하기 전에 남은 양을 알린다.
   "Free trial": "무료 체험",
   "Today's usage": "오늘 사용량",
