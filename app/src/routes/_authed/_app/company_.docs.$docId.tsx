@@ -44,7 +44,7 @@ function DocPage() {
     <PageShell title={doc.data?.doc.title || t("Document")}>
       <Link
         className={cn(
-          "-mt-2 mb-6 inline-flex w-fit items-center gap-1 text-muted-foreground text-sm hover:text-foreground",
+          "mt-1 mb-8 inline-flex w-fit items-center gap-1 text-muted-foreground text-sm hover:text-foreground",
           focusRingBare,
         )}
         data-doc-back
