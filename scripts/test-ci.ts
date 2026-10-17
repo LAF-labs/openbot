@@ -3255,6 +3255,14 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * .integration.test.ts, 3: a post sent once with its row's key, a write kept through an outage and
  * sent once after, a refusal ended); and the head of the prompt the same bytes with and without
  * the hub, and no hub tool without the pass (hub-tools-head.test.ts, 3). 4747 and 28.
+ *
+ * RAISED 2026-10-17 FOR 라피'S UPLOAD TO THE TEAM'S FILES: `server` by twenty-one (to 4796) — the
+ * words read out of a sheet, a PDF, a CSV and plain text, the multipart body, the scope a run's
+ * read is refused by, the reference a row holds and what an attempt says when the file changed or
+ * went, a person's stream, and the hub's answers to an upload (hub-upload.test.ts, 16); and the
+ * upload through the outbox on a real Postgres — sent at once, kept through an outage and sent once
+ * after, a file written over before the retry, a missing file, a computer away while a message
+ * behind it still goes (hub-upload.integration.test.ts, 5). 4775 and 21.
  */
 const GROUPS: readonly {
   name: string;
@@ -3262,7 +3270,7 @@ const GROUPS: readonly {
   roots: readonly string[];
   processes?: number;
 }[] = [
-  { name: "server", floor: 4775, roots: ["server"] },
+  { name: "server", floor: 4796, roots: ["server"] },
   { name: "app", floor: 2543, roots: ["app"] },
   {
     name: "agent-computer",
