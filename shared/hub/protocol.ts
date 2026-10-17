@@ -64,6 +64,9 @@ export const HUB_EVENT_TYPES = [
   "skill.changed",
   "memory.changed",
   "memory.proposals",
+  // Team documents (`laf/hub-docs`): a document whole, and one block (`refId` `<doc id>/<block id>`).
+  "doc.changed",
+  "doc.block_changed",
 ] as const;
 export type HubEventType = (typeof HUB_EVENT_TYPES)[number];
 

@@ -43,8 +43,13 @@ export type DocBlock = {
   hash: string;
 };
 
-/** Who holds a block now, by member id. */
-export type DocHold = { blockId: string; memberId: string };
+/** Who holds a block now: their member id, their name as the hub knows it, and until when (ms). */
+export type DocHold = {
+  blockId: string;
+  memberId: string;
+  name: string | null;
+  until: number;
+};
 
 export type DocSummary = {
   id: string;
@@ -74,6 +79,8 @@ export type DocOp =
       op: "insert_after";
       /** The block it goes after; null for the top of the document. */
       id: string | null;
+      /** The new block's id, made here (`newBlockId`), so the screen knows it before the hub answers. */
+      newId: string;
       kind: DocBlockKind;
       text: string;
       attrs?: Record<string, unknown>;
@@ -125,13 +132,19 @@ function readSummary(value: unknown): DocSummary | null {
   };
 }
 
-/** A hold as the hub names it: `{blockId, by}`, `by` a member id or `m:<id>`. */
-function readHold(value: unknown): DocHold | null {
+/**
+ * A hold as the hub names it — `{block, member, name, until}` in a document's read and in the
+ * `hub.doc.lock` frame alike (`until` null in a frame: let go). Null when it is not one.
+ */
+export function readHold(value: unknown): DocHold | null {
   if (!isRecord(value)) return null;
-  const blockId = str(value.blockId) ?? str(value.block);
-  const by = str(value.by) ?? str(value.memberId) ?? str(value.member);
-  if (!blockId || !by) return null;
-  return { blockId, memberId: by.startsWith("m:") ? by.slice(2) : by };
+  const blockId = str(value.block);
+  const memberId = str(value.member);
+  const until = str(value.until);
+  if (!blockId || !memberId || !until) return null;
+  const at = Date.parse(until);
+  if (Number.isNaN(at)) return null;
+  return { blockId, memberId, name: str(value.name), until: at };
 }
 
 export function readOpenDoc(body: unknown): OpenDoc {
@@ -170,6 +183,35 @@ export const docListQueryOptions = () =>
         .filter((doc): doc is DocSummary => doc !== null);
     },
   });
+
+/**
+ * A block id as the hub takes one from a writer (`b_` and 10–40 of a–z, 0–9): the new block is drawn
+ * under it at once and the hub keeps it.
+ */
+export function newBlockId(): string {
+  return `b_${crypto.randomUUID().replaceAll("-", "").slice(0, 24)}`;
+}
+
+/** One block asked again after `hub.doc.block_changed`: null when it was deleted. */
+export async function readDocBlock(
+  docId: string,
+  blockId: string,
+): Promise<DocBlock | null> {
+  try {
+    const body = await requestOrRefusal(
+      `/api/hub/docs/${encodeURIComponent(docId)}/blocks/${encodeURIComponent(blockId)}`,
+      undefined,
+    );
+    const block = isRecord(body) ? readBlock(body.block) : null;
+    if (!block) throw unreadable();
+    return block;
+  } catch (error) {
+    if (error instanceof RequestRefusedError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+}
 
 /** One document, asked now — the editor's own read after a frame or a refused save. */
 export async function readDoc(id: string): Promise<OpenDoc> {
@@ -276,11 +318,8 @@ export function docFactText(code: string | null): string | null {
   switch (code) {
     case "laf:doc_block_busy":
       return t("Somebody is writing in this block.");
-    case "laf:doc_block_stale":
     case "laf:doc_block_changed":
       return t("Somebody changed this block first. It now shows theirs.");
-    case "laf:doc_not_found":
-      return t("This document is gone.");
     default:
       return companyFactText(code);
   }

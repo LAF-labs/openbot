@@ -1,7 +1,7 @@
 import { IconPlus } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PageEmpty, PageRows } from "@/components/layout/page-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,11 @@ import {
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  HUB_FRAME,
+  type HubFrame,
+  hubFrames,
+} from "@/lib/channels/use-channel-events";
 import { type CompanyMember, memberName } from "@/lib/hub/company";
 import {
   createDoc,
@@ -33,6 +38,18 @@ export function DocsList({
   members: readonly CompanyMember[] | undefined;
 }) {
   const docs = useQuery(docListQueryOptions());
+  const queryClient = useQueryClient();
+
+  // A document made, renamed or removed by a colleague: the list asks again. A block saved does not.
+  useEffect(() => {
+    const onFrame = (event: Event) => {
+      if ((event as CustomEvent<HubFrame>).detail.kind === "hub.doc.changed") {
+        void queryClient.invalidateQueries({ queryKey: docKeys.list });
+      }
+    };
+    hubFrames.addEventListener(HUB_FRAME, onFrame);
+    return () => hubFrames.removeEventListener(HUB_FRAME, onFrame);
+  }, [queryClient]);
 
   return (
     <div data-company-docs>

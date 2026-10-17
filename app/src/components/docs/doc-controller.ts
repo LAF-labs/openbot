@@ -1,24 +1,24 @@
 /**
  * One open document on this person's screen: its blocks as the editor draws them, what has been
- * typed and not yet saved, the one block this person holds, and the queue that sends each change to
- * the hub in order. Plain TypeScript with the doors handed in, so the rules are held by tests that
- * never draw a page (`app/tests/doc-controller.test.ts`); the editor (`doc-editor.tsx`) only draws
- * what `snapshot()` says and tells it what the person did.
+ * typed and not yet saved, the one block this person holds, who else holds which, and the queue that
+ * sends each change to the hub in order. Plain TypeScript with the doors handed in, so the rules are
+ * held by tests that never draw a page (`app/tests/doc-controller.test.ts`); the editor
+ * (`doc-editor.tsx`) draws what `snapshot()` says and tells it what the person did.
  *
  * ONE QUEUE, OPS BUILT WHEN THEY GO. Every change — a save, a split, a merge, a kind — joins one
- * queue and its ops are written at the moment it is sent, not when the key was pressed. Two Enters
- * in a row make two new blocks, and the second's `insert_after` needs the first's id, which only the
- * hub's answer to the first gives; a save typed into a new block needs its id too. Built late, each
- * op reads the block as the previous answer left it: its real id and its newest `version`.
+ * queue, and its ops are written at the moment it is sent, not when the key was pressed: each op
+ * reads the block as the previous answer left it, with its newest `version`. Two saves of one block
+ * in flight at once would both carry the same version and the second would be refused as stale.
  *
- * A NEW BLOCK IS ON SCREEN BEFORE THE HUB HAS IT. Enter draws the block below at once and puts the
- * caret in it, under a key of its own; when the hub answers, the block takes the hub's id and keeps
- * its key, so React never remounts the box the person is typing in.
+ * A NEW BLOCK IS ON SCREEN BEFORE THE HUB HAS IT. Enter draws the block below at once, under an id
+ * made here (`newBlockId`, which the hub keeps as the block's id), and puts the caret in it. What is
+ * typed into it waits in the queue behind its `insert_after`; its hold is taken once the hub has it.
  *
  * THE PERSON'S TEXT WINS ON THEIR OWN SCREEN, AND THE HUB'S VERSION DECIDES. A fresh read never
  * overwrites the block being written or one with unsaved text: those keep what was typed and the
- * version it was typed against, and if somebody else saved meanwhile the save is refused (409) —
- * then the block is read again, reopened with theirs, and the person is told in one line.
+ * version it was typed against. If somebody else saved meanwhile, the save is refused (409), the
+ * document is read again, the refused blocks are reopened with theirs, and the person is told in one
+ * line.
  */
 import type {
   DocBlock,
@@ -27,7 +27,7 @@ import type {
   DocOp,
   OpenDoc,
 } from "@/lib/hub/docs";
-import { isStaleSave } from "@/lib/hub/docs";
+import { isStaleSave, newBlockId } from "@/lib/hub/docs";
 import { RequestRefusedError } from "@/lib/refusals";
 import {
   type BlockLock,
@@ -37,18 +37,18 @@ import {
 } from "./block-lock";
 
 export type DocRow = {
-  /** React's key: the hub's id, or the key a new block was drawn under before it had one. */
+  /** The block's id — made here for a block drawn before the hub had it, and kept by the hub. */
   key: string;
   block: DocBlock;
   /** Drawn here, not yet taken by the hub. */
   isNew: boolean;
-  /** Bumped when the open box must show `block.text` again (a stale save reopened). */
+  /** Bumped when the open box must show `block.text` again (a refused save reopened). */
   reset: number;
 };
 
 export type DocNotice =
   | { kind: "stale" }
-  | { kind: "busy"; memberId: string | null }
+  | { kind: "busy"; name: string | null }
   | { kind: "lost" }
   | { kind: "failed"; code: string | null };
 
@@ -66,6 +66,8 @@ export type DocState = {
 
 export type DocDoors = {
   read: () => Promise<OpenDoc>;
+  /** One block again; null when it was deleted. */
+  readBlock: (blockId: string) => Promise<DocBlock | null>;
   save: (ops: DocOp[], key: string) => Promise<DocBlock[]>;
   lock: (blockId: string) => Promise<LockAnswer>;
   unlock: (blockId: string) => Promise<void>;
@@ -80,6 +82,7 @@ type Patch = {
 export type DocTimers = LockClock & {
   setTimeout: (run: () => void, ms: number) => unknown;
   clearTimeout: (handle: unknown) => void;
+  now: () => number;
 };
 
 const REAL_TIMERS: DocTimers = {
@@ -89,14 +92,15 @@ const REAL_TIMERS: DocTimers = {
   setTimeout: (run, ms) => globalThis.setTimeout(run, ms),
   clearTimeout: (handle) =>
     globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>),
+  now: () => Date.now(),
 };
 
 /** How long after the last keystroke a block is saved. Short: others see it within a second. */
-export const SAVE_AFTER_MS = 400;
+export const SAVE_AFTER_MS = 300;
 /** Frames that arrive together (a batch of ops is several events) make one read. */
-const READ_AFTER_MS = 80;
+const READ_AFTER_MS = 60;
 
-/** Kinds a person writes text into. A divider, a file or a task link has no box. */
+/** Kinds a person writes text into. A divider, a table, a file or a task link has no one box. */
 export const WRITABLE: ReadonlySet<DocBlockKind> = new Set([
   "paragraph",
   "heading1",
@@ -113,8 +117,13 @@ export function kindAfter(kind: DocBlockKind): DocBlockKind {
   return kind === "list" || kind === "check" ? kind : "paragraph";
 }
 
-/** A table's cells, from its attrs, or from its text when the attrs carry none (`a | b` lines). */
-export function tableRows(block: Pick<DocBlock, "text" | "attrs">): string[][] {
+const EMPTY_TABLE = (): string[][] => [
+  ["", ""],
+  ["", ""],
+];
+
+/** A table's cells, row by row, the first row the header (`attrs.rows`). */
+export function tableRows(block: Pick<DocBlock, "attrs">): string[][] {
   const rows = block.attrs.rows;
   if (
     Array.isArray(rows) &&
@@ -126,29 +135,16 @@ export function tableRows(block: Pick<DocBlock, "text" | "attrs">): string[][] {
   ) {
     return rows as string[][];
   }
-  const lines = block.text.split("\n").filter((line) => line.trim() !== "");
-  if (lines.length === 0)
-    return [
-      ["", ""],
-      ["", ""],
-    ];
-  return lines.map((line) => line.split("|").map((cell) => cell.trim()));
+  return EMPTY_TABLE();
 }
 
-/** The text a table is searched and read by: one line per row, cells between bars. */
-export function tableText(rows: readonly (readonly string[])[]): string {
-  return rows.map((row) => row.join(" | ")).join("\n");
-}
-
+/**
+ * What a block of `kind` carries beside its text when it becomes that kind: the hub refuses a key
+ * another kind does not take, so a check turned into a paragraph sends `{}`, never its `checked`.
+ */
 function attrsFor(kind: DocBlockKind): Record<string, unknown> {
   if (kind === "check") return { checked: false };
-  if (kind === "table")
-    return {
-      rows: [
-        ["", ""],
-        ["", ""],
-      ],
-    };
+  if (kind === "table") return { rows: EMPTY_TABLE() };
   return {};
 }
 
@@ -158,11 +154,14 @@ export function createDocController(options: {
   doors: DocDoors;
   meId?: string;
   timers?: DocTimers;
+  /** The idempotency key of each batch. */
   newKey?: () => string;
+  newBlockId?: () => string;
 }) {
   const { doors } = options;
   const timers = options.timers ?? REAL_TIMERS;
   const newKey = options.newKey ?? (() => crypto.randomUUID());
+  const makeBlockId = options.newBlockId ?? newBlockId;
   let meId = options.meId;
 
   let state: DocState = {
@@ -174,19 +173,18 @@ export function createDocController(options: {
     loaded: false,
   };
   const listeners = new Set<() => void>();
-  /** Typed and not yet sent, by row key. */
+  /** Typed and not yet sent, by block id. */
   const drafts = new Map<string, Patch>();
   const saveTimers = new Map<string, unknown>();
-  /** The key a hub id is drawn under, for blocks that were new on this screen. */
-  const keyOfId = new Map<string, string>();
   /**
-   * The hub's id and newest version by row key — kept even after the row leaves the screen, so a
-   * block deleted while its own insert was still on the way is deleted by the id that insert got.
+   * The newest version the hub gave each block — kept after the row leaves the screen, so a block
+   * deleted while its own insert was still on the way is deleted with the version that insert got.
    */
-  const known = new Map<string, { id: string; version: number }>();
+  const versions = new Map<string, number>();
   let composing = false;
   let queue: Promise<void> = Promise.resolve();
   let readTimer: unknown = null;
+  let pruneTimer: unknown = null;
 
   const set = (next: Partial<DocState>) => {
     state = { ...state, ...next };
@@ -201,24 +199,58 @@ export function createDocController(options: {
     });
   };
 
-  const holderOf = (blockId: string): string | null =>
-    state.holds.find((hold) => hold.blockId === blockId)?.memberId ?? null;
+  /** Who else holds `blockId` now, or null — a hold past its `until` is nobody's. */
+  const holdOn = (blockId: string): DocHold | null =>
+    state.holds.find(
+      (hold) => hold.blockId === blockId && hold.until > timers.now(),
+    ) ?? null;
+
+  const busy = (blockId: string): DocNotice => ({
+    kind: "busy",
+    name: holdOn(blockId)?.name ?? null,
+  });
 
   const lock: BlockLock = createBlockLock(
     { acquire: doors.lock, release: doors.unlock },
     (blockId) => {
-      const key = keyOfId.get(blockId) ?? blockId;
-      if (state.activeKey === key) set({ activeKey: null });
+      if (state.activeKey === blockId) set({ activeKey: null });
       set({ notice: { kind: "lost" } });
     },
     timers,
   );
 
+  /* ── who else is writing ────────────────────────────────────────────────────────────────── */
+
+  /**
+   * Holds past their end are dropped when the first of them ends: a colleague whose tab died stops
+   * being shown as writing when the hub stops honouring the hold, without waiting for a read.
+   */
+  const setHolds = (holds: DocHold[]) => {
+    const now = timers.now();
+    const live = holds.filter(
+      (hold) => hold.memberId !== meId && hold.until > now,
+    );
+    if (pruneTimer !== null) timers.clearTimeout(pruneTimer);
+    pruneTimer = null;
+    const first = Math.min(...live.map((hold) => hold.until));
+    if (Number.isFinite(first)) {
+      pruneTimer = timers.setTimeout(
+        () => {
+          pruneTimer = null;
+          setHolds(state.holds);
+        },
+        first - now + 50,
+      );
+    }
+    set({ holds: live });
+  };
+
   /* ── the queue ──────────────────────────────────────────────────────────────────────────── */
 
   /**
    * One change, sent after every change before it. `build` writes the ops when it is this change's
-   * turn (null: nothing left to send); `done` takes the blocks the hub wrote.
+   * turn (null: nothing left to send); `done` takes the blocks the hub wrote; `undo` puts the screen
+   * back when the hub refused.
    */
   const enqueue = (
     build: () => DocOp[] | null,
@@ -232,24 +264,33 @@ export function createDocController(options: {
         done(await doors.save(ops, newKey()));
       } catch (error) {
         undo();
-        refused(error);
+        refused(
+          error,
+          ops.flatMap((op) =>
+            op.op === "insert_after" ? [op.newId] : [op.id],
+          ),
+        );
       }
     });
     return queue;
   };
 
-  const refused = (error: unknown) => {
+  const refused = (error: unknown, touched: readonly string[]) => {
     if (isStaleSave(error)) {
       set({ notice: { kind: "stale" } });
-      void refresh({ reopen: true });
+      void refresh(touched);
       return;
     }
     if (
       error instanceof RequestRefusedError &&
       error.code === "laf:doc_block_busy"
     ) {
-      set({ notice: { kind: "busy", memberId: null } });
-      void refresh({ reopen: true });
+      set({ notice: { kind: "busy", name: null } });
+      if (state.activeKey && touched.includes(state.activeKey)) {
+        set({ activeKey: null });
+        lock.release();
+      }
+      void refresh(touched);
       return;
     }
     set({
@@ -260,13 +301,12 @@ export function createDocController(options: {
     });
   };
 
-  /** The hub's copy of a block onto its row, keeping text typed since the op was built. */
-  const took = (key: string, block: DocBlock | undefined) => {
+  /** The hub's copy of a block onto its row, keeping what was typed since the op was built. */
+  const took = (block: DocBlock | undefined) => {
     if (!block) return;
-    keyOfId.set(block.id, key);
-    known.set(key, { id: block.id, version: block.version });
-    updateRow(key, (row) => {
-      const pending = drafts.get(key);
+    versions.set(block.id, block.version);
+    updateRow(block.id, (row) => {
+      const pending = drafts.get(block.id);
       return {
         ...row,
         isNew: false,
@@ -288,6 +328,7 @@ export function createDocController(options: {
     saveTimers.delete(key);
   };
 
+  /** The `replace` for what was typed into `key`, taking it out of the drafts; null if nothing. */
   const replaceOp = (key: string): DocOp | null => {
     const row = rowOf(key);
     const patch = drafts.get(key);
@@ -295,8 +336,8 @@ export function createDocController(options: {
     drafts.delete(key);
     return {
       op: "replace",
-      id: row.block.id,
-      version: row.block.version,
+      id: key,
+      version: versions.get(key) ?? row.block.version,
       ...patch,
     };
   };
@@ -311,7 +352,7 @@ export function createDocController(options: {
         const op = replaceOp(key);
         return op ? [op] : null;
       },
-      (blocks) => took(key, blocks[0]),
+      (blocks) => took(blocks.find((block) => block.id === key)),
       () => {
         // Kept for the next try unless something newer was typed meanwhile.
         if (sent && !drafts.has(key)) drafts.set(key, sent);
@@ -338,47 +379,48 @@ export function createDocController(options: {
 
   /* ── reading the hub ────────────────────────────────────────────────────────────────────── */
 
-  /** The hub's document onto the screen, keeping what this person is writing. */
-  const load = (open: OpenDoc, reopen = false) => {
+  /** Whether a read must leave this block as the person has it. */
+  const isMine = (key: string) => key === state.activeKey || drafts.has(key);
+
+  /**
+   * The hub's document onto the screen, keeping what this person is writing — except the blocks
+   * in `reopen`, whose save was refused: those take the hub's copy and the box shows it.
+   */
+  const load = (open: OpenDoc, reopen: readonly string[] = []) => {
     const before = new Map(state.rows.map((row) => [row.key, row]));
-    const active = state.activeKey;
     const rows: DocRow[] = open.blocks.map((block) => {
-      const key = keyOfId.get(block.id) ?? block.id;
-      const mine = before.get(key);
-      if (!known.has(key) || !(key === active || drafts.has(key))) {
-        known.set(key, { id: block.id, version: block.version });
-      }
-      const isKept =
-        mine !== undefined && !reopen && (key === active || drafts.has(key));
-      if (isKept) return mine;
-      if (mine && reopen && (key === active || drafts.has(key))) {
-        drafts.delete(key);
-        cancelSave(key);
+      const mine = before.get(block.id);
+      if (mine && reopen.includes(block.id)) {
+        drafts.delete(block.id);
+        cancelSave(block.id);
+        versions.set(block.id, block.version);
         return { ...mine, block, isNew: false, reset: mine.reset + 1 };
       }
-      return { key, block, isNew: false, reset: mine?.reset ?? 0 };
+      if (mine && isMine(block.id)) return mine;
+      versions.set(block.id, block.version);
+      return { key: block.id, block, isNew: false, reset: mine?.reset ?? 0 };
     });
     // New blocks still on their way stay where they were drawn: after the row they followed.
     state.rows.forEach((row, index) => {
-      if (!row.isNew) return;
+      if (!row.isNew || rows.some((one) => one.key === row.key)) return;
       const previous = state.rows[index - 1]?.key;
       const at = previous ? rows.findIndex((one) => one.key === previous) : -1;
       rows.splice(at + 1, 0, row);
     });
-    const holds = open.holds.filter((hold) => hold.memberId !== meId);
-    const stillActive = active && rows.some((row) => row.key === active);
-    set({
-      rows,
-      holds,
-      loaded: true,
-      ...(stillActive ? {} : { activeKey: null }),
-    });
-    if (!stillActive && active) lock.release();
+    const active = state.activeKey;
+    const stillActive =
+      active !== null && rows.some((row) => row.key === active);
+    set({ rows, loaded: true, ...(stillActive ? {} : { activeKey: null }) });
+    setHolds(open.holds);
+    if (active && !stillActive) lock.release();
   };
 
   let reading: Promise<void> | null = null;
   let readAgain = false;
-  const refresh = async (opts: { reopen?: boolean } = {}) => {
+  let reopenNext: string[] = [];
+  /** The document read again — once at a time, and once more if asked meanwhile. */
+  const refresh = async (reopen: readonly string[] = []) => {
+    reopenNext.push(...reopen);
     if (reading) {
       readAgain = true;
       return reading;
@@ -387,11 +429,19 @@ export function createDocController(options: {
       do {
         readAgain = false;
         try {
-          // Wait for what is already queued: a read taken before a save lands would undo it here.
+          // After what is already queued: a read taken before a save lands would undo it on screen.
           await queue;
-          load(await doors.read(), opts.reopen === true);
+          const open = await doors.read();
+          const reopening = reopenNext;
+          reopenNext = [];
+          load(open, reopening);
         } catch (error) {
-          refused(error);
+          set({
+            notice: {
+              kind: "failed",
+              code: error instanceof RequestRefusedError ? error.code : null,
+            },
+          });
           return;
         }
       } while (readAgain);
@@ -400,8 +450,34 @@ export function createDocController(options: {
     reading = null;
   };
 
+  /** One block read again after a colleague's save (`hub.doc.block_changed`). */
+  const blockChanged = async (blockId: string) => {
+    if (!rowOf(blockId)) {
+      // A block this screen has never drawn: where it goes is in the whole document.
+      await refresh();
+      return;
+    }
+    await queue;
+    let block: DocBlock | null;
+    try {
+      block = await doors.readBlock(blockId);
+    } catch {
+      await refresh();
+      return;
+    }
+    if (isMine(blockId)) return;
+    if (block === null) {
+      set({ rows: state.rows.filter((row) => row.key !== blockId) });
+      return;
+    }
+    const known = block;
+    versions.set(blockId, known.version);
+    updateRow(blockId, (row) => ({ ...row, block: known }));
+  };
+
   /* ── what the person did ────────────────────────────────────────────────────────────────── */
 
+  /** Writing stops: what was typed is saved and the hold let go. */
   const leave = () => {
     const key = state.activeKey;
     if (key) void save(key);
@@ -412,13 +488,10 @@ export function createDocController(options: {
   const holdFor = (key: string) => {
     const row = rowOf(key);
     if (!row || row.isNew) return;
-    void lock.hold(row.block.id).then((answer) => {
+    void lock.hold(key).then((answer) => {
       if (state.activeKey !== key) return;
       if (answer === "busy") {
-        set({
-          activeKey: null,
-          notice: { kind: "busy", memberId: holderOf(row.block.id) },
-        });
+        set({ activeKey: null, notice: busy(key) });
         void refresh();
       } else if (answer === "gone") {
         set({ activeKey: null });
@@ -429,11 +502,9 @@ export function createDocController(options: {
 
   /** Open a block for writing. Refused, with the reason on screen, when somebody else holds it. */
   const focus = (key: string, caret: number | "end" = "end"): boolean => {
-    const row = rowOf(key);
-    if (!row) return false;
-    const holder = holderOf(row.block.id);
-    if (holder) {
-      set({ notice: { kind: "busy", memberId: holder } });
+    if (!rowOf(key)) return false;
+    if (holdOn(key)) {
+      set({ notice: busy(key) });
       return false;
     }
     if (state.activeKey === key) return true;
@@ -448,26 +519,17 @@ export function createDocController(options: {
     scheduleSave(key);
   };
 
-  /** The nearest block above that has a box, or null at the top. */
-  const writableAbove = (key: string): DocRow | null => {
+  /** The nearest block above (or below) that has a box, or null at the end. */
+  const writableNear = (key: string, step: 1 | -1): DocRow | null => {
     const index = state.rows.findIndex((row) => row.key === key);
-    for (let at = index - 1; at >= 0; at -= 1) {
+    for (let at = index + step; at >= 0 && at < state.rows.length; at += step) {
       const row = state.rows[at];
       if (row && WRITABLE.has(row.block.kind)) return row;
     }
     return null;
   };
 
-  const writableBelow = (key: string): DocRow | null => {
-    const index = state.rows.findIndex((row) => row.key === key);
-    for (let at = index + 1; at < state.rows.length; at += 1) {
-      const row = state.rows[at];
-      if (row && WRITABLE.has(row.block.kind)) return row;
-    }
-    return null;
-  };
-
-  /** A new block after `key`, drawn now and sent in turn; the caret goes into it. */
+  /** A new block after `key` (null: at the top), drawn now and sent in turn. */
   const insertAfter = (
     key: string | null,
     kind: DocBlockKind,
@@ -475,9 +537,10 @@ export function createDocController(options: {
     attrs: Record<string, unknown> = attrsFor(kind),
   ) => {
     if (key !== null && !rowOf(key)) return;
+    const id = makeBlockId();
     const fresh: DocRow = {
-      key: newKey(),
-      block: { id: "", kind, text, attrs, version: 0, hash: "" },
+      key: id,
+      block: { id, kind, text, attrs, version: 0, hash: "" },
       isNew: true,
       reset: 0,
     };
@@ -485,22 +548,27 @@ export function createDocController(options: {
       key === null ? -1 : state.rows.findIndex((one) => one.key === key);
     const rows = [...state.rows];
     rows.splice(index + 1, 0, fresh);
-    lock.release();
-    set({ rows, activeKey: WRITABLE.has(kind) ? fresh.key : null, caret: 0 });
+    const opens = WRITABLE.has(kind);
+    if (opens) lock.release();
+    set({
+      rows,
+      ...(opens ? { activeKey: id, caret: 0 } : {}),
+    });
     if (key !== null) cancelSave(key);
     enqueue(
       () => {
-        const anchor = key === null ? null : rowOf(key);
-        const now = rowOf(fresh.key);
-        if ((key !== null && (!anchor || anchor.isNew)) || !now) return null;
+        if (key !== null && (!rowOf(key) || rowOf(key)?.isNew)) return null;
+        const now = rowOf(id);
+        if (!now) return null;
         const ops: DocOp[] = [];
         const replace = key === null ? null : replaceOp(key);
         if (replace) ops.push(replace);
-        const typed = drafts.get(fresh.key);
-        drafts.delete(fresh.key);
+        const typed = drafts.get(id);
+        drafts.delete(id);
         ops.push({
           op: "insert_after",
-          id: anchor ? anchor.block.id : null,
+          id: key,
+          newId: id,
           kind: typed?.kind ?? now.block.kind,
           text: typed?.text ?? now.block.text,
           attrs: typed?.attrs ?? now.block.attrs,
@@ -508,18 +576,13 @@ export function createDocController(options: {
         return ops;
       },
       (blocks) => {
-        const anchorId = key === null ? null : rowOf(key)?.block.id;
-        const made =
-          blocks.find((block) => block.id !== anchorId) ?? blocks.at(-1);
-        const replaced = blocks.find((block) => block.id === anchorId);
-        if (key !== null && replaced) took(key, replaced);
-        took(fresh.key, made);
-        if (state.activeKey === fresh.key) holdFor(fresh.key);
-        if (drafts.has(fresh.key)) scheduleSave(fresh.key);
+        for (const block of blocks) took(block);
+        if (state.activeKey === id) holdFor(id);
+        if (drafts.has(id)) scheduleSave(id);
       },
       () => {
-        set({ rows: state.rows.filter((one) => one.key !== fresh.key) });
-        if (state.activeKey === fresh.key) set({ activeKey: null });
+        set({ rows: state.rows.filter((one) => one.key !== id) });
+        if (state.activeKey === id) set({ activeKey: null });
       },
     );
   };
@@ -532,13 +595,18 @@ export function createDocController(options: {
     insertAfter(key, kindAfter(row.block.kind), tail);
   };
 
+  /** The delete of `key`, by its id and the newest version the hub gave it. */
+  const deleteOp = (key: string): DocOp | null => {
+    const version = versions.get(key);
+    return version === undefined ? null : { op: "delete", id: key, version };
+  };
+
   /** Backspace in an empty block: it goes, and the caret goes to the end of the one above. */
   const remove = (key: string) => {
-    const row = rowOf(key);
-    const above = writableAbove(key);
-    if (!row || !above || state.rows.length <= 1) return;
-    if (holderOf(above.block.id)) {
-      set({ notice: { kind: "busy", memberId: holderOf(above.block.id) } });
+    const above = writableNear(key, -1);
+    if (!rowOf(key) || !above || state.rows.length <= 1) return;
+    if (holdOn(above.key)) {
+      set({ notice: busy(above.key) });
       return;
     }
     cancelSave(key);
@@ -552,10 +620,8 @@ export function createDocController(options: {
     holdFor(above.key);
     enqueue(
       () => {
-        const last = known.get(key);
-        return last
-          ? [{ op: "delete", id: last.id, version: last.version }]
-          : null;
+        const op = deleteOp(key);
+        return op ? [op] : null;
       },
       () => {},
     );
@@ -564,18 +630,17 @@ export function createDocController(options: {
   /** Backspace at the start of a block with text: its text joins the end of the block above. */
   const mergeUp = (key: string) => {
     const row = rowOf(key);
-    const above = writableAbove(key);
+    const above = writableNear(key, -1);
     if (!row || !above) return;
-    if (holderOf(above.block.id)) {
-      set({ notice: { kind: "busy", memberId: holderOf(above.block.id) } });
+    if (holdOn(above.key)) {
+      set({ notice: busy(above.key) });
       return;
     }
     const joinAt = above.block.text.length;
-    const text = above.block.text + row.block.text;
     cancelSave(key);
     drafts.delete(key);
     lock.release();
-    draft(above.key, { text });
+    draft(above.key, { text: above.block.text + row.block.text });
     set({
       rows: state.rows.filter((one) => one.key !== key),
       activeKey: above.key,
@@ -586,65 +651,56 @@ export function createDocController(options: {
     enqueue(
       () => {
         const replace = replaceOp(above.key);
-        const ops: DocOp[] = replace ? [replace] : [];
-        const last = known.get(key);
-        if (last)
-          ops.push({ op: "delete", id: last.id, version: last.version });
-        return ops;
+        const remove = deleteOp(key);
+        return [replace, remove].filter((op): op is DocOp => op !== null);
       },
-      (blocks) =>
-        took(
-          above.key,
-          blocks.find((block) => block.id === above.block.id),
-        ),
+      (blocks) => took(blocks.find((block) => block.id === above.key)),
     );
   };
 
-  /** The `/` menu's choice, or a markdown start: the block becomes `kind`. */
+  /** The `/` menu's choice, a markdown start, or a list ended: the block becomes `kind`. */
   const setKind = (key: string, kind: DocBlockKind, text?: string) => {
-    const row = rowOf(key);
-    if (!row) return;
+    if (!rowOf(key)) return;
     draft(key, {
       kind,
       attrs: attrsFor(kind),
       ...(text !== undefined ? { text } : {}),
-      ...(kind === "divider" ? { text: "" } : {}),
+      ...(kind === "divider" || kind === "table" ? { text: "" } : {}),
     });
     updateRow(key, (one) => ({ ...one, reset: one.reset + 1 }));
     void save(key);
     // A divider has no box: writing goes on in a new block under it, as in Notion.
-    if (!WRITABLE.has(kind) && kind !== "table")
-      insertAfter(key, "paragraph", "");
+    if (kind === "divider") insertAfter(key, "paragraph", "");
   };
 
   const toggleCheck = (key: string) => {
     const row = rowOf(key);
-    if (!row || holderOf(row.block.id)) return;
+    if (!row || holdOn(key)) return;
     draft(key, {
       attrs: { ...row.block.attrs, checked: row.block.attrs.checked !== true },
     });
     void save(key);
   };
 
+  /** A table's cells changed: its rows are the block, and its text stays empty. */
   const setTable = (key: string, rows: string[][]) => {
-    draft(key, {
-      attrs: { ...rowOf(key)?.block.attrs, rows },
-      text: tableText(rows),
-    });
+    draft(key, { attrs: { ...rowOf(key)?.block.attrs, rows }, text: "" });
     scheduleSave(key);
   };
 
   return {
     subscribe(listener: () => void) {
       listeners.add(listener);
-      return () => listeners.delete(listener);
+      return () => {
+        listeners.delete(listener);
+      };
     },
     snapshot: () => state,
     setMe(id: string | undefined) {
       meId = id;
     },
     load: (open: OpenDoc) => load(open),
-    refresh,
+    refresh: () => refresh(),
     focus,
     leave,
     input,
@@ -664,15 +720,15 @@ export function createDocController(options: {
     setTable,
     insertAfter,
     focusAbove(key: string) {
-      const above = writableAbove(key);
+      const above = writableNear(key, -1);
       if (above) focus(above.key, "end");
     },
     focusBelow(key: string) {
-      const below = writableBelow(key);
+      const below = writableNear(key, 1);
       if (below) focus(below.key, 0);
     },
     dismiss: () => set({ notice: null }),
-    /** A `hub.doc.*` frame about this document: read it again, once for a burst of frames. */
+    /** `hub.doc.changed`: the document read whole again, once for a burst of frames. */
     changed() {
       if (readTimer !== null) return;
       readTimer = timers.setTimeout(() => {
@@ -680,18 +736,27 @@ export function createDocController(options: {
         void refresh();
       }, READ_AFTER_MS);
     },
+    /** `hub.doc.block_changed`: that one block read again. */
+    blockChanged,
+    /** `hub.doc.lock`: somebody took, renewed (`hold`) or let go (`null`) of a block. */
+    held(blockId: string, hold: DocHold | null) {
+      const others = state.holds.filter((one) => one.blockId !== blockId);
+      setHolds(hold ? [...others, hold] : others);
+    },
     /** Waits until everything queued so far has been answered (for tests and for leaving). */
     settled: () => queue,
     /**
-     * The page is going: what was typed is sent now and the hold let go. Not final — React's
-     * strict mode closes a page's effects and opens them again, and the same controller goes on.
+     * The page is going: what was typed is sent now and the hold let go. Not final — React's strict
+     * mode closes a page's effects and opens them again, and the same controller goes on.
      */
     close() {
       for (const key of [...drafts.keys()]) void save(key);
       lock.release();
       if (state.activeKey) set({ activeKey: null });
       if (readTimer !== null) timers.clearTimeout(readTimer);
+      if (pruneTimer !== null) timers.clearTimeout(pruneTimer);
       readTimer = null;
+      pruneTimer = null;
     },
   };
 }
