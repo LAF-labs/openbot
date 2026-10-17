@@ -3285,6 +3285,16 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `server` by two more (to 4883 on top of 4881): a write meeting a refused pass is said as that,
  * not as kept — with no row when it was known before (hub-tools.test.ts), the row waiting when the
  * hub's 401 came during the write (hub-tools.integration.test.ts).
+ *
+ * the hub, and no hub tool without the pass (hub-tools-head.test.ts, 3). 4747 and 28.
+ *
+ * RAISED 2026-10-17 FOR JOINING AND LEAVING A COMPANY: `server` by four (to 4779) — the leave on a
+ * real Postgres, serialised with no company file or room name left and the person's own kept, a VM
+ * attached or never attached left alone, a browser that cannot sign out keeping the cursor
+ * (hub-leave.integration.test.ts, 3), and 팀에-올리기 carried only with the hub pass
+ * (built-in-skills.test.ts, 1). And `agent-computer` by eleven (to 643): which origins a forget
+ * takes, and a real Chromium signed out of one origin and still signed in to another
+ * (forget-cookies.test.ts). 4775 and 4; 632 and 11.
  */
 const GROUPS: readonly {
   name: string;
