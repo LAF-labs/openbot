@@ -295,6 +295,42 @@ export function markHubResults(
 }
 
 /**
+ * What a hub tool result says once its person has left the company (`hub/leave.ts`): the call and
+ * its answer stay a pair, so the history a provider is handed is still well formed, and what the
+ * company's server answered is not in it. It says what happened, not what was there.
+ */
+export const LEFT_COMPANY_RESULT = "[회사를 떠나며 지운 내용]";
+
+/**
+ * Keep a hub result blanked by a leave blank on a copy that arrives with its words — the path
+ * `withoutGoneProjects` closes for a deleted project's results. A run hands its whole history back,
+ * and a copy built before the leave would otherwise be written over the blank row.
+ */
+export function keepLeftBlank(
+  messages: readonly StoredMessage[],
+  held: readonly StoredMessage[],
+): StoredMessage[] {
+  const blank = new Set(
+    held
+      .filter(
+        (message) =>
+          message.role === "tool" &&
+          message.lafSource === "hub" &&
+          message.content === LEFT_COMPANY_RESULT,
+      )
+      .map((message) => message.id),
+  );
+  if (blank.size === 0) return [...messages];
+  return messages.map((message) =>
+    message.role === "tool" &&
+    blank.has(message.id) &&
+    message.content !== LEFT_COMPANY_RESULT
+      ? { ...message, lafSource: "hub" as const, content: LEFT_COMPANY_RESULT }
+      : message,
+  );
+}
+
+/**
  * A tool result that read a project which is no longer there, as it is kept: one fixed sentence
  * in the result's place. The call and its answer stay a pair, so the history a provider is handed
  * is still well formed; what the project said is not in it.
@@ -526,8 +562,8 @@ export async function appendMessages(
      * here for the project's row, this transaction has written nothing the deletion could be
      * waiting for. Read after a first write, the two would wait on each other.
      */
-    const marked = markHubResults(
-      keepProjectsRead(merged, heldMessages),
+    const marked = keepLeftBlank(
+      markHubResults(keepProjectsRead(merged, heldMessages), heldMessages),
       heldMessages,
     );
     const named = [...new Set(marked.flatMap(projectsReadBy))];

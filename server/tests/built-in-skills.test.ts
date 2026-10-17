@@ -138,7 +138,9 @@ describe("the package's skills", () => {
     // On its own, and after a detach took the pass away: not carried, so no Bot is told of it.
     expect(offered({}).has("mcp__hub__write")).toBe(false);
     // Attached: carried. The bare name alone would not do — `write` says nothing about whose.
-    expect(offered({ LAF_HUB_VM_KEY: "a".repeat(64) }).has("mcp__hub__write")).toBe(true);
+    expect(
+      offered({ LAF_HUB_VM_KEY: "a".repeat(64) }).has("mcp__hub__write"),
+    ).toBe(true);
   });
 
   test("requires is one tool or a list of them, and anything else is refused by name", () => {
