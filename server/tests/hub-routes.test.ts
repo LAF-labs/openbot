@@ -115,6 +115,7 @@ describe("/api/hub", () => {
           protocol: 1,
           privateIp: "10.20.0.5",
           seq: 9,
+          versions: { skills: 0, memory: 0 },
         },
       },
     });
