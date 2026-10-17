@@ -33,10 +33,22 @@ export const HUB_TOOL_PATHS = {
   roomMessages: (id: string, limit: number) =>
     `/rooms/${segment(id)}/messages?limit=${limit}`,
   roomPost: (id: string) => `/rooms/${segment(id)}/messages`,
+  /** The team's documents, newest change first. */
+  docs: "/docs",
+  /** A document drawn as markdown, each block after a `<!-- <id> <hash> -->` line. */
+  docMarkdown: (id: string) => `/docs/${segment(id)}/markdown`,
+  /** A batch of block ops, all or none; 라피's each name the hash it read (`expectHash`). */
+  docBlocks: (id: string) => `/docs/${segment(id)}/blocks`,
 } as const;
 
 /** The kinds a search may be narrowed to, as the hub names them. */
-export const HUB_SEARCH_KINDS = ["file", "skill", "room", "memory"] as const;
+export const HUB_SEARCH_KINDS = [
+  "file",
+  "doc",
+  "skill",
+  "room",
+  "memory",
+] as const;
 export type HubSearchKind = (typeof HUB_SEARCH_KINDS)[number];
 
 export type HubSearchHit = {
@@ -50,6 +62,18 @@ export type HubSearchHit = {
 };
 
 export type HubFileText = { text: string; truncated: boolean };
+export type HubDocHead = {
+  id: string;
+  title: string;
+  folder: string;
+  at: string | null;
+};
+export type HubDocMarkdown = { rev: number | null; markdown: string };
+/** What a batch wrote: each block's id, kind and new hash, so a next op can name it. */
+export type HubDocWritten = {
+  blocks: { id: string; kind: string; hash: string }[];
+  deleted: string[];
+};
 export type HubSkillHead = { slug: string; title: string; summary: string };
 export type HubSkill = HubSkillHead & { instructions: string };
 export type HubMemoryLine = { id: string; content: string; at: string | null };
@@ -229,3 +253,33 @@ export const readRoomMessages = (body: unknown): HubRoomLine[] | null =>
       at: str(message.at),
     };
   });
+
+export const readDocs = (body: unknown): HubDocHead[] | null =>
+  listOf(body, "docs", (doc) => {
+    const id = str(doc.id);
+    if (!id) return null;
+    return {
+      id,
+      title: str(doc.title) ?? "",
+      folder: str(doc.folder) ?? "/",
+      at: str(doc.updatedAt),
+    };
+  });
+
+export function readDocMarkdown(body: unknown): HubDocMarkdown | null {
+  if (!isObject(body)) return null;
+  const markdown = str(body.markdown);
+  if (markdown === null) return null;
+  return { rev: num(body.rev), markdown };
+}
+
+export function readDocWritten(body: unknown): HubDocWritten | null {
+  const blocks = listOf(body, "blocks", (block) => {
+    const id = str(block.id);
+    const hash = str(block.hash);
+    if (!id || hash === null) return null;
+    return { id, kind: str(block.kind) ?? "", hash };
+  });
+  if (!blocks || !isObject(body)) return null;
+  return { blocks, deleted: strings(body.deleted) };
+}
