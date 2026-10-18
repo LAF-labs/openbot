@@ -174,7 +174,7 @@ describe("a run that signed in with a company login", () => {
         noteOrigins: (origins) => noteVaultOrigins(database, origins),
       },
     });
-    const ask = async () => {
+    const ask = async (login?: string) => {
       page = LOGIN_PAGE;
       await gateway.snapshot("bot-1");
       return gateway.requestSecret("bot-1", "bot-1", actor, {
@@ -183,17 +183,19 @@ describe("a run that signed in with a company login", () => {
           { ref: "e2", label: "비밀번호" },
         ],
         snapshotId: 3,
+        ...(login ? { login } : {}),
       });
     };
 
-    // The same site asked while another VM holds it, and again with the hub gone; then filled,
-    // signed in, and the run ends.
+    // The same site asked while another VM holds it, and again with the hub gone (the company
+    // login named: unnamed, the sign-in would go on without it); then filled, signed in, and the
+    // run ends.
     const ready = await ask();
     hub.state.busy = true;
     const busy = await ask();
     hub.state.busy = false;
     hub.state.down = true;
-    const gone = await ask();
+    const gone = await ask("company:shop");
     hub.state.down = false;
     const filled = await ask();
     page = {

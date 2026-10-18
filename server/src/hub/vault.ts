@@ -256,12 +256,15 @@ export function companyLoginResult(
     };
   }
   if (answered.loginBusy) {
-    const { by, until } = answered.loginBusy;
+    const busy = answered.loginBusy;
     return {
       ok: false,
       code: "laf:vault_busy",
       reason: toolResultText("laf:vault_busy"),
-      busy: { by, until },
+      busy:
+        "otherRun" in busy
+          ? { otherRun: true }
+          : { by: busy.by, until: busy.until },
     };
   }
   if (answered.loginFilled?.company) {

@@ -1827,7 +1827,7 @@ export const ko: Record<string, string> = {
   "From a saved login": "저장한 로그인으로 넣음",
   "Several saved logins": "저장한 로그인이 여럿",
   "From a company login": "회사 로그인으로 넣음",
-  "Company login in use": "회사 로그인을 다른 분이 쓰는 중",
+  "Company login in use": "회사 로그인을 쓰는 중",
   "A saved login was not put in: the box was not on the site it was saved for":
     "저장한 로그인을 넣지 않음: 칸이 저장한 사이트의 것이 아님",
   "The Bot named a saved login that was not saved for this site":

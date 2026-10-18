@@ -125,8 +125,14 @@ export type SavedLoginAnswer = {
  * the open request points, while a person is being asked — and, where a saved login answered
  * instead, what it came to.
  */
-/** Whose VM holds a company login, by name where the hub says it, and until when (ISO 8601). */
-export type CompanyBusy = { by: string | null; until: string };
+/**
+ * Who holds a company login: another member's VM, by name where the hub says it, and until when
+ * (ISO 8601) — or another run of this VM's own (`otherRun`), a conversation and a routine, which
+ * the hub cannot tell apart and so cannot say.
+ */
+export type CompanyBusy =
+  | { by: string | null; until: string }
+  | { otherRun: true };
 
 /**
  * Why a company login could not be opened inside the fill: the hub refused or did not answer.
@@ -402,13 +408,27 @@ export function createSecrets(deps: {
   const companyFills = new Map<string, Map<string, CompanyFill[]>>();
   /** The company logins this VM has told the hub it signed in with. Once each per process. */
   const companyVerified = new Set<string>();
+  /**
+   * WHICH ONE RUN OF THIS VM'S HAS EACH EXCLUSIVE COMPANY LOGIN, from the moment it asks for a
+   * lease until it holds none — by login, across every Bot and browser here.
+   *
+   * THE HUB CANNOT KEEP TWO RUNS OF ONE VM APART. It leases by member, and a member's new lease
+   * replaces its earlier one (`hub/src/vault.ts`): a routine signing in while a conversation was
+   * signed in took the conversation's lease away, and the routine's end gave the login back while
+   * the conversation's browser was still in the site — free on the hub, so another member's VM
+   * signed in beside it. So this VM keeps its own runs to one at a time, here, and the hub's
+   * replacing is left for a run signing in again to the same login.
+   */
+  const companyClaims = new Map<string, { botId: string; run: string }>();
 
-  const holdsOf = (botId: string, run: string) => {
-    const runs = companyHolds.get(botId) ?? new Map();
-    companyHolds.set(botId, runs);
-    const holds: Map<string, CompanyHold> = runs.get(run) ?? new Map();
-    runs.set(run, holds);
-    return holds;
+  /** This run's hold on a login, where it has one. Makes nothing: a lookup after a run's end. */
+  const heldNow = (botId: string, run: string, loginId: string) =>
+    companyHolds.get(botId)?.get(run)?.get(loginId);
+  /** A run that holds no lease on the login any more lets go of its claim on it. */
+  const unclaim = (botId: string, run: string, loginId: string) => {
+    const claim = companyClaims.get(loginId);
+    if (claim?.botId !== botId || claim.run !== run) return;
+    if (!heldNow(botId, run, loginId)) companyClaims.delete(loginId);
   };
   const dropHold = (botId: string, run: string, loginId: string) => {
     const runs = companyHolds.get(botId);
@@ -417,6 +437,26 @@ export function createSecrets(deps: {
     holds?.delete(loginId);
     if (holds?.size === 0) runs?.delete(run);
     if (runs?.size === 0) companyHolds.delete(botId);
+    unclaim(botId, run, loginId);
+  };
+  /**
+   * A hold let go of while its run goes on: the browser may still be in the site, and the hub
+   * no longer says so. Said, never silent — why (the hub's fact, or the hour run out) and whose
+   * run, no value.
+   */
+  const lostHold = (
+    botId: string,
+    run: string,
+    loginId: string,
+    why: string,
+  ) => {
+    dropHold(botId, run, loginId);
+    log.warn("company_login_hold_lost", {
+      bot: botId,
+      run,
+      login: loginId,
+      why,
+    });
   };
 
   /**
@@ -431,7 +471,11 @@ export function createSecrets(deps: {
   ): void {
     const company = deps.company;
     if (!company) return;
-    const holds = holdsOf(botId, run);
+    const runs =
+      companyHolds.get(botId) ?? new Map<string, Map<string, CompanyHold>>();
+    companyHolds.set(botId, runs);
+    const holds = runs.get(run) ?? new Map<string, CompanyHold>();
+    runs.set(run, holds);
     // The run leased the same login again (a second sign-in): the hub let the old lease go for
     // the new one (`hub/src/vault.ts`), and its renewal goes with it.
     holds.get(held.loginId)?.cancel();
@@ -441,9 +485,9 @@ export function createSecrets(deps: {
     const entry: CompanyHold = { ...held, since, cancel: () => undefined };
     const arm = () => {
       entry.cancel = schedule(renewIn(entry.until), () => {
-        if (holdsOf(botId, run).get(held.loginId) !== entry) return;
+        if (heldNow(botId, run, held.loginId) !== entry) return;
         if (clock() - since >= LEASE_HOLD_MAX_MS) {
-          dropHold(botId, run, held.loginId);
+          lostHold(botId, run, held.loginId, "held_too_long");
           return;
         }
         void company
@@ -453,18 +497,29 @@ export function createSecrets(deps: {
             ...(held.runId ? { runId: held.runId } : {}),
           })
           .then((renewed) => {
-            if (holdsOf(botId, run).get(held.loginId) !== entry) return;
+            if (heldNow(botId, run, held.loginId) !== entry) return;
             if (!("lease" in renewed)) {
-              dropHold(botId, run, held.loginId);
+              lostHold(
+                botId,
+                run,
+                held.loginId,
+                "unavailable" in renewed
+                  ? renewed.unavailable
+                  : "laf:vault_busy",
+              );
               return;
             }
             entry.until = renewed.until;
             arm();
           })
-          .catch(() => dropHold(botId, run, held.loginId));
+          .catch(() =>
+            lostHold(botId, run, held.loginId, "laf:hub_unreachable"),
+          );
       });
     };
     holds.set(held.loginId, entry);
+    // A hold is always its run's claim, whatever a renewal refused on the way let go of.
+    companyClaims.set(held.loginId, { botId, run });
     arm();
   }
 
@@ -497,15 +552,24 @@ export function createSecrets(deps: {
    * a device where it was one. Never throws, and nothing is kept to be sent later — a release the
    * hub does not hear lapses at the lease's `until`.
    */
-  async function companyRunEnded(botId: string, run: string): Promise<void> {
-    const fills = companyFills.get(botId)?.get(run) ?? [];
-    companyFills.get(botId)?.delete(run);
+  async function companyRunEnded(botId: string, own: string): Promise<void> {
+    // THIS RUN'S, AND A RUN'S THAT NAMED NO CONVERSATION — which nothing else would ever end, so
+    // the next run of the Bot's to end gives it back, as it ends such a run's values
+    // (`valueRuns`). Otherwise it is renewed for the hour and kept from the company all that time.
+    const fills: CompanyFill[] = [];
+    const holds: { run: string; held: CompanyHold }[] = [];
+    for (const run of new Set([own, ANY_RUN])) {
+      fills.push(...(companyFills.get(botId)?.get(run) ?? []));
+      companyFills.get(botId)?.delete(run);
+      for (const held of companyHolds.get(botId)?.get(run)?.values() ?? []) {
+        holds.push({ run, held });
+      }
+    }
     if (companyFills.get(botId)?.size === 0) companyFills.delete(botId);
-    const holds = [...(companyHolds.get(botId)?.get(run)?.values() ?? [])];
-    for (const held of holds) dropHold(botId, run, held.loginId);
+    for (const { run, held } of holds) dropHold(botId, run, held.loginId);
     await Promise.all([
       ...fills.map((fill) => deviceVerified(fill).catch(() => undefined)),
-      ...holds.map((held) =>
+      ...holds.map(({ held }) =>
         deps.company?.release(held.loginId, held.lease).catch(() => false),
       ),
     ]);
@@ -710,6 +774,18 @@ export function createSecrets(deps: {
     );
   }
 
+  /** Whether another run of this VM's has an exclusive company login (`companyClaims`). */
+  function otherRunHas(
+    login: CompanyLogin,
+    botId: string,
+    actor: ActionActor,
+  ): boolean {
+    if (login.concurrent) return false;
+    const claim = companyClaims.get(login.id);
+    const run = actor.runKey ?? actor.threadId ?? ANY_RUN;
+    return claim !== undefined && (claim.botId !== botId || claim.run !== run);
+  }
+
   /** Whose VM holds a company login, as the Bot is told it: a name where the hub gives one. */
   async function busyOf(busy: {
     member: string;
@@ -868,7 +944,8 @@ export function createSecrets(deps: {
       });
       throw new ActionRefusedError(null, "laf:login_not_for_this_site");
     }
-    if (!named && companyDown) return { unavailable: true };
+    // An unnamed sign-in with the hub down goes on as on a VM with no company login: the person's
+    // own login, or the person asked. Kept from them only where the Bot named the company's.
     const total = candidates.length + companyHere.length;
     if (!named && total === 1 && companyHere[0]) {
       return companyOf(companyHere[0]);
@@ -889,7 +966,11 @@ export function createSecrets(deps: {
               label: login.label,
               ...(login.site ? { site: login.site } : {}),
               company: true as const,
-              ...(login.busy ? { busy: await busyOf(login.busy) } : {}),
+              ...(login.busy
+                ? { busy: await busyOf(login.busy) }
+                : otherRunHas(login, botId, actor)
+                  ? { busy: { otherRun: true as const } }
+                  : {}),
             })),
           )),
         ],
@@ -986,96 +1067,160 @@ export function createSecrets(deps: {
       };
     }
     const run = actor.runKey ?? actor.threadId ?? ANY_RUN;
-    const runId = HUB_RUN_SHAPE.test(run) ? run : undefined;
-    const leased = await company.lease(login.id, {
-      origin,
-      ...(runId ? { runId } : {}),
-    });
-    if ("busy" in leased) {
+    // Another run of this VM's has it, or is on its way to: nothing is leased, opened or put in.
+    // Looked at and taken with no wait between, so two runs asking at once cannot both pass.
+    if (otherRunHas(login, botId, actor)) {
       return {
         ...(await control()),
-        loginBusy: { ...named, ...(await busyOf(leased.busy)) },
+        loginBusy: { ...named, otherRun: true },
       };
     }
-    if ("unavailable" in leased) {
-      return { ...(await control()), companyLoginUnavailable: true };
-    }
-    const giveBack = () =>
-      void company.release(login.id, leased.lease).catch(() => false);
-    const [first, ...rest] = fields;
-    if (!first) {
-      giveBack();
-      throw new StaleSnapshotError(STALE_REFS);
-    }
+    if (!login.concurrent) companyClaims.set(login.id, { botId, run });
     try {
-      await govern(
-        computerId,
-        FILL_LOGIN_TOOL,
-        botId,
-        actor,
-        {
-          ref: first.ref,
-          ...(rest.length > 0
-            ? { alsoRefs: rest.map((field) => field.ref) }
-            : {}),
-          login: { id: shownId, ...(login.site ? { site: login.site } : {}) },
-          ...(options.signal ? { signal: options.signal } : {}),
-          ...(options.approvalId ? { approvalId: options.approvalId } : {}),
-        },
-        async (judgedFirst, _path, judgedRest) => {
-          const judged = [judgedFirst, ...judgedRest];
-          const boxes = fields.map((field, index) => {
-            const as = judged[index];
-            if (!as) throw new StaleSnapshotError(STALE_REFS);
-            return {
-              ref: field.ref,
-              element: { role: as.role, name: as.name },
-            };
-          });
-          const opened = await company.open(login.id, leased.lease);
-          if ("unavailable" in opened) throw new CompanyLoginUnavailableError();
-          // Noted before the values leave, as for the person's own (`savedLoginFor`'s fill).
-          putInFor(botId, actor.runKey ?? actor.threadId, computerId);
-          const filled = await as(computerId, botId).fillLogin(
-            boxes.map((box, index) => ({
-              ...box,
-              value:
-                kinds[index] === "password" ? opened.password : opened.username,
-            })),
-            { snapshotId: input.snapshotId, origins: login.origins },
-          );
-          const known = typedInto.get(computerId) ?? [];
-          typedInto.set(
-            computerId,
-            [
-              ...known,
-              ...boxes.map(({ ref, element }) => ({
-                ref,
-                ...element,
-                origin: originOf(cached.url),
-              })),
-            ].slice(-TYPED_INTO_LIMIT),
-          );
-          return filled;
-        },
-      );
-    } catch (error) {
-      giveBack();
-      if (error instanceof CompanyLoginUnavailableError) {
+      const runId = HUB_RUN_SHAPE.test(run) ? run : undefined;
+      const leased = await company.lease(login.id, {
+        origin,
+        ...(runId ? { runId } : {}),
+      });
+      if ("busy" in leased) {
+        return {
+          ...(await control()),
+          loginBusy: { ...named, ...(await busyOf(leased.busy)) },
+        };
+      }
+      if ("unavailable" in leased) {
         return { ...(await control()), companyLoginUnavailable: true };
       }
-      const byARule =
-        error instanceof ActionRefusedError &&
-        (error.code === "laf:policy_denied" ||
-          error.code === "laf:no_rule_allows");
-      if (!byARule || options.nobodyToAsk) throw error;
-      return null;
-    }
-    // A run stopped while this was on its way has already been told it is over: nothing would
-    // ever give this lease back but its clock, nor ask after the sign-in.
-    if (options.signal?.aborted) {
-      giveBack();
+      /*
+       * NOT SIGNED IN BY THIS FILL. Given back — unless this run holds the login from a sign-in
+       * before it: the hub let that lease go for this one, and the run's browser is still in the
+       * site, so this lease is held in its place until the run ends.
+       */
+      const giveBack = () => {
+        if (!leased.concurrent && heldNow(botId, run, login.id)) {
+          hold(botId, run, {
+            loginId: login.id,
+            lease: leased.lease,
+            until: leased.until,
+            origin,
+            ...(runId ? { runId } : {}),
+          });
+          return;
+        }
+        void company.release(login.id, leased.lease).catch(() => false);
+      };
+      const [first, ...rest] = fields;
+      if (!first) {
+        giveBack();
+        throw new StaleSnapshotError(STALE_REFS);
+      }
+      try {
+        await govern(
+          computerId,
+          FILL_LOGIN_TOOL,
+          botId,
+          actor,
+          {
+            ref: first.ref,
+            ...(rest.length > 0
+              ? { alsoRefs: rest.map((field) => field.ref) }
+              : {}),
+            login: { id: shownId, ...(login.site ? { site: login.site } : {}) },
+            ...(options.signal ? { signal: options.signal } : {}),
+            ...(options.approvalId ? { approvalId: options.approvalId } : {}),
+          },
+          async (judgedFirst, _path, judgedRest) => {
+            const judged = [judgedFirst, ...judgedRest];
+            const boxes = fields.map((field, index) => {
+              const as = judged[index];
+              if (!as) throw new StaleSnapshotError(STALE_REFS);
+              return {
+                ref: field.ref,
+                element: { role: as.role, name: as.name },
+              };
+            });
+            const opened = await company.open(login.id, leased.lease);
+            if ("unavailable" in opened)
+              throw new CompanyLoginUnavailableError();
+            // Noted before the values leave, as for the person's own (`savedLoginFor`'s fill).
+            putInFor(botId, actor.runKey ?? actor.threadId, computerId);
+            const filled = await as(computerId, botId).fillLogin(
+              boxes.map((box, index) => ({
+                ...box,
+                value:
+                  kinds[index] === "password"
+                    ? opened.password
+                    : opened.username,
+              })),
+              { snapshotId: input.snapshotId, origins: login.origins },
+            );
+            const known = typedInto.get(computerId) ?? [];
+            typedInto.set(
+              computerId,
+              [
+                ...known,
+                ...boxes.map(({ ref, element }) => ({
+                  ref,
+                  ...element,
+                  origin: originOf(cached.url),
+                })),
+              ].slice(-TYPED_INTO_LIMIT),
+            );
+            return filled;
+          },
+        );
+      } catch (error) {
+        giveBack();
+        if (error instanceof CompanyLoginUnavailableError) {
+          return { ...(await control()), companyLoginUnavailable: true };
+        }
+        const byARule =
+          error instanceof ActionRefusedError &&
+          (error.code === "laf:policy_denied" ||
+            error.code === "laf:no_rule_allows");
+        if (!byARule || options.nobodyToAsk) throw error;
+        return null;
+      }
+      // A run stopped while this was on its way has already been told it is over: nothing would
+      // ever give this lease back but its clock, nor ask after the sign-in.
+      if (options.signal?.aborted) {
+        giveBack();
+        await noteOrigins(login.origins);
+        return {
+          ...(await control()),
+          loginFilled: {
+            id: shownId,
+            ...(login.site ? { site: login.site } : {}),
+            fields: fields.length,
+            company: true,
+          },
+        };
+      }
       await noteOrigins(login.origins);
+      const fills = companyFills.get(botId) ?? new Map<string, CompanyFill[]>();
+      companyFills.set(botId, fills);
+      fills.set(run, [
+        ...(fills.get(run) ?? []),
+        {
+          loginId: login.id,
+          origins: login.origins,
+          computerId,
+          snapshotId: input.snapshotId,
+          ...(runId ? { runId } : {}),
+        },
+      ]);
+      // A login many may use at once is not held: its lease was the ticket for the one open.
+      if (leased.concurrent) {
+        giveBack();
+      } else {
+        hold(botId, run, {
+          loginId: login.id,
+          lease: leased.lease,
+          until: leased.until,
+          origin,
+          ...(runId ? { runId } : {}),
+        });
+      }
       return {
         ...(await control()),
         loginFilled: {
@@ -1085,41 +1230,10 @@ export function createSecrets(deps: {
           company: true,
         },
       };
+    } finally {
+      // A claim outlives the fill only beside the lease the run now holds.
+      unclaim(botId, run, login.id);
     }
-    await noteOrigins(login.origins);
-    const fills = companyFills.get(botId) ?? new Map<string, CompanyFill[]>();
-    companyFills.set(botId, fills);
-    fills.set(run, [
-      ...(fills.get(run) ?? []),
-      {
-        loginId: login.id,
-        origins: login.origins,
-        computerId,
-        snapshotId: input.snapshotId,
-        ...(runId ? { runId } : {}),
-      },
-    ]);
-    // A login many may use at once is not held: its lease was the ticket for the one open.
-    if (leased.concurrent) {
-      giveBack();
-    } else {
-      hold(botId, run, {
-        loginId: login.id,
-        lease: leased.lease,
-        until: leased.until,
-        origin,
-        ...(runId ? { runId } : {}),
-      });
-    }
-    return {
-      ...(await control()),
-      loginFilled: {
-        id: shownId,
-        ...(login.site ? { site: login.site } : {}),
-        fields: fields.length,
-        company: true,
-      },
-    };
   }
 
   /**

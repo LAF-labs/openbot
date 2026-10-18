@@ -134,8 +134,15 @@ function scriptedHub(
       if (options.leaseBusy) return fail(409, "laf:vault_busy");
       leaseCount += 1;
       const lease = `${"a".repeat(63)}${leaseCount}`;
-      leases.set(lease, { login: id ?? "", opened: false });
       const login = logins.find((one) => one.id === id);
+      // The caller's own earlier lease gives way to its new one, as #258's hub does: it leases by
+      // member, and this script is one member's hub.
+      if (!login?.concurrent) {
+        for (const [earlier, held] of leases) {
+          if (held.login === id) leases.delete(earlier);
+        }
+      }
+      leases.set(lease, { login: id ?? "", opened: false });
       return {
         ok: true,
         status: 200,
@@ -572,22 +579,42 @@ describe("a login many may use at once (`concurrent`)", () => {
 });
 
 describe("a hub that cannot hand the login over", () => {
-  test("is a plain fact where a company login is known for the site — no card, nothing put in — and nothing is sent again later", async () => {
+  test("with a company login known for the site, an unnamed sign-in goes on as if there were none — the person's own login, or the person asked — and nothing is sent again later", async () => {
     const hub = scriptedHub();
-    const made = stack({ hub });
-    // The hub answered once, so this VM knows the site has a company login.
-    await made.ask();
-    await made.gateway.runEnded("bot-1", "thread-a");
-    const before = hub.requests.length;
+    const made = stack({ hub, personal: [savedLogin("login-1", "내 계정")] });
+    // The hub answered once, so this VM knows the site has a company login: both are offered.
+    expect((await made.ask()).loginChoice?.map((one) => one.id)).toEqual([
+      "login-1",
+      `company:${LOGIN_ID}`,
+    ]);
     hub.state.down = "all";
-    const answer = await made.ask();
-    expect(answer.companyLoginUnavailable).toBe(true);
-    expect(answer.secretWanted).toBeUndefined();
+    // The hub is down: the person's own goes in, as on a VM with no company.
+    const own = await made.ask();
+    expect(own.loginFilled).toEqual({ id: "login-1", fields: 2 });
+    expect(own.companyLoginUnavailable).toBeUndefined();
+    expect(made.filled).toEqual([
+      [
+        { ref: "e1", value: "own-user" },
+        { ref: "e2", value: "own-pass" },
+      ],
+    ]);
+    expect(hub.sent("lease")).toEqual([]);
+
+    // With nothing of the person's own saved, the person is asked.
+    const alone = scriptedHub();
+    const asked = stack({ hub: alone });
+    await asked.ask();
+    await asked.gateway.runEnded("bot-1", "thread-a");
+    const before = alone.requests.length;
+    alone.state.down = "all";
+    const answer = await asked.ask();
+    expect(answer.companyLoginUnavailable).toBeUndefined();
+    expect(answer.secretWanted).toBeDefined();
+    expect(asked.calls).toEqual(["fillLogin", "requestSecret"]);
     // One attempt each, and never a write the outbox would keep and offer again: no request to
     // the vault carries the outbox's idempotency key, and none is retried by the caller.
-    const vaultRequests = hub.requests.slice(before);
-    expect(vaultRequests.length).toBe(1);
-    for (const request of hub.requests) {
+    expect(alone.requests.length - before).toBe(1);
+    for (const request of alone.requests) {
       expect(request.retry).toBe(false);
       expect(request.idempotencyKey).toBeUndefined();
     }
@@ -688,5 +715,126 @@ describe("the person's own login and the company's, for one site", () => {
       "laf:login_not_for_this_site",
     );
     expect(made.hub.sent("lease")).toEqual([]);
+  });
+});
+
+/*
+ * TWO RUNS OF ONE VM — a conversation and a routine — AND ONE EXCLUSIVE LOGIN. The hub leases by
+ * member, and a member's new lease replaces its earlier one, so the hub cannot keep this VM's own
+ * runs apart: the VM keeps them to one at a time itself.
+ */
+describe("an exclusive company login, among this VM's own runs", () => {
+  const ROUTINE = { ...ACTOR, runKey: "routine:r1" };
+
+  test("a second run is told another run of this person's has it: nothing leased, opened or put in, until the first ends", async () => {
+    const made = stack();
+    expect((await made.ask()).loginFilled?.company).toBe(true);
+    const second = await made.ask({ actor: ROUTINE });
+    expect(second.loginBusy).toEqual({
+      id: `company:${LOGIN_ID}`,
+      label: LABEL,
+      site: "smartstore",
+      otherRun: true,
+    });
+    expect(companyLoginResult(second)).toMatchObject({
+      ok: false,
+      code: "laf:vault_busy",
+      busy: { otherRun: true },
+    });
+    expect(made.hub.sent("lease")).toHaveLength(1);
+    expect(made.hub.sent("open")).toHaveLength(1);
+    expect(made.filled).toHaveLength(1);
+    // The hub still holds the conversation's lease, the one its renewal names.
+    expect(made.hub.leases.size).toBe(1);
+    expect(made.gateway.companyLeases("bot-1")).toEqual([
+      { run: "thread-a", login: LOGIN_ID },
+    ]);
+    // The conversation ends and gives it back: the routine signs in.
+    await made.gateway.runEnded("bot-1", "thread-a");
+    expect((await made.ask({ actor: ROUTINE })).loginFilled?.company).toBe(
+      true,
+    );
+    expect(made.gateway.companyLeases("bot-1")).toEqual([
+      { run: "routine:r1", login: LOGIN_ID },
+    ]);
+  });
+
+  test("named back in a choice, it is marked as in use by another run of this person's", async () => {
+    const made = stack({ personal: [savedLogin("login-1", "내 계정")] });
+    await made.ask({ login: `company:${LOGIN_ID}` });
+    const choice = await made.ask({ actor: ROUTINE });
+    expect(choice.loginChoice).toEqual([
+      { id: "login-1", label: "내 계정" },
+      {
+        id: `company:${LOGIN_ID}`,
+        label: LABEL,
+        site: "smartstore",
+        company: true,
+        busy: { otherRun: true },
+      },
+    ]);
+  });
+
+  test("a run signing in again whose second fill fails keeps the login held on the hub: the new lease stands in for the one it replaced", async () => {
+    const options: Parameters<typeof stack>[0] = {};
+    const made = stack(options);
+    await made.ask();
+    options.fillFails = true;
+    await expect(made.ask()).rejects.toThrow();
+    // The hub let the first lease go for the second; the second is not given back.
+    expect(made.hub.sent("release")).toEqual([]);
+    expect(made.hub.leases.size).toBe(1);
+    expect(made.gateway.companyLeases("bot-1")).toEqual([
+      { run: "thread-a", login: LOGIN_ID },
+    ]);
+    // Its renewal names the lease the hub holds, and the run's end gives that one back.
+    made.timers.at(-1)?.run();
+    await Bun.sleep(0);
+    expect(made.gateway.companyLeases("bot-1")).toHaveLength(1);
+    await made.gateway.runEnded("bot-1", "thread-a");
+    expect(made.hub.leases.size).toBe(0);
+  });
+
+  test("a fill for no conversation is given back at the end of the next run of the Bot's", async () => {
+    const made = stack();
+    const { threadId: _none, ...unthreaded } = ACTOR;
+    expect(
+      (await made.ask({ actor: unthreaded as typeof ACTOR })).loginFilled
+        ?.company,
+    ).toBe(true);
+    expect(made.gateway.companyLeases("bot-1")).toEqual([
+      { run: "", login: LOGIN_ID },
+    ]);
+    await made.gateway.runEnded("bot-1", "thread-x");
+    expect(made.hub.sent("release")).toHaveLength(1);
+    expect(made.hub.leases.size).toBe(0);
+    expect(made.gateway.companyLeases("bot-1")).toEqual([]);
+    // And the next run may have it.
+    expect((await made.ask()).loginFilled?.company).toBe(true);
+  });
+
+  test("a hold the hub no longer knows is said in the log — why, whose run, no value — not let go of silently", async () => {
+    const logsFrom = recentLines.lines().length;
+    const made = stack();
+    await made.ask();
+    // The lease is gone on the hub (taken back, or lapsed): the renewal is refused.
+    made.hub.leases.clear();
+    made.timers[0]?.run();
+    await Bun.sleep(0);
+    expect(made.gateway.companyLeases("bot-1")).toEqual([]);
+    const said = recentLines
+      .lines()
+      .slice(logsFrom)
+      .filter((line) => line.includes("company_login_hold_lost"));
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain("laf:vault_lease_invalid");
+    expect(said[0]).toContain("thread-a");
+    for (const secret of [WHO, PASSWORD]) {
+      expect(JSON.stringify(said)).not.toContain(secret);
+    }
+    // Let go of here, so another run of this VM's may sign in.
+    expect((await made.ask({ actor: ROUTINE })).loginFilled?.company).toBe(
+      true,
+    );
   });
 });
