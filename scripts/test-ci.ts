@@ -3296,6 +3296,11 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * line delivers); and the run on a real Postgres (hub-task-run.integration.test.ts, 5: a routine's
  * run in a project named after the task, its head a routine's byte for byte, a stop on a yes kept
  * to its topic, one conversation for two runs, an unsettled run not reported). 4775 and 21.
+ *
+ * RAISED 2026-10-18 FOR THE TASK PICKUP'S BUGBOT ROUND: `server` by two (to 4904) — a recovered
+ * run's task given back to todo is worked, not reported again (hub-task-pickup.test.ts, 1), and
+ * what a task's run files goes in its project's folder (hub-task-run.integration.test.ts, 1).
+ * 4902 and 2.
  */
 const GROUPS: readonly {
   name: string;
