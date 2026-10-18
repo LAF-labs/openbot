@@ -310,17 +310,25 @@ export async function vaultOriginsOf(
 
 /**
  * A member is leaving: their grants and leases go in the caller's transaction (the registry's
- * `member.put` with `state: "left"`). Answers the logins whose grant was dropped, for the trail.
+ * `member.put` with `state: "left"`), and so does every device their VM verified — the leaving has
+ * that VM's cookies cleared, so the sites will ask it again, and the origin is free for the next
+ * member, who would otherwise be counted as verified on arrival. Answers the logins whose grant was
+ * dropped, for the trail.
  */
 export async function dropVaultFor(
   tx: HubTransaction,
-  memberId: string,
+  member: { id: string; vmOrigin: string | null },
 ): Promise<string[]> {
   const dropped = await tx
     .delete(hubVaultGrants)
-    .where(eq(hubVaultGrants.memberId, memberId))
+    .where(eq(hubVaultGrants.memberId, member.id))
     .returning({ loginId: hubVaultGrants.loginId });
-  await tx.delete(hubVaultLeases).where(eq(hubVaultLeases.memberId, memberId));
+  await tx.delete(hubVaultLeases).where(eq(hubVaultLeases.memberId, member.id));
+  if (member.vmOrigin) {
+    await tx
+      .delete(hubVaultDevices)
+      .where(eq(hubVaultDevices.vmOrigin, member.vmOrigin));
+  }
   return dropped.map((row) => row.loginId).sort();
 }
 

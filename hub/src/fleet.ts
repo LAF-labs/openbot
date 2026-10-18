@@ -225,7 +225,7 @@ async function putMember(
     // Read before the grants go, and in the same transaction: after this commit the VM's pass
     // opens nothing, so this answer is the one place the origins it must clear can come from.
     const vaultOrigins = await vaultOriginsOf(tx, existing.id);
-    const vaultLogins = await dropVaultFor(tx, existing.id);
+    const vaultLogins = await dropVaultFor(tx, existing);
     // Leaving drops the pass and the VM with it: the hash, the grace, the origin. Nothing the
     // departed VM holds opens anything after this commit.
     await tx
