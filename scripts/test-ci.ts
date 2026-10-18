@@ -3326,8 +3326,14 @@ const GROUPS: readonly {
    * RAISED 2026-10-18 FOR A WRITE WHOSE ANSWER IS STILL ON ITS WAY, from 4960 to 4961: one in
    * `hub-tools.integration.test.ts` — the hub's answer held past the write's wait and then a 404,
    * and the Bot is told the 404, not "kept". 4960 and 1.
+   *
+   * RAISED 2026-10-18 FOR ROOM ANSWERS THAT MEET THE BOUNDARY, from 4990 to 4997: five in
+   * `room-answers.integration.test.ts` (a deny posts nothing, an ask posts only on a yes, a Bot not
+   * given the write posts nothing, a question that waited past the window behind a long turn is
+   * answered, a restart's waiting question is answered on connect) and two in
+   * `room-answers.test.ts` (each answer ends one question). 4990 and 7.
    */
-  { name: "server", floor: 4990, roots: ["server"] },
+  { name: "server", floor: 4997, roots: ["server"] },
   { name: "app", floor: 2575, roots: ["app"] },
   {
     name: "agent-computer",
