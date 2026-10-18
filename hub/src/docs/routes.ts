@@ -1267,7 +1267,8 @@ async function applyOps(
         kind: block.content.kind,
         text: block.content.text,
         attrs: block.content.attrs,
-        version: 1,
+        // Not 1: a later op of the same save may have rewritten it, and the answer names this.
+        version: block.version,
         hash: block.hash,
         updatedBy: member,
         updatedAt: now,

@@ -423,6 +423,36 @@ describe("documents", () => {
     expect(gone.status).toBe(404);
   });
 
+  test("a block inserted and rewritten in one save keeps the version it answered, so the next save naming it goes through", async () => {
+    const doc = await newDoc(ann.pass, "첫 줄");
+    const done = await ops(ann.pass, doc.doc.id, [
+      {
+        op: "insert_after",
+        id: doc.blocks[0]?.id,
+        newId: "b_newblock02",
+        text: "처음",
+      },
+      { op: "replace", id: "b_newblock02", version: 1, text: "고친 것" },
+    ]);
+    expect(done.status).toBe(200);
+    const answered = done.body.blocks.find(
+      (block) => block.id === "b_newblock02",
+    );
+    const stored = (await read(ann.pass, doc.doc.id)).blocks.find(
+      (block) => block.id === "b_newblock02",
+    );
+    expect(stored?.version).toBe(answered?.version);
+    const next = await ops(ann.pass, doc.doc.id, [
+      {
+        op: "replace",
+        id: "b_newblock02",
+        version: answered?.version,
+        text: "또 고친 것",
+      },
+    ]);
+    expect(next.status).toBe(200);
+  });
+
   test("400 inserts right after one block renumber the document once its ranks grow long, and keep the order", async () => {
     const doc = await newDoc(ann.pass, "앞\n\n뒤");
     const anchor = doc.blocks[0]?.id;
