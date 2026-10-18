@@ -3294,6 +3294,10 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * refused pass a 502, a note as the person); `app` by forty-four (to 2608): the columns, the rank
  * between neighbours and the menu's steps, every note code in words, who a task is given to, the
  * task frames (hub-tasks.test.ts, 34), and the room's working line (hub-room-working.test.ts, 10).
+ *
+ * RAISED 2026-10-18 FOR 업무판'S SECOND REVIEW: `app` by four (to 2619) — a drag put back with Escape
+ * leaving the next click to open its task, a new task's and a note's key following what is written,
+ * and 회사 drawing no other part under the board (hub-task-board-render.test.tsx).
  */
 const GROUPS: readonly {
   name: string;
