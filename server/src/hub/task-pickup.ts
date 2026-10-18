@@ -32,6 +32,15 @@
  *   not taken again on the event that release raises: what it was left at is remembered by
  *   version, and only a later change — a person's, the sweep's — makes it waiting again.
  *
+ * TWO LOST IN A ROW AND IT STOPS. A run that loses its claim — cut off by its beat, or its move
+ * refused — leaves the task to be run again: a person may have sent it back to be done afresh. But
+ * a run can lose its claim with its work done, when the hub hears none of its beats and the sweep
+ * frees the task under it; run again, it would do that work again, lap after lap. So the second lost
+ * run in a row of one task is the last: the task is moved to `blocked` with `laf:task_claim_lost`,
+ * for a person, and not run a third time. The count is this process's, and a move that reaches the
+ * board ends it. A run refused here is also never reported later in this process, even when the
+ * ledger could not be told so (`refused` failing).
+ *
  * EVERY RUN'S END IS FOLLOWED BY A LOOK AT THE TASK. An event about a task this process is busy with
  * is not acted on then — the task is being run — and a person's move back to `todo` while it works,
  * or the sweep's, is such an event. So the task is read again once its run is over, lost or not:
@@ -85,6 +94,14 @@ export type TaskRunOutcome =
   /** The claim went from under it: a person moved the task, or the sweep freed it. Nothing is said. */
   | { kind: "lost" };
 
+/**
+ * What the board is told: a run's outcome, or that the task's runs kept losing their claim — two in
+ * a row, so it is not run a third time (module comment).
+ */
+export type TaskReported =
+  | Exclude<TaskRunOutcome, { kind: "lost" }>
+  | { kind: "claimLost" };
+
 export type TaskRun = (input: {
   task: HubTaskView;
   /** The claim's id on the hub, which is also the run's id here (the ledger, the thread). */
@@ -137,7 +154,7 @@ function oneLine(text: string): string {
  */
 export function taskReport(
   runId: string,
-  outcome: Exclude<TaskRunOutcome, { kind: "lost" }>,
+  outcome: TaskReported,
 ): { stage: "review" | "blocked"; note: string } {
   const run = `run:${runId}`;
   switch (outcome.kind) {
@@ -171,6 +188,11 @@ export function taskReport(
         stage: "blocked",
         note: oneLine(`laf:task_run_stopped ${run}`),
       };
+    case "claimLost":
+      return {
+        stage: "blocked",
+        note: oneLine(`laf:task_claim_lost ${run}`),
+      };
   }
 }
 
@@ -190,6 +212,10 @@ export function createTaskPickup(options: TaskPickupOptions): TaskPickup {
   const busy = new Map<string, Promise<void>>();
   /** The version this process left a task at when it let go of it. See the module comment. */
   const leftAt = new Map<string, number>();
+  /** Each task's runs that lost their claim in a row. See the module comment. */
+  const lostInARow = new Map<string, number>();
+  /** Runs the board refused to take back here, whatever the ledger managed to keep of it. */
+  const refusedHere = new Set<string>();
 
   const key = () => `task-${randomUUID()}`;
 
@@ -214,11 +240,12 @@ export function createTaskPickup(options: TaskPickupOptions): TaskPickup {
     }
   };
 
+  /** `moved`, `refused` (the run no longer held the task), or `unsent` (the hub did not take it). */
   const report = async (
     taskId: string,
     runId: string,
-    outcome: Exclude<TaskRunOutcome, { kind: "lost" }>,
-  ): Promise<boolean> => {
+    outcome: TaskReported,
+  ): Promise<"moved" | "refused" | "unsent"> => {
     const { stage, note } = taskReport(runId, outcome);
     const answer = await options.http.request({
       method: "PATCH",
@@ -232,7 +259,8 @@ export function createTaskPickup(options: TaskPickupOptions): TaskPickup {
       const moved = readTaskDetail(answer.body);
       if (moved) leftAt.set(taskId, moved.task.version);
       log.info("hub_task_moved", { task: taskId, run: runId, stage });
-      return true;
+      lostInARow.delete(taskId);
+      return "moved";
     }
     log.warn("hub_task_not_moved", {
       task: taskId,
@@ -240,16 +268,19 @@ export function createTaskPickup(options: TaskPickupOptions): TaskPickup {
       stage,
       code: answer.code,
     });
-    if (answer.code === HUB_TASK_CODES.notHeld) {
-      await options.refused?.(runId).catch((error: unknown) => {
-        log.warn("hub_task_refusal_not_kept", {
-          run: runId,
-          reason: error instanceof Error ? error.name : "unknown",
-        });
+    if (answer.code !== HUB_TASK_CODES.notHeld) return "unsent";
+    refusedHere.add(runId);
+    await options.refused?.(runId).catch((error: unknown) => {
+      log.warn("hub_task_refusal_not_kept", {
+        run: runId,
+        reason: error instanceof Error ? error.name : "unknown",
       });
-    }
-    return false;
+    });
+    return "refused";
   };
+
+  const lostOne = (taskId: string) =>
+    lostInARow.set(taskId, (lostInARow.get(taskId) ?? 0) + 1);
 
   /** Whether the task is this 라피's, given by this member, and waiting to be taken. */
   const waiting = (task: HubTaskView, me: string) =>
@@ -283,7 +314,7 @@ export function createTaskPickup(options: TaskPickupOptions): TaskPickup {
         .map((note) => note.runId)
         .filter((run): run is string => run !== null),
     );
-    const finished = options.unreported
+    const recorded = options.unreported
       ? await options.unreported({ taskId, noted }).catch((error: unknown) => {
           log.warn("hub_task_ledger_not_read", {
             task: taskId,
@@ -292,6 +323,9 @@ export function createTaskPickup(options: TaskPickupOptions): TaskPickup {
           return null;
         })
       : null;
+    const finished =
+      recorded && !refusedHere.has(recorded.runId) ? recorded : null;
+    const givenUp = !finished && (lostInARow.get(taskId) ?? 0) >= 2;
 
     // A finished run's report is claimed under that run's id: the note it leaves names it.
     const runId = finished?.runId ?? newRunId();
@@ -317,6 +351,10 @@ export function createTaskPickup(options: TaskPickupOptions): TaskPickup {
         if (finished.outcome.kind !== "lost") {
           await report(taskId, runId, finished.outcome);
         }
+        return true;
+      }
+      if (givenUp) {
+        await report(taskId, runId, { kind: "claimLost" });
         return true;
       }
 
@@ -362,8 +400,9 @@ export function createTaskPickup(options: TaskPickupOptions): TaskPickup {
       } finally {
         clearInterval(timer);
       }
-      if (!lost.signal.aborted && outcome.kind !== "lost") {
-        await report(taskId, runId, outcome);
+      if (lost.signal.aborted || outcome.kind === "lost") lostOne(taskId);
+      else if ((await report(taskId, runId, outcome)) === "refused") {
+        lostOne(taskId);
       }
       return true;
     } finally {

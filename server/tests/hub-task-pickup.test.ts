@@ -368,6 +368,91 @@ describe("a task given to this member's 라피", () => {
     ]);
   });
 
+  test("a finished run that keeps losing its claim to the sweep is retried once, then the task is blocked with the fact — not run lap after lap", async () => {
+    const hub = fakeTaskHub();
+    hub.add({ id: "t_15", assignee: `bot:${ME}` });
+    // The hub answers the claim and the move, but none of the run's beats reach it.
+    hub.intercepting((request) =>
+      request.path.endsWith("/heartbeat")
+        ? { ok: false, status: null, code: "laf:hub_unreachable" }
+        : undefined,
+    );
+    const started: string[] = [];
+    let made = 0;
+    const pickup = createTaskPickup({
+      http: hub.as(ME),
+      memberId: () => ME,
+      run: async ({ runId }) => {
+        started.push(runId);
+        // The run outlives its claim, and the sweep frees the task before the run's move.
+        if (started.length <= 4) {
+          hub.advance(LOCK_MS + 1);
+          hub.sweep();
+        }
+        return { kind: "done", steps: 1 };
+      },
+      unreported: async () => null,
+      refused: async () => {},
+      newRunId: () => {
+        made += 1;
+        return `run-f${made}`;
+      },
+    });
+
+    pickup.heard({ type: "task.assigned", refId: "t_15" });
+    await pickup.idle();
+
+    expect(started).toEqual(["run-f1", "run-f2"]);
+    expect(hub.tasks.get("t_15")?.stage).toBe("blocked");
+    expect(hub.tasks.get("t_15")?.notes.map((note) => note.text)).toEqual([
+      "laf:task_claim_lost run:run-f3",
+    ]);
+  });
+
+  test("a refused run whose ledger could not be told is still not reported on the look after it", async () => {
+    const hub = fakeTaskHub();
+    hub.add({ id: "t_16", assignee: `bot:${ME}` });
+    const started: string[] = [];
+    let made = 0;
+    const pickup = createTaskPickup({
+      http: hub.as(ME),
+      memberId: () => ME,
+      run: async ({ runId }) => {
+        started.push(runId);
+        if (started.length === 1) {
+          // A person sends it back to todo before the run's next beat.
+          const held = hub.tasks.get("t_16");
+          if (held) {
+            held.stage = "todo";
+            held.checkout = null;
+            held.version += 1;
+          }
+        }
+        return { kind: "done", steps: 1 };
+      },
+      // The ledger still names the first run as finished and unreported: writing it lost failed.
+      unreported: async ({ noted }) =>
+        started.length === 0 || noted.has("run-g1")
+          ? null
+          : { runId: "run-g1", outcome: { kind: "done" } },
+      refused: async () => {
+        throw new Error("database away");
+      },
+      newRunId: () => {
+        made += 1;
+        return `run-g${made}`;
+      },
+    });
+
+    pickup.heard({ type: "task.assigned", refId: "t_16" });
+    await pickup.idle();
+
+    expect(started).toEqual(["run-g1", "run-g2"]);
+    expect(hub.tasks.get("t_16")?.notes.map((note) => note.text)).toEqual([
+      "laf:task_ran run:run-g2 steps:1",
+    ]);
+  });
+
   test("a task another member gave this 라피 is left as it is; one this member gave it is taken", async () => {
     const hub = fakeTaskHub();
     hub.add({ id: "t_13", assignee: `bot:${ME}`, assignedBy: "m_other" });
