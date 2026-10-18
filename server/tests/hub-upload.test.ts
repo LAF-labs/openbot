@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import * as XLSX from "xlsx";
 import { MAIN_SCOPE, projectScope } from "../../shared/file-scope";
 import { createConverter } from "../src/attachments/converter-client";
+import { WHOLE_BYTES } from "../src/attachments/extract";
 import {
   ComputerUnavailableError,
   FILE_NOT_FOUND,
@@ -142,6 +143,20 @@ describe("the words that go up with a file", () => {
     expect(
       await textOfFile(never, "a.txt", new Uint8Array([0x61, 0, 0x62])),
     ).toBeNull();
+  });
+
+  test("a UTF-8 file cut inside a character past the bound is still read as UTF-8", async () => {
+    const never = {
+      convert: async () => {
+        throw new Error("plain text never reaches the converter");
+      },
+    };
+    const top = "푸른솔식자재 발주는 목요일\n";
+    const filler = "a".repeat(WHOLE_BYTES - 1 - Buffer.byteLength(top));
+    // "가" is three bytes: one starts a byte before the bound, the next straddles four bytes past it.
+    const bytes = new TextEncoder().encode(`${top}${filler}가가가가`);
+    const text = await textOfFile(never, "메모.md", bytes);
+    expect(text).toBe(`${top}${filler}`);
   });
 
   test("a file the converter does not read, or cannot, goes without words", async () => {

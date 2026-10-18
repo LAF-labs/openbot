@@ -164,21 +164,18 @@ export const mayHaveText = (name: string) =>
  * decodes) — the attachment reader's order (`extract.ts`). A NUL is no text file at all.
  */
 function plainText(bytes: Uint8Array): string | null {
-  const head = bytes.subarray(0, WHOLE_BYTES + 4);
+  const cut = bytes.byteLength > WHOLE_BYTES;
+  const head = bytes.subarray(0, WHOLE_BYTES);
   if (head.includes(0)) return null;
+  // `stream` where the bound cuts the file: a character the cut splits is held back, not read as a
+  // byte that is not UTF-8 — which would send a UTF-8 file's words up decoded as the code page.
   let text: string;
   try {
-    text = new TextDecoder("utf-8", { fatal: true }).decode(head);
+    text = new TextDecoder("utf-8", { fatal: true }).decode(head, {
+      stream: cut,
+    });
   } catch {
-    // Cut inside a character, or not UTF-8: the first is fixed by dropping the cut, the second
-    // by the code page.
-    try {
-      text = new TextDecoder("utf-8", { fatal: true }).decode(
-        bytes.subarray(0, Math.min(bytes.byteLength, WHOLE_BYTES)),
-      );
-    } catch {
-      text = new TextDecoder("euc-kr").decode(head);
-    }
+    text = new TextDecoder("euc-kr").decode(head, { stream: cut });
   }
   // The converter's bound for a readable whole: the same for every kind of file.
   if (Buffer.byteLength(text, "utf8") > WHOLE_BYTES) {
