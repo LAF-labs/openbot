@@ -482,6 +482,24 @@ export type JobDefinition = {
   delivery: "chat" | "feed";
 };
 
+/**
+ * The most a definition may weigh as JSON, in bytes: the hub refuses a bigger handoff with 413
+ * (`HUB_JOB_LIMITS.handoffBytes` on the hub), and the outbox drops a refused write — so a routine
+ * turned off and handed on past it would be gone from both VMs. Measured before anything moves.
+ */
+export const HUB_JOB_HANDOFF_MAX_BYTES = 64 * 1024;
+
+/** This VM's fact: the routine's definition is over `HUB_JOB_HANDOFF_MAX_BYTES` and cannot travel. */
+export const HUB_JOB_TOO_LARGE = "laf:job_definition_too_large";
+
+/** Whether the definition fits the hub's handoff, measured as the hub measures it. */
+export function fitsHandoff(definition: JobDefinition): boolean {
+  return (
+    Buffer.byteLength(JSON.stringify(definition), "utf8") <=
+    HUB_JOB_HANDOFF_MAX_BYTES
+  );
+}
+
 export const jobHandoffBody = (input: {
   to: string;
   definition: JobDefinition;

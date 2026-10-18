@@ -10,6 +10,7 @@ import type { HubLink } from "./link";
 import type { HubOutbox } from "./outbox";
 import type { HubJobs } from "./jobs";
 import { allowForTask, ownsBot, type TaskAsks } from "./task-asks";
+import { HUB_JOB_TOO_LARGE } from "./wire";
 
 /**
  * The app's two doors to the company hub, behind the person's session like every other route:
@@ -80,7 +81,11 @@ export function createHubRoutes(
       ? context.json(result)
       : context.json(
           result,
-          result.code === "laf:routine_not_found" ? 404 : 502,
+          result.code === "laf:routine_not_found"
+            ? 404
+            : result.code === HUB_JOB_TOO_LARGE
+              ? 413
+              : 502,
         );
   });
 

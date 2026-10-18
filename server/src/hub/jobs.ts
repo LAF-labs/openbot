@@ -45,7 +45,9 @@ import type { HubHttp } from "./http";
 import type { HubFrame } from "./link";
 import type { HubOutbox } from "./outbox";
 import {
+  fitsHandoff,
   HUB_JOB_PATHS,
+  HUB_JOB_TOO_LARGE,
   type JobDefinition,
   jobHandoffBody,
   jobRegisterBody,
@@ -193,27 +195,6 @@ export function createHubJobs(options: HubJobsOptions): HubJobs {
     return row?.routineId ?? null;
   };
 
-  /** The job went to another member: this copy off first, the definition handed on, the job let go. */
-  const handOn = async (jobId: string, routineId: string, to: string) => {
-    const definition = await definitionOf(database, routineId);
-    await database
-      .update(lafRoutines)
-      .set({ enabled: false, updatedAt: now() })
-      .where(eq(lafRoutines.id, routineId));
-    if (definition) {
-      await options.outbox.enqueue({
-        method: "PUT",
-        path: HUB_JOB_PATHS.handoff(jobId),
-        body: jobHandoffBody({ to, definition }),
-        origin: "job",
-      });
-    }
-    await database
-      .delete(hubJobRoutines)
-      .where(eq(hubJobRoutines.jobId, jobId));
-    log.info("hub_job_handed_on", { job: jobId, routine: routineId });
-  };
-
   /**
    * The job was taken off the register: its link goes, and the routine stays as its person left it,
    * a plain routine again — on or off as it was, its runs counted against the workspace alone. Kept
@@ -232,6 +213,42 @@ export function createHubJobs(options: HubJobsOptions): HubJobs {
         routine: dropped[0]?.routineId ?? null,
       });
     }
+  };
+
+  /** The job went to another member: this copy off first, the definition handed on, the job let go. */
+  const handOn = async (jobId: string, routineId: string, to: string) => {
+    const definition = await definitionOf(database, routineId);
+    if (definition && !fitsHandoff(definition)) {
+      /*
+       * TOO BIG TO TRAVEL, SO IT DOES NOT MOVE. Measured before the switch: turned off and handed
+       * on, the hub would refuse the handoff, the outbox would drop it, and the routine would be
+       * gone from both VMs. It keeps running here as a plain routine — the job link goes, since
+       * the hub no longer counts this member's runs against the job — and the line says why.
+       */
+      await letGo(jobId);
+      log.warn("hub_job_not_handed_on", {
+        job: jobId,
+        routine: routineId,
+        code: HUB_JOB_TOO_LARGE,
+      });
+      return;
+    }
+    await database
+      .update(lafRoutines)
+      .set({ enabled: false, updatedAt: now() })
+      .where(eq(lafRoutines.id, routineId));
+    if (definition) {
+      await options.outbox.enqueue({
+        method: "PUT",
+        path: HUB_JOB_PATHS.handoff(jobId),
+        body: jobHandoffBody({ to, definition }),
+        origin: "job",
+      });
+    }
+    await database
+      .delete(hubJobRoutines)
+      .where(eq(hubJobRoutines.jobId, jobId));
+    log.info("hub_job_handed_on", { job: jobId, routine: routineId });
   };
 
   /** The job is this VM's now: its definition collected, the routine made, the handoff cleared. */
@@ -309,6 +326,8 @@ export function createHubJobs(options: HubJobsOptions): HubJobs {
       await options.mine(actor, routineId);
       const definition = await definitionOf(database, routineId);
       if (!definition) return { ok: false, code: "laf:routine_not_found" };
+      // A sub-Bot that could never be handed on is not registered as one.
+      if (!fitsHandoff(definition)) return { ok: false, code: HUB_JOB_TOO_LARGE };
       const jobId = (await jobOf(routineId)) ?? randomUUID();
       const answer = await http.request({
         method: "PUT",

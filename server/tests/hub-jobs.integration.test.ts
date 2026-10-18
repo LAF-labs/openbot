@@ -417,6 +417,57 @@ describe("a routine as the company's sub-Bot", () => {
     expect(await routinesB.tick()).toBe(1);
   });
 
+  test("a definition too big for the hub's handoff never moves: not registered, and if it grew after, kept running here", async () => {
+    const hub = register();
+    const http = hub.as("m_a");
+    const outbox = directOutbox(http);
+    const jobs = createHubJobs({
+      database,
+      http,
+      outbox,
+      memberId: () => "m_a",
+      mine: (actor, id) => mine(database, actor, id),
+      install: async () => {
+        throw new Error("not this VM's to install");
+      },
+    });
+    // 64 KB of instruction, in three-byte letters: under the cap in characters, over it in bytes.
+    const tooLong = "가".repeat(22_000);
+    const big = await routine(`매출 정리 ${suite}-6`);
+    await database
+      .update(lafRoutines)
+      .set({ instruction: tooLong })
+      .where(eq(lafRoutines.id, big.id));
+    expect(await jobs.register(AUTHOR, big.id)).toEqual({
+      ok: false,
+      code: "laf:job_definition_too_large",
+    });
+    expect(hub.seen).toEqual([]);
+
+    // Registered while small, grown since, then moved to another member.
+    const grown = await routine(`매출 정리 ${suite}-7`);
+    const registered = await jobs.register(AUTHOR, grown.id);
+    if (!registered.ok) throw new Error(registered.code);
+    await database
+      .update(lafRoutines)
+      .set({ instruction: tooLong })
+      .where(eq(lafRoutines.id, grown.id));
+    const job = hub.jobs.get(registered.jobId);
+    if (!job) throw new Error("not registered");
+    hub.jobs.set(registered.jobId, { ...job, owner: "m_b", runner: "m_b" });
+    jobs.heard({ type: "job.moved", refId: registered.jobId });
+    await jobs.idle();
+
+    // Nothing handed on, and the routine still on here, a plain routine again.
+    expect(outbox.sent).toEqual([]);
+    const [row] = await database
+      .select({ enabled: lafRoutines.enabled })
+      .from(lafRoutines)
+      .where(eq(lafRoutines.id, grown.id));
+    expect(row?.enabled).toBe(true);
+    expect(await jobs.jobOf(grown.id)).toBeNull();
+  });
+
   test("the schedule line says when, in the register's words", () => {
     expect(scheduleLine({ kind: "interval", minutes: 30 })).toBe("every 30m");
     expect(
