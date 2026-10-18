@@ -12,8 +12,8 @@
  * WORKING IS READ OFF THE ROOM, NOT SENT TO IT. The hub has no passing signal — no typing line, no
  * status that disappears — and a status MESSAGE would stay in the room for good, one more line
  * for every question anybody asks. Everything a screen needs is already in the room: a person's
- * question to their 라피, and no answer from that 라피 after it yet. So nothing is posted while it
- * works, and every member's screen can still say so.
+ * questions to their 라피, and that 라피's answers to them. So nothing is posted while it works,
+ * and every member's screen can still say so.
  *
  * FOR A WHILE, NOT FOREVER. A VM that is off, or a turn that failed, never answers; the question
  * would read as being worked on until the end of the room. So a question counts as being worked on
@@ -64,30 +64,50 @@ export function isFresh(line: RoomLine, now: number): boolean {
 
 /**
  * The members whose 라피 is working on a question in this room now, oldest question first: a
- * person asked their 라피, the question is fresh, and that 라피 has posted nothing after it.
+ * person asked their 라피, the question is fresh, and no answer of that 라피's is its own yet.
  *
- * `lines` is a page of the room in any order. A member asking twice is listed once.
+ * ONE ANSWER PER QUESTION, IN ORDER. A VM answers its person's questions in a room one after
+ * another, in the order they were asked, so each post by a member's 라피 answers the oldest of
+ * their questions still open. Read as "any post after the question", the answer to the first of
+ * two quick questions ended the second too, and every screen stopped saying it was being worked
+ * on while it still was. A question already past the window when an answer came is not what that
+ * answer answered — its VM does not answer late — so it is passed over, not paired.
+ *
+ * `lines` is a page of the room in any order. A member asking twice is listed once, at the oldest
+ * question still open.
  */
 export function lafiWorking(
   lines: readonly RoomLine[],
   now: number,
 ): { member: string; seq: number }[] {
   const ordered = [...lines].sort((a, b) => a.seq - b.seq);
-  /** The newest number each member's 라피 posted at. */
-  const answered = new Map<string, number>();
+  /** Each member's questions not answered yet, oldest first. */
+  const open = new Map<string, RoomLine[]>();
   for (const line of ordered) {
     const author = roomAuthor(line.by);
-    if (author?.isLafi) answered.set(author.member, line.seq);
+    if (!author) continue;
+    const asked = open.get(author.member) ?? [];
+    if (!author.isLafi) {
+      if (asksOwnLafi(line, author.member)) {
+        open.set(author.member, [...asked, line]);
+      }
+      continue;
+    }
+    const answeredAt = line.at ? Date.parse(line.at) : Number.NaN;
+    const answerable = asked.findIndex(
+      (question) => Number.isNaN(answeredAt) || isFresh(question, answeredAt),
+    );
+    open.set(
+      author.member,
+      answerable === -1 ? [] : asked.slice(answerable + 1),
+    );
   }
-  const working = new Map<string, number>();
-  for (const line of ordered) {
-    const author = roomAuthor(line.by);
-    if (!author || author.isLafi || working.has(author.member)) continue;
-    if (!asksOwnLafi(line, author.member) || !isFresh(line, now)) continue;
-    if ((answered.get(author.member) ?? 0) > line.seq) continue;
-    working.set(author.member, line.seq);
+  const working: { member: string; seq: number }[] = [];
+  for (const [member, asked] of open) {
+    const oldest = asked.find((question) => isFresh(question, now));
+    if (oldest) working.push({ member, seq: oldest.seq });
   }
-  return [...working].map(([member, seq]) => ({ member, seq }));
+  return working.sort((a, b) => a.seq - b.seq);
 }
 
 /**

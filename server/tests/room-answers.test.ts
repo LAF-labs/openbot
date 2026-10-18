@@ -96,6 +96,35 @@ describe("whose 라피 is working, read off the room", () => {
     ).toEqual([{ member: "m_kim", seq: 2 }]);
   });
 
+  test("two quick questions: the first one's answer leaves the second shown until its own", () => {
+    const asked = [
+      { seq: 1, by: "m:m_kim", mentions: ["lafi"], at: ago(9_000) },
+      { seq: 2, by: "m:m_kim", mentions: ["lafi"], at: ago(8_000) },
+      { seq: 3, by: "bot:m_kim", mentions: [], at: ago(5_000) },
+    ];
+    expect(lafiWorking(asked, NOW)).toEqual([{ member: "m_kim", seq: 2 }]);
+    expect(
+      lafiWorking(
+        [...asked, { seq: 4, by: "bot:m_kim", mentions: [], at: ago(1_000) }],
+        NOW,
+      ),
+    ).toEqual([]);
+  });
+
+  test("an answer is not paired with a question already too old when it came", () => {
+    expect(
+      lafiWorking(
+        [
+          // Never answered: its VM was off.
+          { seq: 1, by: "m:m_kim", mentions: ["lafi"], at: ago(30 * 60_000) },
+          { seq: 2, by: "m:m_kim", mentions: ["lafi"], at: ago(9_000) },
+          { seq: 3, by: "bot:m_kim", mentions: [], at: ago(5_000) },
+        ],
+        NOW,
+      ),
+    ).toEqual([]);
+  });
+
   test("a question past the window is no longer shown as worked on", () => {
     expect(
       lafiWorking(
