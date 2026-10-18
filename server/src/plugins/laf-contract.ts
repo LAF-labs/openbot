@@ -21,7 +21,7 @@ export type ToolAnnotations = Record<string, unknown> | null | undefined;
  * Why a call must stop for a person even when the written policy allows it.
  *
  * One list, defined where it travels: a guard goes out on the approval, and the surface writes the
- * sentence for it, so {@link ../computer/approvals#AskGuard} holds the four names and this is the
+ * sentence for it, so {@link ../computer/approvals#AskGuard} holds the names and this is the
  * contract's own word for the same thing. Two spellings of one list is the shape that drifts.
  */
 export type LafGuard = AskGuard;

@@ -57,7 +57,13 @@ const RISKS = [
   [],
 ] as const;
 
-const GUARDS = ["money", "external", "destructive", "unannotated"] as const;
+const GUARDS = [
+  "money",
+  "external",
+  "destructive",
+  "unannotated",
+  "company",
+] as const;
 
 /**
  * The shapes one intent arrives in.

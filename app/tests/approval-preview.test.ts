@@ -102,6 +102,7 @@ describe("what the card says about a preview", () => {
       { field: "review", values: ["x"] },
       { field: "order", values: ["x"] },
       { field: "status", values: ["x"] },
+      { field: "share", values: ["x"] },
     ];
     const lines = previewLines(every);
     expect(lines).toHaveLength(every.length);
@@ -196,6 +197,28 @@ describe("what the card says about a preview", () => {
   });
 });
 
+describe("what goes up to the company", () => {
+  test("every kind the hub's write asks about is named on the card, in Korean", async () => {
+    // Read off the server's own table, so a kind added there that asks — a team file — fails here
+    // until the card can say what it is instead of printing the hub's word for it.
+    const { HUB_WRITE_GUARDS } = await import(
+      "../../server/src/plugins/catalogue"
+    );
+    const asked = Object.entries(HUB_WRITE_GUARDS)
+      .filter(([, guard]) => guard === "company")
+      .map(([kind]) => kind);
+    expect(asked).toEqual(["propose_memory", "skill"]);
+    const unnamed = asked.filter((kind) => {
+      const [line] = previewLines([{ field: "share", values: [kind] }]);
+      return !line || line.value === kind || !ko[line.value];
+    });
+    expect(unnamed).toEqual([]);
+    // A kind the card does not know is shown as the word, never dropped.
+    const [unknown] = previewLines([{ field: "share", values: ["upload"] }]);
+    expect(unknown?.value).toBe("upload");
+  });
+});
+
 describe("naming the tool", () => {
   test("a tool with a label is named by it, and so is its service", () => {
     const said = describeSubject(SENDING_MAIL);
@@ -221,7 +244,13 @@ describe("naming the tool", () => {
     const { CATALOGUE } = await import("../../server/src/plugins/catalogue");
     const missing: string[] = [];
     for (const entry of CATALOGUE) {
-      const guarded = Object.keys(entry.guardedTools ?? {});
+      // A tool asked about kind by kind is guarded where any of its kinds is.
+      const guarded = [
+        ...Object.keys(entry.guardedTools ?? {}),
+        ...Object.entries(entry.guardedKinds ?? {})
+          .filter(([, kinds]) => Object.values(kinds).some(Boolean))
+          .map(([name]) => name),
+      ];
       if (guarded.length === 0) continue;
       const service = serviceLabel(entry.key);
       if (!service || !ko[service]) missing.push(entry.key);
@@ -237,7 +266,7 @@ describe("naming the tool", () => {
 /* ── rendered, in Korean ─────────────────────────────────────────────────────────────────────── */
 
 type Card = { question: string; lines: [string, string][] };
-type Rendered = { page: Card[] };
+type Rendered = { page: Card[]; company: Card[] };
 
 let rendering: Promise<Rendered> | undefined;
 
@@ -282,6 +311,20 @@ describe("the cards, as a Korean reader sees them", () => {
       ],
       ["제목", "9월 정산 안내"],
       ["내용", "안녕하세요.\n9월 정산서를 보내 드려요.… (이하 생략)"],
+    ]);
+  }, 60_000);
+
+  test("a team skill about to go up says it goes to the company, which skill, and its first words", async () => {
+    const { company } = await renderedInKorean();
+    expect(company).toHaveLength(1);
+    const [card] = company;
+    expect(card?.question).toContain(
+      "회사의 ‘팀에 올리기’ 도구를 쓰려 해요. 올리면 회사 사람 모두가 볼 수 있어요.",
+    );
+    expect(card?.lines).toEqual([
+      ["회사에 올릴 것", "팀 스킬"],
+      ["제목", "견적서 쓰는 법"],
+      ["내용", "견적서를 쓸 때 거래처 이름부터"],
     ]);
   }, 60_000);
 });

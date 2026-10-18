@@ -140,7 +140,7 @@ export type AskSubject = {
   tool?: {
     server: string;
     name: string;
-    guard?: "money" | "external" | "destructive" | "unannotated";
+    guard?: "money" | "external" | "destructive" | "unannotated" | "company";
   };
   repeatCount?: number;
   /** What made it high-risk, when that is why it stopped. */
@@ -486,6 +486,12 @@ function reasonPhrase(subject: AskSubject): Phrase | undefined {
     case "destructive":
       return {
         key: "The tool is declared as one that can destroy something.",
+        params: {},
+      };
+    // Not a property of the tool but of what this call does: it goes up to every colleague.
+    case "company":
+      return {
+        key: "Once it goes up, everyone in your company can see it.",
         params: {},
       };
     default:
