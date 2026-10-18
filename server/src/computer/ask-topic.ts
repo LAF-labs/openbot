@@ -10,6 +10,13 @@ import type { AskSubject } from "./approvals";
  * settle step works the topic out of the action in front of it the same way the stop's note did
  * (`settle.ts`). One function, so the note and the allowance cannot name the same action two ways.
  */
+/**
+ * The longest topic the hub takes (`HUB_TASK_TOPIC_SHAPE`, `{1,200}` characters). Longer — a long
+ * host, a long tool name — and the board's yes is refused while the allowance here still stands.
+ * Cut here, once, so the stop's note, the allowance and the settle step all read the same cut.
+ */
+const TOPIC_MAX_CHARS = 200;
+
 export function topicOf(subject: unknown): string {
   const ask = subject as Partial<AskSubject> | null;
   if (!ask || typeof ask !== "object") return "action";
@@ -21,5 +28,10 @@ export function topicOf(subject: unknown): string {
       : ask.tool && typeof ask.tool.server === "string"
         ? `@${ask.tool.server}/${ask.tool.name}`
         : "";
-  return `${kind}${intent}${where}`.replace(/[^\p{L}\p{N}@/._:-]/gu, "");
+  const topic = [
+    ...`${kind}${intent}${where}`.replace(/[^\p{L}\p{N}@/._:-]/gu, ""),
+  ]
+    .slice(0, TOPIC_MAX_CHARS)
+    .join("");
+  return topic || "action";
 }

@@ -95,6 +95,45 @@ async function allowedForTask(at = 1_000_000) {
   return { store, granted };
 }
 
+describe("a stop's topic", () => {
+  /** The hub's shape for a topic (`HUB_TASK_TOPIC_SHAPE`, #267). */
+  const HUB_TOPIC = /^[\p{L}\p{N}@/._:-]{1,200}$/u;
+
+  test("is cut to the 200 characters the hub takes, and the allowance for it still answers the same action", async () => {
+    const host = `${"가".repeat(240)}.example`;
+    const LONG: AskSubject = { ...A_CLICK, host };
+    const topic = topicOf(LONG);
+    expect([...topic]).toHaveLength(200);
+    expect(topic).toStartWith("browser/activate@가가");
+    expect(HUB_TOPIC.test(topic)).toBe(true);
+    // A short one is whole.
+    expect(topicOf(A_CLICK)).toBe("browser/activate@example.com");
+
+    const store = createStandingApprovalStore({ now: () => 1_000_000 });
+    const scope = allowanceFor({ tool: "computer_click", host });
+    await store.grant({
+      botId: BOT,
+      rule: RULE,
+      scope,
+      subject: LONG,
+      grantedBy: OWNER,
+      tier: "board_task",
+      threadId: TASK,
+      taskId: topic,
+    });
+    const settled = await settle(
+      input({ subject: LONG, allowance: scope, boardTaskThreadId: TASK }),
+      deps(store),
+    );
+    expect(settled.outcome).toBe("allowed");
+  });
+
+  test("is never empty", () => {
+    expect(topicOf({ kind: "!!!" })).toBe("action");
+    expect(HUB_TOPIC.test(topicOf({ kind: "!!!" }))).toBe(true);
+  });
+});
+
 describe("an allowance for one board task", () => {
   test("lets the next run of that task past the same kind of action there, under the person's name", async () => {
     const { store, granted } = await allowedForTask();
