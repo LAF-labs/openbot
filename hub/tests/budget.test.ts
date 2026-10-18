@@ -96,8 +96,17 @@ const reserve = (
     ...(scopes ? { scopes } : {}),
   });
 
-const settle = (pass: string, runId: string, actual: number) =>
-  call(pass, "POST", "/budget/settle", { runId, actual });
+const settle = (
+  pass: string,
+  runId: string,
+  actual: number,
+  scopes?: string[],
+) =>
+  call(pass, "POST", "/budget/settle", {
+    runId,
+    actual,
+    ...(scopes ? { scopes } : {}),
+  });
 
 const setLimits = (limits: { scope: string; dailyUsd: number | null }[]) =>
   call(cho.pass, "PUT", "/budget/limits", { limits });
@@ -281,6 +290,39 @@ describe("settle", () => {
       actual: "0.400000",
     });
     expect((await reserve(ann.pass, "run-after", 0.2)).status).toBe(409);
+  });
+
+  test("a settle with no reservation counts only against the scopes its member may name", async () => {
+    await call(ann.pass, "PUT", "/jobs/j-ann-settle", { name: "Ann's job" });
+    await call(ben.pass, "PUT", "/jobs/j-ben-settle", { name: "Ben's job" });
+    const made = await call(ann.pass, "POST", "/tasks", {
+      title: "Kept to ann",
+      visibility: "me",
+    });
+    const hidden = `task:${(made.body.task as HubTask).id}`;
+    await setLimits([
+      { scope: "job:j-ann-settle", dailyUsd: 0.3 },
+      { scope: hidden, dailyUsd: 0.3 },
+    ]);
+    const reply = await settle(ben.pass, "run-settle-others", 0.4, [
+      "job:j-ann-settle",
+      hidden,
+      "job:j-ben-settle",
+    ]);
+    expect(reply.status).toBe(200);
+    // Counted against the workspace and ben's own job; ann's job and task are left off.
+    expect((reply.body.entry as HubBudgetEntry).scopes).toEqual([
+      "workspace",
+      "job:j-ben-settle",
+    ]);
+    expect(
+      (
+        await reserve(ann.pass, "run-ann-job", 0.2, [
+          "job:j-ann-settle",
+          hidden,
+        ])
+      ).status,
+    ).toBe(200);
   });
 });
 
