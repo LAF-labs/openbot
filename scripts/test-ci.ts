@@ -3301,6 +3301,12 @@ const GROUPS: readonly {
    * RAISED 2026-10-18 FOR A BOT MADE AFTER A BOOT WITH NONE, from 4896 to 4897: one in
    * `industry-packs.integration.test.ts` — the person deletes their only Bot, the server restarts,
    * and the Bot they make next holds their kind's pack. 4896 and 1.
+   *
+   * RAISED 2026-10-18 FOR 라피'S HUB TOOLS AGAINST THE HUB'S REAL ROUTES, from 4927 to 4938: seven in
+   * `hub-tools.test.ts` (`next` counted in characters, a long skill kept whole JSON, the hub's
+   * bounds on a slug, a title, mentions and a memory line refused before a row, a Korean slug let
+   * through) and four in `hub-tools.integration.test.ts` against the real hub (a proposal with its
+   * evidence id, a 20,000-character skill, search and a file read on, a post read back). 4927 and 11.
    */
   { name: "server", floor: 4919, roots: ["server"] },
   { name: "app", floor: 2570, roots: ["app"] },
