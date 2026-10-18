@@ -3373,7 +3373,7 @@ const GROUPS: readonly {
    * company takes a member out of every room and coming back does not put them back; nobody is
    * added to a room in the moment they leave).
    */
-  { name: "hub", floor: 77, roots: ["hub"] },
+  { name: "hub", floor: 143, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
