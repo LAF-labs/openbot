@@ -55,6 +55,8 @@ export type TaskAsks = {
   record(ask: TaskAsk): Promise<void>;
   /** The stop still waiting on a person, or null — none, or answered. */
   waiting(taskId: string): Promise<(TaskAsk & { askedAt: string }) | null>;
+  /** The task's next run ended without stopping on a yes: the stop waiting from before is closed. */
+  close(taskId: string): Promise<void>;
 };
 
 const SCOPE_KINDS: ReadonlySet<string> = new Set(["host", "file", "tool"]);
@@ -78,6 +80,15 @@ export function createTaskAsks(database: Database): TaskAsks {
         .insert(hubTaskAsks)
         .values({ taskId: ask.taskId, ...row })
         .onConflictDoUpdate({ target: hubTaskAsks.taskId, set: row });
+    },
+
+    async close(taskId) {
+      // Only one still waiting: an answered one is the record of a yes somebody gave.
+      await database
+        .delete(hubTaskAsks)
+        .where(
+          and(eq(hubTaskAsks.taskId, taskId), isNull(hubTaskAsks.grantedAt)),
+        );
     },
 
     async waiting(taskId) {

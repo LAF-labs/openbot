@@ -429,6 +429,64 @@ describe("a board task stopped for a yes, and the yes for that task only", () =>
     ]);
   });
 
+  test("a stop nobody answered closes when the task's next run ends some other way: the old button grants nothing", async () => {
+    const who = await person();
+    const hub = fakeTaskHub();
+    const http = hub.as(ME);
+    const outbox = directOutbox(http);
+    // The first run meets the boundary and stops; the next one's page no longer asks (a person
+    // did it by hand, say), and finishes.
+    let pageAsks = true;
+    const pickup = createTaskPickup({
+      http,
+      memberId: () => ME,
+      run: createTaskRun({
+        database,
+        ledger,
+        owner: async () => who,
+        resolveAgents: scriptedBots(who.botId, { count: 0 }),
+        tools: (async (botId: string, actor: { id: string }) =>
+          pageAsks
+            ? boundaryTools([])(botId, actor)
+            : { tools: TOOLS, execute: async () => ({ ok: true }) }) as never,
+        asks,
+      }),
+    });
+    const id = taskId();
+    hub.add({ id, assignee: `bot:${ME}`, title: "재고 주문 넣어줘" });
+    await pickup.scan();
+    expect(hub.tasks.get(id)?.stage).toBe("blocked");
+    expect(await asks.waiting(id)).toMatchObject({
+      topic: "browser/activate@shop.example.test",
+    });
+
+    // A person moves it back to to-do on the board themselves; its next run finishes.
+    pageAsks = false;
+    const blocked = hub.tasks.get(id);
+    await hub.as("m_person").request({
+      method: "PATCH",
+      path: `/tasks/${id}`,
+      body: { version: blocked?.version, stage: "todo" },
+    });
+    pickup.heard({ type: "task.changed", refId: id });
+    await pickup.idle();
+    expect(hub.tasks.get(id)?.stage).toBe("review");
+
+    // Nothing waits any more: the old button grants no allowance and tells the board nothing.
+    expect(await asks.waiting(id)).toBeNull();
+    const pressed = await allowForTask(
+      { database, asks, standing, hub: { http, outbox } },
+      who.actor,
+      id,
+    );
+    expect(pressed).toEqual({ ok: false, code: "laf:task_nothing_waiting" });
+    expect(await standing.list(who.botId)).toEqual([]);
+    expect(
+      hub.requests.filter((request) => request.path.endsWith("/approvals")),
+    ).toEqual([]);
+    expect(hub.tasks.get(id)?.stage).toBe("review");
+  });
+
   test("the company's day spent: the task's run never asks the model, and says why", async () => {
     const who = await person();
     const hub = fakeTaskHub();

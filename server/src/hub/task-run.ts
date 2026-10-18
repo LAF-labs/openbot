@@ -207,7 +207,32 @@ function watching(
 
 export function createTaskRun(deps: TaskRunDeps): TaskRun {
   const owner = deps.owner ?? (() => deploymentBot(deps.database));
-  return async ({ task, runId, signal }): Promise<TaskRunOutcome> => {
+  /*
+   * A STOP WAITS FOR A YES ONLY UNTIL THE TASK'S NEXT RUN ENDS. A run that ends any other way — done,
+   * a login, a failure, the company's day, a stop that named no rule to allow — closes the stop
+   * before it, so its button is gone: pressed later, it would grant a week's allowance for a stop
+   * that is no longer the task's, and send a task now blocked for something else back to the board
+   * with a yes for the old topic. A run that stops on a yes again replaces the row (`record`).
+   */
+  const run: TaskRun = async (input) => {
+    const kept = { ask: false };
+    try {
+      return await once(input, kept);
+    } finally {
+      if (deps.asks && !kept.ask) {
+        await deps.asks.close(input.task.id).catch((error: unknown) => {
+          log.warn("task_ask_not_closed", {
+            task: input.task.id,
+            reason: describeFailure(error),
+          });
+        });
+      }
+    }
+  };
+  const once = async (
+    { task, runId, signal }: Parameters<TaskRun>[0],
+    kept: { ask: boolean },
+  ): Promise<TaskRunOutcome> => {
     const who = await owner();
     if (!who) {
       return { kind: "failed", code: "laf:bot_not_found", steps: 0 };
@@ -334,6 +359,9 @@ export function createTaskRun(deps: TaskRunDeps): TaskRun {
                   topic: stoppedOn.topic,
                   ...stoppedOn.ask,
                 })
+                .then(() => {
+                  kept.ask = true;
+                })
                 .catch((error: unknown) => {
                   log.warn("task_ask_not_kept", {
                     task: task.id,
@@ -423,6 +451,7 @@ export function createTaskRun(deps: TaskRunDeps): TaskRun {
     }
     return outcome;
   };
+  return run;
 }
 
 /** The company's day was spent before the run started: nothing was asked of the model. */
