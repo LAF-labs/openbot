@@ -3334,8 +3334,13 @@ const GROUPS: readonly {
    * gave this 라피 left as it is) and hub-task-run.integration.test.ts 4 (a person's stop reported as
    * one; a lost run told apart and worked again; a refused run never reported; a project deleted
    * mid-run stopping its run first). 4984 and 6.
+   *
+   * RAISED 2026-10-18 FOR THE TASK PICKUP'S LAST REVIEW ROUND, from 4990 to 4992:
+   * hub-task-pickup.test.ts 2 (runs losing their claim twice in a row block the task instead of
+   * running lap after lap; a refused run not reported on the next look though its ledger write
+   * failed). 4990 and 2.
    */
-  { name: "server", floor: 4990, roots: ["server"] },
+  { name: "server", floor: 4992, roots: ["server"] },
   { name: "app", floor: 2570, roots: ["app"] },
   {
     name: "agent-computer",
