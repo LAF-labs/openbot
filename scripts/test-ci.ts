@@ -3353,7 +3353,12 @@ const GROUPS: readonly {
    * with no key refused; four bad messages and one at the limit; the trail without text; paging
    * forward, newest and backward; four bad queries).
    */
-  { name: "hub", floor: 75, roots: ["hub"] },
+  /*
+   * RAISED 2026-10-18 FOR A DEPARTURE FROM THE ROOMS, from 75 to 77: rooms.test.ts 2 (leaving the
+   * company takes a member out of every room and coming back does not put them back; nobody is
+   * added to a room in the moment they leave).
+   */
+  { name: "hub", floor: 77, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
