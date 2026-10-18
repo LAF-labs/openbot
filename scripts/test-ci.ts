@@ -3281,7 +3281,10 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * (hub-tools.test.ts, 22); the writes through the outbox on a real Postgres (hub-tools
  * .integration.test.ts, 3: a post sent once with its row's key, a write kept through an outage and
  * sent once after, a refusal ended); and the head of the prompt the same bytes with and without
- * the hub, and no hub tool without the pass (hub-tools-head.test.ts, 3). 4747 and 28.
+ * the hub, and no hub tool without the pass (hub-tools-head.test.ts, 3). 4747 and 28. Then
+ * `server` by two more (to 4883 on top of 4881): a write meeting a refused pass is said as that,
+ * not as kept — with no row when it was known before (hub-tools.test.ts), the row waiting when the
+ * hub's 401 came during the write (hub-tools.integration.test.ts).
  */
 const GROUPS: readonly {
   name: string;

@@ -171,4 +171,28 @@ describe("writing to the company hub", () => {
     await outbox.sweep();
     expect(sent).toHaveLength(1);
   });
+
+  test("a write that meets a refused pass is said as the refused pass, not as kept, and the row waits", async () => {
+    const { tools } = hubAnswering(() => ({
+      ok: false,
+      status: 401,
+      code: "laf:hub_pass_refused",
+    }));
+    let code: string | null = null;
+    try {
+      await tools.callTool(chat, "write", {
+        kind: "post",
+        room: "r_1",
+        text: "내일 회의는 10시예요.",
+      });
+    } catch (error) {
+      if (error instanceof PluginRefusedError) code = error.code;
+    }
+    expect(code).toBe("laf:hub_pass_refused");
+    // A 401 ends nothing: the row is neither delivered nor refused, for a pass that works.
+    const row = await rowOf(made[0] ?? "");
+    expect(row?.lastCode).toBe("laf:hub_pass_refused");
+    expect(row?.deliveredAt).toBeNull();
+    expect(row?.refusedAt).toBeNull();
+  });
 });
