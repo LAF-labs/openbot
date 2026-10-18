@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { sql } from "drizzle-orm";
 import type { HubEvent, HubSync } from "../../../shared/hub/protocol";
+import type { HubTransaction } from "../../src/db/client";
 import type { TestHub } from "./hub";
 
 export type Reply = { status: number; body: Record<string, unknown> };
@@ -51,4 +53,32 @@ export async function headOf(hub: TestHub, pass: string): Promise<number> {
     headers: { authorization: `Bearer ${pass}` },
   });
   return ((await response.json()) as { seq: number }).seq;
+}
+
+/**
+ * A read that a write commits in the middle of. `hub_versions` is held exclusively, the read is
+ * sent, and only once Postgres shows it waiting on that table — so after whatever it read before
+ * reaching the version — does `write` run, in the transaction holding the lock, and commit.
+ */
+export async function readAcrossACommit(
+  hub: TestHub,
+  read: () => Promise<Reply>,
+  write: (tx: HubTransaction) => Promise<void>,
+): Promise<Reply> {
+  let answer: Promise<Reply> | undefined;
+  await hub.database.transaction(async (tx) => {
+    await tx.execute(sql`lock table hub_versions in access exclusive mode`);
+    answer = read();
+    for (let tries = 0; ; tries++) {
+      const waiting = await hub.database.execute(
+        sql`select 1 from pg_locks where not granted and relation = 'hub_versions'::regclass`,
+      );
+      if (waiting.length > 0) break;
+      if (tries > 500) throw new Error("the read never reached hub_versions");
+      await Bun.sleep(10);
+    }
+    await write(tx);
+  });
+  if (!answer) throw new Error("the read was never sent");
+  return answer;
 }

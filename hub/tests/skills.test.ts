@@ -5,8 +5,10 @@ import type {
   HubSkillList,
   HubSkillPut,
 } from "../../shared/hub/protocol";
+import { hubSkills } from "../src/db/schema";
+import { bumpVersion } from "../src/versions";
 import { newPass, putMember, startTestHub, type TestHub } from "./support/hub";
-import { call, eventsAfter, headOf } from "./support/write";
+import { call, eventsAfter, headOf, readAcrossACommit } from "./support/write";
 
 let hub: TestHub;
 const admin = {
@@ -168,6 +170,32 @@ describe("a team skill", () => {
       title: "리뷰 답장",
       summary: "가게 리뷰에 답장을 단다 답장 끝에는 늘 쿠폰 링크를 붙인다 끝",
     });
+  });
+
+  test("is listed with the version of the rows it lists, a save committing between the two", async () => {
+    const list = () => call(hub, peer.pass, "GET", "/skills");
+    const before = (await list()).body as HubSkillList;
+    const during = (
+      await readAcrossACommit(hub, list, async (tx) => {
+        const now = new Date();
+        await tx.insert(hubSkills).values({
+          slug: "mid-read",
+          title: "중간에 저장",
+          instructions: "x",
+          createdBy: authorId,
+          updatedBy: authorId,
+          createdAt: now,
+          updatedAt: now,
+        });
+        await bumpVersion(tx, "skills");
+      })
+    ).body as HubSkillList;
+    // A VM holding the newer number fetches nothing more, so it must come with the newer rows.
+    const listed = during.skills.some((row) => row.slug === "mid-read");
+    expect([during.version > before.version, listed]).toEqual([listed, listed]);
+    const after = (await list()).body as HubSkillList;
+    expect(after.version).toBe(before.version + 1);
+    expect(after.skills.some((row) => row.slug === "mid-read")).toBe(true);
   });
 
   test("with a slug the VM could not call is refused", async () => {

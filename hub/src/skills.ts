@@ -21,7 +21,7 @@ import { hubSkills } from "./db/schema";
 import { emitEvent, type Listeners } from "./events";
 import type { Answer } from "./idempotency";
 import { invalid, isAdmin, jsonBody, memberWrite, runOf } from "./member-write";
-import { bumpVersion, readVersions } from "./versions";
+import { bumpVersion, readVersions, readWithVersions } from "./versions";
 
 /**
  * Skill writes, one at a time. Arbitrary, fixed, used for nothing else, and taken before the
@@ -166,14 +166,13 @@ export function skillRoutes(options: SkillRouteOptions) {
   route.use("*", options.member);
 
   route.get("/", async (context) => {
-    const rows = await database
-      .select()
-      .from(hubSkills)
-      .orderBy(asc(hubSkills.slug));
+    const { value: rows, versions } = await readWithVersions(database, (tx) =>
+      tx.select().from(hubSkills).orderBy(asc(hubSkills.slug)),
+    );
     const body: HubSkillList = {
       ok: true,
       skills: rows.map(entryOf),
-      version: (await readVersions(database)).skills,
+      version: versions.skills,
     };
     return context.json(body);
   });
