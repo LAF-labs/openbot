@@ -18,7 +18,7 @@ import { hubEvents } from "./db/schema";
  * is final. The cost is that event-writing transactions queue behind each other; they are short
  * and a hub's write rate is people's, not machines'.
  */
-const EVENT_WRITE_LOCK = 7_200_001;
+export const EVENT_WRITE_LOCK = 7_200_001;
 
 export type EmitInput = {
   type: HubEventType;
