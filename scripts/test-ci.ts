@@ -3292,8 +3292,8 @@ const GROUPS: readonly {
    * `industry-packs.integration.test.ts` — the person deletes their only Bot, the server restarts,
    * and the Bot they make next holds their kind's pack. 4896 and 1.
    */
-  { name: "server", floor: 4897, roots: ["server"] },
-  { name: "app", floor: 2543, roots: ["app"] },
+  { name: "server", floor: 4919, roots: ["server"] },
+  { name: "app", floor: 2570, roots: ["app"] },
   {
     name: "agent-computer",
     /*
@@ -3415,7 +3415,7 @@ const GROUPS: readonly {
    * `concurrent` off keeping the lease opened first and ending the others; with none opened, keeping
    * the lease taken first; an open waiting for a change of the login's rules under way).
    */
-  { name: "hub", floor: 250, roots: ["hub"] },
+  { name: "hub", floor: 252, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
