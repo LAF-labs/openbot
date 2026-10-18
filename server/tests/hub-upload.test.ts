@@ -579,7 +579,7 @@ describe("the hub's answer to an upload", () => {
     expect(last?.headers.get("x-laf-origin")).toBe("chat");
   });
 
-  test("full ends the row; busy and down keep it; a refusal says its code", async () => {
+  test("a refusal the hub names is said as its code; a 5xx nobody named is the hub away", async () => {
     status = 507;
     body = { ok: false, code: "laf:hub_full" };
     expect(await send()).toEqual({
@@ -589,7 +589,24 @@ describe("the hub's answer to an upload", () => {
     });
     status = 503;
     body = { ok: false, code: "laf:hub_busy" };
-    expect(await send()).toMatchObject({ code: "laf:hub_unreachable" });
+    expect(await send()).toEqual({
+      ok: false,
+      status: 503,
+      code: "laf:hub_busy",
+    });
+    body = { ok: false, code: "laf:hub_files_unset" };
+    expect(await send()).toEqual({
+      ok: false,
+      status: 503,
+      code: "laf:hub_files_unset",
+    });
+    status = 502;
+    body = null;
+    expect(await send()).toEqual({
+      ok: false,
+      status: 502,
+      code: "laf:hub_unreachable",
+    });
     status = 413;
     body = { ok: false, code: "laf:hub_file_too_large" };
     expect(await send()).toMatchObject({ code: "laf:hub_file_too_large" });

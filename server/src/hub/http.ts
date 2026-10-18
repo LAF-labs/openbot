@@ -280,20 +280,25 @@ export function createHubHttp(options: HubHttpOptions): HubHttp {
         if (response.ok) {
           return { ok: true, status: response.status, body: parsed as T };
         }
-        // A full disk is the hub answering, not the hub away: the same file gets the same answer
-        // until somebody makes room, so it ends the row rather than being offered every five minutes.
+        /*
+         * A refusal the hub named is the hub answering, whatever its status: a 503 for a hub with no
+         * file space (`laf:hub_files_unset`) is said the same way every time, and one for an upload
+         * too many (`laf:hub_busy`) asks for the file again soon. Read as the hub away, either
+         * would hold every write behind the row (`outbox.ts`). What each means for the row is the
+         * outbox's to say; here only what was answered.
+         */
         const code = (parsed as { code?: unknown } | null)?.code;
-        if (response.status === 507) {
-          return {
-            ok: false,
-            status: 507,
-            code:
-              typeof code === "string" && code.startsWith("laf:")
-                ? code
-                : HUB_UPLOAD_FULL,
-          };
+        if (
+          response.status >= 500 &&
+          typeof code === "string" &&
+          code.startsWith("laf:")
+        ) {
+          return { ok: false, status: response.status, code };
         }
-        // 429 and 503 (`laf:hub_busy`, `laf:hub_blob_restoring`) ask to be tried again.
+        if (response.status === 507) {
+          return { ok: false, status: 507, code: HUB_UPLOAD_FULL };
+        }
+        // A 429, or a 5xx nobody named (a proxy in front of a hub that is restarting): away.
         if (response.status === 429) {
           return { ok: false, status: 429, code: HUB_FACTS.unreachable };
         }

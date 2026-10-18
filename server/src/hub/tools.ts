@@ -556,7 +556,17 @@ export function createHubToolTransport(
    * A row already written — by `send`, or by `upload.ts` for a file — and whether the hub took it.
    */
   async function settle(kind: WriteKind, id: string): Promise<McpCallResult> {
-    await Promise.race([runtime.outbox.sweep(), sleep(HUB_WRITE_WAIT_MS)]);
+    const sending = () =>
+      resultOf({
+        kind,
+        sent: false,
+        sending: true,
+        note: toolResultText(HUB_UPLOAD_SENDING),
+      });
+    await Promise.race([
+      runtime.outbox.sweep(kind === "upload" ? "uploads" : "writes"),
+      sleep(HUB_WRITE_WAIT_MS),
+    ]);
     const columns = {
       deliveredAt: hubOutbox.deliveredAt,
       refusedAt: hubOutbox.refusedAt,
@@ -585,14 +595,7 @@ export function createHubToolTransport(
           .select(columns)
           .from(hubOutbox)
           .where(eq(hubOutbox.id, id));
-        if (row && !row.deliveredAt && !row.refusedAt) {
-          return resultOf({
-            kind,
-            sent: false,
-            sending: true,
-            note: toolResultText(HUB_UPLOAD_SENDING),
-          });
-        }
+        if (row && !row.deliveredAt && !row.refusedAt) return sending();
       }
     } else {
       // FOR UPDATE: an attempt still on its way holds this row's lock for its one request, and read
@@ -613,6 +616,11 @@ export function createHubToolTransport(
     // Met just now: the outbox keeps the row (a 401 ends nothing) and has told the line.
     if (row?.lastCode === HUB_FACTS.passRefused || runtime.passRefused?.()) {
       refuse(HUB_FACTS.passRefused);
+    }
+    // An upload kept for anything but the hub being away — behind another upload in its lane, a
+    // hub that asked for it again, its computer for a moment — is on its way, not "unreachable".
+    if (kind === "upload" && row && row.lastCode !== HUB_FACTS.unreachable) {
+      return sending();
     }
     return resultOf({ kind, sent: false, note: toolResultText(HUB_QUEUED) });
   }

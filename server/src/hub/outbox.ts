@@ -17,6 +17,11 @@
  * the same refusal. A 401 ends nothing — the row waits for a pass that works, and nothing is sent
  * until then (`paused`). A hub that does not answer leaves the row, and the sweep stops at it: the
  * rows behind it would meet the same hub.
+ *
+ * UPLOADS GO IN A LANE OF THEIR OWN. One upload's attempt is as long as its file (`http.ts`, up to
+ * half an hour on a slow line); a room post written meanwhile must not stand behind it, or be read
+ * as kept because the hub is away while the hub is up. Each lane is one sweep at a time, oldest
+ * first, and a hub found away stops only the lane that found it.
  */
 import { randomUUID } from "node:crypto";
 import { and, eq, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
@@ -47,23 +52,54 @@ export type HubOutboxWrite = {
 
 export type HubSweep = { delivered: number; refused: number; kept: number };
 
+export type HubOutboxLane = "writes" | "uploads";
+
 export type HubOutbox = {
   /** Writes the row and offers it at once. Answers its id, which is its `Idempotency-Key`. */
   enqueue(write: HubOutboxWrite): Promise<string>;
-  /** Offers every row the hub has not answered, oldest first. One sweep at a time per process. */
-  sweep(): Promise<HubSweep>;
+  /**
+   * Offers every row of a lane the hub has not answered, oldest first; both lanes when none is
+   * named. One sweep at a time per lane per process.
+   */
+  sweep(lane?: HubOutboxLane): Promise<HubSweep>;
 };
 
 /**
  * `waiting`: an upload whose file could not be read again because the computer did not answer.
- * The row stays, but the hub is not away, so the rows behind it are still offered.
+ * `busy`: an upload the hub asked for again (`ASKED_AGAIN`), tried again after the same waits as a
+ * hub that did not answer. Either way the row stays, but the hub is not away, so the rows behind it
+ * are still offered.
  */
 type Attempt =
   | "delivered"
   | "refused"
   | "unreachable"
   | "pass_refused"
-  | "waiting";
+  | "waiting"
+  | "busy";
+
+/**
+ * What a hub that is there says to an upload it will take later: too many at once
+ * (`hub/src/files/routes.ts`), or its upload listener failing on this one (`hub/src/uploads.ts`).
+ * Every other code it names ends the row — a hub with no file space (`laf:hub_files_unset`) says so
+ * to every upload, and a full one until somebody makes room.
+ */
+const ASKED_AGAIN: ReadonlySet<string> = new Set([
+  HUB_FACTS.busy,
+  "laf:hub_failed",
+]);
+
+/** An upload's row (`upload.ts`, `uploadReferenceOf`): its lane, in SQL and in a write. */
+const UPLOAD_ROW = sql`coalesce(jsonb_typeof(${hubOutbox.body} -> 'upload') = 'object', false)`;
+const inUploadLane = (body: unknown) => {
+  const upload =
+    body && typeof body === "object" && !Array.isArray(body)
+      ? (body as { upload?: unknown }).upload
+      : undefined;
+  return (
+    Boolean(upload) && typeof upload === "object" && !Array.isArray(upload)
+  );
+};
 
 export function createHubOutbox(input: {
   database: Database;
@@ -88,15 +124,26 @@ export function createHubOutbox(input: {
     input.sleep ??
     ((milliseconds: number) =>
       new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
-  let running: Promise<HubSweep> | null = null;
-  let again = false;
+  const running: Record<HubOutboxLane, Promise<HubSweep> | null> = {
+    writes: null,
+    uploads: null,
+  };
+  const again: Record<HubOutboxLane, boolean> = {
+    writes: false,
+    uploads: false,
+  };
 
   /** One request for one row, holding its lock for that request only. Null: another sender has it. */
-  const attempt = (id: string | null, skip: readonly string[]) =>
+  const attempt = (
+    lane: HubOutboxLane,
+    id: string | null,
+    skip: readonly string[],
+  ) =>
     database.transaction(async (tx): Promise<[string, Attempt] | null> => {
       const pending = and(
         isNull(hubOutbox.deliveredAt),
         isNull(hubOutbox.refusedAt),
+        lane === "uploads" ? UPLOAD_ROW : sql`not ${UPLOAD_ROW}`,
       );
       const [row] = await tx
         .select()
@@ -148,7 +195,9 @@ export function createHubOutbox(input: {
             ? "unreachable"
             : upload && answer.code === HUB_UPLOAD_SOURCE_AWAY
               ? "waiting"
-              : "refused";
+              : upload && ASKED_AGAIN.has(answer.code)
+                ? "busy"
+                : "refused";
       await tx
         .update(hubOutbox)
         .set({
@@ -163,8 +212,16 @@ export function createHubOutbox(input: {
       return [row.id, outcome];
     });
 
-  const sweepOnce = async (): Promise<HubSweep> => {
-    const tally: HubSweep = { delivered: 0, refused: 0, kept: 0 };
+  /**
+   * One pass over a lane. `skipped`: rows another sender held when this sweep reached them — theirs,
+   * not to be waited on — and rows kept for a reason that is not the hub away, offered again by the
+   * next sweep and not by this one. `stopped`: it met a hub that is away, or a pass it refused.
+   */
+  const sweepOnce = async (
+    lane: HubOutboxLane,
+    skipped: string[],
+  ): Promise<HubSweep & { stopped: boolean }> => {
+    const tally = { delivered: 0, refused: 0, kept: 0, stopped: false };
     await database
       .delete(hubOutbox)
       .where(
@@ -173,18 +230,16 @@ export function createHubOutbox(input: {
           lt(hubOutbox.createdAt, new Date(Date.now() - ANSWERED_KEPT_MS)),
         ),
       );
-    /** Rows another sender held when this sweep reached them: theirs, not to be waited on. */
-    const skipped: string[] = [];
     for (;;) {
       if (input.paused?.()) return tally;
-      let result = await attempt(null, skipped);
+      let result = await attempt(lane, null, skipped);
       if (!result) return tally;
       const [id] = result;
       for (const wait of HUB_RETRY_MS) {
-        if (result?.[1] !== "unreachable") break;
+        if (result?.[1] !== "unreachable" && result?.[1] !== "busy") break;
         await sleep(wait);
         if (input.paused?.()) break;
-        result = await attempt(id, []);
+        result = await attempt(lane, id, []);
         // Taken by another sender in the wait, or answered by it: either way not this sweep's.
         if (!result) break;
       }
@@ -193,8 +248,9 @@ export function createHubOutbox(input: {
         skipped.push(id);
         continue;
       }
-      // Its own file was out of reach, not the hub: it waits for the next sweep, the rest go on.
-      if (outcome === "waiting") {
+      // Its own file out of reach, or a hub that is there and wants it later: it waits for the next
+      // sweep, the rest go on.
+      if (outcome === "waiting" || outcome === "busy") {
         tally.kept += 1;
         skipped.push(id);
         continue;
@@ -203,6 +259,7 @@ export function createHubOutbox(input: {
       else if (outcome === "refused") tally.refused += 1;
       else {
         tally.kept += 1;
+        tally.stopped = true;
         if (outcome === "pass_refused") input.onPassRefused?.();
         // The rows behind it would meet the same hub. They wait for the next sweep.
         log.info("hub_outbox_kept", { code: outcome });
@@ -211,31 +268,51 @@ export function createHubOutbox(input: {
     }
   };
 
-  const sweep = (): Promise<HubSweep> => {
-    if (running) {
-      again = true;
-      return running;
+  const sweepLane = (lane: HubOutboxLane): Promise<HubSweep> => {
+    const current = running[lane];
+    if (current) {
+      again[lane] = true;
+      return current;
     }
-    running = (async () => {
+    const started = (async () => {
       const total: HubSweep = { delivered: 0, refused: 0, kept: 0 };
       try {
+        let stopped = false;
+        const skipped: string[] = [];
         do {
-          again = false;
-          const one = await sweepOnce();
+          again[lane] = false;
+          const one = await sweepOnce(lane, skipped);
           total.delivered += one.delivered;
           total.refused += one.refused;
           total.kept += one.kept;
-        } while (again && total.kept === 0);
+          stopped = one.stopped;
+          // Asked again while it ran: a row written after its last look is offered now, not in five
+          // minutes — unless the hub was found away, which the next sweep would only find again.
+        } while (again[lane] && !stopped);
       } catch (error) {
         log.warn("hub_outbox_sweep_failed", {
           reason: error instanceof Error ? error.name : "unknown",
         });
       } finally {
-        running = null;
+        running[lane] = null;
       }
       return total;
     })();
-    return running;
+    running[lane] = started;
+    return started;
+  };
+
+  const sweep = async (lane?: HubOutboxLane): Promise<HubSweep> => {
+    if (lane) return sweepLane(lane);
+    const [writes, uploads] = await Promise.all([
+      sweepLane("writes"),
+      sweepLane("uploads"),
+    ]);
+    return {
+      delivered: writes.delivered + uploads.delivered,
+      refused: writes.refused + uploads.refused,
+      kept: writes.kept + uploads.kept,
+    };
   };
 
   return {
@@ -249,7 +326,7 @@ export function createHubOutbox(input: {
         origin: write.origin,
         runId: write.runId ?? null,
       });
-      void sweep();
+      void sweepLane(inUploadLane(write.body) ? "uploads" : "writes");
       return id;
     },
     sweep,
