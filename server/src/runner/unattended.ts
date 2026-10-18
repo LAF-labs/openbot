@@ -380,6 +380,11 @@ export type UnattendedToolsOptions = {
    * a run of theirs is offered the way to sign in with one. Absent where there is no vault.
    */
   logins?: Pick<LoginVault, "passwordsAt" | "list">;
+  /**
+   * The company logins' passwords this VM put into a page (`ComputerGateway.companyPasswordsAt`),
+   * taken out beside the person's own. Absent on a VM that belongs to no company.
+   */
+  companyPasswordsAt?: ComputerGateway["companyPasswordsAt"];
 };
 
 /**
@@ -398,6 +403,9 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
    */
   const withoutSavedPasswords = createShownGuard({
     ...(options.logins ? { logins: options.logins } : {}),
+    ...(options.companyPasswordsAt
+      ? { company: options.companyPasswordsAt }
+      : {}),
     seen: (run, hidden) => options.gateway?.handedOver(run.botId, run, hidden),
   });
   return async (

@@ -575,6 +575,35 @@ export function createSecrets(deps: {
     ]);
   }
 
+  /**
+   * THE PASSWORD OF EACH COMPANY LOGIN THIS VM PUT INTO A PAGE, for the server's look after the
+   * run (`logins/shown.ts`): a site keeps what it was given and can write it back in a later run,
+   * when the computer has forgotten it. A person's own is read again from the vault for that look;
+   * a company's cannot be — the hub opens a lease once — so it is kept, in this process's memory
+   * and nowhere else, never written, logged or sent: the last one opened for each login, as long
+   * as this process runs. A server that starts again has forgotten it, as it has its leases.
+   */
+  const companyShown = new Map<
+    string,
+    { origins: readonly string[]; password: string }
+  >();
+
+  /** The company passwords put in here that a page at each address may show back. */
+  function companyPasswordsAt(
+    addresses: readonly string[],
+  ): Map<string, string[]> {
+    const shown = new Map<string, string[]>();
+    for (const address of new Set(addresses)) {
+      for (const { origins, password } of companyShown.values()) {
+        if (!password || !isSavedOrigin(origins, address, originOptions)) {
+          continue;
+        }
+        shown.set(address, [...(shown.get(address) ?? []), password]);
+      }
+    }
+    return shown;
+  }
+
   /** Which company logins this Bot's runs hold now. For a test, and for nothing that acts. */
   function companyLeases(botId: string): { run: string; login: string }[] {
     return [...(companyHolds.get(botId) ?? new Map()).entries()].flatMap(
@@ -1144,6 +1173,10 @@ export function createSecrets(deps: {
               throw new CompanyLoginUnavailableError();
             // Noted before the values leave, as for the person's own (`savedLoginFor`'s fill).
             putInFor(botId, actor.runKey ?? actor.threadId, computerId);
+            companyShown.set(login.id, {
+              origins: login.origins,
+              password: opened.password,
+            });
             const filled = await as(computerId, botId).fillLogin(
               boxes.map((box, index) => ({
                 ...box,
@@ -1728,6 +1761,7 @@ export function createSecrets(deps: {
     supplySecret,
     holdsValues,
     companyLeases,
+    companyPasswordsAt,
     handedOver,
     frameWithheld,
     valuesSeen,

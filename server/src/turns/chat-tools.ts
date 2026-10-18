@@ -158,6 +158,11 @@ export type ChatToolsDeps = {
    */
   logins?: Pick<LoginVault, "passwordsAt">;
   /**
+   * The company logins' passwords this VM put into a page (`ComputerGateway.companyPasswordsAt`),
+   * taken out beside the person's own. Absent on a VM that belongs to no company.
+   */
+  companyPasswordsAt?: ComputerGateway["companyPasswordsAt"];
+  /**
    * `offeredToModel`, never `listForAgent`: this list is read by a model, and the other one holds a
    * vendor's unreviewed words for a tool that waits for review (`OfferedPlugins`, `store.ts`).
    */
@@ -563,6 +568,7 @@ export function createChatTools(deps: ChatToolsDeps) {
   // over, so that no picture of them is kept (`computer/gateway/secrets.ts`, `handedOver`).
   const withoutSavedPasswords = createShownGuard({
     ...(deps.logins ? { logins: deps.logins } : {}),
+    ...(deps.companyPasswordsAt ? { company: deps.companyPasswordsAt } : {}),
     seen: (run, hidden) => deps.gateway?.handedOver(run.botId, run, hidden),
   });
   return async (

@@ -163,6 +163,14 @@ export type ShownGuard = <T>(run: ShownRun, outcome: T) => Promise<T>;
 export function createShownGuard(deps: {
   logins?: Pick<LoginVault, "passwordsAt">;
   /**
+   * The company logins' passwords this VM put into a page, by address
+   * (`computer/gateway/secrets.ts`, `companyPasswordsAt`): looked for beside the person's own, on
+   * the sites they were put into and no others.
+   */
+  company?: (
+    addresses: readonly string[],
+  ) => ReadonlyMap<string, readonly string[]>;
+  /**
    * Told of every outcome handed over, and whether a password was hidden in it. The page that
    * showed one is on screen, so nothing of the run is pictured from there on — and the calls
    * after a hit are the ones its picture would be filed under (`computer/gateway/secrets.ts`,
@@ -173,8 +181,9 @@ export function createShownGuard(deps: {
   /** Said once for each: a login this server cannot read is read at every look at its site. */
   const warned = new Set<string>();
   const vault = deps.logins;
-  // No vault: nothing was saved, nothing can be shown back, and there is nobody to tell.
-  if (!vault) return async (_run, outcome) => outcome;
+  const company = deps.company;
+  // Nothing saved and no company: nothing can be shown back, and there is nobody to tell.
+  if (!vault && !company) return async (_run, outcome) => outcome;
   const hiddenIn = async <T>(
     run: ShownRun,
     outcome: T,
@@ -185,11 +194,16 @@ export function createShownGuard(deps: {
     if (Array.isArray(outcome)) return { outcome, hidden: false };
     const origins = pageOriginsIn(outcome);
     if (origins.length === 0) return { outcome, hidden: false };
-    const { shown, unreadable } = await vault.passwordsAt(run.userId, origins);
+    const { shown, unreadable } = vault
+      ? await vault.passwordsAt(run.userId, origins)
+      : { shown: new Map<string, string[]>(), unreadable: [] };
     const news = unreadable.filter((id) => !warned.has(id));
     if (news.length > 0) {
       for (const id of news) warned.add(id);
       log.warn("saved_login_unreadable", { bot: run.botId, logins: news });
+    }
+    for (const [origin, passwords] of company?.(origins) ?? []) {
+      shown.set(origin, [...(shown.get(origin) ?? []), ...passwords]);
     }
     if (shown.size === 0) return { outcome, hidden: false };
     const left = withoutShown(outcome, shown);

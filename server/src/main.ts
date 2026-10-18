@@ -953,6 +953,9 @@ const unattendedTools = createUnattendedTools({
   ...(computerGateway ? { gateway: computerGateway } : {}),
   pluginStore,
   logins: loginVault,
+  ...(computerGateway && hubRuntime
+    ? { companyPasswordsAt: computerGateway.companyPasswordsAt }
+    : {}),
 });
 
 /**
@@ -1076,6 +1079,10 @@ const chatTools = createChatTools({
   delegatesBrowsing: DELEGATES_BROWSING,
   pluginStore,
   logins: loginVault,
+  // The company's passwords this VM put in, taken out beside the person's own (`hub/vault.ts`).
+  ...(computerGateway && hubRuntime
+    ? { companyPasswordsAt: computerGateway.companyPasswordsAt }
+    : {}),
   approvals,
   people: personAnswers,
   agents: agentProfileStore,

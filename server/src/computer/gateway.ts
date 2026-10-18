@@ -300,6 +300,8 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
     holdsValues: secrets.holdsValues,
     /** The company logins this Bot's runs hold leases on. See `gateway/secrets.ts`. */
     companyLeases: secrets.companyLeases,
+    /** The company passwords put into a page here, for the look after a run (`logins/shown.ts`). */
+    companyPasswordsAt: secrets.companyPasswordsAt,
     /** A browser call's outcome was handed to a model, with or without a saved password hidden in it. */
     handedOver: secrets.handedOver,
     /** Whether a picture offered for this call is one not to keep. */

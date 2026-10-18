@@ -10,6 +10,7 @@ import type { SnapshotResult } from "../src/computer/schema";
 import type { HubAnswer, HubHttp, HubRequest } from "../src/hub/http";
 import { companyLoginResult, createCompanyVault } from "../src/hub/vault";
 import { recentLines } from "../src/log";
+import { createShownGuard } from "../src/logins/shown";
 import type { SavedLogin } from "../src/logins/store";
 
 /**
@@ -836,5 +837,32 @@ describe("an exclusive company login, among this VM's own runs", () => {
     expect((await made.ask({ actor: ROUTINE })).loginFilled?.company).toBe(
       true,
     );
+  });
+});
+
+describe("a company password a site writes back in a later run", () => {
+  test("is taken out of what a model is handed on the login's site, and the call told as a hit — on no other site", async () => {
+    const made = stack();
+    await made.ask();
+    await made.lookAt(SIGNED_IN);
+    // The run is over; the computer has forgotten the value. The site has not.
+    await made.gateway.runEnded("bot-1", "thread-a");
+    const seen: boolean[] = [];
+    const guard = createShownGuard({
+      company: made.gateway.companyPasswordsAt,
+      seen: (_run, hidden) => void seen.push(hidden),
+    });
+    const run = { userId: "owner-1", botId: "bot-1", threadId: "thread-b" };
+    const here = await guard(run, {
+      url: `${ORIGIN}/account`,
+      text: `비밀번호: ${PASSWORD}`,
+    });
+    expect(here.text).toBe("비밀번호: [•••]");
+    const elsewhere = await guard(run, {
+      url: "https://other.example/page",
+      text: `비밀번호: ${PASSWORD}`,
+    });
+    expect(elsewhere.text).toBe(`비밀번호: ${PASSWORD}`);
+    expect(seen).toEqual([true, false]);
   });
 });
