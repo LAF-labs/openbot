@@ -478,6 +478,26 @@ describe("what a 라피 may write", () => {
       detail.notes.map((note) => [note.by, note.text, note.runId]),
     ).toEqual([[`bot:${annId}`, "sign-in needed", "run-blocked"]]);
   });
+  test("a task with more than a thousand notes is read with its newest, the run's line among them", async () => {
+    const task = await newTask(ann.pass);
+    await hub.database.execute(
+      sql`insert into hub_task_notes (task_id, by, text) select ${task.id}, ${annId}, 'note ' || n from generate_series(1, 1000) n`,
+    );
+    await checkout(ann.pass, task.id, "run-late");
+    const moved = await call(ann.pass, "PATCH", `/tasks/${task.id}`, {
+      as: "bot",
+      runId: "run-late",
+      stage: "review",
+      note: "laf:task_ran run:run-late",
+    });
+    expect(moved.status).toBe(200);
+    const detail = (await call(ann.pass, "GET", `/tasks/${task.id}`))
+      .body as unknown as HubTaskDetail;
+    // A 라피 knows its run was reported by this line; without it, it would report the run again.
+    expect(detail.notes).toHaveLength(1000);
+    expect(detail.notes.at(-1)?.runId).toBe("run-late");
+    expect(detail.notes[0]?.text).toBe("note 2");
+  });
 });
 
 describe("a person's edit", () => {

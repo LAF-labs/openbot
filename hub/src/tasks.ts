@@ -521,12 +521,16 @@ export function taskRoutes(options: TaskRouteOptions) {
     if (!ID_SHAPE.test(id)) return badId(context);
     const row = await visibleTask(database, id, context.get("member").id);
     if (!row) return badId(context);
-    const notes = await database
-      .select()
-      .from(hubTaskNotes)
-      .where(eq(hubTaskNotes.taskId, row.id))
-      .orderBy(asc(hubTaskNotes.id))
-      .limit(1000);
+    // The newest thousand, oldest first. A 라피 knows a run of its own was reported by that run's
+    // line, which is among the newest; the oldest thousand left it out on a long-lived task.
+    const notes = (
+      await database
+        .select()
+        .from(hubTaskNotes)
+        .where(eq(hubTaskNotes.taskId, row.id))
+        .orderBy(desc(hubTaskNotes.id))
+        .limit(1000)
+    ).reverse();
     const body: HubTaskDetail = {
       ok: true,
       task: await viewOne(database, row),
