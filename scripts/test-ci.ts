@@ -3295,6 +3295,11 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * upload through the outbox on a real Postgres — sent at once, kept through an outage and sent once
  * after, a file written over before the retry, a missing file, a computer away while a message
  * behind it still goes (hub-upload.integration.test.ts, 5). 4775 and 21.
+ *
+ * RAISED 2026-10-18 FOR BUGBOT'S READ OF THE UPLOAD: `server` by two (to 4904) — a name the team
+ * sees with no ending still sends the file's words (hub-upload.test.ts, 1); and a read nobody can be
+ * asked about is refused with no question opened, an allowance still passing it
+ * (gateway-file-acts-off-the-page.test.ts, 1). 4902 and 2.
  */
 const GROUPS: readonly {
   name: string;
