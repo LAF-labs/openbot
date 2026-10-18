@@ -201,6 +201,55 @@ describe("the line to the company hub", () => {
     });
   });
 
+  test("a cursor that cannot be read once is not taken for none: what was missed still arrives", async () => {
+    const pass = newPass();
+    await putMember(hub, {
+      email: "e@laf.test",
+      vmOrigin: "https://e.agent.test",
+      pass,
+    });
+    const first = vm(pass);
+    first.link.start();
+    await until(() => first.link.status().state === "connected");
+    first.link.stop();
+
+    const missed = await putMember(hub, {
+      email: "f@laf.test",
+      vmOrigin: "https://f.agent.test",
+      pass: newPass(),
+    });
+    // The VM's database refuses the line's first read of its place, and only that one.
+    let refusals = 1;
+    const flaky = new Proxy(database, {
+      get(target, key, receiver) {
+        if (key === "select" && refusals > 0) {
+          refusals -= 1;
+          return () => {
+            throw new Error("connection reset");
+          };
+        }
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    const frames: HubFrame[] = [];
+    const link = createHubLink({
+      database: flaky,
+      http: createHubHttp({ url: hub.url, vmKey: pass, sleep: async () => {} }),
+      hub: hub.url,
+      deliver: (frame) => frames.push(frame),
+      timing: FAST,
+    });
+    links.push(link);
+    link.start();
+    await until(() =>
+      eventsIn(frames).some((frame) => frame.seq === missed.seq),
+    );
+    expect(refusals).toBe(0);
+    expect(eventsIn(frames).find((f) => f.seq === missed.seq)).toMatchObject({
+      refId: missed.id,
+    });
+  });
+
   test("a pass the hub does not know is refused once, said once, and not asked again", async () => {
     const real = createHubHttp({
       url: hub.url,
