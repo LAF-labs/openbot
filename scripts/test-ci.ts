@@ -3323,8 +3323,16 @@ const GROUPS: readonly {
    * RAISED 2026-10-18 FOR A WRITE WHOSE ANSWER IS STILL ON ITS WAY, from 4960 to 4961: one in
    * `hub-tools.integration.test.ts` — the hub's answer held past the write's wait and then a 404,
    * and the Bot is told the 404, not "kept". 4960 and 1.
+   *
+   * RAISED 2026-10-18 FOR ONE COMPANY LOGIN AMONG ONE VM'S RUNS, from 4980 to 4988: six in
+   * `company-login-fill.test.ts` (a second run of the VM told another run has it and nothing
+   * leased, and so marked in a choice; a run signing in again whose second fill fails keeps the
+   * hub's lease; a fill for no conversation given back at the next run's end; a hold the hub no
+   * longer knows said in the log; a company password written back later taken out on its site
+   * alone) and one each in `chat-tools.test.ts` and `unattended-facts.test.ts` (that password
+   * taken out of what a conversation and a routine hand a model). 4980 and 8.
    */
-  { name: "server", floor: 4980, roots: ["server"] },
+  { name: "server", floor: 4988, roots: ["server"] },
   { name: "app", floor: 2570, roots: ["app"] },
   {
     name: "agent-computer",
