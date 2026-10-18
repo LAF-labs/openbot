@@ -3328,8 +3328,14 @@ const GROUPS: readonly {
    *
    * RAISED 2026-10-18 FOR 라피 TAKING THE TASKS GIVEN TO IT, from 4961 to 4984: the task pickup's
    * twenty-three (21 and its Bugbot round's 2, noted above the list). 4961 and 23.
+   *
+   * RAISED 2026-10-18 FOR THE TASK PICKUP'S REVIEW ROUND, from 4984 to 4990: hub-task-pickup.test.ts
+   * 2 (a move the board refused never reported later, the task worked afresh; a task another member
+   * gave this 라피 left as it is) and hub-task-run.integration.test.ts 4 (a person's stop reported as
+   * one; a lost run told apart and worked again; a refused run never reported; a project deleted
+   * mid-run stopping its run first). 4984 and 6.
    */
-  { name: "server", floor: 4984, roots: ["server"] },
+  { name: "server", floor: 4990, roots: ["server"] },
   { name: "app", floor: 2570, roots: ["app"] },
   {
     name: "agent-computer",
@@ -3457,7 +3463,11 @@ const GROUPS: readonly {
    * reservation under half a microdollar written as one and refused by a full day; an actual under
    * half a microdollar counted as one, reserved or not).
    */
-  { name: "hub", floor: 268, roots: ["hub"] },
+  /*
+   * RAISED 2026-10-18 FOR A TASK READ WITH ITS NEWEST NOTES, from 268 to 269: tasks.test.ts 1 (a
+   * thousand notes and then a run's line — the read ends on the run's line).
+   */
+  { name: "hub", floor: 269, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
