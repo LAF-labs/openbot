@@ -839,7 +839,9 @@ export function createSecrets(deps: {
       const id = input.login.slice(COMPANY_LOGIN_PREFIX.length);
       const named = companyHere.find((login) => login.id === id);
       if (named) return companyOf(named);
-      if (!Array.isArray(companyAnswer)) return { unavailable: true };
+      // A hub that does not answer is a fact only where a company login is known for this site.
+      // Elsewhere the name is refused as not this site's, as it is with the hub answering.
+      if (companyDown) return { unavailable: true };
     }
     const named =
       typeof input.login === "string"

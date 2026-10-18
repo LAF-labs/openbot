@@ -601,6 +601,29 @@ describe("a hub that cannot hand the login over", () => {
     expect(made.calls).toEqual(["requestSecret"]);
   });
 
+  test("a company id the Bot names is the same: a plain fact only where a company login is known for the site, refused as not this site's elsewhere", async () => {
+    // Known here from an earlier answer: the named login cannot be had now.
+    const known = scriptedHub();
+    const there = stack({ hub: known });
+    await there.ask();
+    await there.gateway.runEnded("bot-1", "thread-a");
+    known.state.down = "all";
+    const answer = await there.ask({ login: `company:${LOGIN_ID}` });
+    expect(answer.companyLoginUnavailable).toBe(true);
+    // Never known here (an id carried over from another site): the same refusal as with the hub
+    // up, so the Bot asks again without it and the person's own login or card follows.
+    const made = stack({
+      hub: scriptedHub({ down: "all" }),
+      personal: [savedLogin("login-1", "내 계정")],
+    });
+    await expect(made.ask({ login: `company:${LOGIN_ID}` })).rejects.toThrow(
+      "laf:login_not_for_this_site",
+    );
+    const own = await made.ask();
+    expect(own.loginFilled).toEqual({ id: "login-1", fields: 2 });
+    expect(made.hub.sent("lease")).toEqual([]);
+  });
+
   test("a hub whose vault has no key is the same: 503 is not a login", async () => {
     const made = stack({ hub: scriptedHub({ vaultUnset: true }) });
     const answer = await made.ask();
