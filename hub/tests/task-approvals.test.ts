@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
-import type {
-  HubSync,
-  HubTask,
-  HubTaskApproval,
-  HubTaskDetail,
+import {
+  HUB_TASK_TOPIC_MAX,
+  type HubSync,
+  type HubTask,
+  type HubTaskApproval,
+  type HubTaskDetail,
 } from "../../shared/hub/protocol";
 import {
   asMember,
@@ -209,7 +210,7 @@ test("an older version is stale, and a topic that is not a topic is refused", as
     "",
     "a value with spaces",
     42,
-    "x".repeat(201),
+    "x".repeat(HUB_TASK_TOPIC_MAX + 1),
   ]) {
     const bad = await approve(ann.pass, task.id, { topic });
     expect(bad.status).toBe(400);
@@ -220,5 +221,9 @@ test("an older version is stale, and a topic that is not a topic is refused", as
     value: "typed",
   });
   expect(extra.body.field).toBe("value");
-  expect((await approve(ann.pass, task.id, { topic: TOPIC })).status).toBe(200);
+  // As long as a topic may be, and no longer: a VM cuts one to `HUB_TASK_TOPIC_MAX`.
+  const longest = `browser/activate@${"가".repeat(HUB_TASK_TOPIC_MAX - 17)}`;
+  expect((await approve(ann.pass, task.id, { topic: longest })).status).toBe(
+    200,
+  );
 });

@@ -6,6 +6,7 @@ import {
   HUB_JOB_FACTS,
   HUB_JOB_HANDOFF_MS,
   HUB_JOB_LIMITS,
+  hubJobHandoffBytes,
   type HubJobHandoff,
 } from "../../shared/hub/protocol";
 import type { Logger } from "../../shared/log";
@@ -166,7 +167,7 @@ export function startHandoffSweeper(input: {
 /** The definition's size as JSON, in bytes, or null when it is not an object. */
 function definitionBytes(value: unknown): number | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  return Buffer.byteLength(JSON.stringify(value), "utf8");
+  return hubJobHandoffBytes(value);
 }
 
 const reply = (context: Context, answer: Answer) =>

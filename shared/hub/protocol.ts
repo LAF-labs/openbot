@@ -256,8 +256,17 @@ export type HubTaskApproval = {
   at: string;
 };
 
+/**
+ * The longest topic the hub takes, in characters (code points). A VM cuts a longer one to this
+ * before it asks: refused, the yes would be given on the VM and never reach the board.
+ */
+export const HUB_TASK_TOPIC_MAX = 200;
+
 /** What a topic may hold: letters, digits and `@/._:-`, as the VM's `topicOf` leaves it. */
-export const HUB_TASK_TOPIC_SHAPE = /^[\p{L}\p{N}@/._:-]{1,200}$/u;
+export const HUB_TASK_TOPIC_SHAPE = new RegExp(
+  `^[\\p{L}\\p{N}@/._:-]{1,${HUB_TASK_TOPIC_MAX}}$`,
+  "u",
+);
 
 export const HUB_TASK_LIMITS = {
   title: 200,
@@ -439,9 +448,17 @@ export type HubJob = {
 export const HUB_JOB_LIMITS = {
   name: 100,
   schedule: 200,
-  /** The handoff's definition, as JSON, in bytes. */
+  /**
+   * The handoff's definition, in bytes as `hubJobHandoffBytes` counts them. Over it the hub
+   * answers 413 and keeps nothing, so a VM checks it before it turns its copy of the job off: a
+   * job handed on with a definition the hub refused would run on no VM.
+   */
   handoffBytes: 64 * 1024,
 } as const;
+
+/** A handoff's definition as the hub measures it against `handoffBytes`: UTF-8 bytes of its JSON. */
+export const hubJobHandoffBytes = (definition: unknown): number =>
+  new TextEncoder().encode(JSON.stringify(definition)).length;
 
 /** How long a handoff waits for its new runner before the sweep drops it. */
 export const HUB_JOB_HANDOFF_MS = 7 * 24 * 60 * 60 * 1000;

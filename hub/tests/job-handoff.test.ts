@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
-import type { HubJobHandoff, HubSync } from "../../shared/hub/protocol";
+import {
+  HUB_JOB_LIMITS,
+  type HubJobHandoff,
+  type HubSync,
+  hubJobHandoffBytes,
+} from "../../shared/hub/protocol";
 import { sweepExpiredHandoffs } from "../src/job-handoff";
 import {
   asMember,
@@ -204,6 +209,27 @@ test("a definition over 64 KB is refused and nothing is kept; one under it is ta
     definition: definition("가".repeat(21_000)),
   });
   expect(fits.status).toBe(200);
+});
+
+test("the cap is the shared measure's: a definition at the cap is taken, one byte over is refused", async () => {
+  await movedToBen("j-edge");
+  // What a VM checks before it hands a job on, and what the hub counts, are the same number.
+  const sized = (bytes: number) => {
+    const empty = hubJobHandoffBytes(definition(""));
+    const made = definition("a".repeat(bytes - empty));
+    expect(hubJobHandoffBytes(made)).toBe(bytes);
+    return made;
+  };
+  const over = await call(ann.pass, "PUT", handoff("j-edge"), {
+    to: benId,
+    definition: sized(HUB_JOB_LIMITS.handoffBytes + 1),
+  });
+  expect(over.status).toBe(413);
+  const at = await call(ann.pass, "PUT", handoff("j-edge"), {
+    to: benId,
+    definition: sized(HUB_JOB_LIMITS.handoffBytes),
+  });
+  expect(at.status).toBe(200);
 });
 
 test("a second move before it is collected points the slot at the newest runner", async () => {
