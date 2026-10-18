@@ -100,29 +100,68 @@ describe("whose 라피 is working, read off the room", () => {
     const asked = [
       { seq: 1, by: "m:m_kim", mentions: ["lafi"], at: ago(9_000) },
       { seq: 2, by: "m:m_kim", mentions: ["lafi"], at: ago(8_000) },
-      { seq: 3, by: "bot:m_kim", mentions: [], at: ago(5_000) },
+      {
+        seq: 3,
+        by: "bot:m_kim",
+        mentions: [],
+        runId: "room:r_1:1",
+        at: ago(5_000),
+      },
     ];
     expect(lafiWorking(asked, NOW)).toEqual([{ member: "m_kim", seq: 2 }]);
     expect(
       lafiWorking(
-        [...asked, { seq: 4, by: "bot:m_kim", mentions: [], at: ago(1_000) }],
+        [
+          ...asked,
+          {
+            seq: 4,
+            by: "bot:m_kim",
+            mentions: [],
+            runId: "room:r_1:2",
+            at: ago(1_000),
+          },
+        ],
         NOW,
       ),
     ).toEqual([]);
   });
 
-  test("an answer is not paired with a question already too old when it came", () => {
+  test("the first question got no answer and the second did: nothing is being worked on", () => {
     expect(
       lafiWorking(
         [
-          // Never answered: its VM was off.
-          { seq: 1, by: "m:m_kim", mentions: ["lafi"], at: ago(30 * 60_000) },
-          { seq: 2, by: "m:m_kim", mentions: ["lafi"], at: ago(9_000) },
-          { seq: 3, by: "bot:m_kim", mentions: [], at: ago(5_000) },
+          { seq: 1, by: "m:m_kim", mentions: ["lafi"], at: ago(90_000) },
+          { seq: 2, by: "m:m_kim", mentions: ["lafi"], at: ago(30_000) },
+          {
+            seq: 3,
+            by: "bot:m_kim",
+            mentions: [],
+            runId: "room:r_1:2",
+            at: ago(1_000),
+          },
         ],
         NOW,
       ),
     ).toEqual([]);
+  });
+
+  test("the first question answered late leaves the second shown", () => {
+    expect(
+      lafiWorking(
+        [
+          { seq: 1, by: "m:m_kim", mentions: ["lafi"], at: ago(11 * 60_000) },
+          { seq: 2, by: "m:m_kim", mentions: ["lafi"], at: ago(3 * 60_000) },
+          {
+            seq: 3,
+            by: "bot:m_kim",
+            mentions: [],
+            runId: "room:r_1:1",
+            at: ago(30_000),
+          },
+        ],
+        NOW,
+      ),
+    ).toEqual([{ member: "m_kim", seq: 2 }]);
   });
 
   test("a question past the window is no longer shown as worked on", () => {

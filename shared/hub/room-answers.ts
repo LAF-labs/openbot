@@ -19,7 +19,9 @@
  * would read as being worked on until the end of the room. So a question counts as being worked on
  * for {@link ROOM_ANSWER_WINDOW_MS}, and the answering VM uses the same bound the other way: a
  * question older than that when its VM first hears of it — a VM that was off and catches up — is
- * not answered late, where its asker has stopped looking for the answer.
+ * not taken up, where its asker has stopped looking for the answer. One heard in time is answered
+ * even when the turns before it in its room run past the window, so an answer can come after the
+ * screens have stopped saying it is being worked on.
  */
 import { HUB_LAFI_MENTION } from "./protocol";
 
@@ -30,9 +32,31 @@ export type RoomLine = {
   seq: number;
   by: string;
   mentions: readonly string[];
+  /**
+   * The run that posted it. A 라피's answer to a room question is posted under that question's id
+   * ({@link roomQuestionId}), which is how a screen tells which question it answers.
+   */
+  runId?: string | null;
   /** ISO 8601. */
   at: string | null;
 };
+
+/**
+ * The id a room question goes by on the answering VM: the person's message in the room's
+ * conversation, and the run its answer is posted under (`runId`), so a screen reading the room
+ * pairs the answer with its question.
+ */
+export const roomQuestionId = (roomId: string, seq: number): string =>
+  `room:${roomId}:${seq}`;
+
+/** The question an answer names by its run (`room:<room>:<seq>`), or null for any other post. */
+export function answeredQuestion(
+  runId: string | null | undefined,
+): number | null {
+  const match = runId?.match(/^room:[A-Za-z0-9_-]{1,80}:([1-9][0-9]{0,15})$/);
+  const seq = match ? Number(match[1]) : Number.NaN;
+  return Number.isSafeInteger(seq) ? seq : null;
+}
 
 /** Who wrote a message: a person, or that person's 라피. Null for anything else. */
 export function roomAuthor(
@@ -64,14 +88,17 @@ export function isFresh(line: RoomLine, now: number): boolean {
 
 /**
  * The members whose 라피 is working on a question in this room now, oldest question first: a
- * person asked their 라피, the question is fresh, and no answer of that 라피's is its own yet.
+ * person asked their 라피, the question is fresh, and it has not been answered yet.
  *
- * ONE ANSWER PER QUESTION, IN ORDER. A VM answers its person's questions in a room one after
- * another, in the order they were asked, so each post by a member's 라피 answers the oldest of
- * their questions still open. Read as "any post after the question", the answer to the first of
- * two quick questions ended the second too, and every screen stopped saying it was being worked
- * on while it still was. A question already past the window when an answer came is not what that
- * answer answered — its VM does not answer late — so it is passed over, not paired.
+ * AN ANSWER NAMES ITS QUESTION. A VM answers its person's questions in a room one after another,
+ * in the order they were asked, and posts each answer under the question's id (`runId`). So an
+ * answer to question N ends N and every question of that member before it — those were taken
+ * first, and whatever came of them (an answer, a stop, a refusal) they are over. Paired by order
+ * instead, an earlier question that got no answer took the next answer as its own, and an answer
+ * that came late was paired with the question after it.
+ *
+ * A 라피 post that names no question — one the Bot made itself, or one from before answers named
+ * theirs — ends every question of that member asked before it.
  *
  * `lines` is a page of the room in any order. A member asking twice is listed once, at the oldest
  * question still open.
@@ -81,7 +108,7 @@ export function lafiWorking(
   now: number,
 ): { member: string; seq: number }[] {
   const ordered = [...lines].sort((a, b) => a.seq - b.seq);
-  /** Each member's questions not answered yet, oldest first. */
+  /** Each member's questions not over yet, oldest first. */
   const open = new Map<string, RoomLine[]>();
   for (const line of ordered) {
     const author = roomAuthor(line.by);
@@ -93,13 +120,11 @@ export function lafiWorking(
       }
       continue;
     }
-    const answeredAt = line.at ? Date.parse(line.at) : Number.NaN;
-    const answerable = asked.findIndex(
-      (question) => Number.isNaN(answeredAt) || isFresh(question, answeredAt),
-    );
+    const named = answeredQuestion(line.runId);
+    const through = named !== null && named < line.seq ? named : line.seq - 1;
     open.set(
       author.member,
-      answerable === -1 ? [] : asked.slice(answerable + 1),
+      asked.filter((question) => question.seq > through),
     );
   }
   const working: { member: string; seq: number }[] = [];

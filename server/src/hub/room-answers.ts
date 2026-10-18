@@ -41,6 +41,7 @@ import {
   asksOwnLafi,
   isFresh,
   ROOM_ANSWER_WINDOW_MS,
+  roomQuestionId,
 } from "../../../shared/hub/room-answers";
 import { jsonObjectOf } from "../../../shared/json-object";
 import { cutAtCodeUnits } from "../../../shared/sound-text";
@@ -112,8 +113,7 @@ export function parseMessageRef(
 }
 
 /** The id the person's message is filed under in the room's conversation. */
-export const roomQuestionId = (roomId: string, seq: number): string =>
-  `room:${roomId}:${seq}`;
+export { roomQuestionId };
 
 /**
  * What the turn has to post: its last words, unless the Bot posted to this room itself during the
@@ -240,6 +240,8 @@ export function createRoomAnswers(deps: RoomAnswersDeps) {
     channelId: string;
     threadId: string;
     roomId: string;
+    /** The person's message's number in the room. */
+    seq: number;
     question: Message;
   }): Promise<{ turnId: string; status: TurnStatus } | null> => {
     const questionId = input.question.id;
@@ -295,6 +297,8 @@ export function createRoomAnswers(deps: RoomAnswersDeps) {
                 room: input.roomId,
                 text: cutAtCodeUnits(text, HUB_ROOM_LIMITS.text),
                 mentions: [],
+                // The question it answers: posted under its id, so the room's screens pair them.
+                replyTo: input.seq,
               },
             };
           },
@@ -370,6 +374,7 @@ export function createRoomAnswers(deps: RoomAnswersDeps) {
       answerer,
       ...conversation,
       roomId,
+      seq,
       question: { id: questionId, role: "user", content: line.text },
     });
     // Stopped by the person, or failed: they see why in the conversation; the room is not told.

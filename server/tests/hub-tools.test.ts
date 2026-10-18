@@ -363,6 +363,17 @@ describe("what is refused before anybody is asked", () => {
       },
       "laf:tool_arguments_invalid",
     ],
+    // The room question a post answers is a message number, or nothing (`room-answers.ts`).
+    [
+      "write",
+      { kind: "post", room: "r_1", text: "네", replyTo: 0 },
+      "laf:tool_arguments_invalid",
+    ],
+    [
+      "write",
+      { kind: "post", room: "r_1", text: "네", replyTo: "3" },
+      "laf:tool_arguments_invalid",
+    ],
   ])("%s %j → %s", (tool, args, code) => {
     let thrown: unknown = null;
     try {
@@ -379,6 +390,7 @@ describe("what is refused before anybody is asked", () => {
       "write",
       { kind: "post", room: "r_1", text: "내일 10시 회의", mentions: ["m_2"] },
     ],
+    ["write", { kind: "post", room: "r_1", text: "네", replyTo: 3 }],
     [
       "write",
       { kind: "propose_memory", content: "우리 팀은 금요일에 정산한다." },

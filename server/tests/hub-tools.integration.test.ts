@@ -144,6 +144,24 @@ describe("writing to the company hub", () => {
     expect((await rowOf(made[0] ?? ""))?.deliveredAt).not.toBeNull();
   });
 
+  test("a 라피's answer to a room question goes under that question's id as its run, and the body is the room's own shape", async () => {
+    const { tools } = hubAnswering(() => took);
+    await tools.callTool(chat, "write", {
+      kind: "post",
+      room: "r_1",
+      text: "오늘은 16일이에요.",
+      mentions: [],
+      replyTo: 3,
+    });
+    const [request] = sent.slice(-1);
+    expect(request?.run).toBe("room:r_1:3");
+    expect(request?.body).toEqual({
+      text: "오늘은 16일이에요.",
+      mentions: [],
+      as: "bot",
+    });
+  });
+
   test("a hub that is down keeps the write, the Bot is told not to send it again, and it goes once when the hub is back", async () => {
     let up = false;
     const { tools, outbox } = hubAnswering(() => (up ? took : down));

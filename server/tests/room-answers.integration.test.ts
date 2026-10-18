@@ -474,6 +474,7 @@ describe("a person's @라피 in a team room", () => {
           room,
           text: "오늘은 10월 16일이에요.",
           mentions: [],
+          replyTo: 2,
         },
       },
     ]);
@@ -489,6 +490,8 @@ describe("a person's @라피 in a team room", () => {
       method: "POST",
       path: `/rooms/${room}/messages`,
       body: { text: "오늘은 10월 16일이에요.", mentions: [], as: "bot" },
+      // Under the question it answers, so every screen can pair the two.
+      run: roomQuestionId(room, 2),
     });
     // Every hub call this made itself said it was the room's; the post is the hub tool's.
     expect(
@@ -683,7 +686,13 @@ describe("a person's @라피 in a team room", () => {
     await settled();
     expect(calls.at(-1)).toEqual({
       name: WRITE,
-      args: { kind: "post", room, text: "오늘은 16일이에요.", mentions: [] },
+      args: {
+        kind: "post",
+        room,
+        text: "오늘은 16일이에요.",
+        mentions: [],
+        replyTo: 1,
+      },
     });
     expect(hub.posted).toEqual([]);
     const last = ((await thread()) ?? []).at(-1);

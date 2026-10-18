@@ -32,6 +32,7 @@ import {
   HUB_ROOM_LIMITS,
   HUB_SKILL_LIMITS,
 } from "../../../shared/hub/protocol";
+import { roomQuestionId } from "../../../shared/hub/room-answers";
 import { charLength } from "../../../shared/hub/search-words";
 import { toolResultText } from "../../../shared/prompt/tool-results.ko";
 import { cutAtCodeUnits } from "../../../shared/sound-text";
@@ -242,6 +243,9 @@ export function checkHubArgs(
       if (needed(args, "text").length > HUB_ROOM_LIMITS.text) {
         refuse(ARGUMENTS_INVALID);
       }
+      if (args.replyTo !== undefined && replyToOf(args) === null) {
+        refuse(ARGUMENTS_INVALID);
+      }
       const mentions = mentionsOf(args);
       // A 라피 calling 라피 is two VMs answering each other; the hub refuses it, so ask nobody.
       if (mentions.includes("lafi")) refuse(ARGUMENTS_INVALID);
@@ -284,6 +288,18 @@ export function notForTheTeam(content: string): boolean {
     looksLikeAnInstruction(content) ||
     looksLikeAStandingOrder(content)
   );
+}
+
+/**
+ * The room question a post answers, by its number: set by the server on a room answer's post
+ * (`room-answers.ts`) and not offered to the Bot. The post goes under the question's id as its run
+ * (`roomQuestionId`), which the hub keeps on the message and every screen reads.
+ */
+function replyToOf(args: Record<string, unknown>): number | null {
+  const value = args.replyTo;
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0
+    ? value
+    : null;
 }
 
 function mentionsOf(args: Record<string, unknown>): string[] {
@@ -548,16 +564,20 @@ export function createHubToolTransport(
   ): Promise<McpCallResult> {
     const kind = args.kind as WriteKind;
     switch (kind) {
-      case "post":
+      case "post": {
+        const room = needed(args, "room");
+        const replyTo = replyToOf(args);
         return send(kind, {
           method: "POST",
-          path: HUB_TOOL_PATHS.roomPost(needed(args, "room")),
+          path: HUB_TOOL_PATHS.roomPost(room),
           body: roomPostBody({
             text: needed(args, "text"),
             mentions: mentionsOf(args),
           }),
           origin,
+          ...(replyTo === null ? {} : { runId: roomQuestionId(room, replyTo) }),
         });
+      }
       case "propose_memory":
         return send(kind, {
           method: "POST",
