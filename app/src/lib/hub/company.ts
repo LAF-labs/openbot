@@ -276,15 +276,50 @@ export async function companyWrite(
   });
 }
 
+/**
+ * The key for a write, kept while the same thing is pressed again — a room with the same name and
+ * people, the same file — so a press after a dropped answer is one write at the hub. Anything else
+ * gets a new key: the hub answers a repeated key with its first answer, whatever the body.
+ */
+export type WriteKey = { what: string; key: string };
+
+export function keyFor(
+  held: WriteKey | null,
+  what: string,
+  mint: () => string = () => crypto.randomUUID(),
+): WriteKey {
+  return held?.what === what ? held : { what, key: mint() };
+}
+
+/** A file as the same pick again: its name, size and when it was last changed. */
+export const fileIdentity = (file: {
+  name: string;
+  size: number;
+  lastModified: number;
+}): string => JSON.stringify([file.name, file.size, file.lastModified]);
+
+/** The colleagues a new room can take: everyone but this person, and nobody until it is known who that is. */
+export function roomColleagues(
+  members: readonly CompanyMember[] | undefined,
+  meId: string | undefined,
+): CompanyMember[] {
+  if (!members || meId === undefined) return [];
+  return members.filter((member) => member.id !== meId);
+}
+
 export const isAdmin = (role: string | null | undefined): boolean =>
   role === "owner" || role === "admin";
 
-/** A member's name as the screen says it, or the word for a member with none (or one who left). */
+/**
+ * A member's name as the screen says it, or the word for a member with none — or one who left,
+ * which only a roster that has arrived can say. Before it arrives, the plain word for a member.
+ */
 export function memberName(
   id: string,
   members: readonly CompanyMember[] | undefined,
 ): string {
-  const found = members?.find((member) => member.id === id);
+  if (!members) return t("Company member");
+  const found = members.find((member) => member.id === id);
   if (!found) return t("A former member");
   return found.name?.trim() ? found.name : t("A member");
 }

@@ -23,7 +23,10 @@ import {
   companyMessagesQueryOptions,
   companyRoomsQueryOptions,
   companyWrite,
+  keyFor,
   memberName,
+  roomColleagues,
+  type WriteKey,
 } from "@/lib/hub/company";
 import { t } from "@/lib/i18n";
 import { isImeKey } from "@/lib/ime";
@@ -33,15 +36,20 @@ import { cn } from "@/lib/utils";
  * 방: the rooms this person is in, and one of them open — its newest messages, live, and a box to
  * write in. A message somebody else posts reaches this screen as a `hub.room.message` frame, which
  * makes the open room's read stale (`hubKeysForFrame`); nothing here polls.
+ *
+ * `rosterPending` is while who this person is and who the colleagues are is still being asked: a
+ * room's messages wait for it, or this person's own would be drawn as somebody else's.
  */
 export function CompanyRooms({
   members,
   meId,
   openRoom,
+  rosterPending,
 }: {
   members: readonly CompanyMember[] | undefined;
   meId: string | undefined;
   openRoom: string | undefined;
+  rosterPending: boolean;
 }) {
   const rooms = useQuery(companyRoomsQueryOptions());
   const room = rooms.data?.find((one) => one.id === openRoom);
@@ -54,6 +62,7 @@ export function CompanyRooms({
         name={room.name}
         people={room.members}
         roomId={room.id}
+        rosterPending={rosterPending}
       />
     );
   }
@@ -119,22 +128,25 @@ function NewRoom({
   const [isOpen, setIsOpen] = useState(false);
   const [name, setName] = useState("");
   const [chosen, setChosen] = useState<string[]>([]);
+  const held = useRef<WriteKey | null>(null);
   const create = useMutation({
-    mutationFn: () =>
-      companyWrite(
-        "/api/hub/rooms",
-        "POST",
-        { name: name.trim(), members: chosen },
-        crypto.randomUUID(),
-      ),
+    mutationFn: () => {
+      const body = { name: name.trim(), members: chosen };
+      held.current = keyFor(
+        held.current,
+        JSON.stringify([body.name, [...chosen].sort()]),
+      );
+      return companyWrite("/api/hub/rooms", "POST", body, held.current.key);
+    },
     onSuccess: () => {
+      held.current = null;
       setName("");
       setChosen([]);
       setIsOpen(false);
       void queryClient.invalidateQueries({ queryKey: companyKeys.rooms });
     },
   });
-  const others = (members ?? []).filter((member) => member.id !== meId);
+  const others = roomColleagues(members, meId);
 
   if (!isOpen) {
     return (
@@ -218,12 +230,14 @@ function OpenRoom({
   name,
   people,
   roomId,
+  rosterPending,
 }: {
   meId: string | undefined;
   members: readonly CompanyMember[] | undefined;
   name: string;
   people: readonly string[];
   roomId: string;
+  rosterPending: boolean;
 }) {
   const messages = useQuery(companyMessagesQueryOptions(roomId));
   const newest = messages.data?.at(-1)?.seq ?? 0;
@@ -263,7 +277,7 @@ function OpenRoom({
         data-room-messages
         ref={scroller}
       >
-        {messages.isPending ? (
+        {messages.isPending || rosterPending ? (
           <Skeleton className="h-4 w-48" />
         ) : messages.isError ? (
           <p className="text-muted-foreground text-sm">

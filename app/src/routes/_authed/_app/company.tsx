@@ -125,6 +125,7 @@ function CompanyPage() {
           meId={me.data?.member.id}
           members={members.data}
           openRoom={search.room}
+          rosterPending={!status.isError && (me.isPending || members.isPending)}
         />
       ) : null}
       {tab === "files" ? <CompanyFiles members={members.data} /> : null}
