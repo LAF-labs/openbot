@@ -3266,7 +3266,7 @@ const GROUPS: readonly {
    * below it, one test per share from 0.01 to 1 that the server outwaits the computer's longest
    * call, and four on the header the deadline follows. 4711 and 105 is 4816.
    */
-  { name: "server", floor: 4853, roots: ["server"] },
+  { name: "server", floor: 4857, roots: ["server"] },
   { name: "app", floor: 2543, roots: ["app"] },
   {
     name: "agent-computer",
@@ -3373,7 +3373,7 @@ const GROUPS: readonly {
    * company takes a member out of every room and coming back does not put them back; nobody is
    * added to a room in the moment they leave).
    */
-  { name: "hub", floor: 164, roots: ["hub"] },
+  { name: "hub", floor: 192, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
