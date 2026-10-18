@@ -3,7 +3,7 @@
  * person's VM database, nor restored over one.
  *
  * The registry, the event log, the idempotency ledger, the trail, the task board, and the budget
- * ledger with the sub-Bot register. Files,
+ * ledger with the sub-Bot register and its one-time handoffs. Files,
  * skills, memory, rooms and the vault arrive with the changes that build them, each with its own
  * migration.
  */
@@ -171,6 +171,11 @@ export const hubTasks = pgTable(
     checkoutRunId: text("checkout_run_id"),
     checkoutBy: text("checkout_by").references(() => hubMembers.id),
     lockExpiresAt: timestamp("lock_expires_at", { withTimezone: true }),
+    /**
+     * The member whose 라피 run moved it to `blocked`, while it stays there: who may say yes for it
+     * (`POST /tasks/:id/approvals`), and the only one. Null for one a person blocked.
+     */
+    blockedBy: text("blocked_by").references(() => hubMembers.id),
     version: integer("version").notNull().default(1),
     rank: doublePrecision("rank").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -358,4 +363,32 @@ export const hubJobs = pgTable(
       .defaultNow(),
   },
   (table) => [index("hub_jobs_runner").on(table.runner)],
+);
+
+/**
+ * A sub-Bot's definition on its way from the VM the job moved away from to the one it moved to: one
+ * slot per job, made empty (`body` null) when the job moves and filled by the old runner's VM. The
+ * register holds no content, and this is not part of it — it is taken and cleared by the new runner,
+ * and the sweep drops one nobody came for after `expires_at`. `body` is kept as it came and never
+ * read, logged or audited by the hub. Going with its job.
+ */
+export const hubJobHandoffs = pgTable(
+  "hub_job_handoffs",
+  {
+    jobId: text("job_id")
+      .primaryKey()
+      .references(() => hubJobs.id, { onDelete: "cascade" }),
+    fromMember: text("from_member")
+      .notNull()
+      .references(() => hubMembers.id),
+    toMember: text("to_member")
+      .notNull()
+      .references(() => hubMembers.id),
+    body: jsonb("body"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [index("hub_job_handoffs_expires").on(table.expiresAt)],
 );

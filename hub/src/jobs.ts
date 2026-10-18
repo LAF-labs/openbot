@@ -20,6 +20,8 @@ import {
 import type { HubDatabase, HubTransaction } from "./db/client";
 import { hubBudgetLimits, hubJobs, hubMembers } from "./db/schema";
 import { emitEvent, type Listeners } from "./events";
+import { addHandoffRoutes, noteJobMove } from "./job-handoff";
+import { freeMovedJobClaims } from "./tasks";
 
 /**
  * The sub-Bot register: which named, scheduled jobs exist, who owns each, whose VM runs it, when,
@@ -35,6 +37,8 @@ import { emitEvent, type Listeners } from "./events";
  * THE RUNNER FOLLOWS THE OWNER. A job runs on its owner's VM unless set apart, so handing a job to
  * another member moves it: `job.moved` goes to the old runner, whose VM drops it, and the new one,
  * whose VM picks it up. `job.changed` goes to everybody, so every register on screen reads it again.
+ * The move also opens the job's handoff slot (`job-handoff.ts`), through which the old VM hands the
+ * new one the definition the register never holds.
  */
 
 const ID_SHAPE = /^[A-Za-z0-9_-]{1,80}$/;
@@ -154,6 +158,7 @@ export function jobRoutes(options: JobRouteOptions) {
   const route = new Hono<{ Variables: MemberVariables }>();
   route.use(options.member);
   const write = writer(database, listeners);
+  addHandoffRoutes(route, { database, listeners });
 
   route.get("/", async (context) => {
     const rows = await database
@@ -280,6 +285,8 @@ export function jobRoutes(options: JobRouteOptions) {
           actor: self.id,
         });
         if (runner !== row.runner) {
+          await noteJobMove(tx, id, row.runner, runner);
+          await freeMovedJobClaims(tx, id, row.runner, self.id);
           seq = await emitEvent(tx, {
             type: "job.moved",
             refId: id,

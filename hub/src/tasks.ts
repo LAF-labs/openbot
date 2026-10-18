@@ -20,7 +20,9 @@ import {
   HUB_TASK_LIMITS,
   HUB_TASK_LOCK_MS,
   HUB_TASK_STAGES,
+  HUB_TASK_TOPIC_SHAPE,
   type HubTask,
+  type HubTaskApproval,
   type HubTaskAssignee,
   type HubTaskDetail,
   type HubTaskList,
@@ -32,6 +34,7 @@ import { recordAudit } from "./audit";
 import type { AuthedMember, MemberVariables } from "./auth";
 import type { HubDatabase, HubTransaction } from "./db/client";
 import {
+  hubJobs,
   hubMembers,
   hubTaskMembers,
   hubTaskNotes,
@@ -57,12 +60,22 @@ import { audienceOf, visibleTo } from "./visibility";
  *
  * THE CLAIM. `POST /tasks/:id/checkout {runId}` is one conditional UPDATE: it takes the task only
  * if it is waiting (`todo`, unclaimed) or its holder's time ran out, and only for a member it is
- * assigned to (or anybody, when it is assigned to nobody). Postgres makes a second UPDATE of the
+ * assigned to (or anybody, when it is assigned to nobody; for a sub-Bot's `job:<id>`, the job's
+ * runner now — `mayWork`). Postgres makes a second UPDATE of the
  * same row wait for the first to commit and then test its WHERE against the row the first wrote,
  * which no longer matches — so of any number of runs asking at once exactly one is told yes and
  * the rest `laf:task_taken`, with no lock of our own. A run that is told no stops; it does not
  * retry. Its claim lasts `HUB_TASK_LOCK_MS` and is renewed by `/heartbeat`; `/release` and a
  * Bot's move to `review`/`blocked` end it, and the sweep (`task-sweeper.ts`) frees what ran out.
+ *
+ * A YES FOR A BLOCKED TASK. A 라피's run that met an action a person has to allow moves the task to
+ * `blocked` with the action's topic (`kind/intent@place`). `POST /tasks/:id/approvals {topic}` is
+ * that person saying yes, for that task and that topic: the member whose run blocked it, and nobody
+ * else — not an owner or admin either. The yes is kept and judged only by that member's VM, whose
+ * 라피 runs the task; a yes said anywhere else would put the task back in `todo`, its run would meet
+ * the same action with no allowance on its VM, and block again, round and round. The task goes back
+ * to `todo` for the next run, the note says which topic, and `task.approval_granted` names who and
+ * when; the hub records that the yes was given.
  *
  * THE TRAIL HOLDS NO WORDS. A task's audit row says who did what to which id, in which run and
  * with what result — the fields changed by name, a note's length — never a title, a description or
@@ -104,6 +117,64 @@ const notHeld: Answer = {
 const isString = (value: unknown): value is string => typeof value === "string";
 const isManager = (member: AuthedMember) =>
   member.role === "owner" || member.role === "admin";
+
+/**
+ * Whose run may hold the task: anybody's who sees it when it is given to nobody; the member for
+ * `m:<member>` and `bot:<member>`; and for `job:<id>`, the member whose VM runs that job NOW
+ * (`hub_jobs.runner`) — never whoever gave it to the job, and never a runner it moved away from.
+ * Read inside the same statement as the claim, so a job moving between the read and the write
+ * cannot let the old runner in.
+ */
+const mayWork = (member: string) =>
+  sql`(${hubTasks.assignee} is null or ${hubTasks.assignee} = ${`m:${member}`} or ${hubTasks.assignee} = ${`bot:${member}`} or ${hubTasks.assignee} in (select 'job:' || ${hubJobs.id} from ${hubJobs} where ${hubJobs.runner} = ${member}))`;
+
+/**
+ * A job moved (`jobs.ts`): every claim its old runner holds on the job's tasks ends now, and those
+ * tasks go back to `todo` for the new runner. The old VM turns the job off on `job.moved`; a run
+ * still going there hears `laf:task_not_held` at its next beat or report and stops, as for any claim
+ * it lost. Waiting out the claim instead would leave the task stuck for the lock's length with its
+ * owner unable to work it.
+ */
+export async function freeMovedJobClaims(
+  tx: HubTransaction,
+  jobId: string,
+  from: string,
+  actor: string,
+): Promise<number> {
+  const freed = await tx
+    .update(hubTasks)
+    .set({
+      checkoutRunId: null,
+      checkoutBy: null,
+      lockExpiresAt: null,
+      stage: sql`case when ${hubTasks.stage} = 'doing' then 'todo' else ${hubTasks.stage} end`,
+      version: sql`${hubTasks.version} + 1`,
+      updatedAt: sql`now()`,
+    })
+    .where(
+      and(eq(hubTasks.assignee, `job:${jobId}`), eq(hubTasks.checkoutBy, from)),
+    )
+    .returning({
+      id: hubTasks.id,
+      visibility: hubTasks.visibility,
+    });
+  for (const row of freed) {
+    await emitEvent(tx, {
+      type: "task.changed",
+      refId: row.id,
+      actor,
+      visibleTo: await audienceOf(tx, row.visibility),
+    });
+    await recordAudit(tx, {
+      action: "task.claim_moved",
+      member: from,
+      target: row.id,
+      outcome: "freed",
+      payload: { job: jobId },
+    });
+  }
+  return freed.length;
+}
 
 /** The SQL for "the claim lasts this long from now", from the database's clock, never the VM's. */
 const lockUntil = () =>
@@ -628,10 +699,15 @@ export function taskRoutes(options: TaskRouteOptions) {
           throw new Invalid("stage");
         if (stage === null && note === null) throw new Invalid("body");
         if (runId === null) throw new Invalid("runId");
+        const [entitled] = await tx
+          .select({ id: hubTasks.id })
+          .from(hubTasks)
+          .where(and(eq(hubTasks.id, id), mayWork(self.id)));
         if (
           row.checkoutRunId !== runId ||
           row.checkoutBy !== self.id ||
-          row.stage !== "doing"
+          row.stage !== "doing" ||
+          !entitled
         ) {
           await audit(HUB_TASK_FACTS.notHeld);
           return notHeld;
@@ -641,6 +717,8 @@ export function taskRoutes(options: TaskRouteOptions) {
               .update(hubTasks)
               .set({
                 stage,
+                // Whose yes it waits for, when it stops for one (`/approvals`).
+                blockedBy: stage === "blocked" ? self.id : null,
                 // Its run is done with it: the claim ends with the move.
                 checkoutRunId: null,
                 checkoutBy: null,
@@ -715,6 +793,8 @@ export function taskRoutes(options: TaskRouteOptions) {
       if (stage !== row.stage) {
         set.stage = stage;
         set.doneAt = stage === "done" ? new Date() : null;
+        // A person moved it: no run's stop is waiting on a yes any more.
+        set.blockedBy = null;
         fields.push("stage");
       }
       // A person moving a task out of `doing` takes it from the run that held it; that run's next
@@ -887,8 +967,8 @@ export function taskRoutes(options: TaskRouteOptions) {
           outcome,
         });
       // A task given to somebody is theirs to take; one given to nobody is anybody's who sees it.
-      // A job's task is taken on the VM of whoever gave it to the job.
-      const forMe = sql`(${hubTasks.assignee} is null or ${hubTasks.assignee} = ${`m:${self.id}`} or ${hubTasks.assignee} = ${`bot:${self.id}`} or (${hubTasks.assignee} like 'job:%' and ${hubTasks.assignedBy} = ${self.id}))`;
+      // A job's task is taken on the VM that runs the job now (`mayWork`).
+      const forMe = mayWork(self.id);
       const [claimed] = await tx
         .update(hubTasks)
         .set({
@@ -973,6 +1053,9 @@ export function taskRoutes(options: TaskRouteOptions) {
             eq(hubTasks.stage, "doing"),
             eq(hubTasks.checkoutRunId, runId),
             eq(hubTasks.checkoutBy, self.id),
+            // A holder the task is no longer for (its job moved, it was given to somebody else)
+            // keeps nothing alive.
+            mayWork(self.id),
           ),
         )
         .returning({ until: hubTasks.lockExpiresAt });
@@ -990,6 +1073,105 @@ export function taskRoutes(options: TaskRouteOptions) {
       return {
         status: 200,
         body: { ok: true, until: beat.until.toISOString() },
+      };
+    });
+  });
+
+  route.post("/:id/approvals", limited, async (context) => {
+    const id = context.req.param("id");
+    if (!ID_SHAPE.test(id)) return badId(context);
+    const body = await readJson(context);
+    if (!body) return context.json(invalid("body").body as object, 400);
+    const self = context.get("member");
+    return write(context, async (tx, emitted) => {
+      const unknown = Object.keys(body).find(
+        (key) => key !== "topic" && key !== "version",
+      );
+      if (unknown) throw new Invalid(unknown);
+      const topic = body.topic;
+      if (!isString(topic) || !HUB_TASK_TOPIC_SHAPE.test(topic))
+        throw new Invalid("topic");
+      const version = body.version;
+      if (
+        version !== undefined &&
+        (typeof version !== "number" || !Number.isInteger(version))
+      )
+        throw new Invalid("version");
+      const row = await visibleTask(tx, id, self.id, true);
+      if (!row) return notFound;
+      // Ids and the outcome only: the topic names a place, and the note on the task keeps it.
+      // Whoever can see the task may learn it is no longer blocked; only who may say yes gets on.
+      const audit = (outcome: string) =>
+        recordAudit(tx, {
+          action: "task.approval_granted",
+          member: self.id,
+          vmOrigin: self.vmOrigin,
+          target: id,
+          outcome,
+        });
+      if (row.stage !== "blocked") {
+        await audit(HUB_TASK_FACTS.notBlocked);
+        return {
+          status: 409,
+          body: { ok: false, code: HUB_TASK_FACTS.notBlocked },
+        };
+      }
+      if (row.blockedBy !== self.id) {
+        await audit(HUB_TASK_FACTS.notYours);
+        return {
+          status: 403,
+          body: { ok: false, code: HUB_TASK_FACTS.notYours },
+        };
+      }
+      if (version !== undefined && version !== row.version) {
+        await audit(HUB_TASK_FACTS.stale);
+        return {
+          status: 409,
+          body: { ok: false, code: HUB_TASK_FACTS.stale, version: row.version },
+        };
+      }
+      const [next] = await tx
+        .update(hubTasks)
+        .set({
+          stage: "todo",
+          blockedBy: null,
+          version: sql`${hubTasks.version} + 1`,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(hubTasks.id, id))
+        .returning();
+      if (!next) throw new Error("hub_tasks update returned nothing");
+      await tx.insert(hubTaskNotes).values({
+        taskId: id,
+        by: `m:${self.id}`,
+        text: `laf:task_approval_granted topic:${topic}`,
+        runId: null,
+      });
+      const audience = await audienceOf(tx, next.visibility);
+      // The board's line first, so a pickup reading on `task.changed` finds it in `todo`.
+      await emitEvent(tx, {
+        type: "task.changed",
+        refId: id,
+        actor: self.id,
+        visibleTo: audience,
+      });
+      const seq = await emitEvent(tx, {
+        type: "task.approval_granted",
+        refId: id,
+        actor: self.id,
+        visibleTo: audience,
+      });
+      emitted();
+      await audit("ok");
+      const approval: HubTaskApproval = {
+        taskId: id,
+        by: self.id,
+        topic,
+        at: next.updatedAt.toISOString(),
+      };
+      return {
+        status: 200,
+        body: { ok: true, approval, task: await viewOne(tx, next), seq },
       };
     });
   });
