@@ -246,6 +246,26 @@ describe("heartbeat and release", () => {
     ]);
   });
 
+  test("a holder who has lost sight of the task cannot release it and is shown nothing of it", async () => {
+    const task = await newTask(ann.pass, { title: "Kept to the maker" });
+    const claimed = await checkout(ben.pass, task.id, "run-blind");
+    expect(claimed.status).toBe(200);
+    const narrowed = await call(ann.pass, "PATCH", `/tasks/${task.id}`, {
+      version: (claimed.body.task as HubTask).version,
+      visibility: "me",
+    });
+    expect(narrowed.status).toBe(200);
+    const released = await call(ben.pass, "POST", `/tasks/${task.id}/release`, {
+      runId: "run-blind",
+    });
+    expect(released.status).toBe(409);
+    expect(released.body.code).toBe("laf:task_not_held");
+    expect(JSON.stringify(released.body)).not.toContain("Kept to the maker");
+    // Left as it was: the claim runs out and the sweep frees it, as with a beat it can no longer
+    // send.
+    expect((await row(task.id)).checkout_run_id).toBe("run-blind");
+  });
+
   test("a person moving a task out of doing takes it from its run, whose next beat is not_held", async () => {
     const task = await newTask(ann.pass);
     const claimed = await checkout(ann.pass, task.id, "run-moved");
