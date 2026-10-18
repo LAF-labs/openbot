@@ -529,7 +529,51 @@ describe("leaving", () => {
     };
     expect(again.vault.origins).toEqual(answer.vault.origins);
   });
+
+  test("an origin the member opened is in the answer after the admin moves the login off it", async () => {
+    const member = {
+      email: "vault-moved@example.com",
+      vmOrigin: "https://vault-moved.example",
+      pass: newPass(),
+    };
+    const { id } = await putMember(hub, member);
+    await store("moved-1");
+    await call("admin", "PUT", "/moved-1/grants", { members: [id] });
+    const asked = await fetch(`${hub.url}/hub/v1/vault/moved-1/lease`, {
+      method: "POST",
+      ...asMember(member.pass, { "content-type": "application/json" }),
+      body: JSON.stringify({ origin: SITE }),
+    });
+    const lease = ((await asked.json()) as HubVaultLease).lease;
+    const opened = await fetch(`${hub.url}/hub/v1/vault/moved-1/open`, {
+      method: "POST",
+      ...asMember(member.pass, { "content-type": "application/json" }),
+      body: JSON.stringify({ lease }),
+    });
+    expect(opened.status).toBe(200);
+    // The site moved: the login is filled somewhere else now, and the cookies are still on SITE.
+    await store("moved-1", { origins: ["https://moved.example.test"] });
+
+    const answer = (await (await leaveAs(member)).json()) as {
+      vault: { origins: string[] };
+    };
+    expect(answer.vault.origins).toEqual(["https://moved.example.test", SITE]);
+  });
 });
+
+/** The registry saying a member left, as laf-control will. */
+function leaveAs(member: { email: string; vmOrigin: string }) {
+  return sendFleet(hub, {
+    event: "member.put",
+    member: {
+      email: member.email,
+      role: "member",
+      vmOrigin: member.vmOrigin,
+      vmKeyHash: "0".repeat(64),
+      state: "left",
+    },
+  });
+}
 
 describe("the key", () => {
   test("without it the vault answers a fact and the rest of the hub serves", async () => {
