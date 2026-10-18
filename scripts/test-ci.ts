@@ -3273,8 +3273,12 @@ const GROUPS: readonly {
    * `computer-client.test.ts` — today's 45 s at a whole core and the stretched, capped deadline
    * below it, one test per share from 0.01 to 1 that the server outwaits the computer's longest
    * call, and four on the header the deadline follows. 4711 and 105 is 4816.
+   *
+   * RAISED 2026-10-18 FOR A BOT MADE AFTER A BOOT WITH NONE, from 4896 to 4897: one in
+   * `industry-packs.integration.test.ts` — the person deletes their only Bot, the server restarts,
+   * and the Bot they make next holds their kind's pack. 4896 and 1.
    */
-  { name: "server", floor: 4896, roots: ["server"] },
+  { name: "server", floor: 4897, roots: ["server"] },
   { name: "app", floor: 2543, roots: ["app"] },
   {
     name: "agent-computer",

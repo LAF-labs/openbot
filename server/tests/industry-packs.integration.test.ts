@@ -1,21 +1,29 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { composePrompt } from "../../shared/prompt/index";
 import type { BusinessKindId } from "../../shared/shop/catalogue";
+import { createShopStore } from "../src/account/shop";
 import { withGrantedSkills } from "../src/agents/granted-skills";
 import { createAuditStore } from "../src/audit";
 import { createApprovalRegistry } from "../src/computer/approvals";
 import type { ActionPolicy } from "../src/computer/policy";
 import { createDatabase } from "../src/db/client";
-import { agentProfiles, agents, pluginGrants, skills } from "../src/db/schema";
+import {
+  agentProfiles,
+  agents,
+  pluginGrants,
+  skills,
+  users,
+} from "../src/db/schema";
 import { createBuiltInSkills } from "../src/plugins/built-in-skill-sync";
 import {
   BUILT_IN_ORIGIN,
   type BuiltInSkill,
 } from "../src/plugins/built-in-skills";
 import {
+  deploymentOwnerOf,
   type IndustryPack,
   packFor,
   readIndustryPacks,
@@ -78,11 +86,11 @@ const withoutPacks = createBuiltInSkills({
   hasTool: () => true,
 });
 
-async function granted(): Promise<string[]> {
+async function granted(to = bot): Promise<string[]> {
   const rows = await database
     .select({ ref: pluginGrants.ref })
     .from(pluginGrants)
-    .where(and(eq(pluginGrants.agentId, bot), eq(pluginGrants.kind, "skill")));
+    .where(and(eq(pluginGrants.agentId, to), eq(pluginGrants.kind, "skill")));
   return rows.map((row) => row.ref).sort();
 }
 
@@ -216,5 +224,98 @@ describe("a person's VM follows their business kind", () => {
     await sync.reconcile(store, "deployment");
     expect(await granted()).toEqual([everyones, theirs, "온라인판매"].sort());
     expect((await row("온라인판매"))?.instructions).toBe("내가 쓴 본문.");
+  });
+});
+
+/**
+ * The person deletes their only Bot, the server restarts, and they make a new one. The boot with no
+ * live Bot has nobody's kind to follow and takes the pack's rows away; the kind they answered is
+ * still the same, so no save brings the pack back — the new Bot has to bring it itself.
+ */
+describe("a Bot made after a boot with none", () => {
+  const person = `pack-owner-${suite}`;
+  const first = `agent_pack_first_${suite}`;
+  const next = `agent_pack_next_${suite}`;
+  const shop = createShopStore(database);
+
+  async function makeBot(id: string) {
+    await database
+      .insert(agents)
+      .values({ id, name: id, type: "remote_ag_ui", configuration: {} });
+    await database.insert(agentProfiles).values({
+      agentId: id,
+      ownerUserId: person,
+      roleDescription: "For a test.",
+      avatarSeed: id,
+    });
+  }
+
+  /**
+   * A restart: a fresh runtime, holding nothing from the last one, with the pack read the way
+   * `main.ts` reads it — the one owner of the live Bots, and that person's kind through the shop
+   * store. Only this suite's Bots count, so another file's Bots on the same database cannot make
+   * the owner ambiguous.
+   */
+  function boot() {
+    const live = () =>
+      database
+        .select({ id: agentProfiles.agentId, owner: agentProfiles.ownerUserId })
+        .from(agentProfiles)
+        .where(
+          and(
+            inArray(agentProfiles.agentId, [first, next]),
+            isNull(agentProfiles.deletedAt),
+          ),
+        );
+    return createBuiltInSkills({
+      packageDir: "",
+      skills: async () => [packageSkill],
+      packSkills: async () => {
+        const owner = deploymentOwnerOf((await live()).map((row) => row.owner));
+        const answered = owner ? (await shop.read(owner)).kind : null;
+        return packFor(packs, answered)?.own ?? [];
+      },
+      listBots: async () => (await live()).map((row) => row.id),
+      hasTool: () => true,
+    });
+  }
+
+  beforeAll(async () => {
+    await database.insert(users).values({
+      id: person,
+      email: `${person}@packs.test`,
+      emailVerified: true,
+    });
+    await shop.save(person, { kind: "food", places: [] });
+  });
+
+  afterAll(async () => {
+    await database
+      .delete(pluginGrants)
+      .where(inArray(pluginGrants.agentId, [first, next]));
+    await database.delete(agents).where(inArray(agents.id, [first, next]));
+    await database.delete(users).where(eq(users.id, person));
+  });
+
+  test("delete → restart → create: the new Bot holds its kind's pack without another restart", async () => {
+    await makeBot(first);
+    await boot().reconcile(store, "deployment");
+    expect(await granted(first)).toContain("음식점카페");
+
+    // The person deletes their only Bot, and the server restarts with no live Bot.
+    await database
+      .update(agentProfiles)
+      .set({ deletedAt: new Date() })
+      .where(eq(agentProfiles.agentId, first));
+    const restarted = boot();
+    await restarted.reconcile(store, "deployment");
+    expect(await row("음식점카페")).toBeUndefined();
+
+    // They make a new Bot. Their kind is still 음식점·카페, unchanged since before the restart.
+    await makeBot(next);
+    await restarted.offerTo(store, next, "deployment");
+    expect((await shop.read(person)).kind).toBe("food");
+    expect((await row("음식점카페"))?.origin).toBe(BUILT_IN_ORIGIN);
+    expect(await granted(next)).toEqual([everyones, "음식점카페"].sort());
   });
 });
