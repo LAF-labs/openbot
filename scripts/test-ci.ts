@@ -3328,8 +3328,11 @@ const GROUPS: readonly {
    *
    * RAISED 2026-10-16 FOR A SECOND ROTATION, from 50 to 51: the pass it drops loses its socket at
    * once while the pass in grace keeps its own (events-socket.test.ts, 1).
+   *
+   * RAISED 2026-10-18 FOR THE BUDGET'S FIX ROUND, from 84 to 85: a settle with no reservation
+   * counts only against the job and task scopes its member may name (budget.test.ts, 1).
    */
-  { name: "hub", floor: 84, roots: ["hub"] },
+  { name: "hub", floor: 85, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
