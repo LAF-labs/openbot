@@ -281,20 +281,31 @@ export async function vaultOriginsOf(
           or (${hubAudit.action} = 'member.left' and ${hubAudit.target} = ${memberId})`,
     );
   const ids = new Set(granted.map((row) => row.loginId));
+  // The origin each open was for, as the trail wrote it: an admin may have moved the login off it
+  // since, and the cookies the fill left are on the origin it was filled on, not the one it is now.
+  const opened = new Set<string>();
   for (const row of trail) {
-    if (row.action === "vault.opened" && row.target) ids.add(row.target);
-    const dropped = (row.payload as { vaultLogins?: unknown } | null)
-      ?.vaultLogins;
+    const payload = row.payload as {
+      origin?: unknown;
+      vaultLogins?: unknown;
+    } | null;
+    if (row.action === "vault.opened") {
+      if (row.target) ids.add(row.target);
+      if (isString(payload?.origin)) opened.add(payload.origin);
+    }
+    const dropped = payload?.vaultLogins;
     if (Array.isArray(dropped)) {
       for (const id of dropped) if (isString(id)) ids.add(id);
     }
   }
-  if (ids.size === 0) return [];
+  if (ids.size === 0) return [...opened].sort();
   const logins = await tx
     .select({ origins: hubVaultLogins.origins })
     .from(hubVaultLogins)
     .where(inArray(hubVaultLogins.id, [...ids]));
-  return [...new Set(logins.flatMap((row) => row.origins))].sort();
+  return [
+    ...new Set([...opened, ...logins.flatMap((row) => row.origins)]),
+  ].sort();
 }
 
 /**
