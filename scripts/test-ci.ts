@@ -3373,7 +3373,13 @@ const GROUPS: readonly {
    * company takes a member out of every room and coming back does not put them back; nobody is
    * added to a room in the moment they leave).
    */
-  { name: "hub", floor: 220, roots: ["hub"] },
+  /*
+   * RAISED 2026-10-18 FOR WHO IS ON A TASK, from 220 to 223: tasks.test.ts 3 (a 라피's or a job's
+   * task put in doing only by its run's checkout; a members task given to somebody not on it only
+   * by its maker or an admin; leaving the company taking a member off every task, with neither an
+   * edit nor coming back putting them back).
+   */
+  { name: "hub", floor: 223, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
