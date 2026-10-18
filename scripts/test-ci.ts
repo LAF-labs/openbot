@@ -3327,8 +3327,8 @@ const GROUPS: readonly {
    * `hub-tools.integration.test.ts` — the hub's answer held past the write's wait and then a 404,
    * and the Bot is told the 404, not "kept". 4960 and 1.
    */
-  { name: "server", floor: 4961, roots: ["server"] },
-  { name: "app", floor: 2570, roots: ["app"] },
+  { name: "server", floor: 4990, roots: ["server"] },
+  { name: "app", floor: 2575, roots: ["app"] },
   {
     name: "agent-computer",
     /*
