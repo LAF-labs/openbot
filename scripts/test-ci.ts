@@ -3300,7 +3300,12 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * (gateway-file-acts-off-the-page.test.ts, 1). 4902 and 2. On top of main, whose own floor had
  * become 4961: 4961 and 23, to 4984. Then `server` by one more (to 4985): an upload still on its
  * way when the write's wait ends is said as on its way, the Bot not held behind it, and the row
- * ends delivered when the hub answers (hub-upload.integration.test.ts).
+ * ends delivered when the hub answers (hub-upload.integration.test.ts). Then by five more (to
+ * 4990): a hub with no file space ends the upload with its own fact and the writes behind it go; a
+ * busy hub keeps the row, says it is on its way, and the next upload goes; a room post written
+ * while an upload is out goes at once and a second upload is said as on its way; an upload written
+ * after its lane last looked goes in the same sweep (hub-upload.integration.test.ts, 4); and a
+ * UTF-8 text file cut inside a character is read as UTF-8 (hub-upload.test.ts, 1).
  */
 const GROUPS: readonly {
   name: string;
@@ -3328,7 +3333,7 @@ const GROUPS: readonly {
    * `hub-tools.integration.test.ts` — the hub's answer held past the write's wait and then a 404,
    * and the Bot is told the 404, not "kept". 4960 and 1.
    */
-  { name: "server", floor: 4985, roots: ["server"] },
+  { name: "server", floor: 4990, roots: ["server"] },
   { name: "app", floor: 2570, roots: ["app"] },
   {
     name: "agent-computer",
