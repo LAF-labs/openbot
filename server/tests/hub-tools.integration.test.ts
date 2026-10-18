@@ -216,6 +216,8 @@ describe("writing to the company hub", () => {
     });
     let answer = (_answer: HubAnswer<unknown>) => {};
     const http: HubHttp = {
+      upload: async () =>
+        ({ ok: false, status: null, code: "laf:hub_unreachable" }) as never,
       request(request) {
         sent.push(request);
         asked();
