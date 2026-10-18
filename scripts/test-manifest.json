@@ -169,6 +169,7 @@
   "app/tests/hub-company.test.ts",
   "app/tests/hub-room-working.test.ts",
   "app/tests/hub-status.test.ts",
+  "app/tests/hub-task-board-pending.test.tsx",
   "app/tests/hub-tasks.test.ts",
   "app/tests/i18n-coverage.test.ts",
   "app/tests/ideas.test.ts",

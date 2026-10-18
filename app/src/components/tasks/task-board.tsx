@@ -58,6 +58,13 @@ export function TaskBoard({
   }));
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState<readonly string[]>([]);
+  /*
+   * The cards whose move is on its way, known the moment it is sent — `pending` is the same set as
+   * the screen draws it, a render later. A second move sent before the first is answered carries the
+   * version the first replaces: the hub refuses it as `laf:task_stale` and the board says somebody
+   * else changed the task. So a card on its way is not moved again, by a drag or by its menu.
+   */
+  const moving = useRef(new Set<string>());
   const root = useRef<HTMLDivElement>(null);
 
   // A notice says its one thing and goes.
@@ -110,6 +117,7 @@ export function TaskBoard({
       void queryClient.invalidateQueries({ queryKey: taskKeys.board });
     },
     onSettled: (_answer, _error, input) => {
+      moving.current.delete(input.task.id);
       setPending((before) => before.filter((id) => id !== input.task.id));
     },
   });
@@ -120,7 +128,8 @@ export function TaskBoard({
     announce: boolean,
   ) => {
     const task = board.data?.find((one) => one.id === taskId);
-    if (!task || !place) return;
+    if (!task || !place || moving.current.has(taskId)) return;
+    moving.current.add(taskId);
     move.mutate({ task, place, key: crypto.randomUUID() });
     // Said for whoever moved it without seeing it move: the menu's press, a screen reader.
     if (announce) {

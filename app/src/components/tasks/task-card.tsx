@@ -28,7 +28,8 @@ import { cn } from "@/lib/utils";
 /**
  * One task on the board: its title, who has it, and two ways to move it besides dragging — the
  * menu (to another column, or up and down in this one), which is the keyboard's and a screen
- * reader's way, and the grip, which is a finger's.
+ * reader's way, and the grip, which is a finger's. While its last move is on its way, neither moves
+ * it (`task-board.tsx` says why).
  */
 export function TaskCard({
   task,
@@ -118,6 +119,7 @@ export function TaskCard({
                 (stage) => (
                   <DropdownMenuItem
                     data-task-move={stage}
+                    disabled={isPending}
                     key={stage}
                     onClick={() => onStep?.(stage)}
                   >
@@ -129,7 +131,7 @@ export function TaskCard({
             <DropdownMenuSeparator />
             <DropdownMenuItem
               data-task-move="up"
-              disabled={!canStep?.up}
+              disabled={isPending || !canStep?.up}
               onClick={() => onStep?.("up")}
             >
               <IconArrowUp />
@@ -137,7 +139,7 @@ export function TaskCard({
             </DropdownMenuItem>
             <DropdownMenuItem
               data-task-move="down"
-              disabled={!canStep?.down}
+              disabled={isPending || !canStep?.down}
               onClick={() => onStep?.("down")}
             >
               <IconArrowDown />
