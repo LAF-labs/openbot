@@ -18,9 +18,11 @@
  *   boot's read and an event replayed from before a restart, arriving together, make one run.
  * - Across a restart: a run that FINISHED here — its ledger row settled — and whose move never
  *   reached the hub (the process died between the two, or the hub was away) is not run again when
- *   the sweep puts the task back. It is reported: the task is taken under a fresh claim and moved
- *   with the finished run's id (`unreported`). A run cut off mid-way never settled, and is run again
- *   — the work was not done.
+ *   the sweep puts the task back. It is reported: the task is taken under the finished run's own id
+ *   and moved with it (`unreported`). The hub files a note under the claim's id, and the pickup knows
+ *   a run was reported by the notes' ids — so a claim under a fresh id would leave the finished run
+ *   looking unreported for good, and a task a person later gave back would be re-reported instead of
+ *   worked. A run cut off mid-way never settled, and is run again — the work was not done.
  * - A task this process let go of itself (`release`, which puts a `doing` task back to `todo`) is
  *   not taken again on the event that release raises: what it was left at is remembered by
  *   version, and only a later change — a person's, the sweep's — makes it waiting again.
@@ -195,28 +197,27 @@ export function createTaskPickup(options: TaskPickupOptions): TaskPickup {
 
   const report = async (
     taskId: string,
-    claimRunId: string,
-    workRunId: string,
+    runId: string,
     outcome: Exclude<TaskRunOutcome, { kind: "lost" }>,
   ): Promise<boolean> => {
-    const { stage, note } = taskReport(workRunId, outcome);
+    const { stage, note } = taskReport(runId, outcome);
     const answer = await options.http.request({
       method: "PATCH",
       path: HUB_TASK_PATHS.move(taskId),
-      body: taskMoveBody({ runId: claimRunId, stage, note }),
+      body: taskMoveBody({ runId, stage, note }),
       idempotencyKey: key(),
-      run: claimRunId,
+      run: runId,
       origin: "job",
     });
     if (answer.ok) {
       const moved = readTaskDetail(answer.body);
       if (moved) leftAt.set(taskId, moved.task.version);
-      log.info("hub_task_moved", { task: taskId, run: workRunId, stage });
+      log.info("hub_task_moved", { task: taskId, run: runId, stage });
       return true;
     }
     log.warn("hub_task_not_moved", {
       task: taskId,
-      run: workRunId,
+      run: runId,
       stage,
       code: answer.code,
     });
@@ -263,7 +264,8 @@ export function createTaskPickup(options: TaskPickupOptions): TaskPickup {
         })
       : null;
 
-    const runId = newRunId();
+    // A finished run's report is claimed under that run's id: the note it leaves names it.
+    const runId = finished?.runId ?? newRunId();
     const claim = await options.http.request({
       method: "POST",
       path: HUB_TASK_PATHS.checkout(taskId),
@@ -284,7 +286,7 @@ export function createTaskPickup(options: TaskPickupOptions): TaskPickup {
       if (finished) {
         // The work is done already; only the board was never told.
         if (finished.outcome.kind !== "lost") {
-          await report(taskId, runId, finished.runId, finished.outcome);
+          await report(taskId, runId, finished.outcome);
         }
         return;
       }
@@ -332,7 +334,7 @@ export function createTaskPickup(options: TaskPickupOptions): TaskPickup {
         clearInterval(timer);
       }
       if (lost.signal.aborted || outcome.kind === "lost") return;
-      await report(taskId, runId, runId, outcome);
+      await report(taskId, runId, outcome);
     } finally {
       // Always: after a move this is `laf:task_not_held` and says nothing; otherwise it frees the
       // task now rather than when the sweep finds its claim run out.

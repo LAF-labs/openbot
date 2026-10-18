@@ -233,8 +233,44 @@ describe("a task given to this member's 라피", () => {
       {
         by: `bot:${ME}`,
         text: "laf:task_ran run:run-finished",
-        runId: "run-claim",
+        // Claimed under the finished run's own id, so the note's id is the run the ledger holds.
+        runId: "run-finished",
       },
+    ]);
+  });
+
+  test("a recovered run's task, given back to todo by a person, is worked — not reported again", async () => {
+    const hub = fakeTaskHub();
+    hub.add({ id: "t_10", assignee: `bot:${ME}` });
+    const { run, started } = scripted({ kind: "done", steps: 1 });
+    const pickup = createTaskPickup({
+      http: hub.as(ME),
+      memberId: () => ME,
+      run,
+      newRunId: () => "run-fresh",
+      // The ledger's last row for the task stays the finished run until a new one is begun.
+      unreported: async ({ noted }) =>
+        started.length > 0 || noted.has("run-finished")
+          ? null
+          : { runId: "run-finished", outcome: { kind: "done" } },
+    });
+    await pickup.scan();
+    expect(started).toEqual([]);
+    expect(hub.tasks.get("t_10")?.stage).toBe("review");
+
+    // A person sends it back to the 라피.
+    const task = hub.tasks.get("t_10");
+    if (task) {
+      task.stage = "todo";
+      task.version += 1;
+    }
+    pickup.heard({ type: "task.changed", refId: "t_10" });
+    await pickup.idle();
+
+    expect(started).toEqual(["t_10:run-fresh"]);
+    expect(hub.tasks.get("t_10")?.notes.map((note) => note.text)).toEqual([
+      "laf:task_ran run:run-finished",
+      "laf:task_ran run:run-fresh steps:1",
     ]);
   });
 
