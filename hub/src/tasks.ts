@@ -48,7 +48,12 @@ import { audienceOf, visibleTo } from "./visibility";
  * - A task is read, edited and noted by whoever can see it (`visibleTo`, in every query's WHERE).
  *   One a member may not see answers 404, the same as one that does not exist.
  * - Who sees it is changed only by its maker or an owner/admin: widening a task the maker kept to
- *   themselves is theirs to decide, and narrowing one cuts others off.
+ *   themselves is theirs to decide, and narrowing one cuts others off. Giving a members task to
+ *   somebody not on it puts them on it, so that is theirs too.
+ * - A member who leaves the company is taken off every task (`leaveEveryTask`), and an edit never
+ *   puts them back, so coming back does not bring back sight of those tasks or their files.
+ * - A task given to a 라피 or a job enters `doing` only by its run's checkout. A person cannot put
+ *   it there by hand: with no claim on it, no run would ever take it.
  * - A 라피 (`as: "bot"`) moves only a task its own run holds, and only to `review` or `blocked`,
  *   with at most one line of note. `done` is a person's: whether work is finished is a judgement
  *   the hub never takes from a Bot (`laf:task_done_by_person`).
@@ -172,6 +177,10 @@ function assigneeOf(value: unknown): HubTaskAssignee | null {
     throw new Invalid("assignee");
   return value as HubTaskAssignee;
 }
+
+/** A task given to a 라피 or a job is worked by a run; one given to a person, by that person. */
+const workedByRun = (assignee: string | null) =>
+  assignee !== null && !assignee.startsWith("m:");
 
 /** The member an assignee names, or null for a job. */
 function assigneeMember(assignee: string | null): string | null {
@@ -347,6 +356,53 @@ async function emitAssigned(
     actor,
     visibleTo: member ? [member] : await audienceOf(tx, task.visibility),
   });
+}
+
+/**
+ * Takes a member who has left the company off every task they were on, inside the registry's
+ * transaction that marks them gone — and so out of every `task:` audience, files included. The
+ * tasks are locked in one order before their members change, the way an edit locks its task before
+ * it reads them, so an edit committing beside the departure cannot write them back. Whoever is
+ * still on a task hears of it, so their boards redraw its members.
+ */
+export async function leaveEveryTask(
+  tx: HubTransaction,
+  memberId: string,
+  by: string,
+): Promise<void> {
+  const tasks = await tx
+    .select({ id: hubTasks.id, visibility: hubTasks.visibility })
+    .from(hubTasks)
+    .where(
+      inArray(
+        hubTasks.id,
+        tx
+          .select({ taskId: hubTaskMembers.taskId })
+          .from(hubTaskMembers)
+          .where(eq(hubTaskMembers.memberId, memberId)),
+      ),
+    )
+    .orderBy(asc(hubTasks.id))
+    .for("update");
+  // Every row of theirs, a task's or not: a `task:` file reads the same table.
+  await tx.delete(hubTaskMembers).where(eq(hubTaskMembers.memberId, memberId));
+  for (const task of tasks) {
+    const audience = await audienceOf(tx, task.visibility);
+    if (audience === null || audience.length > 0) {
+      await emitEvent(tx, {
+        type: "task.changed",
+        refId: task.id,
+        visibleTo: audience,
+      });
+    }
+    await recordAudit(tx, {
+      action: "task.member_removed",
+      member: by,
+      target: task.id,
+      outcome: "ok",
+      payload: { member: memberId },
+    });
+  }
 }
 
 export type TaskRouteOptions = {
@@ -526,6 +582,8 @@ export function taskRoutes(options: TaskRouteOptions) {
         throw new Invalid("members");
       const assignee =
         body.assignee === undefined ? null : assigneeOf(body.assignee);
+      if (stage === "doing" && workedByRun(assignee))
+        throw new Invalid("stage");
       const assigned = assigneeMember(assignee);
       const named = [...new Set([...asked, ...(assigned ? [assigned] : [])])];
       const active = await activeOf(tx, named);
@@ -725,10 +783,10 @@ export function taskRoutes(options: TaskRouteOptions) {
         set.lockExpiresAt = null;
       }
 
+      const mayReshape = row.createdBy === self.id || isManager(self);
       const reshaping =
         body.visibility !== undefined || body.members !== undefined;
-      if (reshaping && row.createdBy !== self.id && !isManager(self))
-        return forbidden;
+      if (reshaping && !mayReshape) return forbidden;
       const maker = row.createdBy ?? self.id;
       const visibility =
         body.visibility === undefined
@@ -749,6 +807,13 @@ export function taskRoutes(options: TaskRouteOptions) {
             : assigneeOf(body.assignee);
       const reassigned = assignee !== row.assignee;
       if (reassigned) fields.push("assignee");
+      // A claim outlives an edit only while the task stays in `doing`, so this is "nobody holds it".
+      if (
+        stage === "doing" &&
+        row.checkoutRunId === null &&
+        workedByRun(assignee)
+      )
+        throw new Invalid("stage");
       const assigned = assigneeMember(assignee);
       const added = [
         ...asked.filter((m) => !current.includes(m)),
@@ -764,6 +829,13 @@ export function taskRoutes(options: TaskRouteOptions) {
         members.add(row.createdBy);
       if (!assigneeFits(visibility, assigned, members))
         throw new Invalid("assignee");
+      // Nobody who has left the company goes back on: the maker, or an assignee kept from before,
+      // may be gone, and `leaveEveryTask` took them off.
+      const stay = new Set(await activeOf(tx, [...members]));
+      for (const member of members)
+        if (!stay.has(member)) members.delete(member);
+      if (!mayReshape && [...members].some((m) => !current.includes(m)))
+        return forbidden;
       if (fields.length === 0 && note === null) throw new Invalid("body");
 
       const before = await audienceOf(tx, row.visibility);
