@@ -72,8 +72,14 @@ function parseProposal(
   const { content, evidence } = body;
   if (typeof content !== "string") return invalid("content");
   const text = content.trim();
-  // One line: a line break is how a fact turns into a second paragraph of the prompt.
-  if (!text || text.length > HUB_MEMORY_LINE_MAX || /[\r\n]/.test(text))
+  // One line: a line break is how a fact turns into a second paragraph of the prompt — and CR/LF
+  // are not the only ones. Any control character (vertical tab, form feed, NEL) or Unicode's own
+  // line and paragraph separators can open one too, the same set a skill title is flattened of.
+  if (
+    !text ||
+    text.length > HUB_MEMORY_LINE_MAX ||
+    /[\p{Cc}\u2028\u2029]/u.test(text)
+  )
     return invalid("content");
   const value = (evidence ?? null) as Record<string, unknown> | null;
   if (
