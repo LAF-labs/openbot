@@ -33,6 +33,9 @@ import { type Answer, IDEMPOTENCY_KEY_SHAPE, onceFor } from "./idempotency";
  *   add and take out people (the company decides who is in what), and adding themselves is an event
  *   every member sees and a row in the trail, never a quiet look.
  * - Taking somebody out is for that person (leaving), the room's maker, or an admin or owner.
+ * - Leaving the company takes a person out of every room, in the same commit. Coming back does not
+ *   put them back: somebody adds them again, as anybody new, or they would read what was said
+ *   while they were gone.
  * - A room the caller may not read answers 404, the same as one that does not exist, so a member
  *   cannot learn from the answer that a room they are not in is there.
  *
@@ -147,14 +150,76 @@ async function roomMemberIds(
   return rows.map((row) => row.id);
 }
 
-/** Which of `ids` are members of the company now. */
-async function activeOf(tx: HubTransaction, ids: string[]): Promise<string[]> {
+/**
+ * Which of `ids` are members of the company now. `hold` keeps them so until the commit, for a
+ * write that puts them in a room: a departure committing beside it waits, or is waited for and
+ * then seen, so nobody is put in a room in the moment they leave the company. A post does not hold
+ * them: the room's lock already orders it against a departure, which takes that lock too.
+ */
+async function activeOf(
+  tx: HubTransaction,
+  ids: string[],
+  hold = false,
+): Promise<string[]> {
   if (ids.length === 0) return [];
-  const rows = await tx
+  const query = tx
     .select({ id: hubMembers.id })
     .from(hubMembers)
     .where(and(inArray(hubMembers.id, ids), eq(hubMembers.state, "active")));
+  const rows = hold ? await query.for("key share") : await query;
   return rows.map((row) => row.id);
+}
+
+/**
+ * Takes a member who has left the company out of every room they were in, inside the registry's
+ * transaction that marks them gone. The rooms are locked in one order, the way a post or an add
+ * locks its room, so a message committing beside the departure is shown to them or not, never
+ * after they are gone. Each room left with anybody in it hears of it, so their VMs redraw it.
+ */
+export async function leaveEveryRoom(
+  tx: HubTransaction,
+  memberId: string,
+  by: string,
+): Promise<void> {
+  const rooms = await tx
+    .select({ id: hubRooms.id })
+    .from(hubRooms)
+    .where(
+      inArray(
+        hubRooms.id,
+        tx
+          .select({ roomId: hubRoomMembers.roomId })
+          .from(hubRoomMembers)
+          .where(eq(hubRoomMembers.memberId, memberId)),
+      ),
+    )
+    .orderBy(asc(hubRooms.id))
+    .for("update");
+  for (const room of rooms) {
+    await tx
+      .delete(hubRoomMembers)
+      .where(
+        and(
+          eq(hubRoomMembers.roomId, room.id),
+          eq(hubRoomMembers.memberId, memberId),
+        ),
+      );
+    const left = await roomMemberIds(tx, room.id);
+    if (left.length > 0) {
+      await emitEvent(tx, {
+        type: "room.changed",
+        refId: room.id,
+        visibleTo: left,
+      });
+    }
+    await recordAudit(tx, {
+      action: "room.member_removed",
+      member: by,
+      target: room.id,
+      outcome: "ok",
+      payload: { member: memberId },
+    });
+  }
 }
 
 async function roomView(
@@ -295,7 +360,7 @@ export function roomRoutes(options: RoomRouteOptions) {
     }
     return write(context, false, async (tx, emitted) => {
       const wanted = [...new Set([self.id, ...named])];
-      const active = await activeOf(tx, wanted);
+      const active = await activeOf(tx, wanted, true);
       if (active.length !== wanted.length) return invalid("members");
       const id = `r_${randomUUID()}`;
       await tx.insert(hubRooms).values({ id, name, createdBy: self.id });
@@ -349,8 +414,11 @@ export function roomRoutes(options: RoomRouteOptions) {
       if (!room) return notFound;
       const before = await roomMemberIds(tx, roomId);
       if (!before.includes(self.id) && !isManager(self)) return notFound;
-      const active = await activeOf(tx, named);
-      if (active.length !== named.length) return invalid("members");
+      // Only the ones not in it yet are checked and held: holding somebody already in the room
+      // while their departure waits for this room's lock would have each wait for the other.
+      const fresh = named.filter((id) => !before.includes(id));
+      const active = await activeOf(tx, fresh, true);
+      if (active.length !== fresh.length) return invalid("members");
       const added = await tx
         .insert(hubRoomMembers)
         .values(
