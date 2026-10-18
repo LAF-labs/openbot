@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { connect } from "node:net";
 import { join } from "node:path";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type {
   HubFile,
   HubFileList,
@@ -11,6 +11,7 @@ import type {
   HubSync,
 } from "../../shared/hub/protocol";
 import { hubAudit, hubBlobs, hubChunks } from "../src/db/schema";
+import { EVENT_WRITE_LOCK } from "../src/events";
 import { blobPath } from "../src/files/store";
 import { joinTask, put, upload } from "./support/files";
 import {
@@ -444,6 +445,69 @@ describe("a company that is full", () => {
       });
       expect(retried.status).toBe(200);
     } finally {
+      await small.stop();
+    }
+  });
+
+  test("two uploads at once of different files cannot together go past the share", async () => {
+    const small = await startTestHub({ filesQuotaBytes: 100 });
+    // Before the lock below: registering a member writes an event too.
+    const pass = newPass();
+    await putMember(small, {
+      email: "pair@example.com",
+      vmOrigin: "https://pair.example",
+      pass,
+    });
+    // Holds the event lock every write takes after its share check, so both uploads are inside
+    // their transactions at once, past whatever check they made, until it is let go.
+    let release = () => {};
+    let held = () => {};
+    const isHeld = new Promise<void>((resolve) => {
+      held = resolve;
+    });
+    const holder = small.database.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(${EVENT_WRITE_LOCK})`);
+      held();
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    });
+    try {
+      await isHeld;
+      const answers = Promise.all(
+        ["a", "b"].map((letter) =>
+          upload(small, pass, {
+            meta: { name: `${letter}.bin` },
+            bytes: letter.repeat(60),
+          }),
+        ),
+      );
+      // Both are waiting on a lock: the event lock, or the share's while the other holds it.
+      for (let tries = 0; ; tries += 1) {
+        const [row] = await small.database.execute<{ waiting: number }>(
+          sql`select count(*)::int as waiting from pg_locks
+               where locktype = 'advisory' and not granted
+                 and database = (select oid from pg_database where datname = current_database())`,
+        );
+        if (row?.waiting === 2) break;
+        if (tries > 500)
+          throw new Error("the uploads never reached their writes");
+        await Bun.sleep(10);
+      }
+      release();
+      await holder;
+      const statuses = (await answers).map((answer) => answer.status).sort();
+      expect(statuses).toEqual([200, 507]);
+      const [use] = await small.database
+        .select({
+          total: sql<number>`coalesce(sum(${hubBlobs.bytes}), 0)::int`,
+        })
+        .from(hubBlobs)
+        .where(sql`${hubBlobs.refs} > 0`);
+      expect(use?.total).toBe(60);
+    } finally {
+      release();
+      await holder.catch(() => {});
       await small.stop();
     }
   });

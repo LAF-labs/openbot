@@ -79,6 +79,18 @@ const UPLOADS_AT_ONCE = 2;
 /** Chunks inserted per statement, so a long document is a few statements and not one huge one. */
 const CHUNK_BATCH = 500;
 
+/**
+ * One key for every write that checks the company's share. Arbitrary, fixed, and used for nothing
+ * else (events.ts holds 7_200_001).
+ *
+ * WHY THE CHECK IS TAKEN ONE WRITE AT A TIME. Two uploads of different files each read the bytes
+ * in use, and under READ COMMITTED neither sees the other's blob until it commits: both pass, and
+ * together they can go past the share by a whole file. Holding this until the commit means the
+ * second reads the total only after the first's blob is in it. Only under a quota, and the
+ * uploads at once are already two.
+ */
+const QUOTA_LOCK = 7_200_010;
+
 const MIME_SHAPE = /^[\w.+-]{1,64}\/[\w.+-]{1,64}$/;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what it refuses.
 const CONTROL = /[\u0000-\u001f\u007f]/;
@@ -727,6 +739,9 @@ async function writeVersion(
   }
 
   const { blob } = upload;
+  if (input.quotaBytes !== null) {
+    await tx.execute(sql`select pg_advisory_xact_lock(${QUOTA_LOCK})`);
+  }
   const [held] = await tx
     .select({ refs: hubBlobs.refs })
     .from(hubBlobs)

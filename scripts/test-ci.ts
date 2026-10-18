@@ -3354,6 +3354,9 @@ const GROUPS: readonly {
    *
    * RAISED 2026-10-16 FOR A SECOND ROTATION, from 50 to 51: the pass it drops loses its socket at
    * once while the pass in grace keeps its own (events-socket.test.ts, 1).
+   *
+   * RAISED 2026-10-18 FOR THE SHARE CHECKED ONE WRITE AT A TIME, from 116 to 117: two uploads of
+   * different files at once, each fitting alone, one taken and one refused full (files.test.ts, 1).
    */
   /*
    * RAISED 2026-10-16 FOR THE TEAM ROOMS, from 51 to 75: rooms.test.ts 24 (a room listed and read
