@@ -383,6 +383,7 @@ describe("the sweep", () => {
       },
       close: () => {},
       expireAt: () => {},
+      send: () => {},
     });
     const sweeper = startTaskSweeper({
       database: hub.database,
