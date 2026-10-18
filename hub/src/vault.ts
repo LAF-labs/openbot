@@ -332,6 +332,47 @@ export async function dropVaultFor(
   return dropped.map((row) => row.loginId).sort();
 }
 
+/**
+ * A login that is one VM at a time keeps one lease: the one opened first, or, with none opened,
+ * the one taken first. Every other lease on it goes, opened or not, in the caller's transaction
+ * (a `PUT` that turns `concurrent` off, under the login row's lock), so `open` and `lease` see one
+ * holder from the moment the change commits. A deleted lease that was opened cannot take its values
+ * back, but it no longer renews or holds the login. The one kept is marked exclusive, so the
+ * partial unique index stands under it as it does under a lease taken in exclusive mode.
+ */
+async function keepOneHolder(
+  tx: HubTransaction,
+  loginId: string,
+  now: Date,
+): Promise<void> {
+  const [kept] = await tx
+    .select({ id: hubVaultLeases.id })
+    .from(hubVaultLeases)
+    .where(
+      and(eq(hubVaultLeases.loginId, loginId), gt(hubVaultLeases.until, now)),
+    )
+    .orderBy(
+      sql`${hubVaultLeases.openedAt} asc nulls last`,
+      asc(hubVaultLeases.at),
+      asc(hubVaultLeases.id),
+    )
+    .limit(1);
+  await tx
+    .delete(hubVaultLeases)
+    .where(
+      and(
+        eq(hubVaultLeases.loginId, loginId),
+        kept ? ne(hubVaultLeases.id, kept.id) : undefined,
+      ),
+    );
+  if (kept) {
+    await tx
+      .update(hubVaultLeases)
+      .set({ exclusive: true })
+      .where(eq(hubVaultLeases.id, kept.id));
+  }
+}
+
 export type VaultRouteOptions = {
   database: HubDatabase;
   listeners: Listeners;
@@ -478,7 +519,10 @@ export function vaultRoutes(options: VaultRouteOptions) {
     const now = clock();
     const answer = await database.transaction(async (tx): Promise<Reply> => {
       const [existing] = await tx
-        .select({ id: hubVaultLogins.id })
+        .select({
+          id: hubVaultLogins.id,
+          concurrent: hubVaultLogins.concurrent,
+        })
         .from(hubVaultLogins)
         .where(eq(hubVaultLogins.id, id))
         .for("update");
@@ -510,6 +554,9 @@ export function vaultRoutes(options: VaultRouteOptions) {
               notInArray(hubVaultLeases.origin, input.origins),
             ),
           );
+        if (!(input.concurrent ?? existing.concurrent)) {
+          await keepOneHolder(tx, id, now);
+        }
       } else if (sealed) {
         await tx.insert(hubVaultLogins).values({
           id,
@@ -799,7 +846,12 @@ export function vaultRoutes(options: VaultRouteOptions) {
             sealedPassword: hubVaultLogins.sealedPassword,
           })
           .from(hubVaultLogins)
-          .where(eq(hubVaultLogins.id, id));
+          .where(eq(hubVaultLogins.id, id))
+          // Shared, so opens do not wait on each other, but a change of the login's rules (`PUT`,
+          // `PUT grants`, which take it for update) is either wholly before this open or wholly
+          // after it: never a grant, an origin or a holder read from before a change that commits
+          // while the lease is being spent.
+          .for("share");
         if (!login) return notFound;
         if (!(await holdsGrant(tx, id, self.id))) return forbidden;
         const [spent] = await tx
