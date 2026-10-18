@@ -113,6 +113,7 @@ import { deploymentHealthProbes } from "./health";
 import { createLiveScreen, type SocketData } from "./live-screen";
 import { users } from "./db/schema";
 import { createHubRuntime } from "./hub";
+import { createCompanyVault, noteVaultOrigins } from "./hub/vault";
 import { log, recentLines } from "./log";
 import { createLoginVault } from "./logins/store";
 import { readApprovalMetrics } from "./notifications/approval-metrics";
@@ -864,6 +865,21 @@ const computerGateway = computerClient
       client: computerClient,
       projectOf: threadProjects.of,
       logins: loginVault,
+      // The company's logins, on a VM that belongs to one: leased from its hub for a run.
+      ...(hubRuntime
+        ? {
+            companyLogins: {
+              vault: createCompanyVault({
+                http: hubRuntime.http,
+                allowLoopbackHttp: config.computer?.allowPrivateHosts ?? false,
+              }),
+              allowLoopbackHttp: config.computer?.allowPrivateHosts ?? false,
+              // For leaving the company: the sites to sign the browser out of (`hub/leave.ts`).
+              noteOrigins: (origins: readonly string[]) =>
+                noteVaultOrigins(database, origins),
+            },
+          }
+        : {}),
       /*
        * The trail, with one ear on it.
        *
@@ -937,6 +953,9 @@ const unattendedTools = createUnattendedTools({
   ...(computerGateway ? { gateway: computerGateway } : {}),
   pluginStore,
   logins: loginVault,
+  ...(computerGateway && hubRuntime
+    ? { companyPasswordsAt: computerGateway.companyPasswordsAt }
+    : {}),
 });
 
 /**
@@ -1060,6 +1079,10 @@ const chatTools = createChatTools({
   delegatesBrowsing: DELEGATES_BROWSING,
   pluginStore,
   logins: loginVault,
+  // The company's passwords this VM put in, taken out beside the person's own (`hub/vault.ts`).
+  ...(computerGateway && hubRuntime
+    ? { companyPasswordsAt: computerGateway.companyPasswordsAt }
+    : {}),
   approvals,
   people: personAnswers,
   agents: agentProfileStore,

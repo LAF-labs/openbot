@@ -3285,6 +3285,18 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `server` by two more (to 4883 on top of 4881): a write meeting a refused pass is said as that,
  * not as kept — with no row when it was known before (hub-tools.test.ts), the row waiting when the
  * hub's 401 came during the write (hub-tools.integration.test.ts).
+ *
+ * the hub, and no hub tool without the pass (hub-tools-head.test.ts, 3). 4747 and 28.
+ *
+ * RAISED 2026-10-17 FOR THE COMPANY LOGIN ON THE VM: `server` by eighteen (to 4793) — a company
+ * login through the same fill against a scripted hub: leased, judged, opened once, the values in
+ * the page and in no row, answer, request or log line; given back on a question, a refusal, a
+ * stop, a failure and the run's end, renewed while the run goes on, never held when concurrent;
+ * busy said with its holder; a hub that cannot hand it over a fact, never retried or queued; the
+ * person's own and the company's named back together; a verified device only off a page with no
+ * password box (company-login-fill.test.ts, 17); and the whole record on a real Postgres — trail,
+ * conversation, outbox, log — with neither value in it (company-login-secret-absence
+ * .integration.test.ts, 1). 4775 and 18.
  */
 const GROUPS: readonly {
   name: string;
@@ -3311,8 +3323,16 @@ const GROUPS: readonly {
    * RAISED 2026-10-18 FOR A WRITE WHOSE ANSWER IS STILL ON ITS WAY, from 4960 to 4961: one in
    * `hub-tools.integration.test.ts` — the hub's answer held past the write's wait and then a 404,
    * and the Bot is told the 404, not "kept". 4960 and 1.
+   *
+   * RAISED 2026-10-18 FOR ONE COMPANY LOGIN AMONG ONE VM'S RUNS, from 4980 to 4988: six in
+   * `company-login-fill.test.ts` (a second run of the VM told another run has it and nothing
+   * leased, and so marked in a choice; a run signing in again whose second fill fails keeps the
+   * hub's lease; a fill for no conversation given back at the next run's end; a hold the hub no
+   * longer knows said in the log; a company password written back later taken out on its site
+   * alone) and one each in `chat-tools.test.ts` and `unattended-facts.test.ts` (that password
+   * taken out of what a conversation and a routine hand a model). 4980 and 8.
    */
-  { name: "server", floor: 4961, roots: ["server"] },
+  { name: "server", floor: 4988, roots: ["server"] },
   { name: "app", floor: 2570, roots: ["app"] },
   {
     name: "agent-computer",

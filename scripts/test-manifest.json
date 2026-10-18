@@ -375,6 +375,8 @@
   "server/tests/chat-plugin-call.test.ts",
   "server/tests/chat-tools.test.ts",
   "server/tests/compaction.test.ts",
+  "server/tests/company-login-fill.test.ts",
+  "server/tests/company-login-secret-absence.integration.test.ts",
   "server/tests/component-decision.test.ts",
   "server/tests/component-store.integration.test.ts",
   "server/tests/computer-approvals.test.ts",

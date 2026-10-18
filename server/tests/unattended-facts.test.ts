@@ -593,6 +593,24 @@ describe("what a browser tool hands a routine, read for a saved password", () =>
     expect(JSON.stringify(outcome)).not.toContain(SHOWN);
   });
 
+  test("a company login's password this VM put in is taken out too, and the gateway told it was a hit", async () => {
+    told.length = 0;
+    const toolkit = await createUnattendedTools({
+      gateway,
+      companyPasswordsAt: (addresses) =>
+        new Map(
+          addresses.includes("https://shop.example")
+            ? [["https://shop.example", [SHOWN]]]
+            : [],
+        ),
+    })("bot-1", { ...actor, runKey: "routine:run-8" });
+    expect(await toolkit.execute("computer_read", {})).toMatchObject({
+      ok: true,
+      text: "비밀번호 확인: [•••]",
+    });
+    expect(told).toEqual([["bot-1", "routine:run-8", true]]);
+  });
+
   test("without a vault a page is handed over as it was read", async () => {
     const toolkit = await createUnattendedTools({ gateway })("bot-1", actor);
     expect(await toolkit.execute("computer_read", {})).toMatchObject({

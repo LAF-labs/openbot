@@ -53,6 +53,7 @@ import {
   MAIN_SCOPE,
   projectScope,
 } from "../../../shared/file-scope";
+import type { CompanyVault } from "../hub/vault";
 import type { LoginVault } from "../logins/store";
 import type { AuditStore } from "../audit";
 import { type ApprovalRegistry, createApprovalRegistry } from "./approvals";
@@ -154,6 +155,22 @@ export type ComputerGatewayOptions = {
   logins?: Pick<LoginVault, "forOrigin" | "open" | "used"> &
     Partial<Pick<LoginVault, "save" | "acceptsOrigin">>;
   /**
+   * The company's login vault on its hub (`hub/vault.ts`), on a VM that is a member of one: its
+   * logins for a site stand beside the person's own (`gateway/secrets.ts`). With the loopback
+   * opt-in of a developer's stack, as the person's vault is made with.
+   */
+  companyLogins?: {
+    vault: Pick<
+      CompanyVault,
+      "forOrigin" | "lease" | "open" | "release" | "verified" | "memberName"
+    >;
+    allowLoopbackHttp?: boolean;
+    /** Where the origins it was filled on are kept (`hub_vault_origins`, `noteVaultOrigins`). */
+    noteOrigins?: (origins: readonly string[]) => Promise<void>;
+    /** The clock a held lease is renewed by. A test hands in its own. */
+    schedule?: (milliseconds: number, run: () => void) => () => void;
+  };
+  /**
    * The project a conversation is, by its thread: the channel's id where its kind is `project`,
    * null for the main conversation's thread or one that is no conversation's
    * (`channels/thread-projects.ts`, which keeps the answer). What decides whose folder a run's
@@ -231,6 +248,18 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
     // Made just below, from what this hands it; called only once a request arrives.
     govern: (...call) => govern(...call),
     ...(options.logins ? { logins: options.logins } : {}),
+    ...(options.companyLogins?.vault
+      ? {
+          company: options.companyLogins.vault,
+          allowLoopbackHttp: options.companyLogins.allowLoopbackHttp === true,
+          ...(options.companyLogins.noteOrigins
+            ? { noteOrigins: options.companyLogins.noteOrigins }
+            : {}),
+          ...(options.companyLogins.schedule
+            ? { schedule: options.companyLogins.schedule }
+            : {}),
+        }
+      : {}),
   });
   const govern = createGovern({
     auditStore,
@@ -269,6 +298,10 @@ export function createComputerGateway(options: ComputerGatewayOptions) {
     supplySecret: secrets.supplySecret,
     /** Whether a person's value is being held in this Bot's browser. See `gateway/secrets.ts`. */
     holdsValues: secrets.holdsValues,
+    /** The company logins this Bot's runs hold leases on. See `gateway/secrets.ts`. */
+    companyLeases: secrets.companyLeases,
+    /** The company passwords put into a page here, for the look after a run (`logins/shown.ts`). */
+    companyPasswordsAt: secrets.companyPasswordsAt,
     /** A browser call's outcome was handed to a model, with or without a saved password hidden in it. */
     handedOver: secrets.handedOver,
     /** Whether a picture offered for this call is one not to keep. */

@@ -52,6 +52,7 @@ import {
 import { BOTS_OWN_LOOK, readFileInputOf } from "../computer/schema";
 import { snapshotForModel } from "../computer/snapshot-lines";
 import { describeFailure } from "../failure-text";
+import { companyLoginResult } from "../hub/vault";
 import { log } from "../log";
 import { createShownGuard } from "../logins/shown";
 import type { LoginVault } from "../logins/store";
@@ -379,6 +380,11 @@ export type UnattendedToolsOptions = {
    * a run of theirs is offered the way to sign in with one. Absent where there is no vault.
    */
   logins?: Pick<LoginVault, "passwordsAt" | "list">;
+  /**
+   * The company logins' passwords this VM put into a page (`ComputerGateway.companyPasswordsAt`),
+   * taken out beside the person's own. Absent on a VM that belongs to no company.
+   */
+  companyPasswordsAt?: ComputerGateway["companyPasswordsAt"];
 };
 
 /**
@@ -397,6 +403,9 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
    */
   const withoutSavedPasswords = createShownGuard({
     ...(options.logins ? { logins: options.logins } : {}),
+    ...(options.companyPasswordsAt
+      ? { company: options.companyPasswordsAt }
+      : {}),
     seen: (run, hidden) => options.gateway?.handedOver(run.botId, run, hidden),
   });
   return async (
@@ -765,6 +774,9 @@ export function createUnattendedTools(options: UnattendedToolsOptions) {
               signal,
               { nobodyToAsk: true },
             );
+            // A company login, or the fact that it could not be had (`hub/vault.ts`).
+            const company = companyLoginResult(asked);
+            if (company) return company;
             if (asked.loginFilled) {
               return {
                 ok: true,

@@ -79,3 +79,22 @@ export const hubOutbox = pgTable(
       .where(sql`${table.deliveredAt} is null and ${table.refusedAt} is null`),
   ],
 );
+
+/**
+ * The sites this VM's browser signed in to with a company login (`computer/gateway/secrets.ts`):
+ * each origin of a company login it put into a page, and when it first and last did. ORIGINS ONLY —
+ * never a value, a username, or which login.
+ *
+ * Kept here because leaving a company has to sign the browser out of those sites, and by the time
+ * the VM leaves, the hub has already refused its pass and cannot be asked which logins it was
+ * granted (`server/src/hub/leave.ts`, which reads {@link vaultOriginsUsed} in `hub/vault.ts`).
+ */
+export const hubVaultOrigins = pgTable("hub_vault_origins", {
+  origin: text("origin").primaryKey(),
+  firstFilledAt: timestamp("first_filled_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  lastFilledAt: timestamp("last_filled_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});

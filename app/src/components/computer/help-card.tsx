@@ -483,6 +483,10 @@ type HelpEnding =
   | "saved"
   /** The site has several saved logins and the Bot has to say which: nothing went in yet. */
   | "several"
+  /** A company login the person was granted answered: nobody typed, and nobody was asked. */
+  | "company"
+  /** The company login is in use on another member's computer: nothing went in. */
+  | "busy"
   | "skipped"
   | "unanswered"
   | "stopped"
@@ -500,6 +504,10 @@ function endingOf(result: string | undefined): HelpEnding {
       return "saved";
     case "laf:login_choice":
       return "several";
+    case "laf:company_login_filled":
+      return "company";
+    case "laf:vault_busy":
+      return "busy";
     case "laf:help_skipped":
     case "laf:secret_skipped":
       return "skipped";
@@ -528,6 +536,10 @@ function endingLabel(ending: HelpEnding): string {
       return t("From a saved login");
     case "several":
       return t("Several saved logins");
+    case "company":
+      return t("From a company login");
+    case "busy":
+      return t("Company login in use");
     case "skipped":
       return t("Skipped");
     case "unanswered":

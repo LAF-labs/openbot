@@ -1015,6 +1015,32 @@ describe("what a browser tool hands over, read for a saved password", () => {
     expect(told).toEqual([["bot-1", "thread-1", "read-1", true]]);
   });
 
+  test("a company login's password this VM put in is taken out the same way, with no vault of the person's at all", async () => {
+    const { gateway, told } = reading(`비밀번호 확인: ${SHOWN}`);
+    const asked: string[][] = [];
+    const toolkit = await createChatTools({
+      gateway,
+      // What the gateway kept of the company login it filled (`gateway/secrets.ts`).
+      companyPasswordsAt: (addresses) => {
+        asked.push([...addresses]);
+        return new Map(
+          addresses.includes("https://shop.example")
+            ? [["https://shop.example", [SHOWN]]]
+            : [],
+        );
+      },
+      people: createPersonAnswers(),
+    })(context, [tool("computer_read")]);
+    const outcome = await toolkit.execute("computer_read", {}, call("read-c"));
+    expect(outcome).toMatchObject({
+      ok: true,
+      text: "비밀번호 확인: [•••]",
+      notes: [said],
+    });
+    expect(asked).toEqual([["https://shop.example"]]);
+    expect(told).toEqual([["bot-1", "thread-1", "read-c", true]]);
+  });
+
   test("the same words on another site's page are that page's, and the call is still told on", async () => {
     const { gateway, told } = reading(
       `1. hunter2\n2. ${SHOWN}`,

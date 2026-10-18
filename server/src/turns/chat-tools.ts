@@ -130,6 +130,7 @@ import {
 import { RoutineError } from "../routines/errors";
 import type { RoutineSchedule } from "../routines/schedule";
 import type { RoutineService } from "../routines/service";
+import { companyLoginResult } from "../hub/vault";
 import { createShownGuard } from "../logins/shown";
 import type { LoginVault } from "../logins/store";
 import {
@@ -156,6 +157,11 @@ export type ChatToolsDeps = {
    * a model (`logins/shown.ts`). Absent where there is no vault: nothing was saved to look for.
    */
   logins?: Pick<LoginVault, "passwordsAt">;
+  /**
+   * The company logins' passwords this VM put into a page (`ComputerGateway.companyPasswordsAt`),
+   * taken out beside the person's own. Absent on a VM that belongs to no company.
+   */
+  companyPasswordsAt?: ComputerGateway["companyPasswordsAt"];
   /**
    * `offeredToModel`, never `listForAgent`: this list is read by a model, and the other one holds a
    * vendor's unreviewed words for a tool that waits for review (`OfferedPlugins`, `store.ts`).
@@ -562,6 +568,7 @@ export function createChatTools(deps: ChatToolsDeps) {
   // over, so that no picture of them is kept (`computer/gateway/secrets.ts`, `handedOver`).
   const withoutSavedPasswords = createShownGuard({
     ...(deps.logins ? { logins: deps.logins } : {}),
+    ...(deps.companyPasswordsAt ? { company: deps.companyPasswordsAt } : {}),
     seen: (run, hidden) => deps.gateway?.handedOver(run.botId, run, hidden),
   });
   return async (
@@ -1127,6 +1134,9 @@ export function createChatTools(deps: ChatToolsDeps) {
            * The boxes are filled, or the site has several saved logins and the Bot is handed
            * what each is called to choose by — never anything of what one holds.
            */
+          // A company login, or the fact that it could not be had (`hub/vault.ts`).
+          const company = companyLoginResult(asked);
+          if (company) return company;
           if (asked.loginFilled) {
             return {
               ok: true,
