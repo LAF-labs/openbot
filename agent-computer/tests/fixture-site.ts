@@ -736,14 +736,16 @@ export function serveFixture(port = 0) {
        */
       if (path === "/sign-in") {
         const who = url.searchParams.get("as") ?? "";
+        // `?under=/app`: a site that keeps its session under a path, and reads it there only.
+        const under = url.searchParams.get("under") ?? "/";
         return new Response(SIGNED_IN_HTML(who), {
           headers: {
             ...html,
-            "set-cookie": `${SESSION_COOKIE}=${encodeURIComponent(who)}; Path=/; Max-Age=3600`,
+            "set-cookie": `${SESSION_COOKIE}=${encodeURIComponent(who)}; Path=${under}; Max-Age=3600`,
           },
         });
       }
-      if (path === "/whoami") {
+      if (path === "/whoami" || path === "/app/whoami") {
         const cookie = request.headers.get("cookie") ?? "";
         const held = cookie
           .split(";")

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
 import { FORGET_ORIGINS_MAX, originsOf } from "../src/computer-routes";
+import { isSentToOrigin } from "../src/profiles";
 import { serveFixture, SIGNED_OUT_TEXT, signedInAs } from "./fixture-site";
 
 /**
@@ -61,6 +62,33 @@ describe("which origins a forget will take", () => {
     );
     expect(originsOf(many)).toBeNull();
     expect(originsOf(many.slice(1))).toHaveLength(FORGET_ORIGINS_MAX);
+  });
+});
+
+describe("which cookies a forget of an origin takes", () => {
+  test.each([
+    ["a host-only cookie of the host", "wing.example.co.kr", false, true],
+    ["a cookie of the parent domain", ".example.co.kr", false, true],
+    ["a cookie of the host as a domain", ".wing.example.co.kr", false, true],
+    ["a host-only cookie of the parent", "example.co.kr", false, false],
+    ["a sibling's cookie", "bank.example.co.kr", false, false],
+    ["a cookie of a look-alike host", ".ing.example.co.kr", false, false],
+    ["a secure cookie, over https", "wing.example.co.kr", true, true],
+  ])("for https://wing.example.co.kr: %s", (_what, domain, secure, taken) => {
+    expect(
+      isSentToOrigin({ domain, secure }, "https://wing.example.co.kr"),
+    ).toBe(taken);
+  });
+
+  test("a secure cookie is not an http origin's, but is a loopback one's", () => {
+    const cookie = { domain: "wing.example.co.kr", secure: true };
+    expect(isSentToOrigin(cookie, "http://wing.example.co.kr")).toBe(false);
+    expect(
+      isSentToOrigin(
+        { ...cookie, domain: "localhost" },
+        "http://localhost:8080",
+      ),
+    ).toBe(true);
   });
 });
 
@@ -164,6 +192,31 @@ describe.if(HAS_BROWSER)("forgetting the cookies of some origins", () => {
     });
 
     expect(await pageText(`${company}/whoami`)).toContain(SIGNED_OUT_TEXT);
+    expect(await pageText(`${own}/whoami`)).toContain(signedInAs("내계정"));
+  }, 60_000);
+
+  /*
+   * A SESSION KEPT UNDER A PATH. Read off each origin's `/`, the cookie set with `Path=/app` was
+   * never found, and the browser stayed signed in to the company's site after the forget.
+   */
+  test("signs out of a login the site keeps under a path", async () => {
+    const port = new URL(fixture?.url ?? "").port;
+    const company = `http://127.0.0.1:${port}`;
+    const own = `http://localhost:${port}`;
+
+    await pageText(
+      `${company}/sign-in?as=${encodeURIComponent("앱계정")}&under=/app`,
+    );
+    expect(await pageText(`${company}/app/whoami`)).toContain(
+      signedInAs("앱계정"),
+    );
+
+    const forgot = await post("/computers/cookies/forget", {
+      origins: [company],
+    });
+    expect(forgot.status).toBe(200);
+    expect(forgot.body.forgotten).toBe(1);
+    expect(await pageText(`${company}/app/whoami`)).toContain(SIGNED_OUT_TEXT);
     expect(await pageText(`${own}/whoami`)).toContain(signedInAs("내계정"));
   }, 60_000);
 
