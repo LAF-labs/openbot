@@ -3391,7 +3391,7 @@ const GROUPS: readonly {
    * by its maker or an admin; leaving the company taking a member off every task, with neither an
    * edit nor coming back putting them back).
    */
-  { name: "hub", floor: 223, roots: ["hub"] },
+  { name: "hub", floor: 245, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

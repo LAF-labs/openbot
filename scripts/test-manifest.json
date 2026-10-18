@@ -326,6 +326,7 @@
   "hub/tests/sync.test.ts",
   "hub/tests/tasks.test.ts",
   "hub/tests/uploads.test.ts",
+  "hub/tests/vault.test.ts",
   "hub/tests/visibility-property.test.ts",
   "server/tests/account-lifecycle.integration.test.ts",
   "server/tests/account-routes.test.ts",
