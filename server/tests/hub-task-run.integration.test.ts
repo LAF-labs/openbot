@@ -2,6 +2,9 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { Message, Tool } from "@ag-ui/client";
 import { eq, inArray } from "drizzle-orm";
+import { placedForWrite, projectScope } from "../../shared/file-scope";
+import { createThreadProjects } from "../src/channels/thread-projects";
+import type { ActionActor } from "../src/computer/gateway";
 import { createDatabase } from "../src/db/client";
 import {
   agentProfiles,
@@ -335,6 +338,36 @@ describe("a task's run", () => {
         noted: new Set(),
       }),
     ).toEqual({ runId: id, outcome: { kind: "person" } });
+  });
+
+  test("what it files goes in the task's project folder, not the main one", async () => {
+    const who = await person();
+    const { agent } = scriptedAgent([[say("했어요.")]]);
+    const actors: ActionActor[] = [];
+    const given = task("보고서 파일로 남겨줘");
+    await createTaskRun({
+      database,
+      ledger,
+      owner: async () => who,
+      resolveAgents: async () => ({ [who.botId]: agent }),
+      tools: async (_botId, actor) => {
+        actors.push(actor);
+        return { tools: TOOLS, execute: async () => ({ ok: true }) };
+      },
+    })({ task: given, runId: runId(), signal: new AbortController().signal });
+
+    const [conversation] = await database
+      .select({ channelId: channelThreads.channelId })
+      .from(channelThreads)
+      .where(eq(channelThreads.threadId, `task:${given.id}`));
+    // The gateway's own question (`gateway.ts`, `fileScopeOf`): whose files is this actor's run?
+    const threadId = actors[0]?.threadId;
+    expect(threadId).toBe(`task:${given.id}`);
+    const projectId = await createThreadProjects(database).of(threadId ?? "");
+    expect(projectId).toBe(conversation?.channelId ?? "none");
+    expect(placedForWrite(projectScope(projectId ?? ""), "보고서.md")).toBe(
+      `projects/${conversation?.channelId}/보고서.md`,
+    );
   });
 
   test("a second run of the same task works in the same conversation", async () => {

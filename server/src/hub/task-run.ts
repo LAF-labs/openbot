@@ -251,6 +251,10 @@ export function createTaskRun(deps: TaskRunDeps): TaskRun {
             id: actor.id,
             // The local actor is not a row in `users`, so it is named without claiming to be one.
             ...(actor.id === DEV_ACTOR.id ? {} : { userId: actor.id }),
+            // And in which conversation: the task's project, so what it files goes in that
+            // project's folder (`shared/file-scope.ts`). Without it the gateway takes the run for
+            // the main conversation's, and its files outlive the project they were made for.
+            threadId,
             runKey,
             runId,
           },
