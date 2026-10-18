@@ -3337,8 +3337,11 @@ const GROUPS: readonly {
    * back to the board when the job moves (job-tasks.test.ts, 2); a blocked task given to somebody
    * else goes back to the board (task-approvals.test.ts, 1); a definition at the shared cap is
    * taken and one byte over refused (job-handoff.test.ts, 1).
+   *
+   * RAISED 2026-10-18 FOR THE HANDOFF'S LOCK ORDER, from 106 to 107: a move and a run's report on
+   * one of the job's tasks at once both go through (job-tasks.test.ts, 1).
    */
-  { name: "hub", floor: 106, roots: ["hub"] },
+  { name: "hub", floor: 107, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
