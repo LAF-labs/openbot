@@ -23,7 +23,7 @@ import { hubMembers, hubMemory } from "./db/schema";
 import { emitEvent, type Listeners } from "./events";
 import type { Answer } from "./idempotency";
 import { invalid, isAdmin, jsonBody, memberWrite, runOf } from "./member-write";
-import { bumpVersion, readVersions } from "./versions";
+import { bumpVersion, readVersions, readWithVersions } from "./versions";
 
 /*
  * TEAM MEMORY IS READ AS PROMPT BY EVERY MEMBER'S BOT, SO NOTHING A BOT PROPOSES IS READ UNTIL A
@@ -172,7 +172,10 @@ export function memoryRoutes(options: MemoryRouteOptions) {
   route.use("*", options.member);
 
   route.get("/", async (context) => {
-    const lines = await liveLines(database);
+    const { value: lines, versions } = await readWithVersions(
+      database,
+      liveLines,
+    );
     const body: HubMemory = {
       ok: true,
       lines: lines.map((line) => ({
@@ -181,7 +184,7 @@ export function memoryRoutes(options: MemoryRouteOptions) {
         confirmedBy: line.confirmedBy ?? "",
         at: (line.confirmedAt ?? new Date(0)).toISOString(),
       })),
-      version: (await readVersions(database)).memory,
+      version: versions.memory,
       used: lines.reduce((sum, line) => sum + line.content.length, 0),
       cap: HUB_MEMORY_CAP,
     };

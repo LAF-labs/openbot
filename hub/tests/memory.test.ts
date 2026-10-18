@@ -7,7 +7,8 @@ import {
 } from "../../shared/hub/protocol";
 import { hubAudit, hubMemory } from "../src/db/schema";
 import { newPass, putMember, startTestHub, type TestHub } from "./support/hub";
-import { call, eventsAfter, headOf } from "./support/write";
+import { bumpVersion } from "../src/versions";
+import { call, eventsAfter, headOf, readAcrossACommit } from "./support/write";
 
 /*
  * Team memory: anyone's Bot proposes, an admin confirms, and only then does a line reach every
@@ -357,5 +358,42 @@ describe("the team's 1,500 characters", () => {
         .map((id) => [id, "confirmed"])
         .sort(),
     );
+  });
+});
+
+describe("reading the team's lines", () => {
+  test("answers the version of the lines it answers, a confirmation committing between the two", async () => {
+    const before = await memory();
+    const id = `mid-read-${Date.now()}`;
+    const during = (
+      await readAcrossACommit(
+        hub,
+        () => call(hub, staff.pass, "GET", "/memory"),
+        async (tx) => {
+          const now = new Date();
+          const content = "가게 문은 아침 9시에 연다.";
+          await tx.insert(hubMemory).values({
+            id,
+            content,
+            flat: content,
+            state: "confirmed",
+            proposedBy: staffId,
+            evidence,
+            confirmedBy: adminId,
+            confirmedAt: now,
+          });
+          await bumpVersion(tx, "memory");
+        },
+      )
+    ).body as HubMemory;
+    // A VM holding the newer number fetches nothing more, so it must come with the newer line.
+    const carried = during.lines.some((line) => line.id === id);
+    expect([during.version > before.version, carried]).toEqual([
+      carried,
+      carried,
+    ]);
+    const after = await memory();
+    expect(after.version).toBe(before.version + 1);
+    expect(after.lines.some((line) => line.id === id)).toBe(true);
   });
 });

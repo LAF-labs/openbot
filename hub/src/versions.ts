@@ -38,3 +38,21 @@ export async function readVersions(
     rows.find((row) => row.kind === kind)?.version ?? 0;
   return { skills: of("skills"), memory: of("memory") };
 }
+
+/**
+ * `read` and the versions from one snapshot. A collection and its version read in two statements
+ * under read committed can straddle a write's commit: the body would carry the new number with the
+ * old rows, and a VM holding that number has nothing to fetch, so it would never see the change.
+ */
+export function readWithVersions<T>(
+  database: HubDatabase,
+  read: (tx: HubTransaction) => Promise<T>,
+): Promise<{ value: T; versions: HubVersions }> {
+  return database.transaction(
+    async (tx) => {
+      const value = await read(tx);
+      return { value, versions: await readVersions(tx) };
+    },
+    { isolationLevel: "repeatable read", accessMode: "read only" },
+  );
+}
