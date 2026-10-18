@@ -23,12 +23,17 @@
  * register stays content-free, and no VM ever talks to another VM directly (neither knows the
  * other's address, and neither could tell the other's pass from an impostor's).
  *
+ * WHEN THE JOB IS TAKEN OFF THE REGISTER the hub says `job.changed`, and the job reads as 404: the
+ * link here goes and the routine is a plain routine again, as it was before it was registered
+ * (`letGo`). A VM that was away when it happened finds out at its next `scan`.
+ *
  * A handoff that is not there yet — the old VM is down, or slower than the event — is looked for
  * again at every `job.changed` and every time the line comes back (`scan`), so a new runner whose
  * old one was offline for a day still gets it the moment it can.
  */
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
+import { HUB_FACTS } from "../../../shared/hub/protocol";
 import type { AgentActor } from "../agents/profile-types";
 import type { Database } from "../db/client";
 import { hubJobRoutines, lafRoutines } from "../db/schema";
@@ -56,7 +61,10 @@ export type HubJobs = {
   ): Promise<{ ok: true; jobId: string } | { ok: false; code: string }>;
   /** An event off the hub's line. Only the jobs' are looked at. */
   heard(event: { type: string; refId: string | null }): void;
-  /** Every job this VM runs now and has no routine for: its handoff looked for. At boot and on reconnect. */
+  /**
+   * Every job this VM runs now and has no routine for: its handoff looked for; and every job it
+   * holds that the register no longer lists: let go. At boot and on reconnect.
+   */
   scan(): Promise<void>;
   /** Whatever is being handled now, settled. For a test, and for leaving. */
   idle(): Promise<void>;
@@ -163,6 +171,26 @@ export function createHubJobs(options: HubJobsOptions): HubJobs {
     log.info("hub_job_handed_on", { job: jobId, routine: routineId });
   };
 
+  /**
+   * The job was taken off the register: its link goes, and the routine stays as its person left it,
+   * a plain routine again — on or off as it was, its runs counted against the workspace alone. Kept
+   * rather than turned off because the routine was its person's before it was ever a sub-Bot, and
+   * the register is a name for it, not its switch. Left linked, every run would name a job the hub
+   * no longer has, and the hub refuses those (`budget.ts`).
+   */
+  const letGo = async (jobId: string) => {
+    const dropped = await database
+      .delete(hubJobRoutines)
+      .where(eq(hubJobRoutines.jobId, jobId))
+      .returning({ routineId: hubJobRoutines.routineId });
+    if (dropped.length > 0) {
+      log.info("hub_job_let_go", {
+        job: jobId,
+        routine: dropped[0]?.routineId ?? null,
+      });
+    }
+  };
+
   /** The job is this VM's now: its definition collected, the routine made, the handoff cleared. */
   const takeOver = async (jobId: string) => {
     const answer = await http.request({
@@ -199,9 +227,11 @@ export function createHubJobs(options: HubJobsOptions): HubJobs {
       retry: false,
     });
     if (!read.ok) {
-      if (read.code !== "laf:hub_not_found") {
-        log.warn("hub_job_not_read", { job: jobId, code: read.code });
+      if (read.code === HUB_FACTS.notFound) {
+        await letGo(jobId);
+        return;
       }
+      log.warn("hub_job_not_read", { job: jobId, code: read.code });
       return;
     }
     const job = readJob(read.body);
@@ -276,6 +306,17 @@ export function createHubJobs(options: HubJobsOptions): HubJobs {
           const local = await localOf(job.id);
           if ((job.runner === me) !== Boolean(local)) await consider(job.id);
         }),
+      );
+      // A job this VM holds that the register no longer lists was taken off while the line was
+      // down: looked at, so a 404 lets it go.
+      const listed = new Set(jobs.map((job) => job.id));
+      const held = await database
+        .select({ jobId: hubJobRoutines.jobId })
+        .from(hubJobRoutines);
+      await Promise.all(
+        held
+          .filter((row) => !listed.has(row.jobId))
+          .map((row) => consider(row.jobId)),
       );
     },
 

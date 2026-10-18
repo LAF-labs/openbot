@@ -270,6 +270,51 @@ describe("a routine as the company's sub-Bot", () => {
     expect(hub.handoffs.has(jobId)).toBe(false);
   });
 
+  test("taken off the register: the link goes and the routine stays a plain routine, heard live or found at the next scan", async () => {
+    const hub = register();
+    const http = hub.as("m_a");
+    const jobs = createHubJobs({
+      database,
+      http,
+      outbox: directOutbox(http),
+      memberId: () => "m_a",
+      mine: (actor, id) => mine(database, actor, id),
+      install: async () => {
+        throw new Error("not this VM's to install");
+      },
+    });
+    const heard = await routine(`매출 정리 ${suite}-3`);
+    const away = await routine(`매출 정리 ${suite}-4`);
+    const first = await jobs.register(AUTHOR, heard.id);
+    const second = await jobs.register(AUTHOR, away.id);
+    if (!first.ok || !second.ok) throw new Error("not registered");
+
+    // Deleted on the hub while the line is up: `job.changed`, read as 404.
+    hub.jobs.delete(first.jobId);
+    jobs.heard({ type: "job.changed", refId: first.jobId });
+    await jobs.idle();
+    expect(await jobs.jobOf(heard.id)).toBeNull();
+    // The other is untouched: still listed, still linked.
+    expect(await jobs.jobOf(away.id)).toBe(second.jobId);
+
+    // Deleted while this VM was away: the next time the line comes up, it is let go too.
+    hub.jobs.delete(second.jobId);
+    await jobs.scan();
+    await jobs.idle();
+    expect(await jobs.jobOf(away.id)).toBeNull();
+
+    // Both routines are still there and still on: plain routines, as before they were registered.
+    const rows = await database
+      .select({ id: lafRoutines.id, enabled: lafRoutines.enabled })
+      .from(lafRoutines)
+      .where(eq(lafRoutines.createdById, AUTHOR.id));
+    expect(
+      rows
+        .filter((row) => row.id === heard.id || row.id === away.id)
+        .map((row) => row.enabled),
+    ).toEqual([true, true]);
+  });
+
   test("the schedule line says when, in the register's words", () => {
     expect(scheduleLine({ kind: "interval", minutes: 30 })).toBe("every 30m");
     expect(
