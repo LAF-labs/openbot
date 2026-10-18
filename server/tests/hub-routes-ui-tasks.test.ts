@@ -67,7 +67,17 @@ const signedIn: MiddlewareHandler<{ Variables: AppVariables }> = async (
   await next();
 };
 
-function surface(options: { configured?: boolean; status?: HubStatus } = {}) {
+/** This VM's own member, as `/me` names it. */
+const ME = "m_a";
+
+function surface(
+  options: {
+    configured?: boolean;
+    status?: HubStatus;
+    /** Null: `/me` has not answered yet. */
+    me?: string | null;
+  } = {},
+) {
   seen.length = 0;
   script.clear();
   const refusals: string[] = [];
@@ -80,7 +90,14 @@ function surface(options: { configured?: boolean; status?: HubStatus } = {}) {
     start() {},
     stop() {},
     status: () => options.status ?? connected,
-    me: () => null,
+    me: () => {
+      const id = options.me === undefined ? ME : options.me;
+      return id === null
+        ? null
+        : ({ member: { id, role: "member", name: "김" } } as ReturnType<
+            HubLink["me"]
+          >);
+    },
     passRefused: (reason) => refusals.push(reason),
   };
   const app = new Hono<{ Variables: AppVariables }>();
@@ -174,7 +191,7 @@ describe("/api/hub/tasks — 업무판's doors", () => {
         {
           title: "3월 매출 정리",
           visibility: "company",
-          assignee: "bot:m_a",
+          assignee: `bot:${ME}`,
           as: "bot",
           runId: "run_1",
           checkout: { runId: "run_1" },
@@ -190,7 +207,7 @@ describe("/api/hub/tasks — 업무판's doors", () => {
     expect(JSON.parse(seen[0]?.body ?? "")).toEqual({
       title: "3월 매출 정리",
       visibility: "company",
-      assignee: "bot:m_a",
+      assignee: `bot:${ME}`,
       as: "member",
     });
   });
@@ -232,6 +249,72 @@ describe("/api/hub/tasks — 업무판's doors", () => {
       stage: "doing",
       rank: 12.5,
       as: "member",
+    });
+  });
+
+  test.each([
+    ["POST", "/api/hub/tasks", { title: "x", assignee: "bot:m_b" }],
+    ["PATCH", `/api/hub/tasks/${TASK}`, { version: 2, assignee: "bot:m_b" }],
+  ])(
+    "%s giving a colleague's 라피 work is refused unsent, as the hub refuses it",
+    async (method, path, body) => {
+      const { app } = surface();
+      const response = await app.request(path, { method, ...json(body) });
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({
+        ok: false,
+        code: "laf:hub_forbidden",
+        field: "assignee",
+      });
+      expect(seen).toEqual([]);
+    },
+  );
+
+  test("before /me has answered, nobody's 라피 is given work: the hub is not reached yet", async () => {
+    const { app } = surface({ me: null });
+    const response = await app.request("/api/hub/tasks", {
+      method: "POST",
+      ...json({ title: "x", assignee: `bot:${ME}` }),
+    });
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({
+      ok: false,
+      code: "laf:hub_unreachable",
+    });
+    expect(seen).toEqual([]);
+  });
+
+  test("a refusal keeps the field the hub named, and only a field's name", async () => {
+    const { app } = surface();
+    script.set(`PATCH /hub/v1/tasks/${TASK}`, () =>
+      Response.json(
+        { ok: false, code: "laf:request_invalid", field: "stage" },
+        { status: 400 },
+      ),
+    );
+    const moved = await app.request(`/api/hub/tasks/${TASK}`, {
+      method: "PATCH",
+      ...json({ version: 3, stage: "doing", rank: 1 }),
+    });
+    expect(moved.status).toBe(400);
+    expect(await moved.json()).toEqual({
+      ok: false,
+      code: "laf:request_invalid",
+      field: "stage",
+    });
+    script.set(`PATCH /hub/v1/tasks/${TASK}`, () =>
+      Response.json(
+        { ok: false, code: "laf:request_invalid", field: "<b>stage</b> 는" },
+        { status: 400 },
+      ),
+    );
+    const prose = await app.request(`/api/hub/tasks/${TASK}`, {
+      method: "PATCH",
+      ...json({ version: 3, stage: "doing", rank: 1 }),
+    });
+    expect(await prose.json()).toEqual({
+      ok: false,
+      code: "laf:request_invalid",
     });
   });
 

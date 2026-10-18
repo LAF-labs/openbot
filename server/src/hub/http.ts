@@ -25,6 +25,8 @@ export type HubAnswer<T> =
       status: number | null;
       /** One of `HUB_FACTS`, or the hub's own `laf:` code for a refusal it named. */
       code: string;
+      /** The field the hub named in refusing, so the person is told which part to change. */
+      field?: string;
     };
 
 export type HubRequest = {
@@ -102,6 +104,14 @@ export function factOfStatus(status: number, body: unknown): string {
     : HUB_FACTS.forbidden;
 }
 
+/** A field name the hub's refusal carried — a name only, never the hub's prose. */
+const FIELD_SHAPE = /^[A-Za-z]{1,40}$/;
+
+function fieldOf(body: unknown): { field?: string } {
+  const field = (body as { field?: unknown } | null)?.field;
+  return typeof field === "string" && FIELD_SHAPE.test(field) ? { field } : {};
+}
+
 function retryAfterMs(header: string | null): number {
   const seconds = Number(header);
   if (!Number.isFinite(seconds) || seconds < 0) return HUB_RETRY_MS[0];
@@ -160,6 +170,7 @@ export function createHubHttp(options: HubHttpOptions): HubHttp {
             ok: false,
             status: response.status,
             code: factOfStatus(response.status, parsed),
+            ...fieldOf(parsed),
           };
           if (response.status === 429) {
             wait = retryAfterMs(response.headers.get("retry-after"));

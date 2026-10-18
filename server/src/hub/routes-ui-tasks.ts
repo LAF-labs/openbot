@@ -25,7 +25,10 @@ import type { HubLink } from "./link";
  *
  * WHAT THIS DOOR CHECKS is the shape of what it forwards — ids that stay in their path, a stage the
  * board has, an assignee spelled the hub's way, numbers that are numbers — and only the fields the
- * screen sends. Who may see, move or reshape a task is the hub's to say.
+ * screen sends. Who may see, move or reshape a task is the hub's to say, with one rule held here as
+ * well: a 라피 is given work only by its own person (`bot:<this VM's member>`), since it runs on
+ * that person's VM with that person's logins. A refusal keeps the field the hub named, so the
+ * board can say which part was refused.
  *
  * Its own file beside `routes-ui.ts`, so the board and the other 회사 parts change without touching
  * each other; the few lines they share (the 502 rule, the key rule) are spelled the same way.
@@ -177,8 +180,35 @@ export function createHubTaskRoutes(
     if (answer.ok) return context.json(answer.body as Record<string, unknown>);
     if (answer.code === HUB_FACTS.passRefused) live.link.passRefused("api_ui");
     return context.json(
-      { ok: false, code: answer.code },
+      {
+        ok: false,
+        code: answer.code,
+        ...(answer.field ? { field: answer.field } : {}),
+      },
       statusFor(answer.status),
+    );
+  };
+
+  /**
+   * Another member's 라피 is never this person's to give work: `bot:` names this VM's own member
+   * or nothing goes. Before `/me` has answered nobody here is known, which is the hub not reached.
+   */
+  const othersLafi = (
+    context: Ctx,
+    live: Hub,
+    fields: Record<string, unknown>,
+  ) => {
+    const assignee = fields.assignee;
+    if (typeof assignee !== "string" || !assignee.startsWith("bot:"))
+      return null;
+    const me = live.link.me()?.member.id;
+    if (!me)
+      return context.json({ ok: false, code: HUB_FACTS.unreachable }, 502);
+    if (assignee === `bot:${me}`) return null;
+    // Said as the hub says it, so the board has one sentence for the rule wherever it was met.
+    return context.json(
+      { ok: false, code: HUB_FACTS.forbidden, field: "assignee" },
+      403,
     );
   };
 
@@ -199,6 +229,12 @@ export function createHubTaskRoutes(
   ) => {
     const live = opened(context);
     if (live instanceof Response) return live;
+    const refused = othersLafi(
+      context,
+      live,
+      (request.body ?? {}) as Record<string, unknown>,
+    );
+    if (refused) return refused;
     const sent = context.req.header("idempotency-key");
     const key = sent === undefined ? randomUUID() : sent;
     if (!KEY_SHAPE.test(key)) return invalid(context, "idempotencyKey");
