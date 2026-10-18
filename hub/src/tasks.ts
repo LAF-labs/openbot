@@ -1011,6 +1011,8 @@ export function taskRoutes(options: TaskRouteOptions) {
           outcome,
         });
       // Only the run that holds it, from the member whose run it is: a run id is not a secret.
+      // And only while that member still sees it: the answer carries the task, and a holder cut
+      // off by a narrowing is not_held here as at `/heartbeat`, its claim left to run out.
       const [released] = await tx
         .update(hubTasks)
         .set({
@@ -1024,6 +1026,7 @@ export function taskRoutes(options: TaskRouteOptions) {
         .where(
           and(
             eq(hubTasks.id, id),
+            visibleTo(hubTasks.visibility, self.id),
             eq(hubTasks.checkoutRunId, runId),
             eq(hubTasks.checkoutBy, self.id),
           ),
