@@ -3311,9 +3311,19 @@ const GROUPS: readonly {
    * RAISED 2026-10-18 FOR A WRITE WHOSE ANSWER IS STILL ON ITS WAY, from 4960 to 4961: one in
    * `hub-tools.integration.test.ts` — the hub's answer held past the write's wait and then a 404,
    * and the Bot is told the 404, not "kept". 4960 and 1.
+   *
+   * RAISED 2026-10-18 FOR 회사 → 문서: `server` by thirty-eight (4961 to 4999) — the document
+   * doors against a fake hub (hub-routes-ui-docs.test.ts, 20: no company unasked, the pass and
+   * `person`, a read asked once, the four ops spelled again without a hash, seven malformed batches
+   * unsent, the two 409s kept, the hold's doors, a title only, the session, a move to the top),
+   * 라피's document kinds (hub-tools-docs.test.ts, 13: marked markdown, the list, ops sent now under
+   * a key, the two 409s with Korean, seven refused unasked, the bound) and the hold frame on the
+   * line (hub-doc-hold-frame.test.ts, 5); `app` by forty-two (2570 to 2612) — the keys
+   * (doc-block-keys.test.ts, 23), the hold, queue, stale save and frames (doc-controller.test.ts,
+   * 15) and Korean composition in a block (doc-block-ime.test.tsx, 4). 4961 and 38; 2570 and 42.
    */
-  { name: "server", floor: 4961, roots: ["server"] },
-  { name: "app", floor: 2570, roots: ["app"] },
+  { name: "server", floor: 4999, roots: ["server"] },
+  { name: "app", floor: 2612, roots: ["app"] },
   {
     name: "agent-computer",
     /*
