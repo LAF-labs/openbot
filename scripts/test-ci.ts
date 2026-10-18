@@ -3324,9 +3324,18 @@ const GROUPS: readonly {
    * RAISED 2026-10-18 FOR A WRITE WHOSE ANSWER IS STILL ON ITS WAY, from 4960 to 4961: one in
    * `hub-tools.integration.test.ts` — the hub's answer held past the write's wait and then a 404,
    * and the Bot is told the 404, not "kept". 4960 and 1.
+   *
+   * RAISED 2026-10-18 FOR 업무판'S REVIEW (server 4981 to 4985, app 2619 to 2641). Server, in
+   * `hub-routes-ui-tasks.test.ts`: a colleague's 라피 given work refused unsent on a new task and a
+   * move, nobody's before `/me` answers, and a refusal keeping the hub's field (4). App:
+   * `hub-tasks.test.ts` 14 (where a person may put a run's task, six and one, a refusal's words for
+   * six fields and codes, a person's note that looks like a code); `hub-task-board-render.test.tsx`
+   * 6 (a press let go over the column, one let go outside the window, a card taken off mid-drag, a
+   * 라피's card and 하는 중, a refused move putting back its own card, who a held task is offered
+   * to); `hub-room-working.test.ts` 2 (a question's age on the server's clock).
    */
-  { name: "server", floor: 4981, roots: ["server"] },
-  { name: "app", floor: 2619, roots: ["app"] },
+  { name: "server", floor: 4985, roots: ["server"] },
+  { name: "app", floor: 2641, roots: ["app"] },
   {
     name: "agent-computer",
     /*
@@ -3465,7 +3474,12 @@ const GROUPS: readonly {
    * reservation under half a microdollar written as one and refused by a full day; an actual under
    * half a microdollar counted as one, reserved or not).
    */
-  { name: "hub", floor: 342, roots: ["hub"] },
+  /*
+   * RAISED 2026-10-18 FOR A RUN'S WORK BEING ITS OWN PERSON'S, from 342 to 345: tasks.test.ts 3 (only a
+   * 라피's own person gives it a task, new or existing; the words of a task given to a 라피 and to a
+   * routine are its owner's alone).
+   */
+  { name: "hub", floor: 345, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
