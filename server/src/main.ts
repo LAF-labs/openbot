@@ -122,6 +122,7 @@ import {
   createRefusedRuns,
   createTaskRun,
   createUnreportedRuns,
+  type TaskRunner,
 } from "./hub/task-run";
 import { log, recentLines } from "./log";
 import { createLoginVault } from "./logins/store";
@@ -1005,43 +1006,46 @@ const routineService = createRoutineService({
  * A task on the company board given to this member's 라피: taken, run as a routine runs — the same
  * toolkit, browser and lane, nobody asked — and handed back for a person (`hub/task-pickup.ts`).
  */
+/** A task's run, made below; a project's deletion stops one working in its conversation. */
+let taskRun: TaskRunner | undefined;
 if (hubRuntime) {
   const gateway = computerGateway;
+  taskRun = createTaskRun({
+    database,
+    ledger: runLedger,
+    lane: botLane,
+    work: workInFlight,
+    admission,
+    resolveAgents: resolveAgentsFor,
+    tools: unattendedTools,
+    ...(gateway
+      ? {
+          // Its pages in the routines' background browser, let go of at its end as a routine's are.
+          browser: {
+            name: ROUTINE_BROWSER,
+            ended: async (botId: string, runKey: string, opened: boolean) => {
+              await inTime(LET_GO_MS, (within) =>
+                gateway.runEnded(botId, runKey, {
+                  browser: ROUTINE_BROWSER,
+                  within,
+                }),
+              );
+              if (opened) {
+                await inTime(LET_GO_MS, (within) =>
+                  gateway.releaseBrowser(botId, ROUTINE_BROWSER, within),
+                );
+              }
+            },
+          },
+        }
+      : {}),
+  });
   taskPickup = createTaskPickup({
     http: hubRuntime.http,
     memberId: () => hubRuntime.link.me()?.member.id ?? null,
     unreported: createUnreportedRuns(database),
     refused: createRefusedRuns(runLedger),
-    run: createTaskRun({
-      database,
-      ledger: runLedger,
-      lane: botLane,
-      work: workInFlight,
-      admission,
-      resolveAgents: resolveAgentsFor,
-      tools: unattendedTools,
-      ...(gateway
-        ? {
-            // Its pages in the routines' background browser, let go of at its end as a routine's are.
-            browser: {
-              name: ROUTINE_BROWSER,
-              ended: async (botId: string, runKey: string, opened: boolean) => {
-                await inTime(LET_GO_MS, (within) =>
-                  gateway.runEnded(botId, runKey, {
-                    browser: ROUTINE_BROWSER,
-                    within,
-                  }),
-                );
-                if (opened) {
-                  await inTime(LET_GO_MS, (within) =>
-                    gateway.releaseBrowser(botId, ROUTINE_BROWSER, within),
-                  );
-                }
-              },
-            },
-          }
-        : {}),
-    }),
+    run: taskRun,
   });
 }
 
@@ -1194,7 +1198,13 @@ const turnEngine = createTurnEngine({
  */
 const projectDeletion = createProjectDeletion({
   database,
-  stopThread: (threadId) => turnEngine.stopThread(threadId),
+  // A task's run is a conversation's too, and not the turn engine's (`hub/task-run.ts`).
+  stopThread: async (threadId) => {
+    await Promise.all([
+      turnEngine.stopThread(threadId),
+      taskRun?.stopThread(threadId),
+    ]);
+  },
   // Asked once per context the conversation holds, its delegated runs' included (`contextsOf`).
   dropContext: (threadId) => conversations.drop(threadId),
   /*

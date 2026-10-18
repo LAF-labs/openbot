@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { Message, Tool } from "@ag-ui/client";
 import { eq, inArray } from "drizzle-orm";
 import { placedForWrite, projectScope } from "../../shared/file-scope";
+import { createProjectDeletion } from "../src/channels/deleting";
 import { createThreadProjects } from "../src/channels/thread-projects";
 import type { ActionActor } from "../src/computer/gateway";
 import { createDatabase } from "../src/db/client";
@@ -500,5 +501,60 @@ describe("a task's run", () => {
     await createRefusedRuns(ledger)(id);
 
     expect(await unreported({ taskId: given.id, noted: new Set() })).toBeNull();
+  });
+  test("a project deleted while its task runs stops the run first, and nothing of it comes back in the task's next project", async () => {
+    const who = await person();
+    const given = task("지울 일");
+    const first = scriptedAgent([
+      [call("computer_write_file", { path: "a.md", contents: "가" })],
+      [say("첫 실행의 말.")],
+    ]);
+    const runner = createTaskRun({
+      database,
+      ledger,
+      owner: async () => who,
+      resolveAgents: async () => ({ [who.botId]: first.agent }),
+      // The person deletes the task's project while the run's first step is being taken.
+      tools: stubTools(async () => {
+        const [found] = await database
+          .select({ channelId: channelThreads.channelId })
+          .from(channelThreads)
+          .where(eq(channelThreads.threadId, `task:${given.id}`));
+        deleting = deletion.delete({
+          userId: who.actor.id,
+          channelId: found?.channelId ?? "",
+        });
+        return deleting.then(() => ({ ok: true }));
+      }),
+    });
+    const deletion = createProjectDeletion({
+      database,
+      stopThread: (threadId) => runner.stopThread(threadId),
+    });
+    let deleting: Promise<unknown> = Promise.resolve(null);
+
+    const outcome = await runner({
+      task: given,
+      runId: runId(),
+      signal: new AbortController().signal,
+    });
+
+    expect(outcome.kind).toBe("stopped");
+    expect(await deleting).toMatchObject({ ok: true });
+    expect(await messagesFor(database, `task:${given.id}`)).toEqual([]);
+
+    const second = scriptedAgent([[say("둘째 실행.")]]);
+    await createTaskRun({
+      database,
+      ledger,
+      owner: async () => who,
+      resolveAgents: async () => ({ [who.botId]: second.agent }),
+      tools: stubTools(async () => ({ ok: true })),
+    })({ task: given, runId: runId(), signal: new AbortController().signal });
+    const thread = await messagesFor(database, `task:${given.id}`);
+    expect(thread.map((message) => message.content)).toEqual([
+      "지울 일",
+      "둘째 실행.",
+    ]);
   });
 });

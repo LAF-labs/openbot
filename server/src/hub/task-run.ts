@@ -178,9 +178,45 @@ function watching(
   };
 }
 
-export function createTaskRun(deps: TaskRunDeps): TaskRun {
+/** A task's run, and the one way a project's deletion stops it. */
+export type TaskRunner = TaskRun & {
+  /**
+   * Stop the run working in this conversation and wait until it has written its end — what a
+   * project's deletion asks of a conversation's turn (`channels/deleting.ts`). A task's run is not
+   * the turn engine's, so the deletion asks here too: it used to delete the project under the run,
+   * and what the run filed after that came back in the task's next project.
+   */
+  stopThread: (threadId: string) => Promise<void>;
+};
+
+export function createTaskRun(deps: TaskRunDeps): TaskRunner {
   const owner = deps.owner ?? (() => deploymentBot(deps.database));
-  return async ({ task, runId, signal }): Promise<TaskRunOutcome> => {
+  /** The run going on in each task's conversation, by thread. */
+  const going = new Map<
+    string,
+    { stop: () => void; ended: Promise<unknown> }
+  >();
+
+  const run: TaskRun = async (input) => {
+    const threadId = taskThreadOf(input.task.id);
+    const stopping = new AbortController();
+    const ran = once(input, stopping);
+    const entry = {
+      stop: () => stopping.abort(),
+      ended: ran.catch(() => undefined),
+    };
+    going.set(threadId, entry);
+    try {
+      return await ran;
+    } finally {
+      if (going.get(threadId) === entry) going.delete(threadId);
+    }
+  };
+
+  const once = async (
+    { task, runId, signal }: Parameters<TaskRun>[0],
+    stopping: AbortController,
+  ): Promise<TaskRunOutcome> => {
     const who = await owner();
     if (!who) {
       return { kind: "failed", code: "laf:bot_not_found", steps: 0 };
@@ -216,7 +252,6 @@ export function createTaskRun(deps: TaskRunDeps): TaskRun {
       label: task.title || null,
     });
 
-    const stopping = new AbortController();
     const cut = () => stopping.abort();
     if (signal.aborted) cut();
     else signal.addEventListener("abort", cut, { once: true });
@@ -355,6 +390,15 @@ export function createTaskRun(deps: TaskRunDeps): TaskRun {
       });
     return outcome;
   };
+
+  return Object.assign(run, {
+    async stopThread(threadId: string) {
+      const entry = going.get(threadId);
+      if (!entry) return;
+      entry.stop();
+      await entry.ended;
+    },
+  });
 }
 
 /** In the lane of the browser the run's pages are in, or the Bot's where there is none. */
