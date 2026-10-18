@@ -3415,7 +3415,7 @@ const GROUPS: readonly {
    * `concurrent` off keeping the lease opened first and ending the others; with none opened, keeping
    * the lease taken first; an open waiting for a change of the login's rules under way).
    */
-  { name: "hub", floor: 252, roots: ["hub"] },
+  { name: "hub", floor: 266, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
