@@ -7,8 +7,11 @@
  * the one every conversation's turns go through — in a conversation of its own for that room
  * (`openRoomConversation`, kind `room`). The turn's first step is the room's newest messages, read
  * through the hub tool as a first move, so they reach the model as a tool result and the head of
- * the prompt is the bytes it always is. When the turn is over, its last words are posted to the
- * room as this person's 라피 (`as: "bot"`), through the outbox.
+ * the prompt is the bytes it always is. When the turn's loop is over, its last words are posted to
+ * the room as this person's 라피 by the turn's last step (`lastMove`): a `mcp__hub__write` call
+ * through the turn's own executor, so the grant, the person's boundary and the audit row are the
+ * ones the Bot's own post meets (`plugins/call.ts`) — a `deny` posts nothing, and an `ask` is a
+ * card in this conversation that posts only on a yes.
  *
  * AN ATTENDED TURN, NOT A ROUTINE'S. The person asked, a moment ago, from their own account: what
  * the turn needs to ask them — an approval, a login — is a card in that conversation on their own
@@ -22,17 +25,18 @@
  * one conversation, which the engine refuses. Different rooms go on side by side.
  *
  * NEVER TWICE. The person's message is filed in the conversation under an id made from the room
- * and the message's number, so a mention heard again — a restart that replays the line from its
- * cursor — finds it there and starts nothing. And when the Bot already posted to the room itself
- * during the turn (`mcp__hub__write`), its last words are not posted again.
+ * and the message's number, so a mention heard again finds it there and starts nothing. And when
+ * the Bot already posted to the room itself during the turn (`mcp__hub__write`), its last words are
+ * not posted again.
+ *
+ * NEVER LOST TO A RESTART. The line's cursor moves past a mention as soon as it is heard, and the
+ * question waits in this process's memory until its turn — so each time the line connects, the
+ * rooms' newest messages are read again for this person's own fresh questions (`catchUp`), and
+ * whichever was never filed is answered then.
  */
 import type { Message } from "@ag-ui/client";
-import { and, asc, eq, gte, isNotNull, isNull, sql } from "drizzle-orm";
-import {
-  HUB_ROOM_LIMITS,
-  type HubEvent,
-  type HubRoomPost,
-} from "../../../shared/hub/protocol";
+import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { HUB_ROOM_LIMITS, type HubEvent } from "../../../shared/hub/protocol";
 import {
   asksOwnLafi,
   isFresh,
@@ -52,18 +56,11 @@ import {
 } from "../db/schema";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
-import { parseMessage } from "../runner/thread-store";
 import { CHAT_TURN_TIMEOUT_MS, type TurnEngine } from "../turns/engine";
 import type { TurnHub, TurnStatus } from "../turns/hub";
 import type { HubHttp } from "./http";
-import type { HubOutbox } from "./outbox";
 import { HUB_TOOLS_KEY } from "./tools";
-import {
-  HUB_TOOL_PATHS,
-  readRoomMessages,
-  readRooms,
-  roomPostBody,
-} from "./wire";
+import { HUB_TOOL_PATHS, readRoomMessages, readRooms } from "./wire";
 
 /** The hub tools by the names a turn's toolkit offers them under (`toolNameFor`). */
 const HUB_READ_TOOL = `${DEFERRED_TOOL_PREFIX}${HUB_TOOLS_KEY}__read`;
@@ -84,7 +81,6 @@ export type RoomAnswerer = { owner: AgentActor; botId: string };
 export type RoomAnswersDeps = {
   database: Database;
   http: HubHttp;
-  outbox: Pick<HubOutbox, "enqueue" | "sweep">;
   /** This VM's member id in its company, from the line's last `/me`; null before it answered. */
   me: () => string | null;
   /** Who answers. Null while there is nobody to — before the person has made their Bot. */
@@ -236,33 +232,6 @@ export function createRoomAnswers(deps: RoomAnswersDeps) {
   };
 
   /**
-   * The conversation from the question on: the turn whole. Not a tail of the thread — a turn's own
-   * steps and the delegated runs' (`lafDelegated`) are stored on it too, and a long one pushes the
-   * question out of any fixed window, which would leave nothing to post.
-   */
-  const fromQuestion = async (
-    threadId: string,
-    id: string,
-  ): Promise<Message[]> => {
-    const at = await filedAt(threadId, id);
-    if (at === null) return [];
-    const rows = await deps.database
-      .select({ message: lafThreadMessages.message })
-      .from(lafThreadMessages)
-      .where(
-        and(
-          eq(lafThreadMessages.threadId, threadId),
-          gte(lafThreadMessages.seq, at),
-        ),
-      )
-      .orderBy(asc(lafThreadMessages.seq));
-    return rows.flatMap((row) => {
-      const message = parseMessage(row.message);
-      return message ? [message] : [];
-    });
-  };
-
-  /**
    * Start the turn and wait for its end. Listening starts before the send, so an end that comes
    * at once is not missed; a conversation busy with a turn of the person's own is waited for.
    */
@@ -273,6 +242,7 @@ export function createRoomAnswers(deps: RoomAnswersDeps) {
     roomId: string;
     question: Message;
   }): Promise<{ turnId: string; status: TurnStatus } | null> => {
+    const questionId = input.question.id;
     const ended = new Map<string, TurnStatus>();
     let heard: (() => void) | null = null;
     const unsubscribe = deps.turns.subscribe(
@@ -302,6 +272,32 @@ export function createRoomAnswers(deps: RoomAnswersDeps) {
             tool: HUB_READ_TOOL,
             args: { kind: "room", id: input.roomId },
           },
+          // Read off the turn itself, in the turn: nothing the person sends after it is mistaken
+          // for its end, and nothing goes to the room but through the executor.
+          lastMove: (messages) => {
+            const { text, postedItself } = answerOf(
+              messages,
+              questionId,
+              input.roomId,
+            );
+            if (postedItself || !text) {
+              log.info("room_answer_not_posted", {
+                room: input.roomId,
+                status: postedItself ? "posted_itself" : "no_words",
+              });
+              return null;
+            }
+            // The rooms' own shape: as this person's 라피, mentioning nobody.
+            return {
+              tool: HUB_WRITE_TOOL,
+              args: {
+                kind: "post",
+                room: input.roomId,
+                text: cutAtCodeUnits(text, HUB_ROOM_LIMITS.text),
+                mentions: [],
+              },
+            };
+          },
         });
         if (sent.ok) {
           turnId = sent.turnId;
@@ -329,7 +325,15 @@ export function createRoomAnswers(deps: RoomAnswersDeps) {
     }
   };
 
-  const answer = async (roomId: string, seq: number): Promise<void> => {
+  /**
+   * `heardAt` is when this process heard of the question: a question waits behind the room's
+   * earlier ones for as long as their turns run, and that wait is not the question growing old.
+   */
+  const answer = async (
+    roomId: string,
+    seq: number,
+    heardAt: number,
+  ): Promise<void> => {
     const me = deps.me();
     if (!me) return;
     const lines = readRoomMessages(
@@ -338,7 +342,7 @@ export function createRoomAnswers(deps: RoomAnswersDeps) {
     const line = lines?.find((one) => one.seq === seq);
     // A member mentioning this person is told too; only their own 라피 call is answered here.
     if (!line || !asksOwnLafi(line, me)) return;
-    if (!isFresh(line, now())) {
+    if (!isFresh(line, heardAt)) {
       log.info("room_answer_too_old", { room: roomId, seq });
       return;
     }
@@ -368,42 +372,36 @@ export function createRoomAnswers(deps: RoomAnswersDeps) {
       roomId,
       question: { id: questionId, role: "user", content: line.text },
     });
-    if (run?.status !== "done") {
-      // Stopped by the person, or failed: they see why in the conversation; the room is not told.
-      log.info("room_answer_not_posted", {
-        room: roomId,
-        seq,
-        status: run?.status ?? "unheard",
-      });
-      return;
-    }
-    const { text, postedItself } = answerOf(
-      await fromQuestion(conversation.threadId, questionId),
-      questionId,
-      roomId,
-    );
-    if (postedItself || !text) {
-      log.info("room_answer_not_posted", {
-        room: roomId,
-        seq,
-        status: postedItself ? "posted_itself" : "no_words",
-      });
-      return;
-    }
-    // The rooms' own shape (`HubRoomPost`): as this person's 라피, mentioning nobody.
-    const post: HubRoomPost = roomPostBody({
-      text: cutAtCodeUnits(text, HUB_ROOM_LIMITS.text),
-      mentions: [],
+    // Stopped by the person, or failed: they see why in the conversation; the room is not told.
+    log.info("room_answer_ended", {
+      room: roomId,
+      seq,
+      status: run?.status ?? "unheard",
     });
-    await deps.outbox.enqueue({
-      method: "POST",
-      path: HUB_TOOL_PATHS.roomPost(roomId),
-      body: post,
-      origin: "room",
-      runId: run.turnId,
+  };
+
+  /** One question into its room's line, once however often it is heard. */
+  const take = (roomId: string, seq: number, heardAt: number): void => {
+    const id = `${roomId}:${seq}`;
+    if (taken.has(id)) return;
+    taken.add(id);
+    const before = queues.get(roomId) ?? Promise.resolve();
+    const next = before
+      .then(() => answer(roomId, seq, heardAt))
+      .catch((error: unknown) => {
+        log.warn("room_answer_failed", {
+          room: roomId,
+          reason: describeFailure(error),
+        });
+      })
+      // Done with, either way: heard again, the conversation's own copy of it is what answers.
+      .then(() => {
+        taken.delete(id);
+      });
+    queues.set(roomId, next);
+    void next.then(() => {
+      if (queues.get(roomId) === next) queues.delete(roomId);
     });
-    log.info("room_answer_posted", { room: roomId, seq });
-    void deps.outbox.sweep();
   };
 
   return {
@@ -411,27 +409,38 @@ export function createRoomAnswers(deps: RoomAnswersDeps) {
     onEvent(event: HubEvent): void {
       if (event.type !== "room.mention") return;
       const ref = parseMessageRef(event.refId);
-      if (!ref) return;
-      const id = `${ref.roomId}:${ref.seq}`;
-      if (taken.has(id)) return;
-      taken.add(id);
-      const before = queues.get(ref.roomId) ?? Promise.resolve();
-      const next = before
-        .then(() => answer(ref.roomId, ref.seq))
-        .catch((error: unknown) => {
-          log.warn("room_answer_failed", {
-            room: ref.roomId,
-            reason: describeFailure(error),
-          });
-        })
-        // Done with, either way: heard again, the conversation's own copy of it is what answers.
-        .then(() => {
-          taken.delete(id);
+      if (ref) take(ref.roomId, ref.seq, now());
+    },
+
+    /**
+     * Each time the line connects: this person's own fresh questions in the rooms' newest
+     * messages, taken again. One a process before this one heard and never filed — queued behind
+     * another, or waiting for a busy conversation, when it stopped — is answered now; one it filed
+     * finds itself filed and starts nothing.
+     */
+    async catchUp(): Promise<void> {
+      const me = deps.me();
+      if (!me) return;
+      const heardAt = now();
+      try {
+        for (const room of readRooms(await ask(HUB_TOOL_PATHS.rooms)) ?? []) {
+          if (!ROOM_ID.test(room.id)) continue;
+          const lines = readRoomMessages(
+            await ask(
+              HUB_TOOL_PATHS.roomMessages(room.id, HUB_ROOM_LIMITS.pageDefault),
+            ),
+          );
+          for (const line of [...(lines ?? [])].sort((a, b) => a.seq - b.seq)) {
+            if (asksOwnLafi(line, me) && isFresh(line, heardAt)) {
+              take(room.id, line.seq, heardAt);
+            }
+          }
+        }
+      } catch (error) {
+        log.warn("room_answer_catch_up_failed", {
+          reason: describeFailure(error),
         });
-      queues.set(ref.roomId, next);
-      void next.then(() => {
-        if (queues.get(ref.roomId) === next) queues.delete(ref.roomId);
-      });
+      }
     },
 
     /** Every question taken so far, answered or given up on. For tests and a clean stop. */

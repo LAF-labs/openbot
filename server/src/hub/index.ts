@@ -21,6 +21,8 @@ export function createHubRuntime(input: {
   deliver: (frame: HubFrame) => void;
   /** Every event the line applies, for what this server does itself (`link.ts`, `onEvent`). */
   onEvent?: (event: HubEvent) => void;
+  /** Each time the line connects, after the outbox is offered what it kept. */
+  onConnected?: () => void;
 }): HubRuntime {
   const http = createHubHttp({
     url: input.config.url,
@@ -35,7 +37,10 @@ export function createHubRuntime(input: {
     hub: input.config.url,
     deliver: input.deliver,
     ...(input.onEvent ? { onEvent: input.onEvent } : {}),
-    onReachable: () => void outbox?.sweep(),
+    onReachable: () => {
+      void outbox?.sweep();
+      input.onConnected?.();
+    },
   });
   outbox = createHubOutbox({
     database: input.database,

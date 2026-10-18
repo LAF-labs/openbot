@@ -137,6 +137,16 @@ export type SendInput = {
    * the tool; otherwise the turn starts as any other does.
    */
   firstMove?: { tool: string; args: Record<string, unknown> };
+  /**
+   * The turn's last step, decided by the caller from what the turn said, once its loop has ended
+   * well: made through the turn's own executor and filed as a first move is. A room's turn posts
+   * its last words this way, so the post meets the grant, the person's boundary and the audit row
+   * that the Bot's own `mcp__hub__write` meets — a `deny` stops it, an `ask` asks the person in
+   * this conversation. Null makes no step; so does a toolkit without the tool.
+   */
+  lastMove?: (
+    messages: readonly Message[],
+  ) => { tool: string; args: Record<string, unknown> } | null;
 };
 
 export type TurnEngineOptions = {
@@ -1217,29 +1227,34 @@ export function createTurnEngine(options: TurnEngineOptions) {
           decisionMs: now() - decidingAt,
         });
       }
-      if (move && !signal.aborted) {
+      /**
+       * A call the server makes for the Bot, filed in the thread exactly as one the Bot made. Told
+       * from a call the Bot made by its message's `lafFirstMove`, and by nothing else
+       * (`shared/first-move.ts`) — the last move carries no mark: it is a call like any other.
+       * ON THE TURN'S OWN COPY, not added on the way out: every window is sent the turn's messages
+       * from that copy — the frame below, each step's copies, the snapshot a window joining halfway
+       * is handed, the copies at the end — and the thread is written from it. Riding it, the mark
+       * reaches the Bot service with this turn's run, which builds what the model reads key by key
+       * (`agent-bot/src/transcript.ts`) and never sends it on; a later turn is handed the thread
+       * without it (`forTheBot`).
+       */
+      const serverMove = async (
+        made: { tool: string; args: Record<string, unknown> },
+        first: boolean,
+      ) => {
         const callId = `call_${randomUUID().replaceAll("-", "")}`;
-        /*
-         * Told from a call the Bot made by its message's `lafFirstMove`, and by nothing else
-         * (`shared/first-move.ts`). ON THE TURN'S OWN COPY, not added on the way out: every window
-         * is sent the turn's messages from that copy — the frame below, each step's copies, the
-         * snapshot a window joining halfway is handed, the copies at the end — and the thread is
-         * written from it. Riding it, the mark reaches the Bot service with this turn's run, which
-         * builds what the model reads key by key (`agent-bot/src/transcript.ts`) and never sends it
-         * on; a later turn is handed the thread without it (`forTheBot`).
-         */
         const asking: StoredMessage = {
           id: randomUUID(),
           role: "assistant",
           content: "",
-          lafFirstMove: true,
+          ...(first ? { lafFirstMove: true } : {}),
           toolCalls: [
             {
               id: callId,
               type: "function",
               function: {
-                name: move.tool,
-                arguments: JSON.stringify(move.args),
+                name: made.tool,
+                arguments: JSON.stringify(made.args),
               },
             },
           ],
@@ -1253,8 +1268,10 @@ export function createTurnEngine(options: TurnEngineOptions) {
         const callingAt = now();
         // Timed whatever comes back, a throw included: only a call that never left has no time.
         const outcome = await toolkit
-          .execute(move.tool, move.args, { id: callId, signal })
-          .finally(() => meter.firstMoveCalled(now() - callingAt));
+          .execute(made.tool, made.args, { id: callId, signal })
+          .finally(() => {
+            if (first) meter.firstMoveCalled(now() - callingAt);
+          });
         const answer = {
           id: randomUUID(),
           role: "tool" as const,
@@ -1271,7 +1288,8 @@ export function createTurnEngine(options: TurnEngineOptions) {
           role: "tool",
         } as BaseEvent);
         await persistNow();
-      }
+      };
+      if (move && !signal.aborted) await serverMove(move, true);
 
       endsAt = Date.now() + timeoutMs;
       await runTurnLoop(agent, {
@@ -1339,6 +1357,14 @@ export function createTurnEngine(options: TurnEngineOptions) {
         },
       });
       await persisting;
+      const last = signal.aborted
+        ? null
+        : (input.lastMove?.(agent.messages) ?? null);
+      if (last && toolkit.tools.some((tool) => tool.name === last.tool)) {
+        await serverMove(last, false);
+        // Stopped while the step was out — an `ask` the person stopped instead of answering.
+        if (signal.aborted) throw new RunStopped([]);
+      }
     } catch (error) {
       if (error instanceof RunStopped || signal.aborted) {
         stopped = true;

@@ -8,7 +8,10 @@ import {
   type HubRooms,
   roomMessageRef,
 } from "../../shared/hub/protocol";
-import { roomConversationId } from "../../shared/hub/room-answers";
+import {
+  ROOM_ANSWER_WINDOW_MS,
+  roomConversationId,
+} from "../../shared/hub/room-answers";
 import { createAgentProfileStore } from "../src/agents/profile-store";
 import type { AgentActor } from "../src/agents/profile-types";
 import { openRoomConversation } from "../src/channels/conversations";
@@ -27,9 +30,10 @@ import {
 import type { HubAnswer, HubHttp, HubRequest } from "../src/hub/http";
 import { createHubOutbox } from "../src/hub/outbox";
 import { createRoomAnswers, roomQuestionId } from "../src/hub/room-answers";
+import { createHubToolTransport } from "../src/hub/tools";
 import { createRunLedger } from "../src/runner/run-ledger";
 import { messagesFor } from "../src/runner/thread-store";
-import type { LoopAgent } from "../src/runner/turn-loop";
+import type { LoopAgent, LoopOutcome } from "../src/runner/turn-loop";
 import type { ChatToolkit } from "../src/turns/chat-tools";
 import { createTurnEngine } from "../src/turns/engine";
 import { createTurnHub } from "../src/turns/hub";
@@ -111,6 +115,8 @@ function scriptedBot(
     fails?: boolean;
     /** Steps a delegated run leaves on the thread before the answer (`lafDelegated`). */
     delegatedSteps?: number;
+    /** Awaited at the start of every run: a turn that takes as long as a case needs. */
+    onRun?: (run: number) => Promise<void> | void;
   } = {},
 ) {
   const bot = {
@@ -133,6 +139,7 @@ function scriptedBot(
     ) {
       bot.inputs.push([...bot.messages]);
       bot.runs += 1;
+      await options.onRun?.(bot.runs);
       if (options.fails) {
         // Half an answer arrived, then the stream broke: words that must not reach the room.
         bot.messages.push({
@@ -233,6 +240,18 @@ function scriptedHub(room: string, lines: Line[]) {
           ],
         } satisfies HubRooms);
       }
+      const newest = request.path.match(/messages\?limit=(\d+)$/);
+      if (newest) {
+        const page = lines
+          .slice(-Number(newest[1]))
+          .map((line) => ({ ...line, runId: null, files: [] }));
+        return ok({
+          ok: true,
+          messages: page,
+          seq: page.at(-1)?.seq ?? 0,
+          more: false,
+        } satisfies HubRoomMessages);
+      }
       const one = request.path.match(/messages\?since=(\d+)&limit=1$/);
       if (one) {
         const since = Number(one[1]);
@@ -260,20 +279,62 @@ function scriptedHub(room: string, lines: Line[]) {
 const READ = "mcp__hub__read";
 const WRITE = "mcp__hub__write";
 
+/**
+ * What the person's boundary says about a hub write, standing where `plugins/call.ts` does for the
+ * turn's executor: `allow`; `deny`; or `ask`, answered when the case says, `granted` carrying it out.
+ */
+type Boundary =
+  | "allow"
+  | "deny"
+  | { ask: () => Promise<"granted" | "declined" | "nobody"> };
+
 function answering(input: {
   room: string;
   lines: Line[];
   bot: ReturnType<typeof scriptedBot>;
   /** What the turn's hub tools are, as its toolkit offers them; both, unless a case says. */
   offered?: string[];
-  now?: number;
+  now?: () => number;
+  boundary?: Boundary;
+  /** Another process's hub, for a case that is two processes one after the other. */
+  hub?: ReturnType<typeof scriptedHub>;
 }) {
-  const hub = scriptedHub(input.room, input.lines);
+  const hub = input.hub ?? scriptedHub(input.room, input.lines);
   const outbox = createHubOutbox({
     database,
     http: hub.http,
     sleep: async () => {},
   });
+  // The hub tools' own transport, as the catalogue entry carries out a call the boundary let by.
+  const transport = createHubToolTransport({
+    http: hub.http,
+    outbox,
+    database,
+    // Never resolves: the answer comes from the sweep having finished, not from a timer.
+    sleep: () => new Promise<void>(() => {}),
+  });
+  const written = async (args: Record<string, unknown>) =>
+    (
+      await transport.callTool(
+        { url: "https://hub.example", botId: BOT, drawnOn: "conversation" },
+        "write",
+        args,
+      )
+    ).text;
+  const boundary = async (
+    args: Record<string, unknown>,
+  ): Promise<LoopOutcome> => {
+    const said = input.boundary ?? "allow";
+    if (said === "allow") return written(args);
+    if (said === "deny") {
+      return { ok: false, code: "laf:policy_denied", reason: "denied" };
+    }
+    const answer = await said.ask();
+    if (answer === "granted") return written(args);
+    return answer === "declined"
+      ? { ok: false, code: "laf:person_declined", reason: "declined" }
+      : { ok: false, code: "laf:nobody_answered", reason: "nobody" };
+  };
   const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
   const decided: unknown[] = [];
   const turns = createTurnHub({ keepEndedMs: 50 });
@@ -299,7 +360,7 @@ function answering(input: {
               id: input.room,
               messages: input.lines,
             }
-          : { ok: true, kind: "post", sent: true };
+          : boundary(args);
       },
     }),
     // The decisions model, which a room's turn must not ask.
@@ -316,7 +377,6 @@ function answering(input: {
   const answers = createRoomAnswers({
     database,
     http: hub.http,
-    outbox,
     me: () => MEMBER,
     answerer: async () => ({ owner, botId: BOT }),
     conversation: async (answerer, room) => {
@@ -330,7 +390,7 @@ function answering(input: {
     },
     engine,
     turns,
-    ...(input.now === undefined ? {} : { now: () => input.now as number }),
+    ...(input.now ? { now: input.now } : {}),
   });
   const mention = (seq: number) =>
     answers.onEvent({
@@ -353,7 +413,7 @@ function answering(input: {
     await answers.settled();
     await outbox.sweep();
   };
-  return { settled, mention, hub, calls, decided, thread };
+  return { settled, mention, hub, calls, decided, thread, answers };
 }
 
 const roomOf = () => `r_${randomUUID().slice(0, 8)}_${tag}`;
@@ -388,37 +448,54 @@ describe("a person's @라피 in a team room", () => {
       .where(eq(channels.id, roomConversationId(room, BOT)));
     expect(made).toEqual({ kind: "room", name: "영업팀" });
 
-    // The person's words, then the room read for the Bot, then its answer.
+    // The person's words, then the room read for the Bot, then its answer, then the post.
     const stored = (await thread()) ?? [];
     expect(stored.map((message) => message.role)).toEqual([
       "user",
       "assistant",
       "tool",
       "assistant",
+      "assistant",
+      "tool",
     ]);
     expect(stored[0]).toMatchObject({
       id: roomQuestionId(room, 2),
       content: "@라피 오늘 날짜 알려줘",
     });
     expect(isFirstMove(stored[1] as Message)).toBe(true);
-    expect(calls).toEqual([{ name: READ, args: { kind: "room", id: room } }]);
+    // The post is a call of the turn's, through its executor — where the boundary judges it.
+    expect(isFirstMove(stored[4] as Message)).toBe(false);
+    expect(calls).toEqual([
+      { name: READ, args: { kind: "room", id: room } },
+      {
+        name: WRITE,
+        args: {
+          kind: "post",
+          room,
+          text: "오늘은 10월 16일이에요.",
+          mentions: [],
+        },
+      },
+    ]);
     // The model was handed the room as a tool result before it said anything.
     expect(bot.inputs[0]?.at(-1)?.role).toBe("tool");
     expect(String(bot.inputs[0]?.at(-1)?.content)).toContain("회의는 몇 시죠?");
     // A step the server decided asks the decisions model nothing.
     expect(decided).toEqual([]);
 
-    // Posted once, as the person's 라피, mentioning nobody, under the turn's run.
+    // Posted once, as the person's 라피, mentioning nobody.
     expect(hub.posted).toHaveLength(1);
     expect(hub.posted[0]).toMatchObject({
       method: "POST",
       path: `/rooms/${room}/messages`,
       body: { text: "오늘은 10월 16일이에요.", mentions: [], as: "bot" },
-      origin: "room",
     });
-    expect(hub.posted[0]?.run).toBeTruthy();
-    // Every hub call this made said it was the room's.
-    expect(hub.asked.every((request) => request.origin === "room")).toBe(true);
+    // Every hub call this made itself said it was the room's; the post is the hub tool's.
+    expect(
+      hub.asked
+        .filter((request) => request.method !== "POST")
+        .every((request) => request.origin === "room"),
+    ).toBe(true);
   });
 
   test("somebody else's mention of this person, and their 라피's own post, start nothing", async () => {
@@ -515,7 +592,9 @@ describe("a person's @라피 in a team room", () => {
     await settled();
     expect(calls.map((call) => call.name)).toEqual([READ, WRITE]);
     expect(bot.runs).toBe(2);
-    expect(hub.posted).toEqual([]);
+    // The Bot's own post, once; its last words after it are not a second.
+    expect(hub.posted).toHaveLength(1);
+    expect(hub.posted[0]).toMatchObject({ body: { text: "오늘은 16일" } });
   });
 
   test("a turn long enough to push the question out of any window still posts its last words", async () => {
@@ -565,12 +644,166 @@ describe("a person's @라피 in a team room", () => {
     });
     mention(1);
     await settled();
-    expect(calls).toEqual([]);
+    expect(calls.map((call) => call.name)).toEqual([WRITE]);
     expect(decided).toHaveLength(1);
     expect(((await thread()) ?? []).map((message) => message.role)).toEqual([
       "user",
       "assistant",
+      "assistant",
+      "tool",
     ]);
+  });
+
+  test("a Bot not given the hub's write posts nothing to the room", async () => {
+    const room = roomOf();
+    const bot = scriptedBot("네.");
+    const { settled, mention, calls, hub } = answering({
+      room,
+      bot,
+      offered: [READ],
+      lines: [line(1, `m:${MEMBER}`, "@라피 해 줘", ["lafi"])],
+    });
+    mention(1);
+    await settled();
+    expect(bot.runs).toBe(1);
+    expect(calls.map((call) => call.name)).toEqual([READ]);
+    expect(hub.posted).toEqual([]);
+  });
+
+  test("a boundary that denies hub writes: nothing reaches the room, and the refusal is in the person's conversation", async () => {
+    const room = roomOf();
+    const bot = scriptedBot("오늘은 16일이에요.");
+    const { settled, mention, calls, hub, thread } = answering({
+      room,
+      bot,
+      boundary: "deny",
+      lines: [line(1, `m:${MEMBER}`, "@라피 오늘 날짜", ["lafi"])],
+    });
+    mention(1);
+    await settled();
+    expect(calls.at(-1)).toEqual({
+      name: WRITE,
+      args: { kind: "post", room, text: "오늘은 16일이에요.", mentions: [] },
+    });
+    expect(hub.posted).toEqual([]);
+    const last = ((await thread()) ?? []).at(-1);
+    expect(last?.role).toBe("tool");
+    expect(String(last?.content)).toContain("laf:policy_denied");
+  });
+
+  test("a boundary that asks: nothing goes while the person is asked or when nobody answers; a yes posts it once", async () => {
+    const room = roomOf();
+    const bot = scriptedBot("네, 알아봤어요.");
+    const answers: Array<"granted" | "nobody"> = ["nobody", "granted"];
+    let asked = () => {};
+    let reply: (answer: "granted" | "nobody") => void = () => {};
+    const { settled, mention, hub } = answering({
+      room,
+      bot,
+      boundary: {
+        ask: () =>
+          new Promise((resolve) => {
+            reply = resolve;
+            asked();
+          }),
+      },
+      lines: [
+        line(1, `m:${MEMBER}`, "@라피 하나", ["lafi"]),
+        line(2, `m:${MEMBER}`, "@라피 둘", ["lafi"]),
+      ],
+    });
+    for (const [index, answer] of answers.entries()) {
+      const asking = new Promise<void>((resolve) => {
+        asked = resolve;
+      });
+      mention(index + 1);
+      await asking;
+      expect(hub.posted).toHaveLength(0);
+      reply(answer);
+      await settled();
+    }
+    expect(hub.posted).toHaveLength(1);
+    expect(hub.posted[0]).toMatchObject({
+      body: { text: "네, 알아봤어요.", as: "bot" },
+    });
+  });
+
+  test("a question that waited behind a long turn is answered: it was fresh when it was heard", async () => {
+    const room = roomOf();
+    let clock = Date.now();
+    // The first turn runs past the window.
+    const bot = scriptedBot("네.", {
+      onRun: (run) => {
+        if (run === 1) clock += ROOM_ANSWER_WINDOW_MS + 60_000;
+      },
+    });
+    const { settled, mention, hub } = answering({
+      room,
+      bot,
+      now: () => clock,
+      lines: [
+        line(1, `m:${MEMBER}`, "@라피 오래 걸리는 것", ["lafi"]),
+        line(2, `m:${MEMBER}`, "@라피 그다음 것", ["lafi"]),
+      ],
+    });
+    mention(1);
+    mention(2);
+    await settled();
+    expect(bot.runs).toBe(2);
+    expect(hub.posted).toHaveLength(2);
+  });
+
+  test("a restart while a question waits loses nothing: the next process answers what was never filed, once", async () => {
+    const room = roomOf();
+    const lines = [
+      line(1, `m:${MEMBER}`, "@라피 하나", ["lafi"]),
+      line(2, `m:${MEMBER}`, "@라피 둘", ["lafi"]),
+      line(3, `m:${OTHER}`, "@라피 남의 것", ["lafi"]),
+    ];
+    const hub = scriptedHub(room, lines);
+    let started = () => {};
+    const running = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // The process before: the first question's turn is under way, the second waits behind it.
+    const before = answering({
+      room,
+      lines,
+      hub,
+      bot: scriptedBot("하나요.", {
+        onRun: () => {
+          started();
+          return held;
+        },
+      }),
+    });
+    before.mention(1);
+    before.mention(2);
+    await running;
+
+    // The process after: its line's cursor is past both mentions, so it hears neither again.
+    const bot = scriptedBot("둘이요.");
+    const after = answering({ room, lines, hub, bot });
+    await after.answers.catchUp();
+    await after.settled();
+    // Connected again: everything it would take is filed.
+    await after.answers.catchUp();
+    await after.settled();
+    expect(bot.runs).toBe(1);
+    const asked = bot.inputs[0]?.filter((message) => message.role === "user");
+    expect(asked?.map((message) => message.id)).toEqual([
+      roomQuestionId(room, 1),
+      roomQuestionId(room, 2),
+    ]);
+    expect(hub.posted).toHaveLength(1);
+    expect(hub.posted[0]).toMatchObject({ body: { text: "둘이요." } });
+
+    release();
+    await before.settled();
   });
 });
 

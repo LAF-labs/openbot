@@ -412,11 +412,13 @@ let hubFramesSent: Promise<void> = Promise.resolve();
  * is after the hub; the line starts last, so no event comes before it.
  */
 let onHubEvent: ((event: HubEvent) => void) | undefined;
+let onHubConnected: (() => void) | undefined;
 const hubRuntime = config.hub
   ? createHubRuntime({
       config: config.hub,
       database,
       onEvent: (event) => onHubEvent?.(event),
+      onConnected: () => onHubConnected?.(),
       // Chained, so frames reach the page in the order the hub numbered them.
       deliver: (frame) => {
         hubFramesSent = hubFramesSent
@@ -1148,7 +1150,6 @@ if (hubRuntime) {
   const roomAnswers = createRoomAnswers({
     database,
     http: hubRuntime.http,
-    outbox: hubRuntime.outbox,
     me: () => hubRuntime.link.me()?.member.id ?? null,
     answerer: () => answererOf(database),
     conversation: async ({ owner, botId }, room) => {
@@ -1164,6 +1165,7 @@ if (hubRuntime) {
     turns: turnHub,
   });
   onHubEvent = roomAnswers.onEvent;
+  onHubConnected = () => void roomAnswers.catchUp();
 }
 /*
  * A project's deletion, and the one gate its mark is read at (`channels/deleting.ts`). The list of
