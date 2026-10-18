@@ -445,11 +445,16 @@ export function createHubToolTransport(
     return refuse(ARGUMENTS_INVALID);
   }
 
-  /** The row, the first offer, and — for a moment — whether the hub took it. */
+  /**
+   * The row, the first offer, and — for a moment — whether the hub took it. A refused pass is said
+   * as itself, never as "kept, it goes when the hub is back": the outbox sends nothing until a
+   * restart brings another pass, so that note would be false. Known before, it writes no row.
+   */
   async function send(
     kind: WriteKind,
     write: HubOutboxWrite,
   ): Promise<McpCallResult> {
+    if (runtime.passRefused?.()) refuse(HUB_FACTS.passRefused);
     const id = await runtime.outbox.enqueue(write);
     await Promise.race([runtime.outbox.sweep(), sleep(HUB_WRITE_WAIT_MS)]);
     const [row] = await runtime.database
@@ -462,6 +467,10 @@ export function createHubToolTransport(
       .where(eq(hubOutbox.id, id));
     if (row?.refusedAt) refuse(row.lastCode ?? HUB_FACTS.forbidden);
     if (row?.deliveredAt) return resultOf({ kind, sent: true });
+    // Met just now: the outbox keeps the row (a 401 ends nothing) and has told the line.
+    if (row?.lastCode === HUB_FACTS.passRefused || runtime.passRefused?.()) {
+      refuse(HUB_FACTS.passRefused);
+    }
     return resultOf({ kind, sent: false, note: toolResultText(HUB_QUEUED) });
   }
 

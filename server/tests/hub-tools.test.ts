@@ -213,6 +213,34 @@ describe("reading the company hub", () => {
     expect(hub.seen).toHaveLength(1);
   });
 
+  test("a write while the pass is refused is said as the refused pass, and no row is written", async () => {
+    const hub = scripted(() => {
+      throw new Error("a refused pass asks nothing");
+    });
+    let rows = 0;
+    const tools = transport(hub.http, {
+      passRefused: () => true,
+      outbox: {
+        enqueue: async () => {
+          rows += 1;
+          return "row";
+        },
+        sweep: async () => ({ delivered: 0, refused: 0, kept: 0 }),
+      },
+    });
+    expect(
+      await refusal(
+        tools.callTool(chat, "write", {
+          kind: "post",
+          room: "r_1",
+          text: "내일 회의는 10시예요.",
+        }),
+      ),
+    ).toBe("laf:hub_pass_refused");
+    expect(rows).toBe(0);
+    expect(hub.seen).toHaveLength(0);
+  });
+
   test("an answer that is not the shape is said as unreadable, not handed over in part", async () => {
     const hub = scripted(() => ({ ok: true, lines: "not a list" }));
     expect(
