@@ -89,6 +89,7 @@ export const SCREEN_ROUTES = [
   "/channel/$channelId",
   "/channel/new",
   "/company",
+  "/company/docs/$docId",
   "/consent",
   "/feed",
   "/goals",

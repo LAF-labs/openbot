@@ -28,6 +28,7 @@ import {
 import {
   HUB_EVENT_TYPES,
   HUB_FACTS,
+  type HubDocLockFrame,
   type HubEvent,
   type HubMe,
   type HubSync,
@@ -61,7 +62,35 @@ export type HubStatus = {
 /** What reaches the app's socket. The browser drops a `hub.*` kind it does not know. */
 export type HubFrame =
   | ({ kind: `hub.${string}` } & Omit<HubEvent, "type">)
-  | ({ kind: "hub.status" } & HubStatus);
+  | ({ kind: "hub.status" } & HubStatus)
+  | HubDocHoldFrame;
+
+/**
+ * Who is writing in which document block ("쓰는 중"), passed on as the hub sent it: a light frame,
+ * not an event — not numbered, not kept, never caught up after an outage, since a hold lives
+ * seconds and the editor reads the standing holds when it opens a document. `until` null: let go.
+ */
+export type HubDocHoldFrame = Omit<HubDocLockFrame, "kind"> & {
+  kind: "hub.doc.lock";
+};
+
+/** The hub's `doc.lock` frame as this VM passes it on, or null when it is not one. */
+export function docHoldFrame(frame: unknown): HubDocHoldFrame | null {
+  if (typeof frame !== "object" || frame === null) return null;
+  const hold = frame as Record<string, unknown>;
+  if (hold.kind !== "doc.lock") return null;
+  const { doc, block, member, name, until } = hold;
+  if (
+    typeof doc !== "string" ||
+    typeof block !== "string" ||
+    typeof member !== "string" ||
+    (name !== null && typeof name !== "string") ||
+    (until !== null && typeof until !== "string")
+  ) {
+    return null;
+  }
+  return { kind: "hub.doc.lock", doc, block, member, name, until };
+}
 
 export type HubLinkTiming = {
   firstRetryMs: number;
@@ -313,6 +342,11 @@ export function createHubLink(input: {
       try {
         frame = JSON.parse(String(message.data));
       } catch {
+        return;
+      }
+      const hold = docHoldFrame(frame);
+      if (hold) {
+        input.deliver(hold);
         return;
       }
       const event = frame as { kind?: unknown } & Partial<HubEvent>;

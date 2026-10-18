@@ -6,6 +6,7 @@ import { CompanyMembers } from "@/components/company/company-members";
 import { CompanyMemory } from "@/components/company/company-memory";
 import { CompanyRooms } from "@/components/company/company-rooms";
 import { CompanySkills } from "@/components/company/company-skills";
+import { DocsList } from "@/components/docs/docs-list";
 import { PageEmpty, PageShell } from "@/components/layout/page-shell";
 import { focusRingBare } from "@/components/ui/focus";
 import {
@@ -24,7 +25,7 @@ import { cn } from "@/lib/utils";
  *
  * Which part is open, and which room or skill, is in the address, so a reload or Back keeps it.
  */
-const TABS = ["rooms", "files", "skills", "members", "memory"] as const;
+const TABS = ["rooms", "docs", "files", "skills", "members", "memory"] as const;
 type Tab = (typeof TABS)[number];
 
 const companySearchSchema = z
@@ -44,6 +45,8 @@ function tabLabel(tab: Tab): string {
   switch (tab) {
     case "rooms":
       return t("Rooms");
+    case "docs":
+      return t("Documents");
     case "files":
       return t("Files");
     case "skills":
@@ -128,6 +131,7 @@ function CompanyPage() {
           rosterPending={!status.isError && (me.isPending || members.isPending)}
         />
       ) : null}
+      {tab === "docs" ? <DocsList members={members.data} /> : null}
       {tab === "files" ? <CompanyFiles members={members.data} /> : null}
       {tab === "skills" ? <CompanySkills openSkill={search.skill} /> : null}
       {tab === "members" ? (

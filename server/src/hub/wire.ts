@@ -17,8 +17,8 @@ const segment = (value: string) => encodeURIComponent(value);
 
 export const HUB_TOOL_PATHS = {
   /**
-   * `POST /search {q, limit}` — a read, sent as a POST because it carries a body. The hub searches
-   * its files and nothing else (`hub/src/search.ts`): every hit is a file, and it takes no `kinds`.
+   * `POST /search {q, limit}` — a read, sent as a POST because it carries a body. With no `kinds`
+   * the hub searches its files and its documents (`hub/src/search.ts`): a hit is one or the other.
    */
   search: "/search",
   /** `GET /files/:id/text?from=&limit=` — the file's extracted text, a range of it. */
@@ -36,14 +36,25 @@ export const HUB_TOOL_PATHS = {
   roomMessages: (id: string, limit: number) =>
     `/rooms/${segment(id)}/messages?limit=${limit}`,
   roomPost: (id: string) => `/rooms/${segment(id)}/messages`,
+  /** The team's documents, newest change first. */
+  docs: "/docs",
+  /** A document drawn as markdown, each block after a `<!-- <id> <hash> -->` line. */
+  docMarkdown: (id: string) => `/docs/${segment(id)}/markdown`,
+  /** A batch of block ops, all or none; 라피's each name the hash it read (`expectHash`). */
+  docBlocks: (id: string) => `/docs/${segment(id)}/blocks`,
 } as const;
 
 /**
  * Where in its source a hit was found, as the hub sends it (`shared/hub/protocol.ts`): the folder,
- * and for a file the character `from` that `read` with `kind: "file"` takes to read on. The hub
- * sends an object; reading it as a string dropped it, and every hit reached 라피 with no place.
+ * for a file the character `from` that `read` with `kind: "file"` takes to read on, and for a
+ * document the block the words were found in (null: its title). The hub sends an object; reading
+ * it as a string dropped it, and every hit reached 라피 with no place.
  */
-export type HubSearchWhere = { folder: string; from?: number };
+export type HubSearchWhere = {
+  folder: string;
+  from?: number;
+  block?: string | null;
+};
 
 export type HubSearchHit = {
   kind: string;
@@ -56,6 +67,18 @@ export type HubSearchHit = {
 };
 
 export type HubFileText = { text: string; truncated: boolean };
+export type HubDocHead = {
+  id: string;
+  title: string;
+  folder: string;
+  at: string | null;
+};
+export type HubDocMarkdown = { rev: number | null; markdown: string };
+/** What a batch wrote: each block's id, kind and new hash, so a next op can name it. */
+export type HubDocWritten = {
+  blocks: { id: string; kind: string; hash: string }[];
+  deleted: string[];
+};
 export type HubSkillHead = { slug: string; title: string; summary: string };
 export type HubSkill = HubSkillHead & { instructions: string };
 export type HubMemoryLine = { id: string; content: string; at: string | null };
@@ -153,10 +176,14 @@ function readWhere(value: unknown): HubSearchWhere | null {
   if (!isObject(value)) return null;
   const folder = str(value.folder);
   if (folder === null) return null;
+  const where: HubSearchWhere = { folder };
   const from = value.from;
-  return typeof from === "number" && Number.isInteger(from) && from >= 0
-    ? { folder, from }
-    : { folder };
+  if (typeof from === "number" && Number.isInteger(from) && from >= 0) {
+    where.from = from;
+  }
+  const block = value.block;
+  if (typeof block === "string" || block === null) where.block = block;
+  return where;
 }
 
 export const readSearchHits = (body: unknown): HubSearchHit[] | null =>
@@ -249,3 +276,33 @@ export const readRoomMessages = (body: unknown): HubRoomLine[] | null =>
       at: str(message.at),
     };
   });
+
+export const readDocs = (body: unknown): HubDocHead[] | null =>
+  listOf(body, "docs", (doc) => {
+    const id = str(doc.id);
+    if (!id) return null;
+    return {
+      id,
+      title: str(doc.title) ?? "",
+      folder: str(doc.folder) ?? "/",
+      at: str(doc.updatedAt),
+    };
+  });
+
+export function readDocMarkdown(body: unknown): HubDocMarkdown | null {
+  if (!isObject(body)) return null;
+  const markdown = str(body.markdown);
+  if (markdown === null) return null;
+  return { rev: num(body.rev), markdown };
+}
+
+export function readDocWritten(body: unknown): HubDocWritten | null {
+  const blocks = listOf(body, "blocks", (block) => {
+    const id = str(block.id);
+    const hash = str(block.hash);
+    if (!id || hash === null) return null;
+    return { id, kind: str(block.kind) ?? "", hash };
+  });
+  if (!blocks || !isObject(body)) return null;
+  return { blocks, deleted: strings(body.deleted) };
+}
