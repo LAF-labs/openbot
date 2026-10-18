@@ -559,6 +559,45 @@ describe("leaving", () => {
     };
     expect(answer.vault.origins).toEqual(["https://moved.example.test", SITE]);
   });
+
+  test("a VM's verified devices go with its member, so the next member on that VM starts unverified", async () => {
+    const vmOrigin = "https://vault-reused.example";
+    const first = {
+      email: "vault-first@example.com",
+      vmOrigin,
+      pass: newPass(),
+    };
+    const { id: firstId } = await putMember(hub, first);
+    await store("reused-1");
+    await call("admin", "PUT", "/reused-1/grants", { members: [firstId] });
+    const verified = await fetch(`${hub.url}/hub/v1/vault/reused-1/verified`, {
+      method: "POST",
+      ...asMember(first.pass, { "content-type": "application/json" }),
+      body: "{}",
+    });
+    expect(verified.status).toBe(200);
+    const countOf = async () =>
+      ((await call("admin", "GET", "")).body as HubVault).logins.find(
+        (login) => login.id === "reused-1",
+      );
+    // The presence, so the absence after the leaving is about a row that was counted.
+    expect(await countOf()).toMatchObject({ verifiedVms: 1, totalVms: 1 });
+
+    expect((await leaveAs(first)).status).toBe(200);
+    const second = {
+      email: "vault-second@example.com",
+      vmOrigin,
+      pass: newPass(),
+    };
+    const { id: secondId } = await putMember(hub, second);
+    await call("admin", "PUT", "/reused-1/grants", { members: [secondId] });
+    expect(await countOf()).toMatchObject({ verifiedVms: 0, totalVms: 1 });
+    const rows = await hub.database
+      .select()
+      .from(hubVaultDevices)
+      .where(eq(hubVaultDevices.vmOrigin, vmOrigin));
+    expect(rows).toEqual([]);
+  });
 });
 
 /** The registry saying a member left, as laf-control will. */
