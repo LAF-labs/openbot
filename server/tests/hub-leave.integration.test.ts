@@ -119,6 +119,14 @@ async function aPersonAndBot() {
 
 const HUB_TOOLS = ["mcp__hub__read", "mcp__hub__write"];
 
+/** Where this VM is in a hub's events: the mark that it belonged to that hub. */
+async function atHub(hub: string) {
+  await database
+    .insert(hubCursor)
+    .values({ one: true, hub, seq: 7 })
+    .onConflictDoUpdate({ target: hubCursor.one, set: { hub, seq: 7 } });
+}
+
 function prepareInput(
   botId: string,
   threadId: string,
@@ -201,7 +209,12 @@ describe("a VM detached from its company", () => {
     const chat = `${suite}-chat`;
     const room = `room:${suite}`;
     const delegated = `room:${suite}.browse`;
-    madeThreads.push(chat, room, delegated);
+    const mine = `${suite}-mine`;
+    madeThreads.push(chat, room, delegated, mine);
+    // Another conversation of the person's, which no hub tool answered in.
+    await appendMessages(database, mine, [
+      { id: "o1", role: "user", content: "택배는 우체국으로 보내" },
+    ] as never);
 
     // The person's own conversation, with one hub call in it — the result is the company's words.
     await appendMessages(database, chat, [
@@ -275,8 +288,8 @@ describe("a VM detached from its company", () => {
         agentId: botId,
         ownerUserId: userId,
         content: OWN_FACT,
-        evidenceThreadId: chat,
-        evidenceMessageId: "m6",
+        evidenceThreadId: mine,
+        evidenceMessageId: "o1",
         evidenceExcerpt: "택배는 우체국으로 보내",
       },
       {
@@ -452,7 +465,7 @@ describe("a VM detached from its company", () => {
     expect(before).toContain(ROOM_NAME);
 
     const result = await leaveCompanyIfDetached({
-      attached: false,
+      hub: undefined,
       database,
       conversations,
       loginOrigins: async () => [COMPANY_LOGIN],
@@ -562,7 +575,7 @@ describe("a VM detached from its company", () => {
     expect(await database.select().from(hubCursor)).toEqual([]);
     expect(
       await leaveCompanyIfDetached({
-        attached: false,
+        hub: undefined,
         database,
         conversations,
         loginOrigins: async () => [COMPANY_LOGIN],
@@ -614,12 +627,12 @@ describe("a VM detached from its company", () => {
       loginOrigins: async () => [],
     };
     expect(
-      await leaveCompanyIfDetached({ ...leave, attached: true }),
+      await leaveCompanyIfDetached({ ...leave, hub: "https://co.hub.test" }),
     ).toBeNull();
     expect(await database.select().from(hubCursor)).toHaveLength(1);
     await database.delete(hubCursor);
     expect(
-      await leaveCompanyIfDetached({ ...leave, attached: false }),
+      await leaveCompanyIfDetached({ ...leave, hub: undefined }),
     ).toBeNull();
   });
 
@@ -633,7 +646,7 @@ describe("a VM detached from its company", () => {
         set: { hub: "https://co.hub.test", seq: 9 },
       });
     const result = await leaveCompanyIfDetached({
-      attached: false,
+      hub: undefined,
       database,
       conversations,
       loginOrigins: async () => [COMPANY_LOGIN],
@@ -643,5 +656,359 @@ describe("a VM detached from its company", () => {
     });
     expect(result?.done).toBe(false);
     expect(await database.select().from(hubCursor)).toHaveLength(1);
+  });
+
+  /*
+   * "그거 기억해 둬", ON THE NEXT MESSAGE: the usual way a Bot keeps what the hub answered. The
+   * line cites the person's later message, and no hub result comes after that one — so a rule that
+   * looked only after the cited message left the company's words live in the notebook. A line the
+   * Bot learned before the hub ever answered in the conversation is still the person's.
+   */
+  test("retires a Bot's line remembered on the message after a hub answer, and keeps one learned before it", async () => {
+    const { userId, botId } = await aPersonAndBot();
+    const chat = `${suite}-next`;
+    madeThreads.push(chat);
+    await appendMessages(database, chat, [
+      { id: "n0", role: "user", content: "택배는 우체국으로 보내" },
+      { id: "n0a", role: "assistant", content: "기억해 둘게요." },
+      { id: "n1", role: "user", content: "단가표 찾아 줘" },
+      {
+        id: "n2",
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: "call_hub_next",
+            type: "function",
+            function: {
+              name: "mcp__hub__read",
+              arguments: JSON.stringify({ kind: "search", query: "단가" }),
+            },
+          },
+        ],
+      },
+      {
+        id: "n3",
+        role: "tool",
+        toolCallId: "call_hub_next",
+        content: JSON.stringify({ hits: [{ title: FILE_NAME }] }),
+      },
+      { id: "n4", role: "assistant", content: "찾았어요." },
+      { id: "n5", role: "user", content: "그거 기억해 둬" },
+      { id: "n6", role: "assistant", content: "기억해 둘게요." },
+    ] as never);
+    await database.insert(agentMemories).values([
+      {
+        id: `${suite}-before`,
+        agentId: botId,
+        ownerUserId: userId,
+        content: OWN_FACT,
+        evidenceThreadId: chat,
+        evidenceMessageId: "n0",
+        evidenceExcerpt: "택배는 우체국으로 보내",
+      },
+      {
+        id: `${suite}-next`,
+        agentId: botId,
+        ownerUserId: userId,
+        content: HEARD,
+        evidenceThreadId: chat,
+        evidenceMessageId: "n5",
+        evidenceExcerpt: "그거 기억해 둬",
+      },
+    ]);
+    await atHub("https://co.hub.test");
+
+    const result = await leaveCompanyIfDetached({
+      hub: undefined,
+      database,
+      conversations: createConversationStore(),
+      loginOrigins: async () => [],
+    });
+    expect(result?.done).toBe(true);
+    const lines = await database
+      .select()
+      .from(agentMemories)
+      .where(eq(agentMemories.agentId, botId));
+    const line = (id: string) =>
+      lines.find((one) => one.id === `${suite}-${id}`);
+    expect(line("next")?.content).toBe(LEFT_COMPANY_RESULT);
+    expect(line("next")?.evidenceExcerpt).toBeNull();
+    expect(line("next")?.forgetReason).toBe("company_left");
+    expect(line("before")?.content).toBe(OWN_FACT);
+    expect(line("before")?.forgottenAt).toBeNull();
+  });
+
+  /*
+   * A SAVE THAT FAILED IS NOT A LEAVE DONE. The conversation store used to log a failed write and
+   * resolve, so the leave deleted the cursor and blanked the notebook lines it had meant to draw
+   * out of the frozen layers — and the row, holding the company's words, was loaded by the next
+   * boot as it was. Now the leave stops before it changes a row, the cursor stays, and the next
+   * boot's leave finds everything again.
+   */
+  test.each([
+    ["drawing the company's words out of a conversation", true],
+    ["asking every conversation for a new epoch", false],
+  ])(
+    "a context that could not be saved while %s keeps the cursor, and the next boot finishes",
+    async (_what, drawn) => {
+      const { userId, botId } = await aPersonAndBot();
+      const chat = `${suite}-unsaved`;
+      madeThreads.push(chat);
+      await appendMessages(database, chat, [
+        { id: "s1", role: "user", content: OWN_ASK },
+        { id: "s2", role: "assistant", content: "내일은 맑아요." },
+      ] as never);
+      if (drawn) {
+        await database.insert(agentMemories).values({
+          id: `${suite}-unsaved`,
+          agentId: botId,
+          ownerUserId: userId,
+          content: HEARD,
+          evidenceThreadId: `room:${suite}-unsaved`,
+          evidenceMessageId: "r1",
+        });
+      }
+      const real = conversationPersistence(database);
+      let failing = false;
+      const persistence = {
+        ...real,
+        save: async (state: Parameters<typeof real.save>[0]) => {
+          if (failing) throw new Error("disk full");
+          await real.save(state);
+        },
+      };
+      const conversations = createConversationStore({ persistence });
+      conversations.prepare(
+        prepareInput(botId, chat, HUB_TOOLS, {
+          memories: drawn ? [OWN_FACT, HEARD] : [OWN_FACT],
+        }),
+      );
+      await conversations.settled();
+      await atHub("https://co.hub.test");
+      const row = async () =>
+        JSON.stringify(
+          await database
+            .select()
+            .from(lafConversationContexts)
+            .where(eq(lafConversationContexts.threadId, chat)),
+        );
+      if (drawn) expect(await row()).toContain(FILE_NAME);
+
+      failing = true;
+      const leave = {
+        hub: undefined,
+        database,
+        conversations,
+        loginOrigins: async () => [],
+      };
+      await expect(leaveCompanyIfDetached(leave)).rejects.toThrow();
+      expect(await database.select().from(hubCursor)).toHaveLength(1);
+      expect(await row()).not.toContain('"due"');
+      if (drawn) {
+        expect(await row()).toContain(FILE_NAME);
+        // Still there for the next boot's leave to find.
+        const [line] = await database
+          .select()
+          .from(agentMemories)
+          .where(eq(agentMemories.id, `${suite}-unsaved`));
+        expect(line?.content).toBe(HEARD);
+      }
+
+      // The next boot: the row as it was loaded, a save that works, and the leave again.
+      failing = false;
+      const restarted = createConversationStore({ persistence });
+      await restarted.load();
+      const again = await leaveCompanyIfDetached({
+        ...leave,
+        conversations: restarted,
+      });
+      expect(again?.done).toBe(true);
+      expect(await database.select().from(hubCursor)).toEqual([]);
+      expect(await row()).not.toContain(FILE_NAME);
+      expect(await row()).toContain('"due":"company_left"');
+    },
+  );
+
+  /*
+   * WHAT THE BOT HANDED ON AFTER READING THE HUB. `delegate` takes a task in the Bot's words, which
+   * after a hub answer are the company's, and hands back an answer written from them; both ride in
+   * every later turn of the conversation. A delegation made before the hub ever answered is the
+   * person's and stays as it was.
+   */
+  test("blanks a delegation's task and answer made after a hub answer, and drops the run's own conversation", async () => {
+    await aPersonAndBot();
+    const chat = `${suite}-delegated`;
+    const think = `${chat}.think`;
+    madeThreads.push(chat, think);
+    const delegateCall = (id: string, task: string) => ({
+      id,
+      type: "function",
+      function: {
+        name: "delegate",
+        arguments: JSON.stringify({ to: "think", task }),
+      },
+    });
+    await appendMessages(database, chat, [
+      { id: "d0", role: "user", content: "내 일정 정리해 줘" },
+      {
+        id: "d0a",
+        role: "assistant",
+        content: "",
+        toolCalls: [delegateCall("call_mine", "다음 주 일정 정리")],
+      },
+      {
+        id: "d0b",
+        role: "tool",
+        toolCallId: "call_mine",
+        content: JSON.stringify({ ok: true, answer: "월요일이 비어요." }),
+      },
+      { id: "d1", role: "user", content: "단가표 보고 비교해 줘" },
+      {
+        id: "d2",
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          {
+            id: "call_hub_d",
+            type: "function",
+            function: {
+              name: "mcp__hub__read",
+              arguments: JSON.stringify({ kind: "search", query: "단가" }),
+            },
+          },
+        ],
+      },
+      {
+        id: "d3",
+        role: "tool",
+        toolCallId: "call_hub_d",
+        content: JSON.stringify({ hits: [{ title: FILE_NAME }] }),
+      },
+      {
+        id: "d4",
+        role: "assistant",
+        content: "",
+        toolCalls: [delegateCall("call_think", `${FILE_NAME}의 단가 비교`)],
+      },
+      {
+        id: "d5",
+        role: "tool",
+        toolCallId: "call_think",
+        content: JSON.stringify({
+          ok: true,
+          answer: `${FILE_NAME}이 더 싸요.`,
+        }),
+      },
+      { id: "d6", role: "assistant", content: "비교해 봤어요." },
+    ] as never);
+    // The thinking run's own conversation, holding the task it was handed.
+    await appendMessages(database, think, [
+      { id: "t1", role: "user", content: `${FILE_NAME}의 단가 비교` },
+      { id: "t2", role: "assistant", content: `${FILE_NAME}이 더 싸요.` },
+    ] as never);
+    await atHub("https://co.hub.test");
+    const before = JSON.stringify(
+      await database
+        .select()
+        .from(lafThreadMessages)
+        .where(inArray(lafThreadMessages.threadId, [chat, think])),
+    );
+    expect(before).toContain(FILE_NAME);
+
+    const dropped: string[] = [];
+    const store = createConversationStore();
+    const result = await leaveCompanyIfDetached({
+      hub: undefined,
+      database,
+      conversations: {
+        drop: async (threadId) => {
+          dropped.push(threadId);
+          await store.drop(threadId);
+        },
+        forgetCompany: (input) => store.forgetCompany(input),
+        beginEpochEverywhere: (reason) => store.beginEpochEverywhere(reason),
+      },
+      loginOrigins: async () => [],
+    });
+    expect(result?.done).toBe(true);
+    expect(dropped).toContain(think);
+    expect(dropped).toContain(`${chat}.browse`);
+
+    const after = JSON.stringify(
+      await database
+        .select()
+        .from(lafThreadMessages)
+        .where(inArray(lafThreadMessages.threadId, [chat, think])),
+    );
+    expect(after).not.toContain(FILE_NAME);
+    expect(await messagesFor(database, think)).toEqual([]);
+    const kept = await messagesFor(database, chat);
+    const byId = (id: string) => kept.find((message) => message.id === id);
+    const taskOf = (id: string) =>
+      JSON.parse(
+        (byId(id) as { toolCalls: { function: { arguments: string } }[] })
+          .toolCalls[0]?.function.arguments ?? "{}",
+      );
+    expect(taskOf("d4")).toEqual({ to: "think", task: LEFT_COMPANY_RESULT });
+    expect(byId("d5")?.content).toBe(LEFT_COMPANY_RESULT);
+    // Before the hub answered: the person's, as it was.
+    expect(taskOf("d0a")).toEqual({ to: "think", task: "다음 주 일정 정리" });
+    expect(byId("d0b")?.content).toBe(
+      JSON.stringify({ ok: true, answer: "월요일이 비어요." }),
+    );
+    expect(byId("d6")?.content).toBe("비교해 봤어요.");
+
+    // A copy built before the leave, handed back by a run, does not write the words back.
+    await appendMessages(database, chat, [
+      {
+        id: "d4",
+        role: "assistant",
+        content: "",
+        toolCalls: [delegateCall("call_think", `${FILE_NAME}의 단가 비교`)],
+      },
+      {
+        id: "d5",
+        role: "tool",
+        toolCallId: "call_think",
+        content: JSON.stringify({
+          ok: true,
+          answer: `${FILE_NAME}이 더 싸요.`,
+        }),
+      },
+    ] as never);
+    expect(JSON.stringify(await messagesFor(database, chat))).not.toContain(
+      FILE_NAME,
+    );
+  });
+
+  /*
+   * MOVED FROM ONE COMPANY TO ANOTHER BETWEEN TWO BOOTS. The old hub's lines are gone and a new
+   * hub's are there: the old company's copies go as they would on a plain detach, and what was on
+   * its way to the old hub is never sent to the new one.
+   */
+  test("a VM attached to another hub than its cursor's leaves the old one, and sends the new one nothing of the old", async () => {
+    await atHub("https://old.hub.test");
+    await database.insert(hubOutbox).values({
+      id: `${suite}-old-post`,
+      method: "POST",
+      path: "/rooms/r_1/messages",
+      body: { text: `${ROOM_NAME}에 ${FILE_NAME} 올렸어요` },
+      origin: "chat",
+    });
+    const result = await leaveCompanyIfDetached({
+      hub: "https://new.hub.test",
+      database,
+      conversations: createConversationStore(),
+      loginOrigins: async () => [],
+    });
+    expect(result?.done).toBe(true);
+    expect(
+      await database
+        .select()
+        .from(hubOutbox)
+        .where(like(hubOutbox.id, `${suite}%`)),
+    ).toEqual([]);
+    expect(await database.select().from(hubCursor)).toEqual([]);
   });
 });

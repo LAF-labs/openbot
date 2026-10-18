@@ -351,13 +351,13 @@ const computerClient = config.computer
     })
   : undefined;
 /*
- * A VM detached from its company since the last boot takes the company's copies off this machine,
- * once, before anything runs (`hub/leave.ts`) — the conversations were loaded above, so the new
- * epoch it asks for reaches every one of them, and no turn has started that could write a company
- * conversation back.
+ * A VM detached from its company, or moved to another, since the last boot takes the company's
+ * copies off this machine, once, before anything runs (`hub/leave.ts`) — the conversations were
+ * loaded above, so the new epoch it asks for reaches every one of them, and no turn has started
+ * that could write a company conversation back.
  */
-await leaveCompanyIfDetached({
-  attached: Boolean(config.hub),
+const leftCompany = await leaveCompanyIfDetached({
+  hub: config.hub?.url,
   database,
   conversations,
   /*
@@ -381,6 +381,7 @@ await leaveCompanyIfDetached({
 }).catch((error: unknown) => {
   // Logged and not fatal: the cursor stays, so the next boot tries again.
   log.error("hub_leave_failed", { reason: describeFailure(error) });
+  return { done: false };
 });
 const agentProfileStore = createAgentProfileStore(
   database,
@@ -437,9 +438,16 @@ const channelEvents = createChannelEventHub();
  * so a first sign-in after boot hears the next frame.
  */
 let hubFramesSent: Promise<void> = Promise.resolve();
-const hubRuntime = config.hub
+/*
+ * NOT WHILE THE LEAVE OF ANOTHER HUB IS UNFINISHED. Moved from one hub to another, a leave of the
+ * old one cut short keeps the old cursor so the next boot runs it again; the new hub's line would
+ * write its own over it at once (`hub/cursor.ts`), and that boot would find nothing to leave.
+ */
+const joinedHub = leftCompany?.done === false ? undefined : config.hub;
+if (config.hub && !joinedHub) log.warn("hub_held_for_leave", {});
+const hubRuntime = joinedHub
   ? createHubRuntime({
-      config: config.hub,
+      config: joinedHub,
       database,
       // Chained, so frames reach the page in the order the hub numbered them.
       deliver: (frame) => {

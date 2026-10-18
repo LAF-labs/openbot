@@ -273,7 +273,7 @@ export type ConversationStore = {
    * Start a new epoch on the next run of every kept conversation, and keep that asked-for in the
    * row, so a restart before the next message still takes it. For what changes the frozen layer of
    * every conversation at once and is not in the epoch's key — leaving a company (`hub/leave.ts`).
-   * Resolves, with how many were asked, once the rows are written.
+   * Resolves, with how many were asked, once the rows are written; rejects when one was not.
    */
   beginEpochEverywhere(reason: EpochReason): Promise<number>;
   /**
@@ -286,7 +286,8 @@ export type ConversationStore = {
    * it goes: a gap line over the days it stood for takes its place (`unsummarisedCut`), and a close
    * prepared and not taken goes with it. `lines` are the notebook lines the leave retires, as they
    * are drawn: out of every conversation's frozen layer, its known facts and its reminders.
-   * Resolves, with how many summaries and drawn lines went, once the rows are written.
+   * Resolves, with how many summaries and drawn lines went, once the rows are written; rejects when
+   * one was not.
    */
   forgetCompany(input: {
     threads: readonly string[];
@@ -880,9 +881,10 @@ export function createConversationStore(
    * otherwise race, and the older state landing last would un-say a reminder the provider has
    * already cached. Each write is the whole state as it was when it was asked for.
    */
-  const writes = new Map<string, Promise<void>>();
-  const keep = (conversation: Conversation) => {
-    if (!conversation.kept || !persistence) return;
+  const writes = new Map<string, Promise<boolean>>();
+  /** Resolves to whether this state reached the row; never rejects. */
+  const keep = (conversation: Conversation): Promise<boolean> => {
+    if (!conversation.kept || !persistence) return Promise.resolve(true);
     const state = {
       threadId: conversation.threadId,
       agentId: conversation.botId,
@@ -895,16 +897,33 @@ export function createConversationStore(
     const previous = writes.get(state.threadId) ?? Promise.resolve();
     const next = previous
       .then(() => persistence.save(state))
-      .catch((error) => {
-        // The conversation goes on from memory; a restart before the next write starts it again.
-        log.warn("conversation_context_unsaved", {
-          reason: describeFailure(error),
-        });
-      })
+      .then(
+        () => true,
+        (error) => {
+          // The conversation goes on from memory; a restart before the next write starts it again.
+          log.warn("conversation_context_unsaved", {
+            reason: describeFailure(error),
+          });
+          return false;
+        },
+      )
       .finally(() => {
         if (writes.get(state.threadId) === next) writes.delete(state.threadId);
       });
     writes.set(state.threadId, next);
+    return next;
+  };
+
+  /**
+   * Waits for these writes, and refuses when one of them did not reach its row: for a caller that
+   * says it is done once the rows are written (`beginEpochEverywhere`, `forgetCompany`), which a
+   * leave takes as the moment it may delete what would let it run again.
+   */
+  const written = async (saves: readonly Promise<boolean>[]) => {
+    const unsaved = (await Promise.all(saves)).filter((saved) => !saved);
+    if (unsaved.length > 0) {
+      throw new Error(`${unsaved.length} conversation context(s) not saved`);
+    }
   };
 
   /** Compactions being decided, by thread. For `settled` and `compactNow`. */
@@ -1549,16 +1568,15 @@ export function createConversationStore(
     },
 
     async beginEpochEverywhere(reason) {
-      let asked = 0;
+      const saves: Promise<boolean>[] = [];
       for (const conversation of conversations.values()) {
         if (!conversation.kept) continue;
         conversation.pending = reason;
         conversation.epoch = { ...conversation.epoch, due: reason };
-        keep(conversation);
-        asked += 1;
+        saves.push(keep(conversation));
       }
-      await Promise.all(writes.values());
-      return asked;
+      await written(saves);
+      return saves.length;
     },
 
     async forgetCompany(input) {
@@ -1568,6 +1586,7 @@ export function createConversationStore(
       const isGone = (line: string) => gone.includes(flat(line));
       let summaries = 0;
       let lines = 0;
+      const saves: Promise<boolean>[] = [];
       for (const conversation of conversations.values()) {
         // A close being prepared reads the results as they were; wait for it, then drop what it made.
         const running = closes.get(conversation.threadId);
@@ -1623,9 +1642,9 @@ export function createConversationStore(
             changed = true;
           }
         }
-        if (changed) keep(conversation);
+        if (changed) saves.push(keep(conversation));
       }
-      await Promise.all(writes.values());
+      await written(saves);
       return { summaries, lines };
     },
 
