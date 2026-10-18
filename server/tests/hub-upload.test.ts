@@ -370,7 +370,7 @@ describe("a run's upload: judged under its scope, then a reference", () => {
     expect(JSON.stringify(h.enqueued)).not.toContain("발주는");
   });
 
-  test("a rule that refuses the read, or asks about it, sends nothing", async () => {
+  test("a rule that refuses the read, or would ask about it, sends nothing", async () => {
     for (const [thrown, code] of [
       [
         Object.assign(new Error("laf:policy_denied"), {
@@ -379,7 +379,9 @@ describe("a run's upload: judged under its scope, then a reference", () => {
         "laf:policy_denied",
       ],
       [
-        Object.assign(new Error("x"), { code: "laf:awaiting_approval" }),
+        // What the gateway refuses a read with where a rule asks: no question is opened for an
+        // upload (`acts.ts`, `readWholeFile`).
+        Object.assign(new Error("laf:would_ask"), { code: "laf:would_ask" }),
         HUB_UPLOAD_READ_ASKED,
       ],
     ] as const) {
@@ -430,6 +432,21 @@ describe("an attempt reads the file again", () => {
     expect(h.sent[0]?.parts.meta).toEqual({ name: "메모.txt", folder: "/" });
     expect(h.sent[0]?.parts.text).toBe("발주는 목요일");
     expect(h.sent[0]?.parts.blob).toEqual(NOTE);
+  });
+
+  test("a name the team sees with no kind in it still sends the words: the kind is the file's", async () => {
+    // The tool lets 라피 name the file for the team, and a title has no ending.
+    const h = harness(new Map([[reference.path, NOTE]]));
+    const answer = await h.uploads.sendReference(
+      { ...reference, name: "목요일 발주 메모" },
+      request,
+    );
+    expect(answer.ok).toBe(true);
+    expect(h.sent[0]?.parts.meta).toEqual({
+      name: "목요일 발주 메모",
+      folder: "/",
+    });
+    expect(h.sent[0]?.parts.text).toBe("발주는 목요일");
   });
 
   test("a file written over since it was judged is not sent", async () => {

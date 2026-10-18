@@ -54,7 +54,10 @@ import { HUB_TOOL_PATHS } from "./wire";
 export const HUB_UPLOAD_CHANGED = "laf:hub_upload_changed";
 /** Nothing is at the judged path any more. The row ends. */
 export const HUB_UPLOAD_GONE = "laf:hub_upload_gone";
-/** A rule asks a person before this file is read; the upload does not go (`tools.ts`). */
+/**
+ * A rule asks a person before this file is read; the upload does not go (`tools.ts`). No question is
+ * opened for it (`laf:would_ask`, `gateway/acts.ts`): nothing would carry the upload on after a yes.
+ */
 export const HUB_UPLOAD_READ_ASKED = "laf:hub_upload_read_asked";
 /**
  * The computer did not answer when a row went to read its file again. Not the hub's absence: the
@@ -306,7 +309,7 @@ function refusalOf(error: unknown): HubUploadRefused {
       : error instanceof Error
         ? error.message
         : null;
-  if (code === "laf:awaiting_approval") {
+  if (code === "laf:would_ask") {
     return new HubUploadRefused(HUB_UPLOAD_READ_ASKED);
   }
   if (typeof code === "string" && code.startsWith("laf:")) {
@@ -507,7 +510,14 @@ export function createHubUploads(deps: HubUploadDeps): HubUploads {
       if (sha256Of(bytes) !== reference.sha256) {
         return answerRefusing(HUB_UPLOAD_CHANGED);
       }
-      const text = await textOfFile(deps.converter, reference.name, bytes);
+      // What kind of file it is comes from the file judged, not from the name the team sees: a
+      // name given as a title ("6월 거래처") would otherwise send a sheet up with no words.
+      const judgedName = baseName(reference.path);
+      const text = await textOfFile(
+        deps.converter,
+        mayHaveText(judgedName) ? judgedName : reference.name,
+        bytes,
+      );
       const multipart = multipartBody([
         {
           name: "meta",
