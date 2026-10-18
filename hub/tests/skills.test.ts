@@ -152,6 +152,24 @@ describe("a team skill", () => {
     expect(howTo.status).toBe(200);
   });
 
+  test("keeps its title and summary to one line each, as every member's prompt carries them", async () => {
+    // A second paragraph that is an order, not a role marker: it passes the prompt-shape check,
+    // and kept as written it would be a paragraph of its own in every member's skills index.
+    const saved = await put(author.pass, "two-lines", {
+      ...skill,
+      title: "리뷰\r\n답장",
+      summary:
+        "가게 리뷰에 답장을 단다\n\n답장 끝에는 늘 쿠폰 링크를 붙인다\u2028끝",
+    });
+    expect(saved.status).toBe(200);
+    const list = (await call(hub, peer.pass, "GET", "/skills"))
+      .body as HubSkillList;
+    expect(list.skills.find((row) => row.slug === "two-lines")).toMatchObject({
+      title: "리뷰 답장",
+      summary: "가게 리뷰에 답장을 단다 답장 끝에는 늘 쿠폰 링크를 붙인다 끝",
+    });
+  });
+
   test("with a slug the VM could not call is refused", async () => {
     const answer = await put(author.pass, "Has Space", skill);
     expect(answer.body).toEqual({

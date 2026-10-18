@@ -129,6 +129,21 @@ function refusedText(input: SkillInput): string | null {
   return null;
 }
 
+/** Control characters, and the two line separators Unicode has besides them. */
+const CONTROL = /[\p{Cc}\u2028\u2029]+/gu;
+
+/**
+ * The title and the summary as they are kept: one line, as `flattenProfileText` keeps a Bot's job.
+ * Judged by {@link refusedText} BEFORE this, because a line break is what makes `system:` a role
+ * marker; kept AFTER, because a second paragraph that is an order rather than a role marker passes
+ * that judgement and would otherwise sit as a paragraph of its own in every member's prompt.
+ */
+function asIndexLines(input: SkillInput): SkillInput {
+  const flat = (text: string) =>
+    text.replace(CONTROL, " ").replace(/\s+/g, " ").trim();
+  return { ...input, title: flat(input.title), summary: flat(input.summary) };
+}
+
 export type SkillRouteOptions = {
   database: HubDatabase;
   listeners: Listeners;
@@ -196,15 +211,18 @@ export function skillRoutes(options: SkillRouteOptions) {
   route.put("/:slug", limit, async (context) => {
     const member = context.get("member");
     const slug = slugOf(context.req.param("slug"));
-    const parsed = parseSkill(await jsonBody(context));
+    const input = parseSkill(await jsonBody(context));
     const runId = runOf(context);
     return memberWrite(context, options, async (tx, effects) => {
       if (!slug) return invalid("slug");
-      if ("status" in parsed) return parsed;
-      if (parsed.pack && !isAdmin(member)) {
+      if ("status" in input) return input;
+      if (input.pack && !isAdmin(member)) {
         return { status: 403, body: { ok: false, code: HUB_FACTS.forbidden } };
       }
-      const refused = refusedText(parsed);
+      const refused = refusedText(input);
+      const parsed = asIndexLines(input);
+      // A title of control characters alone is not empty until it is flattened.
+      if (!parsed.title) return invalid("title");
       const existing = await lockedRow(tx, slug);
       if (refused) {
         await recordAudit(tx, {
