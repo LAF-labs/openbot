@@ -3285,6 +3285,21 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `server` by two more (to 4883 on top of 4881): a write meeting a refused pass is said as that,
  * not as kept — with no row when it was known before (hub-tools.test.ts), the row waiting when the
  * hub's 401 came during the write (hub-tools.integration.test.ts).
+ *
+ * RAISED 2026-10-16 FOR "@라피" IN A TEAM ROOM: `server` by twenty-eight (to 4803) — what a mention
+ * names, who wrote a room's line, whose 라피 is working and what a turn posts (room-answers.test.ts,
+ * 18); the turn in the room's own conversation on a real Postgres and the real engine — read first,
+ * posted once as the person's 라피, nothing for another's mention, once when heard twice, nothing
+ * late, nothing twice, nothing after a failure, no move without the tool, and the conversation found
+ * again (room-answers.integration.test.ts, 8); the head the same bytes as a chat turn's
+ * (room-answers-head.test.ts, 1); and the line's listener hearing each event, a throw stopping
+ * nothing (hub-link.integration.test.ts, 1). 4775 and 28. `app` by five (to 2548): the room's words
+ * for who wrote what and whose 라피 is working, and the room's conversation found and named
+ * (hub-rooms.test.ts). 2543 and 5.
+ *
+ * RAISED 2026-10-18 FOR A LONG ROOM TURN: `server` by one (to 4910) — a turn whose steps push the
+ * question past a fixed tail of the thread still posts its last words
+ * (room-answers.integration.test.ts). 4909 and 1.
  */
 const GROUPS: readonly {
   name: string;
@@ -3311,9 +3326,20 @@ const GROUPS: readonly {
    * RAISED 2026-10-18 FOR A WRITE WHOSE ANSWER IS STILL ON ITS WAY, from 4960 to 4961: one in
    * `hub-tools.integration.test.ts` — the hub's answer held past the write's wait and then a 404,
    * and the Bot is told the 404, not "kept". 4960 and 1.
+   *
+   * RAISED 2026-10-18 FOR ROOM ANSWERS THAT MEET THE BOUNDARY, from 4990 to 4997: five in
+   * `room-answers.integration.test.ts` (a deny posts nothing, an ask posts only on a yes, a Bot not
+   * given the write posts nothing, a question that waited past the window behind a long turn is
+   * answered, a restart's waiting question is answered on connect) and two in
+   * `room-answers.test.ts` (each answer ends one question). 4990 and 7.
+   *
+   * RAISED 2026-10-18 FOR A ROOM ANSWER THAT NAMES ITS QUESTION, from 4997 to 5002: one more in
+   * `room-answers.test.ts` (an answer that came late leaves the next question shown), three in
+   * `hub-tools.test.ts` (a `replyTo` refused unless a message number, and let through when one)
+   * and one in `hub-tools.integration.test.ts` (the post goes under the question's id). 4997 and 5.
    */
-  { name: "server", floor: 4961, roots: ["server"] },
-  { name: "app", floor: 2570, roots: ["app"] },
+  { name: "server", floor: 5002, roots: ["server"] },
+  { name: "app", floor: 2575, roots: ["app"] },
   {
     name: "agent-computer",
     /*

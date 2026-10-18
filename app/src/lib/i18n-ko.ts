@@ -2537,6 +2537,12 @@ export const ko: Record<string, string> = {
     "회사 서버가 바빠요. 잠시 뒤에 다시 해 주세요.",
   "Somebody already decided on this line.": "이미 누군가 정한 줄이에요.",
   "That could not be sent as it is.": "이대로는 보낼 수 없어요.",
+  // 단체방에서 부른 라피 — 답하는 동안의 한 줄, 라피가 쓴 글의 이름, 그 방의 내 대화(lib/hub/rooms.ts).
+  "{name}'s Lafi": "{name}의 라피",
+  "{name}'s Lafi is looking into it": "{name}의 라피가 알아보는 중",
+  "A teammate": "팀원",
+  "Team room · {name}": "단체방 · {name}",
+  "A team room": "단체방",
   // 오늘 사용량 — 설정의 한 줄과, 80%부터 입력창 위에 뜨는 한 줄. 거절당하기 전에 남은 양을 알린다.
   "Free trial": "무료 체험",
   "Today's usage": "오늘 사용량",

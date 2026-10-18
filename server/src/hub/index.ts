@@ -6,6 +6,7 @@
  * Absent `LAF_HUB_URL`, nothing here is made: `main.ts` gets undefined, the routes answer
  * `configured: false`, and the settings screen draws no company line.
  */
+import type { HubEvent } from "../../../shared/hub/protocol";
 import type { DeploymentConfig } from "../config";
 import type { Database } from "../db/client";
 import { createHubHttp, type HubHttp } from "./http";
@@ -18,6 +19,10 @@ export function createHubRuntime(input: {
   config: NonNullable<DeploymentConfig["hub"]>;
   database: Database;
   deliver: (frame: HubFrame) => void;
+  /** Every event the line applies, for what this server does itself (`link.ts`, `onEvent`). */
+  onEvent?: (event: HubEvent) => void;
+  /** Each time the line connects, after the outbox is offered what it kept. */
+  onConnected?: () => void;
 }): HubRuntime {
   const http = createHubHttp({
     url: input.config.url,
@@ -31,7 +36,11 @@ export function createHubRuntime(input: {
     http,
     hub: input.config.url,
     deliver: input.deliver,
-    onReachable: () => void outbox?.sweep(),
+    ...(input.onEvent ? { onEvent: input.onEvent } : {}),
+    onReachable: () => {
+      void outbox?.sweep();
+      input.onConnected?.();
+    },
   });
   outbox = createHubOutbox({
     database: input.database,

@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { useMyBots } from "@/lib/agents/my-bots";
 import { requestJump } from "@/lib/channels/jump";
 import { projectName } from "@/lib/channels/projects";
+import { roomConversationName } from "@/lib/hub/rooms";
 import {
   type ChannelSummary,
   channelListQueryOptions,
@@ -169,6 +170,9 @@ function whereOf(
     : undefined;
   if ((channel?.kind ?? hit.kind) === "project") {
     return projectName(channel ?? { name: hit.channelName });
+  }
+  if ((channel?.kind ?? hit.kind) === "room") {
+    return roomConversationName(channel ?? { name: hit.channelName });
   }
   if ((bots?.length ?? 0) <= 1) return t("Chat");
   const botId = channel?.agentIds?.[0];

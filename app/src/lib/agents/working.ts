@@ -19,7 +19,10 @@ import { polled } from "@/lib/polling";
  */
 export type WorkingRun = {
   agentId: string;
-  /** `chat` | `routine` | `wake` — and `handoff` or `room` on a run from before 2026-09-24. */
+  /**
+   * `chat` | `routine` | `wake` | `room` — the last a person's 라피 answering them in a team room
+   * (`server/src/hub/room-answers.ts`) — and `handoff` on a run from before 2026-09-24.
+   */
   origin: string;
   /** What it is doing, when somebody wrote it down — a routine's name. */
   label: string | null;
