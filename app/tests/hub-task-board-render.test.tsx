@@ -62,3 +62,77 @@ describe("a card on its way", () => {
     RENDER_TIMEOUT_MS,
   );
 });
+
+describe("a drag put back with Escape", () => {
+  /*
+   * The release's click is swallowed so a drag does not open the task. Escape ended the drag
+   * before the release, and the release then found nothing to end, so nothing un-swallowed it: the
+   * next click on a title that no press had come before — Enter, a finger's tap — opened nothing.
+   */
+  test(
+    "leaves the next click on a card to open its task",
+    async () => {
+      const { escaped } = await rendered();
+      expect(escaped.error).toBeUndefined();
+      expect(escaped.wasDragging).toBe(true);
+      expect(escaped.putBack).toBe(true);
+      expect(escaped.opened).toBe("t_a");
+    },
+    RENDER_TIMEOUT_MS,
+  );
+});
+
+describe("a write's key follows what is written", () => {
+  /*
+   * The hub answers a repeated key with its first answer, whatever the body. A key kept from the
+   * first press would have an edited retry answered as the old write, which is never made.
+   */
+  test(
+    "a new task pressed again keeps its key, and an edited title gets a new one",
+    async () => {
+      const { newTask } = await rendered();
+      expect(newTask.error).toBeUndefined();
+      const [first, again, edited] = newTask.writes;
+      expect(newTask.writes).toHaveLength(3);
+      expect(first?.body).toEqual({ title: "견적서", visibility: "company" });
+      expect(again?.key).toBe(first?.key ?? "missing");
+      expect(edited?.body).toEqual({
+        title: "견적서 보내기",
+        visibility: "company",
+      });
+      expect(edited?.key).toEqual(expect.any(String));
+      expect(edited?.key).not.toBe(first?.key ?? null);
+    },
+    RENDER_TIMEOUT_MS,
+  );
+
+  test(
+    "a note sent again keeps its key, and edited words get a new one",
+    async () => {
+      const { note } = await rendered();
+      expect(note.error).toBeUndefined();
+      const [first, again, edited] = note.writes;
+      expect(note.writes).toHaveLength(3);
+      expect(first?.body).toEqual({ text: "내일 보내요" });
+      expect(again?.key).toBe(first?.key ?? "missing");
+      expect(edited?.body).toEqual({ text: "내일 아침에 보내요" });
+      expect(edited?.key).toEqual(expect.any(String));
+      expect(edited?.key).not.toBe(first?.key ?? null);
+    },
+    RENDER_TIMEOUT_MS,
+  );
+});
+
+describe("회사 draws one part at a time", () => {
+  test(
+    "on 업무판 a tab the address still names draws nothing under the board",
+    async () => {
+      const { company } = await rendered();
+      expect(company.error).toBeUndefined();
+      expect(company.onTasks).toEqual({ board: true, files: false });
+      // The same tab, away from 업무판, is drawn: the absence above is the board's doing.
+      expect(company.onFiles).toEqual({ board: false, files: true });
+    },
+    RENDER_TIMEOUT_MS,
+  );
+});

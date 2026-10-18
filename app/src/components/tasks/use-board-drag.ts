@@ -40,6 +40,8 @@ type Session = {
   offsetY: number;
   width: number;
   isDragging: boolean;
+  /** Escape put the card back; the press still ends where every press ends, on its release. */
+  isCancelled: boolean;
   target: DropTarget | null;
 };
 
@@ -105,19 +107,22 @@ export function useBoardDrag(input: {
     }
   };
 
-  // Escape while dragging puts the card back where it was.
+  /*
+   * Escape while dragging puts the card back where it was. The session is kept, cancelled, until
+   * the pointer is let go: that release is what clears the click it swallows (`end`). Ended here
+   * instead, nothing would clear it — the release finds no session — and the next click on a card
+   * that no press had reset first (Enter on a title, a finger's tap) would not open its task.
+   */
   const isDragging = drag !== null;
   useEffect(() => {
     if (!isDragging) return;
     const handleKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      // `end(false)`, spelled out: only refs and a state setter, so the effect needs nothing else.
       const current = session.current;
-      session.current = null;
-      if (current?.isDragging) {
-        swallowClick.current = true;
-        setDrag(null);
-      }
+      if (!current?.isDragging) return;
+      current.isCancelled = true;
+      current.target = null;
+      setDrag(null);
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
@@ -147,6 +152,7 @@ export function useBoardDrag(input: {
       offsetY: event.clientY - box.top,
       width: box.width,
       isDragging: false,
+      isCancelled: false,
       target: null,
     };
     // The grip: no text selection, no scroll starting under the finger.
@@ -156,6 +162,7 @@ export function useBoardDrag(input: {
   const handlePointerMove = (event: PointerEvent<HTMLElement>) => {
     const current = session.current;
     if (!current || current.pointerId !== event.pointerId) return;
+    if (current.isCancelled) return;
     if (!current.isDragging) {
       const moved = Math.hypot(
         event.clientX - current.startX,

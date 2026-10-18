@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,7 +13,13 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { channelListQueryOptions } from "@/lib/channels/queries";
-import { authorOf, type CompanyMember, memberName } from "@/lib/hub/company";
+import {
+  authorOf,
+  type CompanyMember,
+  keyFor,
+  memberName,
+  type WriteKey,
+} from "@/lib/hub/company";
 import {
   type JobChoice,
   stageLabel,
@@ -187,18 +193,22 @@ function noteAuthor(
 
 function NoteBox({ taskId, onSent }: { taskId: string; onSent: () => void }) {
   const [text, setText] = useState("");
-  const [key, setKey] = useState(() => crypto.randomUUID());
+  const held = useRef<WriteKey | null>(null);
   const send = useMutation({
-    mutationFn: (written: string) =>
-      taskWrite(
+    mutationFn: (written: string) => {
+      // The key follows the words, as a room's message does (`company-rooms.tsx`): the same note
+      // again is one note, an edited one is another.
+      held.current = keyFor(held.current, written);
+      return taskWrite(
         `/api/hub/tasks/${encodeURIComponent(taskId)}/notes`,
         "POST",
         { text: written },
-        key,
-      ),
+        held.current.key,
+      );
+    },
     onSuccess: () => {
       setText("");
-      setKey(crypto.randomUUID());
+      held.current = null;
       onSent();
     },
   });

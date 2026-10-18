@@ -81,6 +81,7 @@ function CompanyPage() {
   const shown = TABS.filter((tab) => tab !== "memory" || isAdmin(role));
   const tab: Tab =
     search.tab && shown.includes(search.tab) ? search.tab : "rooms";
+  const part: Tab | "tasks" = isOnTasks ? "tasks" : tab;
   const line = status.data ? hubStatusLine(status.data) : null;
   const workspace =
     me.data?.workspace?.name ??
@@ -151,8 +152,9 @@ function CompanyPage() {
         ))}
       </nav>
 
-      {isOnTasks ? <Outlet /> : null}
-      {isOnTasks ? null : tab === "rooms" ? (
+      {/* One part at a time: on 업무판 a `tab` the address still carries draws nothing under it. */}
+      {part === "tasks" ? <Outlet /> : null}
+      {part === "rooms" ? (
         <CompanyRooms
           meId={me.data?.member.id}
           members={members.data}
@@ -160,12 +162,12 @@ function CompanyPage() {
           rosterPending={!status.isError && (me.isPending || members.isPending)}
         />
       ) : null}
-      {tab === "files" ? <CompanyFiles members={members.data} /> : null}
-      {tab === "skills" ? <CompanySkills openSkill={search.skill} /> : null}
-      {tab === "members" ? (
+      {part === "files" ? <CompanyFiles members={members.data} /> : null}
+      {part === "skills" ? <CompanySkills openSkill={search.skill} /> : null}
+      {part === "members" ? (
         <CompanyMembers meId={me.data?.member.id} members={members} />
       ) : null}
-      {tab === "memory" ? <CompanyMemory members={members.data} /> : null}
+      {part === "memory" ? <CompanyMemory members={members.data} /> : null}
     </PageShell>
   );
 }

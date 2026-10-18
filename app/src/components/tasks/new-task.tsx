@@ -1,9 +1,9 @@
 import { IconPlus } from "@tabler/icons-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { CompanyMember } from "@/lib/hub/company";
+import { type CompanyMember, keyFor, type WriteKey } from "@/lib/hub/company";
 import {
   type JobChoice,
   taskFailureText,
@@ -30,23 +30,24 @@ export function NewTask({
   const [isOpen, setIsOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [assignee, setAssignee] = useState(NOBODY);
-  const [key, setKey] = useState(() => crypto.randomUUID());
+  const held = useRef<WriteKey | null>(null);
   const create = useMutation({
-    mutationFn: () =>
-      taskWrite(
-        "/api/hub/tasks",
-        "POST",
-        {
-          title: title.trim(),
-          visibility: "company",
-          ...(assignee === NOBODY ? {} : { assignee }),
-        },
-        key,
-      ),
+    mutationFn: () => {
+      const body = {
+        title: title.trim(),
+        visibility: "company",
+        ...(assignee === NOBODY ? {} : { assignee }),
+      };
+      // The same task pressed again keeps its key, so a retry after a dropped answer is one task;
+      // an edited title or another assignee is another write, or the hub would answer it with the
+      // first one's result and the edit would never be made.
+      held.current = keyFor(held.current, JSON.stringify(body));
+      return taskWrite("/api/hub/tasks", "POST", body, held.current.key);
+    },
     onSuccess: () => {
       setTitle("");
       setAssignee(NOBODY);
-      setKey(crypto.randomUUID());
+      held.current = null;
       setIsOpen(false);
       void queryClient.invalidateQueries({ queryKey: taskKeys.board });
     },
