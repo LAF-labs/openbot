@@ -3332,8 +3332,13 @@ const GROUPS: readonly {
    * given the write posts nothing, a question that waited past the window behind a long turn is
    * answered, a restart's waiting question is answered on connect) and two in
    * `room-answers.test.ts` (each answer ends one question). 4990 and 7.
+   *
+   * RAISED 2026-10-18 FOR A ROOM ANSWER THAT NAMES ITS QUESTION, from 4997 to 5002: one more in
+   * `room-answers.test.ts` (an answer that came late leaves the next question shown), three in
+   * `hub-tools.test.ts` (a `replyTo` refused unless a message number, and let through when one)
+   * and one in `hub-tools.integration.test.ts` (the post goes under the question's id). 4997 and 5.
    */
-  { name: "server", floor: 4997, roots: ["server"] },
+  { name: "server", floor: 5002, roots: ["server"] },
   { name: "app", floor: 2575, roots: ["app"] },
   {
     name: "agent-computer",
