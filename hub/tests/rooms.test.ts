@@ -1,13 +1,14 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
-import type {
-  HubRoom,
-  HubRoomMessages,
-  HubRooms,
-  HubSync,
+import { eq, sql } from "drizzle-orm";
+import {
+  type HubRoom,
+  type HubRoomMessages,
+  type HubRooms,
+  type HubSync,
+  roomMessageRef,
 } from "../../shared/hub/protocol";
-import { hubAudit, hubMessages } from "../src/db/schema";
+import { hubAudit, hubEvents, hubMembers, hubMessages } from "../src/db/schema";
 import {
   asMember,
   newPass,
@@ -245,6 +246,90 @@ describe("rooms: who is in them", () => {
     });
     expect(response.status).toBe(400);
     expect(await response.json()).toMatchObject({ field: "members" });
+  });
+
+  test("leaving the company takes them out of every room; coming back does not put them back", async () => {
+    const eve = {
+      email: "eve@example.com",
+      vmOrigin: "https://eve.example",
+      pass: newPass(),
+    };
+    const eveId = (await putMember(hub, eve)).id;
+    const room = await makeRoom(ann.pass, [eveId]);
+    await postedSeq(ann.pass, room.id, { text: "이브 있을 때" });
+
+    const start = await head(ann.pass);
+    await putMember(hub, { ...eve, state: "left" });
+    const rooms = (await (
+      await call(ann.pass, "GET", "/rooms")
+    ).json()) as HubRooms;
+    expect(rooms.rooms.find((each) => each.id === room.id)?.members).toEqual([
+      annId,
+    ]);
+    // The ones still in it hear the roster change, so their VMs redraw it.
+    expect(
+      (await eventsAfter(ann.pass, start))
+        .filter((event) => event.type === "room.changed")
+        .map((event) => event.refId),
+    ).toEqual([room.id]);
+    const seq = await postedSeq(ann.pass, room.id, { text: "이브 없이" });
+    const said = await hub.database
+      .select({ type: hubEvents.type, visibleTo: hubEvents.visibleTo })
+      .from(hubEvents)
+      .where(eq(hubEvents.refId, roomMessageRef(room.id, seq)));
+    expect(said).toEqual([{ type: "room.message", visibleTo: [annId] }]);
+
+    // Back with a new pass: the same member, in no room, reading none of it.
+    const back = { ...eve, pass: newPass() };
+    expect((await putMember(hub, back)).id).toBe(eveId);
+    const theirs = (await (
+      await call(back.pass, "GET", "/rooms")
+    ).json()) as HubRooms;
+    expect(theirs.rooms).toEqual([]);
+    expect((await messages(back.pass, room.id)).status).toBe(404);
+  });
+
+  test("nobody is added to a room in the moment they leave the company", async () => {
+    const fay = {
+      email: "fay@example.com",
+      vmOrigin: "https://fay.example",
+      pass: newPass(),
+    };
+    const fayId = (await putMember(hub, fay)).id;
+    const room = await makeRoom(ann.pass, []);
+    // A departure holding her row, the way the registry's does, while the add arrives.
+    let adding: Promise<Response> | undefined;
+    await hub.database.transaction(async (tx) => {
+      await tx
+        .select({ id: hubMembers.id })
+        .from(hubMembers)
+        .where(eq(hubMembers.id, fayId))
+        .for("update");
+      await tx
+        .update(hubMembers)
+        .set({ state: "left", leftAt: new Date() })
+        .where(eq(hubMembers.id, fayId));
+      adding = call(ann.pass, "POST", `/rooms/${room.id}/members`, {
+        members: [fayId],
+      });
+      // Until the add is waiting on her row.
+      for (let tries = 0; tries < 200; tries++) {
+        const [row] = await hub.database.execute<{ n: number }>(
+          sql`select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`,
+        );
+        if ((row?.n ?? 0) > 0) break;
+        await Bun.sleep(10);
+      }
+    });
+    const answer = await (adding as Promise<Response>);
+    expect(answer.status).toBe(400);
+    expect(await answer.json()).toMatchObject({ field: "members" });
+    const rooms = (await (
+      await call(ann.pass, "GET", "/rooms")
+    ).json()) as HubRooms;
+    expect(rooms.rooms.find((each) => each.id === room.id)?.members).toEqual([
+      annId,
+    ]);
   });
 });
 
