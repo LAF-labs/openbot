@@ -498,6 +498,18 @@ export function vaultRoutes(options: VaultRouteOptions) {
             changedAt: now,
           })
           .where(eq(hubVaultLogins.id, id));
+        // A lease not yet opened is for one origin; one the login is no longer filled on can never
+        // open, so it must not keep holding the login either. An opened lease stays until it is
+        // released or lapses: its run is already signed in, and the browser is still its.
+        await tx
+          .delete(hubVaultLeases)
+          .where(
+            and(
+              eq(hubVaultLeases.loginId, id),
+              isNull(hubVaultLeases.openedAt),
+              notInArray(hubVaultLeases.origin, input.origins),
+            ),
+          );
       } else if (sealed) {
         await tx.insert(hubVaultLogins).values({
           id,
@@ -755,7 +767,8 @@ export function vaultRoutes(options: VaultRouteOptions) {
   /**
    * The values, once per lease. The lease is spent by the same statement that checks it, so two
    * `open`s racing on one lease cannot both pass; the grant is checked again, since it may have
-   * been taken away since the lease was given.
+   * been taken away since the lease was given, and so is the lease's origin, which the login may no
+   * longer be filled on.
    */
   route.post("/:id/open", async (context) => {
     const self = context.get("member");
@@ -779,6 +792,7 @@ export function vaultRoutes(options: VaultRouteOptions) {
       answer = await database.transaction(async (tx): Promise<Reply> => {
         const [login] = await tx
           .select({
+            origins: hubVaultLogins.origins,
             wrappedKey: hubVaultLogins.wrappedKey,
             kekId: hubVaultLogins.kekId,
             sealedUsername: hubVaultLogins.sealedUsername,
@@ -798,6 +812,7 @@ export function vaultRoutes(options: VaultRouteOptions) {
               eq(hubVaultLeases.memberId, self.id),
               gt(hubVaultLeases.until, now),
               isNull(hubVaultLeases.openedAt),
+              inArray(hubVaultLeases.origin, login.origins),
             ),
           )
           .returning({
