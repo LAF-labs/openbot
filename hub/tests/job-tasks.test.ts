@@ -258,5 +258,5 @@ test("a move and a run's report on one of the job's tasks at once both go throug
   });
   const moved = await move;
   expect(moved?.status).toBe(200);
-  expect((moved?.body.job as { runner: string }).runner).toBe(danId);
+  expect(moved?.body.job).toMatchObject({ runner: danId });
 });
