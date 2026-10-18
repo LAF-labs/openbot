@@ -3331,8 +3331,14 @@ const GROUPS: readonly {
    *
    * RAISED 2026-10-18 FOR THE BUDGET'S FIX ROUND, from 84 to 85: a settle with no reservation
    * counts only against the job and task scopes its member may name (budget.test.ts, 1).
+   *
+   * RAISED 2026-10-18 FOR THE HANDOFF'S FIX ROUND, from 102 to 106: a checkout during a job's move
+   * waits for it and the old runner is refused, and a task the old runner's run stopped on goes
+   * back to the board when the job moves (job-tasks.test.ts, 2); a blocked task given to somebody
+   * else goes back to the board (task-approvals.test.ts, 1); a definition at the shared cap is
+   * taken and one byte over refused (job-handoff.test.ts, 1).
    */
-  { name: "hub", floor: 102, roots: ["hub"] },
+  { name: "hub", floor: 106, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
