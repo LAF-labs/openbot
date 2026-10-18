@@ -3308,7 +3308,7 @@ const GROUPS: readonly {
    * through) and four in `hub-tools.integration.test.ts` against the real hub (a proposal with its
    * evidence id, a 20,000-character skill, search and a file read on, a post read back). 4927 and 11.
    */
-  { name: "server", floor: 4919, roots: ["server"] },
+  { name: "server", floor: 4960, roots: ["server"] },
   { name: "app", floor: 2570, roots: ["app"] },
   {
     name: "agent-computer",

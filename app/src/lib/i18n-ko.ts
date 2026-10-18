@@ -167,7 +167,6 @@ export const ko: Record<string, string> = {
   "Used a tool": "도구 사용",
   "Public tenders and support programmes": "나라장터·기업마당",
   "Web search": "웹 검색",
-  Company: "회사",
   "It wants to list what is in the workspace.":
     "봇 폴더에 무엇이 있는지 보려 해요.",
   "It wants to list what is in {path}.": "{path} 안에 무엇이 있는지 보려 해요.",
