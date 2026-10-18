@@ -386,6 +386,61 @@ describe("leasing and opening", () => {
     expect(left).toEqual([]);
   });
 
+  test("an origin taken off a login ends the unopened leases on it", async () => {
+    await store("unlist-1");
+    await grant("unlist-1", ["a", "c"]);
+    const held = await lease("a", "unlist-1");
+    expect(held.status).toBe(200);
+    const moved = "https://moved-unlist.example.test";
+    expect(
+      (
+        await call("admin", "PUT", "/unlist-1", {
+          label: "Wing unlist-1",
+          origins: [moved],
+        })
+      ).status,
+    ).toBe(200);
+    // Status and code one by one: a diff of a body that held the values would print them.
+    const opened = await call("a", "POST", "/unlist-1/open", {
+      lease: leaseOf(held),
+    });
+    expect(opened.status).toBe(409);
+    expect(opened.body.code).toBe("laf:vault_lease_invalid");
+    expect(JSON.stringify(opened.body).includes(PASSWORD)).toBe(false);
+    // Nor does it hold the login against the next VM.
+    const left = await hub.database
+      .select({ memberId: hubVaultLeases.memberId })
+      .from(hubVaultLeases)
+      .where(eq(hubVaultLeases.loginId, "unlist-1"));
+    expect(left).toEqual([]);
+    const next = await call("c", "POST", "/unlist-1/lease", { origin: moved });
+    expect(next.status).toBe(200);
+  });
+
+  test("open refuses a lease for an origin the login no longer lists", async () => {
+    await store("unlist-2");
+    await grant("unlist-2", ["a"]);
+    const held = await lease("a", "unlist-2");
+    expect(held.status).toBe(200);
+    // However such a row came to outlive the change, the check at open is what stands.
+    await hub.database
+      .update(hubVaultLeases)
+      .set({ origin: "https://elsewhere-unlist.example.test" })
+      .where(eq(hubVaultLeases.loginId, "unlist-2"));
+    const opened = await call("a", "POST", "/unlist-2/open", {
+      lease: leaseOf(held),
+    });
+    expect(opened.status).toBe(409);
+    expect(opened.body.code).toBe("laf:vault_lease_invalid");
+    expect(JSON.stringify(opened.body).includes(PASSWORD)).toBe(false);
+    expect(JSON.stringify(opened.body).includes(USERNAME)).toBe(false);
+    const [row] = await hub.database
+      .select({ openedAt: hubVaultLeases.openedAt })
+      .from(hubVaultLeases)
+      .where(eq(hubVaultLeases.loginId, "unlist-2"));
+    expect(row?.openedAt).toBeNull();
+  });
+
   test("a verified VM is counted, and only the caller's own VM can be named", async () => {
     await store("device-1");
     await grant("device-1", ["a", "c"]);

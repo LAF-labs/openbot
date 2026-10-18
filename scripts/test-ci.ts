@@ -3391,7 +3391,12 @@ const GROUPS: readonly {
    * by its maker or an admin; leaving the company taking a member off every task, with neither an
    * edit nor coming back putting them back).
    */
-  { name: "hub", floor: 245, roots: ["hub"] },
+  /*
+   * RAISED 2026-10-18 FOR A LEASE ON AN ORIGIN TAKEN OFF ITS LOGIN, from 245 to 247: vault.test.ts
+   * 2 (a change of origins ending the unopened leases on the dropped one, so it neither opens nor
+   * holds the login; an open refused for a lease whose origin the login no longer lists).
+   */
+  { name: "hub", floor: 247, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
