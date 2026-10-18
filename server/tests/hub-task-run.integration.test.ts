@@ -16,10 +16,12 @@ import {
   users,
 } from "../src/db/schema";
 import {
+  createRefusedRuns,
   createTaskRun,
   createUnreportedRuns,
   taskThreadOf,
 } from "../src/hub/task-run";
+import { createWorkInFlight } from "../src/runner/in-flight";
 import { createRunLedger } from "../src/runner/run-ledger";
 import { messagesFor } from "../src/runner/thread-store";
 import {
@@ -408,5 +410,94 @@ describe("a task's run", () => {
         noted: new Set(),
       }),
     ).toBeNull();
+  });
+  test("a person's stop that never reached the board is reported as a stop after a restart, never run again", async () => {
+    const who = await person();
+    const work = createWorkInFlight();
+    const { agent } = scriptedAgent([
+      [call("computer_write_file", { path: "a.md", contents: "가" })],
+      [say("다음 걸음.")],
+    ]);
+    const id = runId();
+    const given = task("멈출 일");
+    const outcome = await createTaskRun({
+      database,
+      ledger,
+      work,
+      owner: async () => who,
+      resolveAgents: async () => ({ [who.botId]: agent }),
+      // 모두 멈추기, pressed while the run's first step is being taken.
+      tools: stubTools(async () => {
+        for (const going of work.of(who.actor.id)) await going.stop();
+        return { ok: true };
+      }),
+    })({ task: given, runId: id, signal: new AbortController().signal });
+
+    expect(outcome.kind).toBe("stopped");
+    expect(
+      await createUnreportedRuns(database)({
+        taskId: given.id,
+        noted: new Set(),
+      }),
+    ).toEqual({ runId: id, outcome: { kind: "stopped" } });
+  });
+
+  test("a run that lost its claim is told apart from a person's stop, and worked again", async () => {
+    const who = await person();
+    const claim = new AbortController();
+    const { agent } = scriptedAgent([
+      [call("computer_write_file", { path: "a.md", contents: "가" })],
+      [say("다음 걸음.")],
+    ]);
+    const id = runId();
+    const given = task("옮겨진 일");
+    const outcome = await createTaskRun({
+      database,
+      ledger,
+      owner: async () => who,
+      resolveAgents: async () => ({ [who.botId]: agent }),
+      // The beat is told the run no longer holds the task while its first step is taken.
+      tools: stubTools(async () => {
+        claim.abort();
+        return { ok: true };
+      }),
+    })({ task: given, runId: id, signal: claim.signal });
+
+    expect(outcome).toEqual({ kind: "lost" });
+    const [row] = await database
+      .select({ status: lafThreadRuns.status, error: lafThreadRuns.error })
+      .from(lafThreadRuns)
+      .where(eq(lafThreadRuns.runId, id));
+    expect(row).toEqual({ status: "stopped", error: "laf:task_not_held" });
+    expect(
+      await createUnreportedRuns(database)({
+        taskId: given.id,
+        noted: new Set(),
+      }),
+    ).toBeNull();
+  });
+
+  test("a finished run whose move the board refused is never reported later", async () => {
+    const who = await person();
+    const { agent } = scriptedAgent([[say("했어요.")]]);
+    const id = runId();
+    const given = task("돌려보낸 일");
+    await createTaskRun({
+      database,
+      ledger,
+      owner: async () => who,
+      resolveAgents: async () => ({ [who.botId]: agent }),
+      tools: stubTools(async () => ({ ok: true })),
+    })({ task: given, runId: id, signal: new AbortController().signal });
+    const unreported = createUnreportedRuns(database);
+    expect(await unreported({ taskId: given.id, noted: new Set() })).toEqual({
+      runId: id,
+      outcome: { kind: "done" },
+    });
+
+    // The board said `laf:task_not_held` to its move: a person had sent the task back.
+    await createRefusedRuns(ledger)(id);
+
+    expect(await unreported({ taskId: given.id, noted: new Set() })).toBeNull();
   });
 });

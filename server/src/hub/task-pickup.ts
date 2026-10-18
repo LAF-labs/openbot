@@ -22,10 +22,20 @@
  *   and moved with it (`unreported`). The hub files a note under the claim's id, and the pickup knows
  *   a run was reported by the notes' ids — so a claim under a fresh id would leave the finished run
  *   looking unreported for good, and a task a person later gave back would be re-reported instead of
- *   worked. A run cut off mid-way never settled, and is run again — the work was not done.
+ *   worked. A person's stop (`모두 멈추기`) is one of these: reported `blocked`, never run again. A run
+ *   cut off mid-way never settled, and is run again — the work was not done.
+ * - A run the board took back — its claim gone because a person moved the task while it worked, or
+ *   the sweep freed it — is LOST, whether its beat saw that first or the board refused its move. The
+ *   ledger says so (`refused`, and `task-run.ts` for a beat's), apart from a person's stop, so no
+ *   later pickup reports a move the board has already said no to: the task is worked afresh.
  * - A task this process let go of itself (`release`, which puts a `doing` task back to `todo`) is
  *   not taken again on the event that release raises: what it was left at is remembered by
  *   version, and only a later change — a person's, the sweep's — makes it waiting again.
+ *
+ * EVERY RUN'S END IS FOLLOWED BY A LOOK AT THE TASK. An event about a task this process is busy with
+ * is not acted on then — the task is being run — and a person's move back to `todo` while it works,
+ * or the sweep's, is such an event. So the task is read again once its run is over, lost or not:
+ * what was missed while it ran is seen then, not at the next time the line drops.
  *
  * A CRASH IS THE HUB'S TO CLEAN UP. A process that dies holding a task stops beating; the hub's
  * sweep frees the claim within a minute of it running out and says so (`task.changed`), and the
@@ -91,6 +101,11 @@ export type TaskPickupOptions = {
   memberId: () => string | null;
   run: TaskRun;
   unreported?: UnreportedRun;
+  /**
+   * A run whose move the board refused because the run no longer held the task: written down as
+   * lost, as one whose beat was refused is, so `unreported` never names it.
+   */
+  refused?: (runId: string) => Promise<void>;
   heartbeatMs?: number;
   newRunId?: () => string;
 };
@@ -221,6 +236,14 @@ export function createTaskPickup(options: TaskPickupOptions): TaskPickup {
       stage,
       code: answer.code,
     });
+    if (answer.code === HUB_TASK_CODES.notHeld) {
+      await options.refused?.(runId).catch((error: unknown) => {
+        log.warn("hub_task_refusal_not_kept", {
+          run: runId,
+          reason: error instanceof Error ? error.name : "unknown",
+        });
+      });
+    }
     return false;
   };
 
@@ -231,10 +254,11 @@ export function createTaskPickup(options: TaskPickupOptions): TaskPickup {
     task.checkout === null &&
     (leftAt.get(task.id) ?? -1) < task.version;
 
-  const work = async (taskId: string, seen?: HubTaskView): Promise<void> => {
+  /** Whether a claim was taken: then the task is read again once this is over. */
+  const work = async (taskId: string, seen?: HubTaskView): Promise<boolean> => {
     const me = options.memberId();
-    if (!me) return;
-    if (seen && !waiting(seen, me)) return;
+    if (!me) return false;
+    if (seen && !waiting(seen, me)) return false;
     // Read again, with its notes: an event names a task and never carries it.
     const read = await options.http.request({
       path: HUB_TASK_PATHS.task(taskId),
@@ -244,10 +268,10 @@ export function createTaskPickup(options: TaskPickupOptions): TaskPickup {
       if (read.code !== "laf:hub_not_found") {
         log.warn("hub_task_not_read", { task: taskId, code: read.code });
       }
-      return;
+      return false;
     }
     const detail = readTaskDetail(read.body);
-    if (!detail || !waiting(detail.task, me)) return;
+    if (!detail || !waiting(detail.task, me)) return false;
 
     const noted = new Set(
       detail.notes
@@ -277,7 +301,7 @@ export function createTaskPickup(options: TaskPickupOptions): TaskPickup {
     if (!claim.ok) {
       // Taken by another run, or no longer waiting. Not asked again.
       log.info("hub_task_not_taken", { task: taskId, code: claim.code });
-      return;
+      return false;
     }
     const claimed = readTaskDetail(claim.body)?.task ?? detail.task;
     log.info("hub_task_taken", { task: taskId, run: runId });
@@ -288,7 +312,7 @@ export function createTaskPickup(options: TaskPickupOptions): TaskPickup {
         if (finished.outcome.kind !== "lost") {
           await report(taskId, runId, finished.outcome);
         }
-        return;
+        return true;
       }
 
       const lost = new AbortController();
@@ -333,8 +357,10 @@ export function createTaskPickup(options: TaskPickupOptions): TaskPickup {
       } finally {
         clearInterval(timer);
       }
-      if (lost.signal.aborted || outcome.kind === "lost") return;
-      await report(taskId, runId, outcome);
+      if (!lost.signal.aborted && outcome.kind !== "lost") {
+        await report(taskId, runId, outcome);
+      }
+      return true;
     } finally {
       // Always: after a move this is `laf:task_not_held` and says nothing; otherwise it frees the
       // task now rather than when the sweep finds its claim run out.
@@ -351,10 +377,13 @@ export function createTaskPickup(options: TaskPickupOptions): TaskPickup {
           task: taskId,
           reason: error instanceof Error ? error.name : "unknown",
         });
+        return false;
       })
       .finally(() => {
         busy.delete(taskId);
-      });
+      })
+      // A run is over: what was heard about the task while it ran is seen now (module comment).
+      .then((ran) => (ran ? consider(taskId) : undefined));
     busy.set(taskId, going);
     return going;
   };

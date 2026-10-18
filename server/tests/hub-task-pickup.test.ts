@@ -61,7 +61,7 @@ describe("a task given to this member's 라피", () => {
         runId: "run-a",
       },
     ]);
-    // The claim, the move, then the release that finds the move already ended it.
+    // The claim, the move, the release that finds the move already ended it, and the look after.
     expect(
       hub.requests.map(
         (request) => `${request.method ?? "GET"} ${request.path}`,
@@ -71,6 +71,7 @@ describe("a task given to this member's 라피", () => {
       "POST /tasks/t_1/checkout",
       "PATCH /tasks/t_1",
       "POST /tasks/t_1/release",
+      "GET /tasks/t_1",
     ]);
   });
 
@@ -274,39 +275,97 @@ describe("a task given to this member's 라피", () => {
     ]);
   });
 
-  test("a claim taken from under the run stops it and tells the board nothing", async () => {
+  test("a claim taken from under the run stops it, tells the board nothing of it, and the task is looked at again", async () => {
     const hub = fakeTaskHub();
     hub.add({ id: "t_8", assignee: `bot:${ME}` });
-    let stoppedBy: string | null = null;
+    const started: string[] = [];
     const pickup = createTaskPickup({
       http: hub.as(ME),
       memberId: () => ME,
-      run: ({ signal }) =>
-        new Promise<TaskRunOutcome>((resolve) => {
-          // A person moves the task while the run works: the next beat is told it is not held.
+      run: ({ runId, signal }) => {
+        started.push(runId);
+        if (started.length > 1)
+          return Promise.resolve({ kind: "done", steps: 1 });
+        return new Promise<TaskRunOutcome>((resolve) => {
+          // A person moves the task back to todo while the run works: the next beat is told it is
+          // not held. The `task.changed` that move raised arrives while the task is still busy.
           const task = hub.tasks.get("t_8");
           if (task) {
             task.stage = "todo";
             task.checkout = null;
             task.version += 1;
           }
-          signal.addEventListener("abort", () => {
-            stoppedBy = "beat";
-            resolve({ kind: "lost" });
-          });
-        }),
-      newRunId: () => "run-c",
+          pickup.heard({ type: "task.changed", refId: "t_8" });
+          signal.addEventListener("abort", () => resolve({ kind: "lost" }));
+        });
+      },
+      newRunId: () => `run-c${started.length + 1}`,
       heartbeatMs: 5,
     });
 
     pickup.heard({ type: "task.assigned", refId: "t_8" });
     await pickup.idle();
 
-    expect(stoppedBy as string | null).toBe("beat");
-    expect(hub.tasks.get("t_8")?.notes).toEqual([]);
-    expect(hub.requests.some((request) => request.method === "PATCH")).toBe(
-      false,
-    );
+    // The cut-off run said nothing; the task, waiting again, was read again and worked.
+    expect(started).toEqual(["run-c1", "run-c2"]);
+    expect(hub.tasks.get("t_8")?.stage).toBe("review");
+    expect(hub.tasks.get("t_8")?.notes.map((note) => note.text)).toEqual([
+      "laf:task_ran run:run-c2 steps:1",
+    ]);
+  });
+
+  test("a task a person sends back to todo before the run's beat sees it: the move refused is never reported later, and the task is worked again", async () => {
+    const hub = fakeTaskHub();
+    hub.add({ id: "t_12", assignee: `bot:${ME}` });
+    // The ledger as `createUnreportedRuns` reads it: the task's last run, and whether it was lost.
+    const ledger: { runId: string; lost: boolean }[] = [];
+    const started: string[] = [];
+    let made = 0;
+    const pickup = createTaskPickup({
+      http: hub.as(ME),
+      memberId: () => ME,
+      run: async ({ task, runId }) => {
+        started.push(`${runId}:v${task.version}`);
+        if (started.length === 1) {
+          // A person edits it and sends it back to todo; the run finishes before its next beat.
+          const held = hub.tasks.get("t_12");
+          if (held) {
+            held.stage = "todo";
+            held.checkout = null;
+            held.title = "고친 일";
+            held.version += 1;
+          }
+          pickup.heard({ type: "task.changed", refId: "t_12" });
+        }
+        ledger.push({ runId, lost: false });
+        return { kind: "done", steps: 1 };
+      },
+      unreported: async ({ noted }) => {
+        const last = ledger.at(-1);
+        return last && !last.lost && !noted.has(last.runId)
+          ? { runId: last.runId, outcome: { kind: "done" } }
+          : null;
+      },
+      refused: async (runId) => {
+        const row = ledger.find((one) => one.runId === runId);
+        if (row) row.lost = true;
+      },
+      newRunId: () => {
+        made += 1;
+        return `run-e${made}`;
+      },
+    });
+
+    pickup.heard({ type: "task.assigned", refId: "t_12" });
+    await pickup.idle();
+    // The line comes back later and the board is read again: nothing is left to report.
+    await pickup.scan();
+
+    expect(started).toEqual(["run-e1:v2", "run-e2:v4"]);
+    expect(hub.tasks.get("t_12")?.stage).toBe("review");
+    expect(hub.tasks.get("t_12")?.notes.map((note) => note.text)).toEqual([
+      "laf:task_ran run:run-e2 steps:1",
+    ]);
   });
 
   test("a task this process let go of itself is not taken again on the event its release raised", async () => {

@@ -118,7 +118,11 @@ import {
   hearFrame,
   type TaskPickup,
 } from "./hub/task-pickup";
-import { createTaskRun, createUnreportedRuns } from "./hub/task-run";
+import {
+  createRefusedRuns,
+  createTaskRun,
+  createUnreportedRuns,
+} from "./hub/task-run";
 import { log, recentLines } from "./log";
 import { createLoginVault } from "./logins/store";
 import { readApprovalMetrics } from "./notifications/approval-metrics";
@@ -1007,6 +1011,7 @@ if (hubRuntime) {
     http: hubRuntime.http,
     memberId: () => hubRuntime.link.me()?.member.id ?? null,
     unreported: createUnreportedRuns(database),
+    refused: createRefusedRuns(runLedger),
     run: createTaskRun({
       database,
       ledger: runLedger,

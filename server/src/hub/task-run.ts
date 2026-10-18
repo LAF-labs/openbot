@@ -47,10 +47,17 @@ import {
 } from "../runner/unattended";
 import { turnFailureOf } from "../turns/engine";
 import type { TaskRun, TaskRunOutcome, UnreportedRun } from "./task-pickup";
-import type { HubTaskView } from "./wire";
+import { HUB_TASK_CODES, type HubTaskView } from "./wire";
 
 /** The conversation a task is worked in. */
 export const taskThreadOf = (taskId: string) => `task:${taskId}`;
+
+/**
+ * Why a run the board took back is `stopped` in the ledger: it lost its claim — a person moved the
+ * task, or the sweep freed it. A person's stop (`모두 멈추기`) is `stopped` with no code. The two
+ * must be told apart after a restart: a stop is reported, a lost run is worked again.
+ */
+export const TASK_LOST = HUB_TASK_CODES.notHeld;
 
 /** A routine's step budget, and a task's. */
 export const TASK_MAX_STEPS = 12;
@@ -290,8 +297,7 @@ export function createTaskRun(deps: TaskRunDeps): TaskRun {
         error && typeof error === "object" && "steps" in error
           ? ((error as { steps: unknown[] }).steps?.length ?? 0)
           : 0;
-      if (signal.aborted) outcome = { kind: "lost" };
-      else if (error instanceof RunStopped || stopping.signal.aborted) {
+      if (error instanceof RunStopped || stopping.signal.aborted) {
         outcome = { kind: "stopped", steps };
       } else {
         outcome = {
@@ -304,6 +310,8 @@ export function createTaskRun(deps: TaskRunDeps): TaskRun {
       signal.removeEventListener("abort", cut);
       done?.();
     }
+    // The claim went while it ran: the board has moved on, however the run itself came out.
+    if (signal.aborted) outcome = { kind: "lost" };
 
     /*
      * The run's record, in its conversation: what was asked, and every step, whichever way it
@@ -328,7 +336,12 @@ export function createTaskRun(deps: TaskRunDeps): TaskRun {
             : outcome.kind === "stopped" || outcome.kind === "lost"
               ? "stopped"
               : "done",
-        error: outcome.kind === "failed" ? outcome.code : null,
+        error:
+          outcome.kind === "failed"
+            ? outcome.code
+            : outcome.kind === "lost"
+              ? TASK_LOST
+              : null,
         awaiting:
           outcome.kind === "approval" ||
           outcome.kind === "login" ||
@@ -361,7 +374,9 @@ function inLane<T>(
  * A run of this task that finished here and that no note on the board names: the process died
  * between the run's end and the board's move, or the hub was away for both the move and the
  * release. Its outcome as far as the ledger kept it — the kind of person it waited for is not kept.
- * A run that never settled (`running`, or `unknown` after a restart) did not finish, and is not one.
+ * A person's stop is one, and is reported as a stop: run again, it would undo what a person stopped.
+ * A run that never settled (`running`, or `unknown` after a restart) did not finish, and a run the
+ * board took back (`TASK_LOST`) is the board's already; neither is one, and the task is worked.
  */
 export function createUnreportedRuns(database: Database): UnreportedRun {
   return async ({ taskId, noted }) => {
@@ -389,8 +404,24 @@ export function createUnreportedRuns(database: Database): UnreportedRun {
           runId: last.runId,
           outcome: { kind: "failed", code: last.error ?? "laf:turn_failed" },
         };
+      case "stopped":
+        return last.error === TASK_LOST
+          ? null
+          : { runId: last.runId, outcome: { kind: "stopped" } };
       default:
         return null;
     }
   };
+}
+
+/**
+ * The pickup's `refused`: a run whose move the board refused because the run no longer held the
+ * task. It finished here, but the board had moved on — a person sent the task back while it ran —
+ * so it is written down as lost, as one whose beat was refused is, and never reported later.
+ */
+export function createRefusedRuns(
+  ledger: RunLedger,
+): (runId: string) => Promise<void> {
+  return (runId) =>
+    ledger.settle(runId, { status: "stopped", error: TASK_LOST });
 }
