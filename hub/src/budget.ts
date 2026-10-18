@@ -327,14 +327,16 @@ async function emitReached(
 }
 
 /**
- * A reservation may name a job only if this member's VM runs it, and a task only if this member
- * can see it: otherwise one member's runs could spend another's job or task down to nothing.
+ * The scopes this member may not count a run against: a job this member's VM does not run, a task
+ * this member cannot see. Otherwise one member's runs could spend another's job or task down to
+ * nothing, and the job's or task's own runs would then be refused for the rest of the day.
  */
-async function scopesAllowed(
+async function scopesRefused(
   tx: HubTransaction,
   self: AuthedMember,
   scopes: HubBudgetScope[],
-): Promise<Answer | null> {
+): Promise<HubBudgetScope[]> {
+  const refused: HubBudgetScope[] = [];
   const jobs = scopes
     .filter((scope) => scope.startsWith("job:"))
     .map((scope) => scope.slice(4));
@@ -343,7 +345,8 @@ async function scopesAllowed(
       .select({ id: hubJobs.id })
       .from(hubJobs)
       .where(and(inArray(hubJobs.id, jobs), eq(hubJobs.runner, self.id)));
-    if (rows.length !== jobs.length) return forbidden;
+    const runs = new Set(rows.map((row) => row.id));
+    for (const id of jobs) if (!runs.has(id)) refused.push(`job:${id}`);
   }
   const tasks = scopes
     .filter((scope) => scope.startsWith("task:"))
@@ -358,8 +361,21 @@ async function scopesAllowed(
           visibleTo(hubTasks.visibility, self.id),
         ),
       );
-    if (rows.length !== tasks.length) return notFound;
+    const seen = new Set(rows.map((row) => row.id));
+    for (const id of tasks) if (!seen.has(id)) refused.push(`task:${id}`);
   }
+  return refused;
+}
+
+/** A reservation naming a refused scope is refused whole: a job's 403 before a task's 404. */
+async function scopesAllowed(
+  tx: HubTransaction,
+  self: AuthedMember,
+  scopes: HubBudgetScope[],
+): Promise<Answer | null> {
+  const refused = await scopesRefused(tx, self, scopes);
+  if (refused.some((scope) => scope.startsWith("job:"))) return forbidden;
+  if (refused.length > 0) return notFound;
   return null;
 }
 
@@ -447,7 +463,10 @@ export type SettleInput = {
  * Writes what a run cost. Once: a settle sent again answers with the first and changes nothing. A
  * run never reserved (its reserve did not reach the hub) is still written, against the workspace
  * and the scopes the settle names, because the money was spent whether or not the hub was asked;
- * a ledger that refused it would be a ledger that is short.
+ * a ledger that refused it would be a ledger that is short. The scopes it names pass the same check
+ * a reservation's do (`scopesRefused`): one this member may not name is left off the row, not the
+ * whole settle refused — the run still counts against the workspace, and nobody's settle can spend
+ * another member's job or task down to nothing.
  */
 export async function settle(
   tx: HubTransaction,
@@ -463,12 +482,14 @@ export async function settle(
     };
   }
   if (!existing) {
+    const refused = await scopesRefused(tx, self, input.scopes);
+    const scopes = input.scopes.filter((scope) => !refused.includes(scope));
     const [row] = await tx
       .insert(hubBudgetEntries)
       .values({
         member: self.id,
         runId: input.runId,
-        scopes: input.scopes,
+        scopes,
         reserved: "0",
         actual: input.actual,
         state: "settled",
@@ -483,7 +504,12 @@ export async function settle(
       vmOrigin: self.vmOrigin,
       runId: input.runId,
       outcome: "unreserved",
-      payload: { reserved: 0, actual: usd(input.actual), scopes: input.scopes },
+      payload: {
+        reserved: 0,
+        actual: usd(input.actual),
+        scopes,
+        ...(refused.length > 0 ? { refused } : {}),
+      },
     });
     return { status: 200, body: { ok: true, entry: entryView(row) } };
   }
