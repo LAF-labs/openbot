@@ -17,8 +17,8 @@ const segment = (value: string) => encodeURIComponent(value);
 
 export const HUB_TOOL_PATHS = {
   /**
-   * `POST /search {q, limit}` — a read, sent as a POST because it carries a body. The hub searches
-   * its files and nothing else (`hub/src/search.ts`): every hit is a file, and it takes no `kinds`.
+   * `POST /search {q, limit}` — a read, sent as a POST because it carries a body. With no `kinds`
+   * the hub searches its files and its documents (`hub/src/search.ts`): a hit is one or the other.
    */
   search: "/search",
   /** `GET /files/:id/text?from=&limit=` — the file's extracted text, a range of it. */
@@ -46,10 +46,15 @@ export const HUB_TOOL_PATHS = {
 
 /**
  * Where in its source a hit was found, as the hub sends it (`shared/hub/protocol.ts`): the folder,
- * and for a file the character `from` that `read` with `kind: "file"` takes to read on. The hub
- * sends an object; reading it as a string dropped it, and every hit reached 라피 with no place.
+ * for a file the character `from` that `read` with `kind: "file"` takes to read on, and for a
+ * document the block the words were found in (null: its title). The hub sends an object; reading
+ * it as a string dropped it, and every hit reached 라피 with no place.
  */
-export type HubSearchWhere = { folder: string; from?: number };
+export type HubSearchWhere = {
+  folder: string;
+  from?: number;
+  block?: string | null;
+};
 
 export type HubSearchHit = {
   kind: string;
@@ -171,10 +176,14 @@ function readWhere(value: unknown): HubSearchWhere | null {
   if (!isObject(value)) return null;
   const folder = str(value.folder);
   if (folder === null) return null;
+  const where: HubSearchWhere = { folder };
   const from = value.from;
-  return typeof from === "number" && Number.isInteger(from) && from >= 0
-    ? { folder, from }
-    : { folder };
+  if (typeof from === "number" && Number.isInteger(from) && from >= 0) {
+    where.from = from;
+  }
+  const block = value.block;
+  if (typeof block === "string" || block === null) where.block = block;
+  return where;
 }
 
 export const readSearchHits = (body: unknown): HubSearchHit[] | null =>

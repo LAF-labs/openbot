@@ -28,6 +28,7 @@ import {
 import {
   HUB_EVENT_TYPES,
   HUB_FACTS,
+  type HubDocLockFrame,
   type HubEvent,
   type HubMe,
   type HubSync,
@@ -69,13 +70,8 @@ export type HubFrame =
  * not an event — not numbered, not kept, never caught up after an outage, since a hold lives
  * seconds and the editor reads the standing holds when it opens a document. `until` null: let go.
  */
-export type HubDocHoldFrame = {
+export type HubDocHoldFrame = Omit<HubDocLockFrame, "kind"> & {
   kind: "hub.doc.lock";
-  doc: string;
-  block: string;
-  member: string;
-  name: string | null;
-  until: string | null;
 };
 
 /** The hub's `doc.lock` frame as this VM passes it on, or null when it is not one. */

@@ -82,6 +82,16 @@ describe("reading the company hub", () => {
           by: "m_2",
           extra: "a field the Bot was never told about",
         },
+        {
+          kind: "doc",
+          id: "d_1",
+          title: "회의록",
+          where: { folder: "/영업", block: "b_0123456789" },
+          snippet: "견적은 금요일까지",
+          score: 0.6,
+          at: "2026-10-15T02:00:00Z",
+          by: "m_3",
+        },
       ],
       next: null,
     }));
@@ -95,7 +105,7 @@ describe("reading the company hub", () => {
       {
         method: "POST",
         path: "/search",
-        // The hub searches its files alone and reads no `kinds` (`hub/src/search.ts`).
+        // No `kinds`: the hub searches its files and its documents (`hub/src/search.ts`).
         body: { q: "견적", limit: HUB_SEARCH_LIMIT },
         origin: "chat",
         retry: false,
@@ -104,7 +114,7 @@ describe("reading the company hub", () => {
     expect(JSON.parse(result.text)).toEqual({
       source: "회사",
       kind: "search",
-      shown: 1,
+      shown: 2,
       hits: [
         {
           kind: "file",
@@ -114,6 +124,16 @@ describe("reading the company hub", () => {
           snippet: "단가 12,000원",
           at: "2026-10-15T01:00:00Z",
           by: "m_2",
+        },
+        {
+          kind: "doc",
+          id: "d_1",
+          title: "회의록",
+          // The block the words were found in: where 라피 reads the document from.
+          where: { folder: "/영업", block: "b_0123456789" },
+          snippet: "견적은 금요일까지",
+          at: "2026-10-15T02:00:00Z",
+          by: "m_3",
         },
       ],
     });
