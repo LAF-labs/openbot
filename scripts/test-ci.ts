@@ -3321,8 +3321,13 @@ const GROUPS: readonly {
    * RAISED 2026-10-18 FOR A WRITE WHOSE ANSWER IS STILL ON ITS WAY, from 4960 to 4961: one in
    * `hub-tools.integration.test.ts` — the hub's answer held past the write's wait and then a 404,
    * and the Bot is told the 404, not "kept". 4960 and 1.
+   *
+   * RAISED 2026-10-18 FOR A LEAVE THAT TAKES WHAT WAS WRITTEN FROM THE COMPANY'S WORDS, from 4965 to
+   * 4966: one in `day-epochs.test.ts` — a day summary a leave cannot keep is one gap line over its
+   * days, the same line the second time. The leave's own checks grew inside the serialisation
+   * test, which is one test. 4965 and 1.
    */
-  { name: "server", floor: 4965, roots: ["server"] },
+  { name: "server", floor: 4966, roots: ["server"] },
   { name: "app", floor: 2570, roots: ["app"] },
   {
     name: "agent-computer",

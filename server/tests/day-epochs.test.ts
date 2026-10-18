@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { recentLines } from "../src/log";
 import {
   contextFactsFor,
   contextLayerText,
@@ -10,9 +9,7 @@ import {
   type ConversationPersistence,
   createConversationStore,
   type PrepareInput,
-} from "../src/context/conversations";
-import { delegatedThreadOf } from "../src/turns/engine";
-import {
+  unsummarisedCut,
   unsummarisedSummary,
   withGapsKept,
 } from "../src/context/conversations";
@@ -25,6 +22,8 @@ import {
   transcriptOf,
 } from "../src/context/day-close";
 import type { SummaryScrubber } from "../src/context/forget-scrub";
+import { recentLines } from "../src/log";
+import { delegatedThreadOf } from "../src/turns/engine";
 
 /**
  * The day's close, measured where it matters: what the next request carries.
@@ -982,6 +981,28 @@ describe("a close that keeps failing", () => {
       "- 9/20~9/21:",
       "- 9/27~9/28:",
     ]);
+  });
+
+  test("a summary a leave cannot keep is one gap line over its days, from its oldest dated line to the day before its close — the same line the second time, and undated when nothing in it is", () => {
+    const cut = {
+      through: "a9",
+      day: "2026-09-30 (화)",
+      summary: [
+        "- 9/24: 한빛농산에서 유자 40박스",
+        "- 9/25~9/26: 이 기간의 대화는 요약되지 않았다.",
+        "- 9/28: 거래처 단가표를 찾아 드림.",
+      ].join("\n"),
+    };
+    const once = unsummarisedCut(cut);
+    expect(once).toEqual({
+      through: "a9",
+      day: cut.day,
+      summary: "- 9/24~9/29: 이 기간의 대화는 요약되지 않았다.",
+    });
+    expect(unsummarisedCut(once)).toEqual(once);
+    expect(
+      unsummarisedCut({ ...cut, summary: "유자 40박스를 받기로 함." }).summary,
+    ).toBe("- 날짜 모름: 이 기간의 대화는 요약되지 않았다.");
   });
 
   test("a gap line put back survives a rewrite near the bound: the summary's oldest line pays, never the line saying what is missing", () => {

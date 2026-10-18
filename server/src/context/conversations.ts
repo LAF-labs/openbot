@@ -277,6 +277,22 @@ export type ConversationStore = {
    */
   beginEpochEverywhere(reason: EpochReason): Promise<number>;
   /**
+   * This VM left its company (`hub/leave.ts`): what the conversations hold that was drawn from the
+   * company's words goes, in memory and in the row, before anything reads it again — `pending` is
+   * memory, and `peek` hands the stored layer to a model as it stands.
+   *
+   * `threads` are the conversations a hub tool answered in. Their day summary was written from
+   * those answers whole (`transcriptOf` reads every result), and nothing tells its lines apart, so
+   * it goes: a gap line over the days it stood for takes its place (`unsummarisedCut`), and a close
+   * prepared and not taken goes with it. `lines` are the notebook lines the leave retires, as they
+   * are drawn: out of every conversation's frozen layer, its known facts and its reminders.
+   * Resolves, with how many summaries and drawn lines went, once the rows are written.
+   */
+  forgetCompany(input: {
+    threads: readonly string[];
+    lines: readonly string[];
+  }): Promise<{ summaries: number; lines: number }>;
+  /**
    * Decide a compaction for the conversation now, whatever its size, and wait for it. What the
    * threshold does on its own; exposed for the eval and the tests. Resolves to whether anything new
    * was dropped (and so whether the next run starts a new epoch).
@@ -559,6 +575,9 @@ function gapOf(line: string, until: number): Gap | null {
 const gapLine = (gap: Gap) =>
   `- ${gap.first === gap.last ? shortDay(gap.first) : `${shortDay(gap.first)}~${shortDay(gap.last)}`}: ${GAP_SENTENCE}`;
 
+/** A gap line for days nothing dates: rows from before stamps, a summary with no dated line. */
+const UNDATED_GAP_LINE = `- 날짜 모름: ${GAP_SENTENCE}`;
+
 /**
  * The summary a close makes without the summariser: what the last close said, carried as it was,
  * and one gap line for the span — joined with the gap line before it when their days touch or
@@ -583,8 +602,10 @@ export function unsummarisedSummary(
   const lines = (previous ?? "").split("\n").filter((line) => line.trim());
   if (!first || !last) {
     // Rows from before stamps: a gap with no dates, which nothing will join.
-    const line = `- 날짜 모름: ${GAP_SENTENCE}`;
-    return { summary: boundedSummary([...lines, line].join("\n")), days: 0 };
+    return {
+      summary: boundedSummary([...lines, UNDATED_GAP_LINE].join("\n")),
+      days: 0,
+    };
   }
   let gap: Gap = { first: dayNumber(first), last: dayNumber(last) };
   const kept = lines.filter((line) => {
@@ -600,6 +621,30 @@ export function unsummarisedSummary(
   return {
     summary: boundedSummary([...kept, gapLine(gap)].join("\n")),
     days: keys.length,
+  };
+}
+
+/**
+ * A cut whose summary cannot be kept, as the gap it leaves: one gap line over the days the summary
+ * stood for — from its oldest dated line to the day before its close — and nothing it said. What a
+ * close made without the summariser writes for days it never read, so the Bot is told what is not
+ * in its summary and the next close carries the line like any gap (`withGapsKept`). The same line
+ * again for a cut that is already one, so a leave run twice changes nothing the second time.
+ */
+export function unsummarisedCut(cut: DayCut): DayCut {
+  const until = dayNumber(dayKey(cut.day)) - 1;
+  let first: number | null = null;
+  for (const line of cut.summary.split("\n")) {
+    const found = GAP_DATES.exec(line);
+    const day = found?.[1] ? gapDateOf(found[1], until) : null;
+    if (day !== null && day <= until && (first === null || day < first)) {
+      first = day;
+    }
+  }
+  return {
+    ...cut,
+    summary:
+      first === null ? UNDATED_GAP_LINE : gapLine({ first, last: until }),
   };
 }
 
@@ -1514,6 +1559,74 @@ export function createConversationStore(
       }
       await Promise.all(writes.values());
       return asked;
+    },
+
+    async forgetCompany(input) {
+      const answered = new Set(input.threads);
+      const gone = input.lines.map(flat).filter(Boolean);
+      const drawn = new Set(gone.map((line) => `- ${line}`));
+      const isGone = (line: string) => gone.includes(flat(line));
+      let summaries = 0;
+      let lines = 0;
+      for (const conversation of conversations.values()) {
+        // A close being prepared reads the results as they were; wait for it, then drop what it made.
+        const running = closes.get(conversation.threadId);
+        if (running) await running;
+        let changed = false;
+        if (answered.has(conversation.threadId)) {
+          conversation.close = null;
+          conversation.closeCheckedKey = null;
+          const cut = conversation.epoch.cut;
+          const clean = cut ? unsummarisedCut(cut) : null;
+          if (cut && clean && clean.summary !== cut.summary) {
+            const before = withSummary("", cut).trim();
+            const after = withSummary("", clean).trim();
+            conversation.epoch = {
+              ...conversation.epoch,
+              cut: clean,
+              system: before
+                ? conversation.epoch.system.replace(before, () => after)
+                : conversation.epoch.system,
+            };
+            summaries += 1;
+            changed = true;
+          }
+        }
+        if (drawn.size > 0) {
+          const system = conversation.epoch.system.split("\n");
+          const kept = system.filter((line) => !drawn.has(flat(line)));
+          const { known } = conversation;
+          const memories = known.memories.filter((line) => !isGone(line));
+          const reminders = scrubbed(conversation.reminders, gone);
+          if (
+            kept.length < system.length ||
+            memories.length < known.memories.length ||
+            JSON.stringify(reminders) !== JSON.stringify(conversation.reminders)
+          ) {
+            lines += system.length - kept.length;
+            conversation.epoch = {
+              ...conversation.epoch,
+              system: kept.join("\n"),
+            };
+            conversation.known = {
+              ...known,
+              memories,
+              confirmed: known.confirmed.filter((line) => !isGone(line)),
+              retired: known.retired.filter((line) => !isGone(line)),
+              superseded: Object.fromEntries(
+                Object.entries(known.superseded).filter(
+                  ([old, now]) => !isGone(old) && !isGone(now),
+                ),
+              ),
+            };
+            conversation.reminders = reminders;
+            changed = true;
+          }
+        }
+        if (changed) keep(conversation);
+      }
+      await Promise.all(writes.values());
+      return { summaries, lines };
     },
 
     async tick() {

@@ -24,13 +24,37 @@
  *      to, deleted whole: forgotten by the context store first, so nothing writes a row back, then
  *      their rows in `account/deletion.ts`'s order — messages, contexts, runs, the threads.
  *   4. notebook lines learned in one of those conversations are retired, and their words and their
- *      excerpt go with them: a retired line is still a row, and the row would still say it.
+ *      excerpt go with them: a retired line is still a row, and the row would still say it. So is
+ *      a Bot's own line learned in a question of the person's that a hub tool answered — the line
+ *      was written with the company's words in front of it, and nothing tells which of its words
+ *      came from where. Not a line the person wrote or said is right: that one they have read.
  *   5. the browser signed out of the origins of the company's shared logins, and only those
  *      (`agent-computer` `POST /computers/cookies/forget`).
  * and then every kept conversation starts a new epoch, because its frozen layer names the hub's
  * two tools and the deferred tools are not in the epoch's key (`context/conversations.ts`).
+ *
+ * WHAT WAS WRITTEN FROM THE COMPANY'S WORDS GOES WITH THEM — the copies a model made, which the
+ * person never read and the next model call would be handed again:
+ *   - the day summary of every conversation a hub tool answered in, read off those answers whole
+ *     (`context/day-close.ts` `transcriptOf`): a gap line over its days stands in its place, in the
+ *     row and in the frozen layer that carries it, and a close prepared and not taken is dropped
+ *     (`ConversationStore.forgetCompany`). Done before the rows below change, and found again the
+ *     same way by a leave cut short and run at the next boot: the hub's mark stays on a result
+ *     the leave blanked;
+ *   - the retired notebook lines, out of every conversation's frozen layer, known facts and
+ *     reminders, the same way;
+ *   - the notepad of a routine whose runs called a hub tool (`laf_routine_runs.steps` keeps each
+ *     call's real name): the cursor it carries to its next run was written from the answers.
+ *     Receipts are kept to twenty, so a call older than those is not seen.
+ * Not these, each for its reason: the Bot's answers, a routine's delivered answer and its 소식
+ * posts, which the person was shown; the search index, which holds a person's and the Bot's words
+ * only (migration 0065); compaction, which keeps decisions and no words (`context/compaction.ts`);
+ * the nightly guidance and the standing facts, which read the dialogue and the owner's messages
+ * and never a result (`dialogueOf`, `ownerMessagesOf`); the audit trail, which never holds a
+ * successful result (`plugins/call.ts`) and a hub tool never reports a failure in its own words.
  */
-import { type AnyColumn, like, or, sql } from "drizzle-orm";
+import { type AnyColumn, inArray, like, or, sql } from "drizzle-orm";
+import { drawnLine, isNotebookSlot } from "../../../shared/notebook";
 import type { ConversationStore } from "../context/conversations";
 import type { Database } from "../db/client";
 import {
@@ -40,12 +64,14 @@ import {
   hubCursor,
   hubOutbox,
   lafConversationContexts,
+  lafRoutineNotepads,
+  lafRoutineRuns,
   lafThreadMessages,
   lafThreadRuns,
 } from "../db/schema";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
-import { LEFT_COMPANY_RESULT } from "../runner/thread-store";
+import { HUB_TOOL_PREFIX, LEFT_COMPANY_RESULT } from "../runner/thread-store";
 
 /** The company's own conversations: a room's, a task's — and the runs they hand work to. */
 export const COMPANY_THREAD_PREFIXES = ["room:", "task:"] as const;
@@ -61,7 +87,10 @@ export type LeaveCounts = Record<string, number>;
 
 export type CompanyLeave = {
   database: Database;
-  conversations: Pick<ConversationStore, "drop" | "beginEpochEverywhere">;
+  conversations: Pick<
+    ConversationStore,
+    "drop" | "beginEpochEverywhere" | "forgetCompany"
+  >;
   /**
    * The origins of the company's shared logins this person had. Asked once; an empty list asks
    * the browser nothing. See `main.ts` for where they come from today.
@@ -97,6 +126,47 @@ async function companyThreads(database: Database): Promise<string[]> {
       found.flat().flatMap((row) => (row.threadId ? [row.threadId] : [])),
     ),
   ];
+}
+
+/** The conversations a hub tool answered in: the mark stays on a result a leave blanked. */
+async function threadsTheHubAnswered(database: Database): Promise<string[]> {
+  const rows = await database
+    .selectDistinct({ threadId: lafThreadMessages.threadId })
+    .from(lafThreadMessages)
+    .where(sql`${lafThreadMessages.message} ->> 'lafSource' = 'hub'`);
+  return rows.map((row) => row.threadId);
+}
+
+/**
+ * Step 4's lines: learned in a company conversation, or a Bot's own unconfirmed line learned in a
+ * question a hub tool answered — the person's message it cites, and a hub result after it before
+ * their next one. Each until it is retired, blank and without its excerpt.
+ */
+function linesToRetire(database: Database) {
+  const learnedFromHub = sql`${agentMemories.source} = 'bot' and ${agentMemories.confirmedAt} is null and exists (
+    select 1 from ${lafThreadMessages} asked
+    join ${lafThreadMessages} answered
+      on answered.thread_id = asked.thread_id and answered.seq > asked.seq
+    where asked.thread_id = ${agentMemories.evidenceThreadId}
+      and asked.message ->> 'id' = ${agentMemories.evidenceMessageId}
+      and answered.message ->> 'lafSource' = 'hub'
+      and not exists (
+        select 1 from ${lafThreadMessages} later
+        where later.thread_id = asked.thread_id
+          and later.seq > asked.seq and later.seq < answered.seq
+          and later.message ->> 'role' = 'user'
+      )
+  )`;
+  return database
+    .select({
+      id: agentMemories.id,
+      content: agentMemories.content,
+      slot: agentMemories.slot,
+    })
+    .from(agentMemories)
+    .where(
+      sql`(${isCompanyThread(agentMemories.evidenceThreadId)} or (${learnedFromHub})) and (${agentMemories.content} <> ${LEFT_COMPANY_RESULT} or ${agentMemories.evidenceExcerpt} is not null or ${agentMemories.forgottenAt} is null)`,
+    );
 }
 
 /** Step 5, bounded: a browser that will not answer must not hold the server's boot. */
@@ -145,6 +215,26 @@ export async function leaveCompany(leave: CompanyLeave): Promise<{
   const threads = await companyThreads(database);
   // Forgotten by the store before the rows go, so nothing it holds writes a row back.
   for (const threadId of threads) await leave.conversations.drop(threadId);
+
+  /*
+   * What the kept conversations drew from the company's words, before the rows change: both are
+   * found the same way again by a leave run after a crash, and the lines' words are still there to
+   * find in the frozen layers.
+   */
+  const retiring = await linesToRetire(database);
+  const forgotten = await leave.conversations.forgetCompany({
+    threads: await threadsTheHubAnswered(database),
+    lines: retiring
+      .filter((line) => line.content !== LEFT_COMPANY_RESULT)
+      .map((line) =>
+        drawnLine({
+          content: line.content,
+          slot: isNotebookSlot(line.slot) ? line.slot : null,
+        }),
+      ),
+  });
+  counts.summaries = forgotten.summaries;
+  counts.drawnLines = forgotten.lines;
 
   await database.transaction(async (transaction) => {
     counts.outbox = (
@@ -200,21 +290,48 @@ export async function leaveCompany(leave: CompanyLeave): Promise<{
      * blanked, because a retired line keeps its words for the audit's sake and these words are
      * the company's. Every such line, already retired or not, so no earlier retirement left them.
      */
-    const learned = isCompanyThread(agentMemories.evidenceThreadId);
-    counts.notebookLines = (
+    counts.notebookLines = retiring.length
+      ? (
+          await transaction
+            .update(agentMemories)
+            .set({
+              forgottenAt: sql`coalesce(${agentMemories.forgottenAt}, now())`,
+              forgottenBy: sql`coalesce(${agentMemories.forgottenBy}, ${LEFT_COMPANY_BY})`,
+              forgetReason: sql`case when ${agentMemories.forgottenAt} is null then ${LEFT_COMPANY_REASON} else ${agentMemories.forgetReason} end`,
+              content: LEFT_COMPANY_RESULT,
+              evidenceExcerpt: null,
+            })
+            .where(
+              inArray(
+                agentMemories.id,
+                retiring.map((line) => line.id),
+              ),
+            )
+            .returning({ id: agentMemories.id })
+        ).length
+      : 0;
+
+    /*
+     * A routine's notepad, written by runs that read the hub. Emptied the way a person empties it
+     * (`routines/notepad.ts` `clearNotepad`): the version moves, so nothing written against the
+     * old one lands.
+     */
+    counts.routineNotepads = (
       await transaction
-        .update(agentMemories)
+        .update(lafRoutineNotepads)
         .set({
-          forgottenAt: sql`coalesce(${agentMemories.forgottenAt}, now())`,
-          forgottenBy: sql`coalesce(${agentMemories.forgottenBy}, ${LEFT_COMPANY_BY})`,
-          forgetReason: sql`case when ${agentMemories.forgottenAt} is null then ${LEFT_COMPANY_REASON} else ${agentMemories.forgetReason} end`,
-          content: LEFT_COMPANY_RESULT,
-          evidenceExcerpt: null,
+          entries: [],
+          version: sql`${lafRoutineNotepads.version} + 1`,
+          writtenByRun: null,
+          updatedAt: sql`now()`,
         })
         .where(
-          sql`${learned} and (${agentMemories.content} <> ${LEFT_COMPANY_RESULT} or ${agentMemories.evidenceExcerpt} is not null or ${agentMemories.forgottenAt} is null)`,
+          sql`${lafRoutineNotepads.entries} <> '[]'::jsonb and ${lafRoutineNotepads.routineId} in (
+            select ${lafRoutineRuns.routineId} from ${lafRoutineRuns}
+            where jsonb_path_exists(${lafRoutineRuns.steps}, '$[*].calls[*] ? (@.name starts with $hub)', jsonb_build_object('hub', ${HUB_TOOL_PREFIX}::text))
+          )`,
         )
-        .returning({ id: agentMemories.id })
+        .returning({ routineId: lafRoutineNotepads.routineId })
     ).length;
   });
 

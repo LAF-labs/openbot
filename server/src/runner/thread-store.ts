@@ -253,7 +253,7 @@ export function keepProjectsRead(
 }
 
 /** The tools whose results are the company hub's: `mcp__hub__read`, `mcp__hub__write`. */
-const HUB_TOOL_PREFIX = `${DEFERRED_TOOL_PREFIX}hub__`;
+export const HUB_TOOL_PREFIX = `${DEFERRED_TOOL_PREFIX}hub__`;
 
 /**
  * Mark every tool result answering a hub tool's call `lafSource: "hub"`, and keep the mark on a copy
