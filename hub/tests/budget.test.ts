@@ -221,6 +221,16 @@ describe("reserve", () => {
     ).toBe(false);
   });
 
+  test("an amount under half a microdollar is reserved as one, so a full day refuses it", async () => {
+    await setLimits([{ scope: "workspace", dailyUsd: 0.2 }]);
+    expect((await reserve(ann.pass, "run-tiny", 0.0000001)).status).toBe(200);
+    expect((await entry(annId, "run-tiny"))?.reserved).toBe("0.000001");
+    expect((await reserve(ann.pass, "run-fill", 0.199999)).status).toBe(200);
+    expect((await reserve(ann.pass, "run-tiny-full", 0.0000001)).status).toBe(
+      409,
+    );
+  });
+
   test("a reservation may not name a job another member's VM runs", async () => {
     await call(ann.pass, "PUT", "/jobs/j-anns", { name: "Ann's job" });
     const reply = await reserve(ben.pass, "run-not-mine", 0.2, ["job:j-anns"]);
@@ -290,6 +300,23 @@ describe("settle", () => {
       actual: "0.400000",
     });
     expect((await reserve(ann.pass, "run-after", 0.2)).status).toBe(409);
+  });
+
+  test("an actual under half a microdollar is counted as one, reserved or not", async () => {
+    expect((await settle(ben.pass, "run-tiny-spend", 0.0000001)).status).toBe(
+      200,
+    );
+    expect(await entry(benId, "run-tiny-spend")).toEqual({
+      state: "settled",
+      reserved: "0.000000",
+      actual: "0.000001",
+    });
+    expect((await reserve(ann.pass, "run-tiny-held", 0.1)).status).toBe(200);
+    expect((await settle(ann.pass, "run-tiny-held", 0.0000001)).status).toBe(
+      200,
+    );
+    expect((await entry(annId, "run-tiny-held"))?.actual).toBe("0.000001");
+    expect((await budget(cho.pass)).workspace.spent).toBe(0.000002);
   });
 
   test("a settle with no reservation counts only against the scopes its member may name", async () => {
