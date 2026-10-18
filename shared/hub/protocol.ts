@@ -696,6 +696,12 @@ export const HUB_TASK_FACTS = {
   notHeld: "laf:task_not_held",
   /** A 라피 tried to set `done`, which only a person does. */
   doneByPerson: "laf:task_done_by_person",
+  /**
+   * A task worked on another member's VM — their 라피 (`bot:<them>`), or a routine they gave it
+   * (`job:`) — runs with that member's permissions, so only they give it that work or change the
+   * words it works from.
+   */
+  notYourRun: "laf:task_not_your_run",
 } as const;
 
 export const HUB_TASK_LIMITS = {
