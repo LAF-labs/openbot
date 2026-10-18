@@ -64,9 +64,11 @@ import { audienceOf, visibleTo } from "./visibility";
  * runner now — `mayWork`). Postgres makes a second UPDATE of the
  * same row wait for the first to commit and then test its WHERE against the row the first wrote,
  * which no longer matches — so of any number of runs asking at once exactly one is told yes and
- * the rest `laf:task_taken`, with no lock of our own. A run that is told no stops; it does not
- * retry. Its claim lasts `HUB_TASK_LOCK_MS` and is renewed by `/heartbeat`; `/release` and a
- * Bot's move to `review`/`blocked` end it, and the sweep (`task-sweeper.ts`) frees what ran out.
+ * the rest `laf:task_taken`, with no lock of our own on the task. A job's task first takes a share
+ * of its job's row, so a claim waits for a move of that job to commit (`holdJobOf`). A run that is
+ * told no stops; it does not retry. Its claim lasts `HUB_TASK_LOCK_MS` and is renewed by
+ * `/heartbeat`; `/release` and a Bot's move to `review`/`blocked` end it, and the sweep
+ * (`task-sweeper.ts`) frees what ran out.
  *
  * A YES FOR A BLOCKED TASK. A 라피's run that met an action a person has to allow moves the task to
  * `blocked` with the action's topic (`kind/intent@place`). `POST /tasks/:id/approvals {topic}` is
@@ -122,11 +124,29 @@ const isManager = (member: AuthedMember) =>
  * Whose run may hold the task: anybody's who sees it when it is given to nobody; the member for
  * `m:<member>` and `bot:<member>`; and for `job:<id>`, the member whose VM runs that job NOW
  * (`hub_jobs.runner`) — never whoever gave it to the job, and never a runner it moved away from.
- * Read inside the same statement as the claim, so a job moving between the read and the write
- * cannot let the old runner in.
+ * This reads the runner as last committed, and a plain read does not wait for a move still in
+ * flight: a claim takes `holdJobOf` first, so it reads the runner the move commits.
  */
 const mayWork = (member: string) =>
   sql`(${hubTasks.assignee} is null or ${hubTasks.assignee} = ${`m:${member}`} or ${hubTasks.assignee} = ${`bot:${member}`} or ${hubTasks.assignee} in (select 'job:' || ${hubJobs.id} from ${hubJobs} where ${hubJobs.runner} = ${member}))`;
+
+/**
+ * Holds the row of the job the task is given to, if any, until the transaction ends. A move
+ * (`jobs.ts`) holds that row from before it changes the runner until it commits, so a checkout
+ * waits for it and then reads the new runner. Read without this, a checkout during the move saw the
+ * old runner, took the task for it, and the move's `freeMovedJobClaims` — which had already run —
+ * never freed it: the old VM's run was refused at its first beat and the new runner was kept out
+ * for the lock's length.
+ */
+async function holdJobOf(tx: HubTransaction, taskId: string): Promise<void> {
+  await tx
+    .select({ id: hubJobs.id })
+    .from(hubJobs)
+    .where(
+      sql`'job:' || ${hubJobs.id} = (select ${hubTasks.assignee} from ${hubTasks} where ${hubTasks.id} = ${taskId})`,
+    )
+    .for("share");
+}
 
 /**
  * A job moved (`jobs.ts`): every claim its old runner holds on the job's tasks ends now, and those
@@ -967,7 +987,9 @@ export function taskRoutes(options: TaskRouteOptions) {
           outcome,
         });
       // A task given to somebody is theirs to take; one given to nobody is anybody's who sees it.
-      // A job's task is taken on the VM that runs the job now (`mayWork`).
+      // A job's task is taken on the VM that runs the job now (`mayWork`), once any move of it
+      // has committed.
+      await holdJobOf(tx, id);
       const forMe = mayWork(self.id);
       const [claimed] = await tx
         .update(hubTasks)

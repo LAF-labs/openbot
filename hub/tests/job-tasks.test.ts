@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { HubTask } from "../../shared/hub/protocol";
+import { hubJobs } from "../src/db/schema";
+import { emitEvent } from "../src/events";
+import { noteJobMove } from "../src/job-handoff";
+import { freeMovedJobClaims } from "../src/tasks";
 import {
   asMember,
   newPass,
@@ -166,4 +170,49 @@ test("a holder the task is no longer for keeps nothing alive: its beat and its r
   });
   expect(release.status).toBe(200);
   expect((release.body.task as HubTask).stage).toBe("todo");
+});
+
+/** Until some statement on this file's database waits for a lock another transaction holds. */
+async function someoneWaits(): Promise<void> {
+  for (let tries = 0; tries < 500; tries++) {
+    const rows = await hub.database.execute<{ waiting: number }>(
+      sql`select count(*)::int as waiting from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`,
+    );
+    if ((rows[0]?.waiting ?? 0) > 0) return;
+    await Bun.sleep(10);
+  }
+  throw new Error("nothing waited on a lock");
+}
+
+test("a checkout that meets a move before its commit waits for it, and the old runner is refused", async () => {
+  const task = await jobTask(ben, ann, "j-racing");
+  let answer: Promise<Reply> | undefined;
+  await hub.database.transaction(async (tx) => {
+    // `PUT /jobs/j-racing {owner: dan}` up to its commit, step by step as `jobs.ts` takes them.
+    await tx
+      .select()
+      .from(hubJobs)
+      .where(eq(hubJobs.id, "j-racing"))
+      .for("update");
+    await tx
+      .update(hubJobs)
+      .set({ owner: danId, runner: danId })
+      .where(eq(hubJobs.id, "j-racing"));
+    await emitEvent(tx, {
+      type: "job.changed",
+      refId: "j-racing",
+      actor: benId,
+    });
+    await noteJobMove(tx, "j-racing", benId, danId);
+    await freeMovedJobClaims(tx, "j-racing", benId, benId);
+    // Ben's VM has not heard of the move yet and asks for the task now.
+    answer = checkout(ben.pass, task.id, "run-racing");
+    await someoneWaits();
+  });
+  const refused = await answer;
+  expect(refused?.status).toBe(409);
+  expect(refused?.body.code).toBe("laf:task_taken");
+  expect((await checkout(dan.pass, task.id, "run-new-runner")).status).toBe(
+    200,
+  );
 });
