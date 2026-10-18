@@ -57,8 +57,12 @@ import { visibleTo } from "./visibility";
  * never what the run was asked or did.
  */
 
-/** One key for every budget write. Arbitrary, fixed, and used for nothing else. */
-const BUDGET_LOCK = 7_200_002;
+/**
+ * One key for every budget write. Arbitrary, fixed, and used for nothing else — the hub's other
+ * keys are 7_200_001 (events), 7_200_002 (skills), 7_200_003 (memory) and 7_200_010 (the files'
+ * quota). Two features on one key would make every skill write wait on every reservation.
+ */
+const BUDGET_LOCK = 7_200_004;
 
 const RUN_SHAPE = /^[A-Za-z0-9_.:-]{1,128}$/;
 const SCOPE_SHAPE = /^(workspace|(job|task):[A-Za-z0-9_-]{1,80})$/;
