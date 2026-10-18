@@ -39,6 +39,46 @@ export const HUB_TOOL_PATHS = {
 } as const;
 
 /**
+ * The task board, as this VM's 라피 works it (`task-pickup.ts`). The hub's side is #253's
+ * `hub/src/tasks.ts`; the shapes below are written against it.
+ */
+export const HUB_TASK_PATHS = {
+  /** `GET /tasks?stage=todo&limit=&cursor=` — newest first, a page at a time. */
+  waiting: (limit: number, cursor: string | null) =>
+    `/tasks?stage=todo&limit=${limit}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+  /** `GET /tasks/:id` — the task and its notes. */
+  task: (id: string) => `/tasks/${segment(id)}`,
+  /** `POST {runId}` — one conditional UPDATE on the hub: of any number of runs asking, one wins. */
+  checkout: (id: string) => `/tasks/${segment(id)}/checkout`,
+  /** `POST {runId}` — the claim lasts five more minutes. */
+  heartbeat: (id: string) => `/tasks/${segment(id)}/heartbeat`,
+  /** `POST {runId}` — the claim ends; a task still `doing` goes back to `todo`. */
+  release: (id: string) => `/tasks/${segment(id)}/release`,
+  /** `PATCH {as:"bot", runId, stage, note}` — the move and its one line, in one transaction. */
+  move: (id: string) => `/tasks/${segment(id)}`,
+} as const;
+
+/** The facts the task routes answer with that this VM acts on (`HUB_TASK_FACTS` on the hub). */
+export const HUB_TASK_CODES = {
+  /** Another run holds it, or it is not waiting. The run that asked stops and does not ask again. */
+  taken: "laf:task_taken",
+  /** This run no longer holds it: a person moved it, or the sweep freed it. The run stops. */
+  notHeld: "laf:task_not_held",
+} as const;
+
+/**
+ * How often a run holding a task says it is still at it: two beats inside the hub's five-minute
+ * claim (`HUB_TASK_HEARTBEAT_MS` on the hub), so one lost beat does not lose the task.
+ */
+export const HUB_TASK_HEARTBEAT_MS = 2 * 60 * 1000;
+
+/** The longest note a 라피 may leave: one line (`HUB_TASK_LIMITS.botNote` on the hub). */
+export const HUB_TASK_BOT_NOTE_MAX = 500;
+
+/** A page of waiting tasks, read at boot. */
+export const HUB_TASK_PAGE = 100;
+
+/**
  * Where in its source a hit was found, as the hub sends it (`shared/hub/protocol.ts`): the folder,
  * and for a file the character `from` that `read` with `kind: "file"` takes to read on. The hub
  * sends an object; reading it as a string dropped it, and every hit reached 라피 with no place.
@@ -118,6 +158,25 @@ export const skillBody = (input: {
   title: input.title,
   summary: input.summary,
   instructions: input.instructions,
+});
+
+/** `POST /checkout`, `/heartbeat` and `/release` all carry the run and nothing else. */
+export const taskClaimBody = (runId: string) => ({ runId });
+
+/**
+ * A 라피's move of a task its run holds: `review` or `blocked` (never `done`, which the hub refuses
+ * from a Bot), with its one line. Sent as one PATCH so a crash cannot leave the note without the
+ * move or the move without the note.
+ */
+export const taskMoveBody = (input: {
+  runId: string;
+  stage: "review" | "blocked";
+  note: string;
+}) => ({
+  as: "bot" as const,
+  runId: input.runId,
+  stage: input.stage,
+  note: input.note,
 });
 
 /* ── answers ───────────────────────────────────────────────────────────────────────────────── */
@@ -249,3 +308,59 @@ export const readRoomMessages = (body: unknown): HubRoomLine[] | null =>
       at: str(message.at),
     };
   });
+
+/** A task as this VM needs it: enough to decide whether it is this 라피's to take, and to run it. */
+export type HubTaskView = {
+  id: string;
+  title: string;
+  description: string | null;
+  stage: string;
+  assignee: string | null;
+  /** Moves with every write, the sweep's included. */
+  version: number;
+  checkout: { runId: string; by: string } | null;
+};
+
+export type HubTaskNoteView = { by: string; runId: string | null };
+
+const readTask = (task: Record<string, unknown>): HubTaskView | null => {
+  const id = str(task.id);
+  const stage = str(task.stage);
+  const version = num(task.version);
+  if (!id || !stage || version === null) return null;
+  const held = isObject(task.checkout) ? task.checkout : null;
+  const runId = held ? str(held.runId) : null;
+  return {
+    id,
+    title: str(task.title) ?? "",
+    description: str(task.description),
+    stage,
+    assignee: str(task.assignee),
+    version,
+    checkout: held && runId ? { runId, by: str(held.by) ?? "" } : null,
+  };
+};
+
+/** `GET /tasks?…`: the page and where the next one starts. */
+export function readTaskPage(
+  body: unknown,
+): { tasks: HubTaskView[]; next: string | null } | null {
+  const tasks = listOf(body, "tasks", readTask);
+  if (tasks === null || !isObject(body)) return null;
+  return { tasks, next: str(body.next) };
+}
+
+/** `GET /tasks/:id`, a checkout's answer and a release's: the task under `task`; notes beside it. */
+export function readTaskDetail(
+  body: unknown,
+): { task: HubTaskView; notes: HubTaskNoteView[] } | null {
+  if (!isObject(body) || !isObject(body.task)) return null;
+  const task = readTask(body.task);
+  if (!task) return null;
+  const notes =
+    listOf(body, "notes", (note) => ({
+      by: str(note.by) ?? "",
+      runId: str(note.runId),
+    })) ?? [];
+  return { task, notes };
+}

@@ -3285,6 +3285,20 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `server` by two more (to 4883 on top of 4881): a write meeting a refused pass is said as that,
  * not as kept — with no row when it was known before (hub-tools.test.ts), the row waiting when the
  * hub's 401 came during the write (hub-tools.integration.test.ts).
+ *
+ * RAISED 2026-10-17 FOR 라피 TAKING THE TASKS GIVEN TO IT: `server` by twenty-one (to 4796) — the
+ * pickup against an in-memory board that keeps the hub's claim rules (hub-task-pickup.test.ts, 16:
+ * taken, run once and moved with its note; blocked on a yes; not somebody else's; two VMs racing;
+ * a crash mid-run, the sweep and the next boot; a finished run reported and not run again; a claim
+ * lost under the run; its own release not taken again; the six notes and the one-line cut; what the
+ * line delivers); and the run on a real Postgres (hub-task-run.integration.test.ts, 5: a routine's
+ * run in a project named after the task, its head a routine's byte for byte, a stop on a yes kept
+ * to its topic, one conversation for two runs, an unsettled run not reported). 4775 and 21.
+ *
+ * RAISED 2026-10-18 FOR THE TASK PICKUP'S BUGBOT ROUND: `server` by two (to 4904) — a recovered
+ * run's task given back to todo is worked, not reported again (hub-task-pickup.test.ts, 1), and
+ * what a task's run files goes in its project's folder (hub-task-run.integration.test.ts, 1).
+ * 4902 and 2.
  */
 const GROUPS: readonly {
   name: string;
@@ -3311,8 +3325,11 @@ const GROUPS: readonly {
    * RAISED 2026-10-18 FOR A WRITE WHOSE ANSWER IS STILL ON ITS WAY, from 4960 to 4961: one in
    * `hub-tools.integration.test.ts` — the hub's answer held past the write's wait and then a 404,
    * and the Bot is told the 404, not "kept". 4960 and 1.
+   *
+   * RAISED 2026-10-18 FOR 라피 TAKING THE TASKS GIVEN TO IT, from 4961 to 4984: the task pickup's
+   * twenty-three (21 and its Bugbot round's 2, noted above the list). 4961 and 23.
    */
-  { name: "server", floor: 4961, roots: ["server"] },
+  { name: "server", floor: 4984, roots: ["server"] },
   { name: "app", floor: 2570, roots: ["app"] },
   {
     name: "agent-computer",
