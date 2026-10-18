@@ -25,6 +25,9 @@ export function toolLabel(ref: string): string | undefined {
       return t("Send a KakaoTalk notification");
     case "google-sheets/update_sheet_values":
       return t("Overwrite cells in a sheet");
+    // Asked about kind by kind (the catalogue's `guardedKinds`): what goes up is on the card.
+    case "hub/write":
+      return t("Share with the team");
     default:
       return undefined;
   }

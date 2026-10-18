@@ -94,6 +94,11 @@ export const ko: Record<string, string> = {
   Review: "리뷰",
   "Order number": "주문번호",
   "Change to": "바꿀 상태",
+  // 회사에 올리는 것의 카드: 무엇이 회사 사람 모두에게 가는지.
+  "Goes to your company": "회사에 올릴 것",
+  "A team skill": "팀 스킬",
+  "A line for the team's memory, once an admin confirms it":
+    "팀 기억에 넣을 한 줄 (관리자가 확인하면 들어가요)",
   "and {count} more": "외 {count}명",
   "(the rest is not shown)": "(이하 생략)",
   "Booking confirmation": "예약 확정 안내",
@@ -109,6 +114,7 @@ export const ko: Record<string, string> = {
   "Change an order's status": "주문 상태 바꾸기",
   "Send a KakaoTalk notification": "알림톡 보내기",
   "Overwrite cells in a sheet": "시트 칸 덮어쓰기",
+  "Share with the team": "팀에 올리기",
   /*
    * 대화의 한 걸음 줄(`lib/copilot/step-labels.ts`). 첫 과제에서 'tool_search', 'search_support_
    * programs · public-data'가 사장님께 그대로 보였다(2026-09-27). 봇의 동작은 브라우저 줄처럼
@@ -261,6 +267,8 @@ export const ko: Record<string, string> = {
     "밖으로 무언가를 보내는 도구라고 선언돼 있어요.",
   "The tool is declared as one that moves money.":
     "돈을 움직이는 도구라고 선언돼 있어요.",
+  "Once it goes up, everyone in your company can see it.":
+    "올리면 회사 사람 모두가 볼 수 있어요.",
   "The tool declared no risk at all, so it is treated as the most dangerous thing it could be.":
     "이 도구는 위험도를 선언하지 않아 가장 위험한 것으로 취급해요.",
   "The whole connector was removed": "커넥터 자체가 제거됨",

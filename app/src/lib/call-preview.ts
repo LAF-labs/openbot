@@ -29,7 +29,8 @@ export type CallPreviewField =
   | "text"
   | "review"
   | "order"
-  | "status";
+  | "status"
+  | "share";
 
 export type CallPreviewEntry = {
   field: CallPreviewField;
@@ -44,9 +45,11 @@ export type CallPreview = CallPreviewEntry[];
 
 /**
  * The order the lines are drawn in, whatever order the facts arrived in: who it reaches first,
- * what it is called, when and where, and the words it says last — they are the longest.
+ * what it is called, when and where, and the words it says last — they are the longest. What goes
+ * up to the company comes before all of it: it is what the person is deciding about.
  */
 const FIELD_ORDER = [
+  "share",
   "recipients",
   "attendees",
   "subject",
@@ -145,6 +148,8 @@ function labelOf(field: CallPreviewField): string {
       return t("Order number");
     case "status":
       return t("Change to");
+    case "share":
+      return t("Goes to your company");
   }
 }
 
@@ -170,6 +175,21 @@ function templateName(code: string): string | undefined {
       return t("Booking confirmation");
     case "laf_review":
       return t("Review request");
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * What goes up to the company, by the hub's word for its kind (`server/src/hub/tools.ts`). A kind
+ * this does not know is shown as the word, as an unknown order status is.
+ */
+function sharedKindName(kind: string): string | undefined {
+  switch (kind) {
+    case "skill":
+      return t("A team skill");
+    case "propose_memory":
+      return t("A line for the team's memory, once an admin confirms it");
     default:
       return undefined;
   }
@@ -208,6 +228,9 @@ function shownValue(
     toolRef === "kakao-alimtalk/alimtalk_send"
   ) {
     return entry.values.map((code) => templateName(code) ?? code).join(", ");
+  }
+  if (entry.field === "share") {
+    return entry.values.map((kind) => sharedKindName(kind) ?? kind).join(", ");
   }
   if (entry.field === "status" && toolRef === "cafe24/update_order_status") {
     return entry.values

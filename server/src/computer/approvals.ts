@@ -156,11 +156,22 @@ export type ApprovalSubject = {
  * these has let that Bot's later calls of that tool go without asking, whatever their arguments —
  * what the button says, kept by the owner's decision of 2026-09-16 (`settle.ts`).
  *
+ * `company` is a write every member of the person's company receives: a skill each colleague's Bot
+ * loads, a line an admin may confirm into every colleague's prompt (`hub/tools.ts`). Joining a
+ * company publishes only what the person picks, so the person picks each one, on a card that
+ * says what goes up (the catalogue's `guardedKinds`, read per call because one tool writes both
+ * these and a room message nobody needs asking about).
+ *
  * Defined here rather than in `plugins/laf-contract.ts` because it travels on the approval, and the
  * surface phrases it; the contract module re-exports it under its own name so there is one list
  * rather than two that agree by hand.
  */
-export type AskGuard = "money" | "external" | "destructive" | "unannotated";
+export type AskGuard =
+  | "money"
+  | "external"
+  | "destructive"
+  | "unannotated"
+  | "company";
 
 /** What the action does, in the terms a person is asked about it. */
 export type AskIntent =
@@ -280,7 +291,12 @@ export type CallPreviewField =
   | "review"
   | "order"
   /** The status an order is about to be moved to, as the vendor's own code. */
-  | "status";
+  | "status"
+  /**
+   * What goes up to the person's company, as the hub's own word for its kind (`skill`,
+   * `propose_memory`). The card names it; a kind it has no name for is shown as the word.
+   */
+  | "share";
 
 export type CallPreviewEntry = {
   field: CallPreviewField;

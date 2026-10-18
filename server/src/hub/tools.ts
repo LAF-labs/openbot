@@ -42,9 +42,11 @@ import {
   looksLikeAStandingOrder,
   looksLikePromptStructure,
 } from "../agents/memory-store";
+import type { CallPreview, CallPreviewEntry } from "../computer/approvals";
 import type { Database } from "../db/client";
 import { hubOutbox } from "../db/schema";
 import type { DeploymentKeyService } from "../plugins/deployment-key-runtime";
+import { previewOf, previewValue } from "../plugins/call-preview";
 import { MAX_RESULT_CHARS, type McpCallResult } from "../plugins/mcp";
 import type { PartnerToolSpec } from "../plugins/partner-tools";
 import { PluginRefusedError } from "../plugins/store";
@@ -80,7 +82,8 @@ export const HUB_READ_KINDS = [
 ] as const;
 export const HUB_WRITE_KINDS = ["post", "propose_memory", "skill"] as const;
 type ReadKind = (typeof HUB_READ_KINDS)[number];
-type WriteKind = (typeof HUB_WRITE_KINDS)[number];
+export type HubWriteKind = (typeof HUB_WRITE_KINDS)[number];
+type WriteKind = HubWriteKind;
 
 /** Search hits handed to the Bot at once: ten excerpts are about 3K tokens (hub design §7.2). */
 export const HUB_SEARCH_LIMIT = 10;
@@ -298,6 +301,44 @@ function mentionsOf(args: Record<string, unknown>): string[] {
     ),
   ];
 }
+
+/**
+ * A line for the card, or none when what it would show looks like a secret. The card is the
+ * person's own, but it is handed to every surface that draws the question, and a key pasted into
+ * a skill is not one of the things it shows. Judged on what would be shown, after the cut.
+ */
+const unlessSecret = (entries: CallPreviewEntry[]): CallPreviewEntry[] =>
+  entries.filter((entry) => !entry.values.some(looksLikeASecret));
+
+/**
+ * What the card shows for each write, before the person lets it go up (`VendorTransport
+ * .previewCall`): what kind of thing goes to the company, its title, its first words. Keyed by
+ * every kind the tool takes, as the floor is (`HUB_WRITE_GUARDS` in `plugins/catalogue.ts`), so a
+ * kind added to `HUB_WRITE_KINDS` says here what its card shows. A post has none: nothing asks
+ * about one by default, and a question a written rule raises about it keeps the card it had.
+ */
+const HUB_WRITE_PREVIEWS: Readonly<
+  Record<WriteKind, (args: Record<string, unknown>) => CallPreview | null>
+> = {
+  post: () => null,
+  propose_memory: (args) =>
+    previewOf([
+      ...previewValue("share", "propose_memory"),
+      ...unlessSecret(previewValue("text", text(args, "content"))),
+    ]),
+  skill: (args) =>
+    previewOf([
+      ...previewValue("share", "skill"),
+      ...unlessSecret(previewValue("subject", text(args, "title"))),
+      // The summary is the skill in a line; without one, its first words.
+      ...unlessSecret(
+        previewValue(
+          "text",
+          text(args, "summary") ?? text(args, "instructions"),
+        ),
+      ),
+    ]),
+};
 
 /**
  * The result as the Bot reads it, inside the bound every plugin result keeps (`MAX_RESULT_CHARS`).
@@ -596,6 +637,11 @@ export function createHubToolTransport(
       })),
     validateArgs: async (_connection, toolName, args) =>
       checkHubArgs(toolName, args),
+    // Read only after `validateArgs` has passed, so the kind is one of the table's.
+    previewCall: (toolName, args) =>
+      toolName === "write"
+        ? (HUB_WRITE_PREVIEWS[args.kind as WriteKind]?.(args) ?? null)
+        : null,
     callTool: async (connection, toolName, args) => {
       // Checked again here: a direct call reaches the transport only through `validateArgs`, but a
       // transport is a door of its own and refuses what it was never meant to send.

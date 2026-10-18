@@ -59,6 +59,29 @@ import type { DrawnOn } from "./transport";
 const reachedAsFor = (entry: CatalogueEntry | null, actorId: string): string =>
   entry?.auth.kind === "user-oauth" || entry?.partner ? actorId : "deployment";
 
+/**
+ * The reviewed catalogue's floor for one call: the tool's own, or — for a tool that does several
+ * things by its `kind` — that kind's (`CatalogueEntry.guardedKinds`). Read off the call's
+ * arguments, which the floor then binds the person's answer to like any other question.
+ *
+ * A kind a tool's table does not name is `unannotated`, the floor a tool that said nothing about
+ * itself gets: never a publish let past because a table forgot it.
+ */
+function catalogueGuardOf(
+  entry: CatalogueEntry,
+  toolName: string,
+  args: Record<string, unknown>,
+): LafGuard | null {
+  const own = entry.guardedTools?.[toolName];
+  if (own) return own;
+  const byKind = entry.guardedKinds?.[toolName];
+  if (!byKind) return null;
+  const kind = args.kind;
+  return typeof kind === "string" && Object.hasOwn(byKind, kind)
+    ? (byKind[kind] ?? null)
+    : "unannotated";
+}
+
 /** What a settled question hands back when the call may go ahead. See `computer/settle.ts`. */
 type SettledAllowed = Extract<SettleResult, { outcome: "allowed" }>;
 
@@ -546,17 +569,16 @@ export function createCallPath(
        * and it is the only word here — which is why the REST adapters carry no
        * annotations of their own to disagree with it.
        */
-      const guard: LafGuard | null =
-        entry !== null
-          ? (entry.guardedTools?.[toolName] ?? null)
-          : declared
-            ? declared.guard
-            : "unannotated";
-
       const args = withoutEmptyOptionals(
         input.args,
         advertised[0]?.inputSchema as Record<string, unknown> | undefined,
       );
+      const guard: LafGuard | null =
+        entry !== null
+          ? catalogueGuardOf(entry, toolName, args)
+          : declared
+            ? declared.guard
+            : "unannotated";
 
       /*
        * COULD THIS CALL SUCCEED AT ALL? ASKED BEFORE ANYBODY IS.

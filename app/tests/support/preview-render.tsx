@@ -105,5 +105,50 @@ await page.waitFor(
 const pageCards = cardsIn(page.host);
 await page.unmount();
 
-console.log(`PREVIEW_RENDER ${JSON.stringify({ page: pageCards })}`);
+// --- a team skill about to go up to the company -------------------------------------------------
+
+const sharing = await mountApp({
+  path: "/approve/ap-skill",
+  api: ({ pathname }) => {
+    if (pathname === "/api/agents") {
+      return json({ agents: [agentFixture({ id: "bot-1", name: "초롱" })] });
+    }
+    if (pathname === "/api/approvals/bot-1") {
+      return json({
+        approvals: [
+          {
+            id: "ap-skill",
+            botId: "bot-1",
+            rule: "laf:company",
+            subject: {
+              kind: "tool",
+              intent: "call_tool",
+              tool: { server: "hub", name: "write", guard: "company" },
+              reason: "guard_floor",
+            } satisfies AskSubject,
+            preview: [
+              { field: "share", values: ["skill"] },
+              { field: "subject", values: ["견적서 쓰는 법"] },
+              { field: "text", values: ["견적서를 쓸 때 거래처 이름부터"] },
+            ],
+            scope: { kind: "tool", value: "hub/write" },
+            requestedAt: "2026-10-18T00:00:00.000Z",
+            expiresAt: "2099-01-01T00:00:00.000Z",
+          },
+        ],
+      });
+    }
+    return undefined;
+  },
+});
+await sharing.waitFor(
+  () => sharing.host.querySelector("dl[aria-label]") !== null,
+  "the preview of what goes up to the company",
+);
+const companyCards = cardsIn(sharing.host);
+await sharing.unmount();
+
+console.log(
+  `PREVIEW_RENDER ${JSON.stringify({ page: pageCards, company: companyCards })}`,
+);
 process.exit(0);

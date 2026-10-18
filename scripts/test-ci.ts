@@ -3311,9 +3311,16 @@ const GROUPS: readonly {
    * RAISED 2026-10-18 FOR A WRITE WHOSE ANSWER IS STILL ON ITS WAY, from 4960 to 4961: one in
    * `hub-tools.integration.test.ts` — the hub's answer held past the write's wait and then a 404,
    * and the Bot is told the 404, not "kept". 4960 and 1.
+   *
+   * RAISED 2026-10-18 FOR A PUBLISH TO THE COMPANY ASKING FIRST, from 4961 to 4970: nine in
+   * `hub-publish-asks.integration.test.ts` — a skill and a proposal each asked with what goes up
+   * and nothing sent, the card's lines with a secret-shaped one left off, the trail without the
+   * words, a yes sent once, a no leaving no row, a deny refusing, an allowance passing and not
+   * with allowances off, a post going as before. 4961 and 9. And `app` from 2570 to 2572: every
+   * kind that asks named on the card, and the card in Korean (approval-preview.test.ts).
    */
-  { name: "server", floor: 4961, roots: ["server"] },
-  { name: "app", floor: 2570, roots: ["app"] },
+  { name: "server", floor: 4970, roots: ["server"] },
+  { name: "app", floor: 2572, roots: ["app"] },
   {
     name: "agent-computer",
     /*

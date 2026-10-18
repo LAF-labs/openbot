@@ -30,6 +30,8 @@ import {
   normalizeHostname,
   resolvedHostVerdict,
 } from "../net/host-verdict";
+// Type-only, as below: the hub's tools reach the plugin store, which reads this file.
+import type { HubWriteKind } from "../hub/tools";
 import type { LafGuard } from "./laf-contract";
 // Type-only, so naming the transport here creates no import cycle with the registry that resolves it.
 import type { TransportKind } from "./transport";
@@ -279,6 +281,22 @@ export type CatalogueEntry = {
    */
   guardedTools?: Readonly<Record<string, LafGuard>>;
   /**
+   * Floors for a tool that does several things by its `kind` argument, kind by kind.
+   *
+   * The company hub's one `write` posts a room message the person asked for and also publishes to
+   * every colleague — a team skill, a line for the team's memory — and a floor on the whole tool
+   * would put a card in front of every message, while none would let a publish past unasked
+   * (2026-10-18). So the floor is read off the call's own `kind`. A kind the table does not name is
+   * treated as a tool that declared nothing (`unannotated`): the arguments are checked against the
+   * tool's enum before this is read, so that is a table behind its tool, and it asks.
+   *
+   * `guardedTools` wins where both name a tool. The same rule as there: each guard is TRUE of what
+   * the kind does, and a kind that needs no person is `null`, written out.
+   */
+  guardedKinds?: Readonly<
+    Record<string, Readonly<Record<string, LafGuard | null>>>
+  >;
+  /**
    * The tools whose result is somebody's mail, and so may carry a one-time code, a password-reset
    * link or a magic sign-in link.
    *
@@ -322,6 +340,20 @@ export type CatalogueEntry = {
   partner?: PartnerFamily;
   docsUrl: string;
 };
+
+/**
+ * The company hub's `write`, kind by kind: who is asked before it goes (`guardedKinds`).
+ *
+ * Keyed by every kind the tool takes, so a kind added to `HUB_WRITE_KINDS` does not typecheck
+ * until somebody writes here whether it asks. Publishing — anything every colleague receives — is
+ * `company`; a room message the person asked for is `null` and stays with the written policy.
+ */
+export const HUB_WRITE_GUARDS: Readonly<Record<HubWriteKind, LafGuard | null>> =
+  Object.freeze({
+    post: null,
+    propose_memory: "company",
+    skill: "company",
+  });
 
 /**
  * A short list, deliberately.
@@ -925,8 +957,10 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
    * says.
    *
    * `write` posts to a room, proposes a team memory line or publishes a skill — all inside the
-   * company, none destructive, so no guard floor; the written policy decides, and asks about
-   * nothing by default (hub design §9.1). A proposal is only a proposal: an admin confirms it.
+   * company, none destructive. A post is a message the person asked for, so the written policy
+   * decides it as before. A skill and a proposal go to every colleague — one is loaded by each of
+   * their Bots, the other an admin may confirm into each of their prompts — so each stops for the
+   * person first, on a card naming what goes up (`HUB_WRITE_GUARDS`).
    */
   {
     key: "hub",
@@ -937,6 +971,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
     path: "/hub/v1",
     auth: { kind: "deployment-key", key: "laf-hub" },
     writeTools: Object.freeze(["write"]),
+    guardedKinds: Object.freeze({ write: HUB_WRITE_GUARDS }),
     docsUrl: "https://agent.laf-co.com/",
   },
 ]);
