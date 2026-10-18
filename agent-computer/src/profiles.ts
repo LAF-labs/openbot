@@ -175,6 +175,33 @@ export type ProfileOptions = {
   now?: () => number;
 };
 
+/** Hosts a browser treats as secure over plain http, so a `Secure` cookie is sent to them anyway. */
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * Whether the browser would send this cookie to some page of this origin: its domain matches the
+ * origin's host — exactly for a host-only cookie, the host or a parent for a domain cookie (`.` in
+ * front, as Chromium reports it) — and a `Secure` cookie only over https or to a loopback host.
+ *
+ * ANY PATH. A site that keeps its session under `Path=/app` signs the person in at `/app` and
+ * nowhere above it, and that is the login a forget must take. Playwright's `cookies(urls)` reads
+ * each origin as its `/` and leaves such a cookie out, so a forget built on it took nothing and the
+ * browser stayed signed in (review of pull request 261, on a real Chromium).
+ */
+export function isSentToOrigin(
+  cookie: { domain: string; secure: boolean },
+  origin: string,
+): boolean {
+  const { hostname, protocol } = new URL(origin);
+  const host = hostname.toLowerCase();
+  const domain = cookie.domain.toLowerCase();
+  const matches = domain.startsWith(".")
+    ? host === domain.slice(1) || host.endsWith(domain)
+    : host === domain;
+  if (!matches) return false;
+  return !cookie.secure || protocol === "https:" || LOOPBACK_HOSTS.has(host);
+}
+
 export function createProfiles(root: string, options: ProfileOptions = {}) {
   /*
    * Before the first browser, so no browser this module ever launches can have its DevTools pipe
@@ -698,6 +725,37 @@ export function createProfiles(root: string, options: ProfileOptions = {}) {
         if (resetting === over) resetting = null;
         finish();
       }
+    },
+
+    /**
+     * Sign the browser out of these origins and nothing else: every cookie the browser would send
+     * to one of them is deleted, and every other cookie stays. What a person leaving their company
+     * asks for — the company's shared logins go, their own bank and marketplace do not
+     * (`server/src/hub/leave.ts`). `reset` is the whole jar and is not that.
+     *
+     * "Would send" is the browser's own rule on any page of the origin (`isSentToOrigin`): a cookie
+     * set for the site's parent domain is sent to the origin and goes with it, because that is
+     * often where a site keeps its session, and so does one set under a path. A browser that is not
+     * running is started for it: the cookies are on disk in the profile, and only the browser reads
+     * that file. Answers how many went.
+     */
+    async forgetCookies(
+      botId: string,
+      origins: readonly string[],
+    ): Promise<number> {
+      if (origins.length === 0) return 0;
+      const context = await browserFor(botId);
+      const found = (await context.cookies()).filter((cookie) =>
+        origins.some((origin) => isSentToOrigin(cookie, origin)),
+      );
+      for (const cookie of found) {
+        await context.clearCookies({
+          name: cookie.name,
+          domain: cookie.domain,
+          path: cookie.path,
+        });
+      }
+      return found.length;
     },
 
     /**

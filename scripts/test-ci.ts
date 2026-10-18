@@ -3285,6 +3285,16 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `server` by two more (to 4883 on top of 4881): a write meeting a refused pass is said as that,
  * not as kept — with no row when it was known before (hub-tools.test.ts), the row waiting when the
  * hub's 401 came during the write (hub-tools.integration.test.ts).
+ *
+ * the hub, and no hub tool without the pass (hub-tools-head.test.ts, 3). 4747 and 28.
+ *
+ * RAISED 2026-10-17 FOR JOINING AND LEAVING A COMPANY: `server` by four (to 4779) — the leave on a
+ * real Postgres, serialised with no company file or room name left and the person's own kept, a VM
+ * attached or never attached left alone, a browser that cannot sign out keeping the cursor
+ * (hub-leave.integration.test.ts, 3), and 팀에-올리기 carried only with the hub pass
+ * (built-in-skills.test.ts, 1). And `agent-computer` by eleven (to 643): which origins a forget
+ * takes, and a real Chromium signed out of one origin and still signed in to another
+ * (forget-cookies.test.ts). 4775 and 4; 632 and 11.
  */
 const GROUPS: readonly {
   name: string;
@@ -3311,8 +3321,18 @@ const GROUPS: readonly {
    * RAISED 2026-10-18 FOR A WRITE WHOSE ANSWER IS STILL ON ITS WAY, from 4960 to 4961: one in
    * `hub-tools.integration.test.ts` — the hub's answer held past the write's wait and then a 404,
    * and the Bot is told the 404, not "kept". 4960 and 1.
+   *
+   * RAISED 2026-10-18 FOR A LEAVE THAT TAKES WHAT WAS WRITTEN FROM THE COMPANY'S WORDS, from 4965 to
+   * 4966: one in `day-epochs.test.ts` — a day summary a leave cannot keep is one gap line over its
+   * days, the same line the second time. The leave's own checks grew inside the serialisation
+   * test, which is one test. 4965 and 1.
+   *
+   * RAISED 2026-10-18 FOR WHAT A LEAVE STILL MISSED, from 4966 to 4971: five in
+   * `hub-leave.integration.test.ts` — a line remembered on the message after a hub answer, a
+   * context that could not be saved (twice: drawing the lines out, and the new epoch), a
+   * delegation made after a hub answer, and a VM moved to another hub. 4966 and 5.
    */
-  { name: "server", floor: 4961, roots: ["server"] },
+  { name: "server", floor: 4971, roots: ["server"] },
   { name: "app", floor: 2570, roots: ["app"] },
   {
     name: "agent-computer",
@@ -3361,8 +3381,13 @@ const GROUPS: readonly {
      * RAISED 2026-10-16 FOR A CALL'S SHARE, IN AND OUT, from 685 to 688: three more in
      * `core-share.test.ts` — a step stretched as far as the server said it waits, never further,
      * and a machine that cannot be read saying nothing.
+     *
+     * RAISED 2026-10-18 FOR A LOGIN KEPT UNDER A PATH, from 699 to 708: nine in
+     * `forget-cookies.test.ts` — which cookies a forget of an origin takes (seven hosts and
+     * domains, and a secure cookie over http), and a real Chromium signed out of a `Path=/app`
+     * session. 699 and 9.
      */
-    floor: 688,
+    floor: 708,
     roots: ["agent-computer"],
     processes: 1,
   },

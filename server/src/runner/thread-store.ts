@@ -25,7 +25,7 @@ import type { Message } from "@ag-ui/client";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { type FirstMoveMark, isFirstMove } from "../../../shared/first-move";
 import { DEFERRED_TOOL_PREFIX } from "../../../shared/tools/bridge";
-import type { DelegatedMark } from "../../../shared/tools/delegate";
+import { DELEGATE, type DelegatedMark } from "../../../shared/tools/delegate";
 import {
   type ProjectsMark,
   projectsReadBy,
@@ -253,7 +253,7 @@ export function keepProjectsRead(
 }
 
 /** The tools whose results are the company hub's: `mcp__hub__read`, `mcp__hub__write`. */
-const HUB_TOOL_PREFIX = `${DEFERRED_TOOL_PREFIX}hub__`;
+export const HUB_TOOL_PREFIX = `${DEFERRED_TOOL_PREFIX}hub__`;
 
 /**
  * Mark every tool result answering a hub tool's call `lafSource: "hub"`, and keep the mark on a copy
@@ -292,6 +292,98 @@ export function markHubResults(
       ? { ...message, lafSource: "hub" as const }
       : message,
   );
+}
+
+/**
+ * What a hub tool result says once its person has left the company (`hub/leave.ts`): the call and
+ * its answer stay a pair, so the history a provider is handed is still well formed, and what the
+ * company's server answered is not in it. It says what happened, not what was there.
+ */
+export const LEFT_COMPANY_RESULT = "[회사를 떠나며 지운 내용]";
+
+type ToolCall = NonNullable<
+  Extract<StoredMessage, { role: "assistant" }>["toolCalls"]
+>[number];
+
+/** A `delegate` call, read defensively: a stored row is cast, not validated (`parseMessage`). */
+export const isDelegateCall = (call: ToolCall | undefined): boolean =>
+  call?.function?.name === DELEGATE.name;
+
+/**
+ * A `delegate` call as a leave keeps it: the same call, to the same side, its task in
+ * `LEFT_COMPANY_RESULT`'s words. The task is the Bot's own retelling of what it had read, and after
+ * a hub answer that is the company's words (`hub/leave.ts`); the call stays so its answer still has
+ * a call to answer.
+ */
+export function withTaskLeft(call: ToolCall): ToolCall {
+  let args: unknown;
+  try {
+    args = JSON.parse(call.function.arguments);
+  } catch {
+    args = null;
+  }
+  const kept =
+    args && typeof args === "object" && !Array.isArray(args) ? args : {};
+  return {
+    ...call,
+    function: {
+      ...call.function,
+      arguments: JSON.stringify({ ...kept, task: LEFT_COMPANY_RESULT }),
+    },
+  };
+}
+
+/**
+ * Keep what a leave blanked blank on a copy that arrives with its words — the path
+ * `withoutGoneProjects` closes for a deleted project's results. A run hands its whole history back,
+ * and a copy built before the leave would otherwise be written over the blank row. Two kinds: a
+ * result the leave blanked (a hub tool's, or a `delegate` answer written from one), and the task of
+ * a `delegate` call it blanked.
+ */
+export function keepLeftBlank(
+  messages: readonly StoredMessage[],
+  held: readonly StoredMessage[],
+): StoredMessage[] {
+  const blank = new Set<string>();
+  const tasks = new Map<string, ToolCall>();
+  for (const message of held) {
+    if (
+      message.role === "tool" &&
+      message.lafSource === "hub" &&
+      message.content === LEFT_COMPANY_RESULT
+    ) {
+      blank.add(message.id);
+    }
+    if (message.role !== "assistant") continue;
+    for (const call of message.toolCalls ?? []) {
+      if (
+        isDelegateCall(call) &&
+        withTaskLeft(call).function.arguments === call.function.arguments
+      ) {
+        tasks.set(call.id, call);
+      }
+    }
+  }
+  if (blank.size === 0 && tasks.size === 0) return [...messages];
+  return messages.map((message) => {
+    if (
+      message.role === "tool" &&
+      blank.has(message.id) &&
+      message.content !== LEFT_COMPANY_RESULT
+    ) {
+      return {
+        ...message,
+        lafSource: "hub" as const,
+        content: LEFT_COMPANY_RESULT,
+      };
+    }
+    if (message.role !== "assistant" || !message.toolCalls) return message;
+    if (!message.toolCalls.some((call) => tasks.has(call?.id))) return message;
+    return {
+      ...message,
+      toolCalls: message.toolCalls.map((call) => tasks.get(call?.id) ?? call),
+    };
+  });
 }
 
 /**
@@ -526,8 +618,8 @@ export async function appendMessages(
      * here for the project's row, this transaction has written nothing the deletion could be
      * waiting for. Read after a first write, the two would wait on each other.
      */
-    const marked = markHubResults(
-      keepProjectsRead(merged, heldMessages),
+    const marked = keepLeftBlank(
+      markHubResults(keepProjectsRead(merged, heldMessages), heldMessages),
       heldMessages,
     );
     const named = [...new Set(marked.flatMap(projectsReadBy))];

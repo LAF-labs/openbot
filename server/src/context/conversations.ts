@@ -108,7 +108,12 @@ export type EpochReason =
   | "memory_forgotten"
   | "compaction"
   /** The owner's local day turned: the history before it became a summary (`./day-close`). */
-  | "day_boundary";
+  | "day_boundary"
+  /**
+   * This VM left its company hub (`hub/leave.ts`): the frozen layer names the hub's tools, and the
+   * tools are gone. The deferred tools are not the head, so the key alone would never move for it.
+   */
+  | "company_left";
 
 /** What an epoch is frozen against. Any of them changing starts a new one. */
 export type EpochKey = {
@@ -142,6 +147,12 @@ type Epoch = EpochKey & {
    */
   closeFailures?: number;
   closeFailedDay?: string;
+  /**
+   * A new epoch asked for from outside and not taken yet, kept with the epoch so a restart before
+   * the conversation's next message does not lose it — `pending` is memory. Only `beginEpochEverywhere`
+   * writes it; the next epoch is frozen without it.
+   */
+  due?: EpochReason;
 };
 
 type Conversation = {
@@ -258,6 +269,30 @@ export type ConversationStore = {
   ): UsageContext | null;
   /** Start a new epoch on the conversation's next run. The compaction hook. */
   beginEpoch(threadId: string, reason: EpochReason): void;
+  /**
+   * Start a new epoch on the next run of every kept conversation, and keep that asked-for in the
+   * row, so a restart before the next message still takes it. For what changes the frozen layer of
+   * every conversation at once and is not in the epoch's key — leaving a company (`hub/leave.ts`).
+   * Resolves, with how many were asked, once the rows are written; rejects when one was not.
+   */
+  beginEpochEverywhere(reason: EpochReason): Promise<number>;
+  /**
+   * This VM left its company (`hub/leave.ts`): what the conversations hold that was drawn from the
+   * company's words goes, in memory and in the row, before anything reads it again — `pending` is
+   * memory, and `peek` hands the stored layer to a model as it stands.
+   *
+   * `threads` are the conversations a hub tool answered in. Their day summary was written from
+   * those answers whole (`transcriptOf` reads every result), and nothing tells its lines apart, so
+   * it goes: a gap line over the days it stood for takes its place (`unsummarisedCut`), and a close
+   * prepared and not taken goes with it. `lines` are the notebook lines the leave retires, as they
+   * are drawn: out of every conversation's frozen layer, its known facts and its reminders.
+   * Resolves, with how many summaries and drawn lines went, once the rows are written; rejects when
+   * one was not.
+   */
+  forgetCompany(input: {
+    threads: readonly string[];
+    lines: readonly string[];
+  }): Promise<{ summaries: number; lines: number }>;
   /**
    * Decide a compaction for the conversation now, whatever its size, and wait for it. What the
    * threshold does on its own; exposed for the eval and the tests. Resolves to whether anything new
@@ -541,6 +576,9 @@ function gapOf(line: string, until: number): Gap | null {
 const gapLine = (gap: Gap) =>
   `- ${gap.first === gap.last ? shortDay(gap.first) : `${shortDay(gap.first)}~${shortDay(gap.last)}`}: ${GAP_SENTENCE}`;
 
+/** A gap line for days nothing dates: rows from before stamps, a summary with no dated line. */
+const UNDATED_GAP_LINE = `- 날짜 모름: ${GAP_SENTENCE}`;
+
 /**
  * The summary a close makes without the summariser: what the last close said, carried as it was,
  * and one gap line for the span — joined with the gap line before it when their days touch or
@@ -565,8 +603,10 @@ export function unsummarisedSummary(
   const lines = (previous ?? "").split("\n").filter((line) => line.trim());
   if (!first || !last) {
     // Rows from before stamps: a gap with no dates, which nothing will join.
-    const line = `- 날짜 모름: ${GAP_SENTENCE}`;
-    return { summary: boundedSummary([...lines, line].join("\n")), days: 0 };
+    return {
+      summary: boundedSummary([...lines, UNDATED_GAP_LINE].join("\n")),
+      days: 0,
+    };
   }
   let gap: Gap = { first: dayNumber(first), last: dayNumber(last) };
   const kept = lines.filter((line) => {
@@ -582,6 +622,30 @@ export function unsummarisedSummary(
   return {
     summary: boundedSummary([...kept, gapLine(gap)].join("\n")),
     days: keys.length,
+  };
+}
+
+/**
+ * A cut whose summary cannot be kept, as the gap it leaves: one gap line over the days the summary
+ * stood for — from its oldest dated line to the day before its close — and nothing it said. What a
+ * close made without the summariser writes for days it never read, so the Bot is told what is not
+ * in its summary and the next close carries the line like any gap (`withGapsKept`). The same line
+ * again for a cut that is already one, so a leave run twice changes nothing the second time.
+ */
+export function unsummarisedCut(cut: DayCut): DayCut {
+  const until = dayNumber(dayKey(cut.day)) - 1;
+  let first: number | null = null;
+  for (const line of cut.summary.split("\n")) {
+    const found = GAP_DATES.exec(line);
+    const day = found?.[1] ? gapDateOf(found[1], until) : null;
+    if (day !== null && day <= until && (first === null || day < first)) {
+      first = day;
+    }
+  }
+  return {
+    ...cut,
+    summary:
+      first === null ? UNDATED_GAP_LINE : gapLine({ first, last: until }),
   };
 }
 
@@ -817,9 +881,10 @@ export function createConversationStore(
    * otherwise race, and the older state landing last would un-say a reminder the provider has
    * already cached. Each write is the whole state as it was when it was asked for.
    */
-  const writes = new Map<string, Promise<void>>();
-  const keep = (conversation: Conversation) => {
-    if (!conversation.kept || !persistence) return;
+  const writes = new Map<string, Promise<boolean>>();
+  /** Resolves to whether this state reached the row; never rejects. */
+  const keep = (conversation: Conversation): Promise<boolean> => {
+    if (!conversation.kept || !persistence) return Promise.resolve(true);
     const state = {
       threadId: conversation.threadId,
       agentId: conversation.botId,
@@ -832,16 +897,33 @@ export function createConversationStore(
     const previous = writes.get(state.threadId) ?? Promise.resolve();
     const next = previous
       .then(() => persistence.save(state))
-      .catch((error) => {
-        // The conversation goes on from memory; a restart before the next write starts it again.
-        log.warn("conversation_context_unsaved", {
-          reason: describeFailure(error),
-        });
-      })
+      .then(
+        () => true,
+        (error) => {
+          // The conversation goes on from memory; a restart before the next write starts it again.
+          log.warn("conversation_context_unsaved", {
+            reason: describeFailure(error),
+          });
+          return false;
+        },
+      )
       .finally(() => {
         if (writes.get(state.threadId) === next) writes.delete(state.threadId);
       });
     writes.set(state.threadId, next);
+    return next;
+  };
+
+  /**
+   * Waits for these writes, and refuses when one of them did not reach its row: for a caller that
+   * says it is done once the rows are written (`beginEpochEverywhere`, `forgetCompany`), which a
+   * leave takes as the moment it may delete what would let it run again.
+   */
+  const written = async (saves: readonly Promise<boolean>[]) => {
+    const unsaved = (await Promise.all(saves)).filter((saved) => !saved);
+    if (unsaved.length > 0) {
+      throw new Error(`${unsaved.length} conversation context(s) not saved`);
+    }
   };
 
   /** Compactions being decided, by thread. For `settled` and `compactNow`. */
@@ -1485,6 +1567,87 @@ export function createConversationStore(
       if (conversation) conversation.pending = reason;
     },
 
+    async beginEpochEverywhere(reason) {
+      const saves: Promise<boolean>[] = [];
+      for (const conversation of conversations.values()) {
+        if (!conversation.kept) continue;
+        conversation.pending = reason;
+        conversation.epoch = { ...conversation.epoch, due: reason };
+        saves.push(keep(conversation));
+      }
+      await written(saves);
+      return saves.length;
+    },
+
+    async forgetCompany(input) {
+      const answered = new Set(input.threads);
+      const gone = input.lines.map(flat).filter(Boolean);
+      const drawn = new Set(gone.map((line) => `- ${line}`));
+      const isGone = (line: string) => gone.includes(flat(line));
+      let summaries = 0;
+      let lines = 0;
+      const saves: Promise<boolean>[] = [];
+      for (const conversation of conversations.values()) {
+        // A close being prepared reads the results as they were; wait for it, then drop what it made.
+        const running = closes.get(conversation.threadId);
+        if (running) await running;
+        let changed = false;
+        if (answered.has(conversation.threadId)) {
+          conversation.close = null;
+          conversation.closeCheckedKey = null;
+          const cut = conversation.epoch.cut;
+          const clean = cut ? unsummarisedCut(cut) : null;
+          if (cut && clean && clean.summary !== cut.summary) {
+            const before = withSummary("", cut).trim();
+            const after = withSummary("", clean).trim();
+            conversation.epoch = {
+              ...conversation.epoch,
+              cut: clean,
+              system: before
+                ? conversation.epoch.system.replace(before, () => after)
+                : conversation.epoch.system,
+            };
+            summaries += 1;
+            changed = true;
+          }
+        }
+        if (drawn.size > 0) {
+          const system = conversation.epoch.system.split("\n");
+          const kept = system.filter((line) => !drawn.has(flat(line)));
+          const { known } = conversation;
+          const memories = known.memories.filter((line) => !isGone(line));
+          const reminders = scrubbed(conversation.reminders, gone);
+          if (
+            kept.length < system.length ||
+            memories.length < known.memories.length ||
+            JSON.stringify(reminders) !== JSON.stringify(conversation.reminders)
+          ) {
+            lines += system.length - kept.length;
+            conversation.epoch = {
+              ...conversation.epoch,
+              system: kept.join("\n"),
+            };
+            conversation.known = {
+              ...known,
+              memories,
+              confirmed: known.confirmed.filter((line) => !isGone(line)),
+              retired: known.retired.filter((line) => !isGone(line)),
+              superseded: Object.fromEntries(
+                Object.entries(known.superseded).filter(
+                  ([old, now]) => !isGone(old) && !isGone(now),
+                ),
+              ),
+            };
+            conversation.reminders = reminders;
+            changed = true;
+          }
+        }
+        if (changed) saves.push(keep(conversation));
+      }
+      await written(saves);
+      return { summaries, lines };
+    },
+
     async tick() {
       if (!days) return 0;
       const now = clock();
@@ -1682,6 +1845,8 @@ export function createConversationStore(
           lastUserMessageId: row.lastUserMessageId,
           compaction: planOf(row.compaction),
           ...unkept(),
+          // An epoch asked for before the restart and not taken yet is still asked for.
+          pending: epoch.due ?? null,
           question: { messageId: row.lastUserMessageId, costUsd: 0 },
           touchedAt: clock(),
         });

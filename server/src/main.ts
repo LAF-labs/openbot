@@ -113,6 +113,8 @@ import { deploymentHealthProbes } from "./health";
 import { createLiveScreen, type SocketData } from "./live-screen";
 import { users } from "./db/schema";
 import { createHubRuntime } from "./hub";
+import { leaveCompanyIfDetached } from "./hub/leave";
+import { describeFailure } from "./failure-text";
 import { log, recentLines } from "./log";
 import { createLoginVault } from "./logins/store";
 import { readApprovalMetrics } from "./notifications/approval-metrics";
@@ -348,6 +350,39 @@ const computerClient = config.computer
       whereaboutsFor: browserWhereabouts.forBot,
     })
   : undefined;
+/*
+ * A VM detached from its company, or moved to another, since the last boot takes the company's
+ * copies off this machine, once, before anything runs (`hub/leave.ts`) — the conversations were
+ * loaded above, so the new epoch it asks for reaches every one of them, and no turn has started
+ * that could write a company conversation back.
+ */
+const leftCompany = await leaveCompanyIfDetached({
+  hub: config.hub?.url,
+  database,
+  conversations,
+  /*
+   * NONE ARE KNOWN TODAY. The origins of the company's shared logins are the vault's (hub design
+   * §9.3), which neither the hub nor this VM has yet, and by this boot the hub refuses this VM's
+   * pass — the detach told it first. The vault, when it is built, has to keep on this VM the origins
+   * it fills, for this to read; until then no company login can have reached the browser.
+   */
+  loginOrigins: async () => [],
+  ...(computerClient
+    ? {
+        forgetCookies: async (origins: readonly string[]) => {
+          const [bot] = await allLiveBots(database);
+          // No Bot to address the computer with: nothing has used the browser since it was reset.
+          if (!bot) return 0;
+          return (await computerClient.forBot(bot).forgetCookies(origins))
+            .forgotten;
+        },
+      }
+    : {}),
+}).catch((error: unknown) => {
+  // Logged and not fatal: the cursor stays, so the next boot tries again.
+  log.error("hub_leave_failed", { reason: describeFailure(error) });
+  return { done: false };
+});
 const agentProfileStore = createAgentProfileStore(
   database,
   config.managedAgentAgUiUrl,
@@ -403,9 +438,16 @@ const channelEvents = createChannelEventHub();
  * so a first sign-in after boot hears the next frame.
  */
 let hubFramesSent: Promise<void> = Promise.resolve();
-const hubRuntime = config.hub
+/*
+ * NOT WHILE THE LEAVE OF ANOTHER HUB IS UNFINISHED. Moved from one hub to another, a leave of the
+ * old one cut short keeps the old cursor so the next boot runs it again; the new hub's line would
+ * write its own over it at once (`hub/cursor.ts`), and that boot would find nothing to leave.
+ */
+const joinedHub = leftCompany?.done === false ? undefined : config.hub;
+if (config.hub && !joinedHub) log.warn("hub_held_for_leave", {});
+const hubRuntime = joinedHub
   ? createHubRuntime({
-      config: config.hub,
+      config: joinedHub,
       database,
       // Chained, so frames reach the page in the order the hub numbered them.
       deliver: (frame) => {
@@ -466,7 +508,10 @@ const deploymentKeyRuntime = createDeploymentKeyRuntime({
  * Read from the same directory the package above was, so a deployment's skills are its package's.
  */
 const deploymentTools = offeredTools({
-  deploymentKeyTools: deploymentKeyRuntime.toolNames,
+  deploymentKeyTools: [
+    ...deploymentKeyRuntime.toolNames,
+    ...deploymentKeyRuntime.wireToolNames,
+  ],
 });
 /**
  * The industry packs (`tenant/<package>/profiles/<kind>/`): what choosing a kind of business
