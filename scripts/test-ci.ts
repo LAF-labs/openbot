@@ -3298,7 +3298,9 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * sees with no ending still sends the file's words (hub-upload.test.ts, 1); and a read nobody can be
  * asked about is refused with no question opened, an allowance still passing it
  * (gateway-file-acts-off-the-page.test.ts, 1). 4902 and 2. On top of main, whose own floor had
- * become 4961: 4961 and 23, to 4984.
+ * become 4961: 4961 and 23, to 4984. Then `server` by one more (to 4985): an upload still on its
+ * way when the write's wait ends is said as on its way, the Bot not held behind it, and the row
+ * ends delivered when the hub answers (hub-upload.integration.test.ts).
  */
 const GROUPS: readonly {
   name: string;
@@ -3326,7 +3328,7 @@ const GROUPS: readonly {
    * `hub-tools.integration.test.ts` — the hub's answer held past the write's wait and then a 404,
    * and the Bot is told the 404, not "kept". 4960 and 1.
    */
-  { name: "server", floor: 4984, roots: ["server"] },
+  { name: "server", floor: 4985, roots: ["server"] },
   { name: "app", floor: 2570, roots: ["app"] },
   {
     name: "agent-computer",
