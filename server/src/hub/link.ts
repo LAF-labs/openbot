@@ -354,9 +354,17 @@ export function createHubLink(input: {
       return;
     }
     me = answer.body;
-    const kept = await readHubCursor(input.database, input.hub).catch(
-      () => null,
-    );
+    let kept: number | null;
+    try {
+      kept = await readHubCursor(input.database, input.hub);
+    } catch {
+      // A read that failed is not "no place yet": taken as one, the line would jump to /me's
+      // newest and write that down, and every event in between would be skipped for good.
+      // Nothing is moved; the line tries again as it does when the hub does not answer.
+      if (stopped) return;
+      lost(HUB_FACTS.unreachable, "cursor_unread");
+      return;
+    }
     if (kept === null) {
       // No place in this hub's sequence: start at its newest event, as the hub's own socket does.
       cursor = Math.max(cursor, me.seq);
