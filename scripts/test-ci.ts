@@ -3372,7 +3372,7 @@ const GROUPS: readonly {
      * `core-share.test.ts` — a step stretched as far as the server said it waits, never further,
      * and a machine that cannot be read saying nothing.
      */
-    floor: 688,
+    floor: 699,
     roots: ["agent-computer"],
     processes: 1,
   },
