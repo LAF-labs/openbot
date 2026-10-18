@@ -32,12 +32,13 @@ const cho = {
   role: "admin" as const,
 };
 let annId = "";
+let benId = "";
 let choId = "";
 
 beforeAll(async () => {
   hub = await startTestHub();
   annId = (await putMember(hub, ann)).id;
-  await putMember(hub, ben);
+  benId = (await putMember(hub, ben)).id;
   choId = (await putMember(hub, cho)).id;
 });
 afterAll(() => hub.stop());
@@ -179,6 +180,23 @@ test("a task a person moved is no longer waiting on that run's yes", async () =>
   expect((await approve(ann.pass, task.id, { topic: TOPIC })).status).toBe(403);
 });
 
+test("a blocked task given to somebody else goes back to the board, no longer waiting on the old run's yes", async () => {
+  const task = await blockedByAnnsRun();
+  const given = await call(ben.pass, "PATCH", `/tasks/${task.id}`, {
+    version: task.version,
+    assignee: `m:${benId}`,
+  });
+  expect(given.status).toBe(200);
+  expect((given.body.task as HubTask).stage).toBe("todo");
+  const late = await approve(ann.pass, task.id, { topic: TOPIC });
+  expect(late.status).toBe(409);
+  expect(late.body.code).toBe("laf:task_not_blocked");
+  const taken = await call(ben.pass, "POST", `/tasks/${task.id}/checkout`, {
+    runId: "run-ben",
+  });
+  expect(taken.status).toBe(200);
+});
+
 test("an older version is stale, and a topic that is not a topic is refused", async () => {
   const task = await blockedByAnnsRun();
   const stale = await approve(ann.pass, task.id, {
@@ -187,7 +205,12 @@ test("an older version is stale, and a topic that is not a topic is refused", as
   });
   expect(stale.status).toBe(409);
   expect(stale.body.code).toBe("laf:task_stale");
-  for (const topic of ["", "a value with spaces", 42, "x".repeat(201)]) {
+  for (const topic of [
+    "",
+    "a value with spaces",
+    42,
+    "x".repeat(201),
+  ]) {
     const bad = await approve(ann.pass, task.id, { topic });
     expect(bad.status).toBe(400);
     expect(bad.body.field).toBe("topic");

@@ -216,3 +216,29 @@ test("a checkout that meets a move before its commit waits for it, and the old r
     200,
   );
 });
+
+test("a task the old runner's run stopped on goes back to the board when the job moves, and the new runner takes it", async () => {
+  const task = await jobTask(ben, ann, "j-stopped");
+  expect((await checkout(ben.pass, task.id, "run-stopped")).status).toBe(200);
+  const blocked = await call(ben.pass, "PATCH", `/tasks/${task.id}`, {
+    as: "bot",
+    runId: "run-stopped",
+    stage: "blocked",
+    note: "laf:task_needs_approval run:run-stopped topic:browser/activate@shop.example.test",
+  });
+  expect(blocked.status).toBe(200);
+  expect(
+    (await call(ben.pass, "PUT", "/jobs/j-stopped", { owner: danId })).status,
+  ).toBe(200);
+  const rows = await hub.database.execute<{
+    stage: string;
+    blocked_by: string | null;
+  }>(sql`select stage, blocked_by from hub_tasks where id = ${task.id}`);
+  expect(rows[0]).toEqual({ stage: "todo", blocked_by: null });
+  // Ben's yes would be kept on a VM that no longer runs the job: there is nothing to say yes to.
+  const late = await call(ben.pass, "POST", `/tasks/${task.id}/approvals`, {
+    topic: "browser/activate@shop.example.test",
+  });
+  expect(late.body.code).toBe("laf:task_not_blocked");
+  expect((await checkout(dan.pass, task.id, "run-dan")).status).toBe(200);
+});

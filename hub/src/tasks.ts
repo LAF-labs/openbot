@@ -77,7 +77,9 @@ import { audienceOf, visibleTo } from "./visibility";
  * 라피 runs the task; a yes said anywhere else would put the task back in `todo`, its run would meet
  * the same action with no allowance on its VM, and block again, round and round. The task goes back
  * to `todo` for the next run, the note says which topic, and `task.approval_granted` names who and
- * when; the hub records that the yes was given.
+ * when; the hub records that the yes was given. When who may work the task changes — its job moves,
+ * or a person gives it to somebody else — no run waits on that yes any more: the task goes back to
+ * `todo`, and the new member's run stops on the action afresh if it has to.
  *
  * THE TRAIL HOLDS NO WORDS. A task's audit row says who did what to which id, in which run and
  * with what result — the fields changed by name, a note's length — never a title, a description or
@@ -154,6 +156,11 @@ async function holdJobOf(tx: HubTransaction, taskId: string): Promise<void> {
  * still going there hears `laf:task_not_held` at its next beat or report and stops, as for any claim
  * it lost. Waiting out the claim instead would leave the task stuck for the lock's length with its
  * owner unable to work it.
+ *
+ * A task the old runner's run stopped on (`blocked`, `blocked_by` the old runner) goes back to
+ * `todo` too. Its yes could only be said by the old runner and kept on the old VM, which no longer
+ * runs the job, while the new runner was refused (`laf:task_not_yours`); and a block has no lock
+ * to run out. The new runner's run meets the action afresh and stops on it with an ask of its own.
  */
 export async function freeMovedJobClaims(
   tx: HubTransaction,
@@ -167,12 +174,16 @@ export async function freeMovedJobClaims(
       checkoutRunId: null,
       checkoutBy: null,
       lockExpiresAt: null,
-      stage: sql`case when ${hubTasks.stage} = 'doing' then 'todo' else ${hubTasks.stage} end`,
+      blockedBy: null,
+      stage: sql`case when ${hubTasks.stage} in ('doing', 'blocked') then 'todo' else ${hubTasks.stage} end`,
       version: sql`${hubTasks.version} + 1`,
       updatedAt: sql`now()`,
     })
     .where(
-      and(eq(hubTasks.assignee, `job:${jobId}`), eq(hubTasks.checkoutBy, from)),
+      and(
+        eq(hubTasks.assignee, `job:${jobId}`),
+        or(eq(hubTasks.checkoutBy, from), eq(hubTasks.blockedBy, from)),
+      ),
     )
     .returning({
       id: hubTasks.id,
@@ -849,6 +860,16 @@ export function taskRoutes(options: TaskRouteOptions) {
             : assigneeOf(body.assignee);
       const reassigned = assignee !== row.assignee;
       if (reassigned) fields.push("assignee");
+      // Given to somebody else, a task a run stopped on waits on nobody's yes: the yes was its
+      // member's, kept on their VM, and the new one's run could never take it. It goes back to the
+      // board, where their run meets the action afresh — unless the person moved it themselves.
+      if (reassigned && row.blockedBy) {
+        set.blockedBy = null;
+        if (body.stage === undefined) {
+          set.stage = "todo";
+          fields.push("stage");
+        }
+      }
       const assigned = assigneeMember(assignee);
       const added = [
         ...asked.filter((m) => !current.includes(m)),
