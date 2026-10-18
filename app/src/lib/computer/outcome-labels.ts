@@ -35,6 +35,8 @@ export const OUTCOME_LABELS: Record<string, string> = {
   "laf:no_rule_allows": "No rule allows it",
   "laf:blind_action": "The screen had not been read yet",
   "laf:declined_recently": "You said no to this recently",
+  // A rule asks first, about work nobody can be asked about mid-way (the company files' upload).
+  "laf:would_ask": "A rule asks you first, so it was not done",
   "laf:use_request_secret": "It asked for a secret instead",
   /*
    * Two more floors under the boundary (security review, 2026-09): a letter pressed as a key is

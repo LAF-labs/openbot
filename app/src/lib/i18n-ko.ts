@@ -288,6 +288,8 @@ export const ko: Record<string, string> = {
   "Write what this Bot may get on with. It is asked about everything else.":
     "그냥 진행해도 되는 일을 적어 주세요. 나머지는 모두 물어봐요.",
   "You said no to this recently": "최근에 아니라고 답함",
+  "A rule asks you first, so it was not done":
+    "먼저 물어보는 규칙이 있어 하지 않음",
   name: "이름",
   "what it is for": "무엇을 하는 봇인지",
   "Show more": "더 보기",

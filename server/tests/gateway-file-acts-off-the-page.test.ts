@@ -383,3 +383,53 @@ describe("a file act is off the page", () => {
     expect(JSON.stringify(rows)).not.toContain("kbstar");
   });
 });
+
+/*
+ * A READ NOBODY CAN BE ASKED ABOUT. The company hub's upload reads a file whole, judged as the
+ * Bot's own read (`acts.ts`, `readWholeFile`), from inside a tool call no answer can carry on. A
+ * rule that asks used to open a question for it anyway: the person was buzzed and shown a card
+ * whose yes uploaded nothing. It is refused instead, with no question; an allowance still passes it.
+ */
+describe("a read nobody can be asked about", () => {
+  test("a rule that asks refuses it with no question opened, and an allowance the person granted still lets it through", async () => {
+    const asksFirst = 'intent == "read_file"';
+    const { gateway, rows, computer, approvals, standing } = await parked({
+      ...PERMISSIVE,
+      ask: [asksFirst],
+    });
+    const wholeRead = () =>
+      outcome(
+        gateway.readWholeFile(COMPUTER, BOT, ACTOR, { path: "uploads/a.csv" }),
+      );
+
+    const refused = (await wholeRead()) as ActionRefusedError;
+    expect(refused).toBeInstanceOf(ActionRefusedError);
+    expect(refused.code).toBe("laf:would_ask");
+    expect(await approvals.pending(BOT)).toEqual([]);
+    expect(computer.asked).toEqual([]);
+    expect(rows.map((row) => row.eventType)).not.toContain(
+      "approval.requested",
+    );
+    expect(rows.at(-1)?.payload).toMatchObject({
+      action: "computer_read_file",
+      decision: { allowed: false, source: "deny", code: "laf:would_ask" },
+    });
+
+    // The Bot's own read under the same rule is still asked about: only this act asks nobody.
+    const asked = (await outcome(
+      gateway.readFile(COMPUTER, BOT, ACTOR, { path: "uploads/a.csv" }),
+    )) as ActionNeedsApprovalError;
+    expect(asked).toBeInstanceOf(ActionNeedsApprovalError);
+    await approvals.withdraw(asked.approvalId, BOT);
+
+    await standing.grant({
+      botId: BOT,
+      rule: asksFirst,
+      scope: asked.scope ?? { kind: "tool", value: "computer_read_file" },
+      subject: asked.subject,
+      grantedBy: OWNER,
+    });
+    expect(await wholeRead()).toBe("went through");
+    expect(computer.asked).toEqual(["fileBytes uploads/a.csv"]);
+  });
+});

@@ -258,6 +258,7 @@ describe("the line to the company hub", () => {
     });
     let asked = 0;
     const counting: HubHttp = {
+      upload: (request) => real.upload(request),
       request: (request) => {
         asked += 1;
         return real.request(request);
@@ -293,6 +294,7 @@ describe("the line to the company hub", () => {
     });
     const asked: string[] = [];
     const counting: HubHttp = {
+      upload: (request) => real.upload(request),
       request: (request) => {
         asked.push(request.path);
         return real.request(request);
@@ -329,6 +331,7 @@ describe("the line to the company hub", () => {
     });
     const asked: number[] = [];
     const counting: HubHttp = {
+      upload: (request) => real.upload(request),
       request: (request) => {
         // `/me` only: each attempt starts with one. `/sync` is the poll between.
         if (request.path === "/me") asked.push(Date.now());
@@ -380,6 +383,7 @@ describe("the line to the company hub", () => {
       sleep: async () => {},
     });
     const counting: HubHttp = {
+      upload: (request) => real.upload(request),
       request: (request) => {
         asked += 1;
         return real.request(request);

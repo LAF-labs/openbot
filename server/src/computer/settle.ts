@@ -111,6 +111,14 @@ export type SettleInput = {
    * action and said yes.
    */
   highRisk?: (() => Promise<HighRiskVerdict>) | undefined;
+  /**
+   * NOBODY CAN BE ASKED ABOUT THIS ONE: where a question would be opened, the action is refused
+   * with `laf:would_ask` and none is opened. For work this server does outside a turn's tool call
+   * — the company hub's upload reading a file (`gateway/acts.ts`, `readWholeFile`) — which no
+   * answer could carry on: opened anyway, the question buzzed the person and drew a card whose yes
+   * did nothing. Everything that passes an action without a person still passes it.
+   */
+  askNobody?: boolean | undefined;
 };
 
 export type SettleDeps = {
@@ -318,6 +326,7 @@ export async function settle(
   // the task go with the scope: "for this conversation" and "for this task" are kinds of
   // allowance and off with the rest — and off for a high-risk submission, which no allowance passes.
   const wider = mayStand && !escalated;
+  if (input.askNobody) return { outcome: "refused", code: "laf:would_ask" };
   const approval = await deps.approvals.request({
     botId: input.botId,
     actor: input.actorId,
@@ -383,6 +392,7 @@ async function settleAllowed(
       declinedRecently: true,
     };
   }
+  if (input.askNobody) return { outcome: "refused", code: "laf:would_ask" };
   const approval = await deps.approvals.request({
     botId: input.botId,
     actor: input.actorId,

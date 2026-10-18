@@ -3285,6 +3285,27 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `server` by two more (to 4883 on top of 4881): a write meeting a refused pass is said as that,
  * not as kept — with no row when it was known before (hub-tools.test.ts), the row waiting when the
  * hub's 401 came during the write (hub-tools.integration.test.ts).
+ *
+ * RAISED 2026-10-17 FOR 라피'S UPLOAD TO THE TEAM'S FILES: `server` by twenty-one (to 4796) — the
+ * words read out of a sheet, a PDF, a CSV and plain text, the multipart body, the scope a run's
+ * read is refused by, the reference a row holds and what an attempt says when the file changed or
+ * went, a person's stream, and the hub's answers to an upload (hub-upload.test.ts, 16); and the
+ * upload through the outbox on a real Postgres — sent at once, kept through an outage and sent once
+ * after, a file written over before the retry, a missing file, a computer away while a message
+ * behind it still goes (hub-upload.integration.test.ts, 5). 4775 and 21.
+ *
+ * RAISED 2026-10-18 FOR BUGBOT'S READ OF THE UPLOAD: `server` by two (to 4904) — a name the team
+ * sees with no ending still sends the file's words (hub-upload.test.ts, 1); and a read nobody can be
+ * asked about is refused with no question opened, an allowance still passing it
+ * (gateway-file-acts-off-the-page.test.ts, 1). 4902 and 2. On top of main, whose own floor had
+ * become 4961: 4961 and 23, to 4984. Then `server` by one more (to 4985): an upload still on its
+ * way when the write's wait ends is said as on its way, the Bot not held behind it, and the row
+ * ends delivered when the hub answers (hub-upload.integration.test.ts). Then by five more (to
+ * 4990): a hub with no file space ends the upload with its own fact and the writes behind it go; a
+ * busy hub keeps the row, says it is on its way, and the next upload goes; a room post written
+ * while an upload is out goes at once and a second upload is said as on its way; an upload written
+ * after its lane last looked goes in the same sweep (hub-upload.integration.test.ts, 4); and a
+ * UTF-8 text file cut inside a character is read as UTF-8 (hub-upload.test.ts, 1).
  */
 const GROUPS: readonly {
   name: string;
@@ -3312,7 +3333,7 @@ const GROUPS: readonly {
    * `hub-tools.integration.test.ts` — the hub's answer held past the write's wait and then a 404,
    * and the Bot is told the 404, not "kept". 4960 and 1.
    */
-  { name: "server", floor: 4961, roots: ["server"] },
+  { name: "server", floor: 4990, roots: ["server"] },
   { name: "app", floor: 2570, roots: ["app"] },
   {
     name: "agent-computer",

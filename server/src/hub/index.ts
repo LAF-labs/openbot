@@ -11,13 +11,26 @@ import type { Database } from "../db/client";
 import { createHubHttp, type HubHttp } from "./http";
 import { createHubLink, type HubFrame, type HubLink } from "./link";
 import { createHubOutbox, type HubOutbox } from "./outbox";
+import {
+  createHubUploads,
+  type HubUploadDeps,
+  type HubUploads,
+} from "./upload";
 
-export type HubRuntime = { http: HubHttp; link: HubLink; outbox: HubOutbox };
+export type HubRuntime = {
+  http: HubHttp;
+  link: HubLink;
+  outbox: HubOutbox;
+  /** Absent where there is no computer to read the Bot's folder from. */
+  uploads?: HubUploads;
+};
 
 export function createHubRuntime(input: {
   config: NonNullable<DeploymentConfig["hub"]>;
   database: Database;
   deliver: (frame: HubFrame) => void;
+  /** The Bot's folder and the converter, for uploads (`upload.ts`). */
+  files?: Omit<HubUploadDeps, "http" | "outbox">;
 }): HubRuntime {
   const http = createHubHttp({
     url: input.config.url,
@@ -26,6 +39,8 @@ export function createHubRuntime(input: {
   });
   // The two refer to each other; the outbox is reached through this binding once both exist.
   let outbox: HubOutbox | undefined;
+  // And the uploads and the outbox: a row is written by the one and sent by the other.
+  let uploads: HubUploads | undefined;
   const link = createHubLink({
     database: input.database,
     http,
@@ -38,6 +53,15 @@ export function createHubRuntime(input: {
     http,
     paused: () => link.status().state === "refused",
     onPassRefused: () => link.passRefused("outbox"),
+    ...(input.files
+      ? {
+          sendUpload: (reference, request) =>
+            (uploads as HubUploads).sendReference(reference, request),
+        }
+      : {}),
   });
-  return { http, link, outbox };
+  uploads = input.files
+    ? createHubUploads({ ...input.files, http, outbox })
+    : undefined;
+  return { http, link, outbox, ...(uploads ? { uploads } : {}) };
 }

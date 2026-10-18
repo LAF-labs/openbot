@@ -52,6 +52,11 @@ import type { DrawnOn, VendorTransport } from "../plugins/transport";
 import type { HubHttp } from "./http";
 import type { HubOutbox, HubOutboxWrite } from "./outbox";
 import {
+  type HubUploadActor,
+  HubUploadRefused,
+  type HubUploads,
+} from "./upload";
+import {
   HUB_TOOL_PATHS,
   memoryProposalBody,
   readFileText,
@@ -78,7 +83,12 @@ export const HUB_READ_KINDS = [
   "memory",
   "members",
 ] as const;
-export const HUB_WRITE_KINDS = ["post", "propose_memory", "skill"] as const;
+export const HUB_WRITE_KINDS = [
+  "post",
+  "propose_memory",
+  "skill",
+  "upload",
+] as const;
 type ReadKind = (typeof HUB_READ_KINDS)[number];
 type WriteKind = (typeof HUB_WRITE_KINDS)[number];
 
@@ -136,7 +146,7 @@ export const HUB_TOOLS: readonly PartnerToolSpec[] = Object.freeze([
   },
   {
     name: "write",
-    description: `이 사람의 회사에 쓴다. kind post: 단체방(room)에 글(text)을 이 사람의 라피로서 올린다 — 팀원을 부르려면 members의 id를 mentions에 넣는다. kind propose_memory: 팀이 기억할 사실 한 줄(content)을 올린다 — 팀의 관리자가 확인해야 팀 기억이 되고, evidence에는 그 근거가 된 이 사람의 말을 그대로 넣는다. kind skill: 이 사람의 스킬을 팀 스킬로 올린다(id, title, summary, instructions). 회사 서버에 닿지 않으면 이 컴퓨터에 두었다가 다시 이어질 때 보낸다.`,
+    description: `이 사람의 회사에 쓴다. kind post: 단체방(room)에 글(text)을 이 사람의 라피로서 올린다 — 팀원을 부르려면 members의 id를 mentions에 넣는다. kind propose_memory: 팀이 기억할 사실 한 줄(content)을 올린다 — 팀의 관리자가 확인해야 팀 기억이 되고, evidence에는 그 근거가 된 이 사람의 말을 그대로 넣는다. kind skill: 이 사람의 스킬을 팀 스킬로 올린다(id, title, summary, instructions). kind upload: 너의 폴더에 있는 파일(path)을 팀 파일로 올린다 — folder는 팀 폴더(/로 시작, 없으면 맨 위), name은 팀에서 보일 이름(없으면 파일 이름). 표·PDF·글 파일은 속의 글도 함께 올라가 팀 search에 걸린다. 회사 서버에 닿지 않으면 이 컴퓨터에 두었다가 다시 이어질 때 보낸다.`,
     inputSchema: {
       type: "object",
       properties: {
@@ -144,7 +154,7 @@ export const HUB_TOOLS: readonly PartnerToolSpec[] = Object.freeze([
           type: "string",
           enum: [...HUB_WRITE_KINDS],
           description:
-            "post 단체방에 글, propose_memory 팀 기억 제안, skill 팀 스킬 올리기",
+            "post 단체방에 글, propose_memory 팀 기억 제안, skill 팀 스킬 올리기, upload 파일 올리기",
         },
         room: {
           type: "string",
@@ -171,6 +181,16 @@ export const HUB_TOOLS: readonly PartnerToolSpec[] = Object.freeze([
         title: { type: "string", description: "skill의 이름" },
         summary: { type: "string", description: "skill이 무엇인지 한 줄" },
         instructions: { type: "string", description: "skill의 본문" },
+        path: {
+          type: "string",
+          description:
+            "upload할 파일: 너의 폴더 안의 경로, 파일 도구가 준 그대로",
+        },
+        folder: {
+          type: "string",
+          description: "upload할 팀 폴더, 예: /영업/2026",
+        },
+        name: { type: "string", description: "upload한 파일의 팀에서의 이름" },
       },
       required: ["kind"],
       additionalProperties: false,
@@ -189,6 +209,11 @@ export type HubToolRuntime = {
   /** Told when a read meets a refused pass, so the line says so once and stops (`link.ts`). */
   onPassRefused?: () => void;
   sleep?: (milliseconds: number) => Promise<void>;
+  /**
+   * Files into the team's files (`upload.ts`). Absent on a VM with no computer to read the Bot's
+   * folder from: an upload is then refused as the computer being out of reach.
+   */
+  uploads?: HubUploads;
 };
 
 /** A refusal the Bot reads as Korean (`shared/prompt/tool-results.ko.ts`). */
@@ -199,6 +224,8 @@ function refuse(code: string): never {
 const ARGUMENTS_INVALID = "laf:tool_arguments_invalid";
 const HUB_UNREADABLE = "laf:hub_unreadable";
 const HUB_QUEUED = "laf:hub_queued";
+/** An upload whose attempt is still on its way when the write's wait ends. */
+export const HUB_UPLOAD_SENDING = "laf:hub_upload_sending";
 export const MEMORY_NOT_PROPOSED = "laf:memory_not_proposed";
 
 const text = (args: Record<string, unknown>, name: string): string | null => {
@@ -265,6 +292,14 @@ export function checkHubArgs(
       if (needed(args, "instructions").length > HUB_SKILL_LIMITS.instructions) {
         refuse(ARGUMENTS_INVALID);
       }
+    }
+    if (kind === "upload") {
+      needed(args, "path");
+      // The hub's own reading of a folder, the part that can be known here: absolute.
+      const folder = text(args, "folder");
+      if (folder !== null && !folder.startsWith("/")) refuse(ARGUMENTS_INVALID);
+      const name = text(args, "name");
+      if (name !== null && /[/\\]/.test(name)) refuse(ARGUMENTS_INVALID);
     }
     return;
   }
@@ -514,37 +549,121 @@ export function createHubToolTransport(
     write: HubOutboxWrite,
   ): Promise<McpCallResult> {
     if (runtime.passRefused?.()) refuse(HUB_FACTS.passRefused);
-    const id = await runtime.outbox.enqueue(write);
-    await Promise.race([runtime.outbox.sweep(), sleep(HUB_WRITE_WAIT_MS)]);
-    // FOR UPDATE: an attempt still on its way holds this row's lock for its one request, and read
-    // past it the row looks unsent — the Bot would be told "kept" and then the hub might refuse it.
-    // Waiting for that lock waits out the attempt, which the hub client bounds at five seconds, and
-    // the Bot gets the hub's answer. In a transaction, so that wait sits on a connection of its own
-    // (`db/client.ts`) and not on one the plain queries share.
-    const [row] = await runtime.database.transaction((tx) =>
-      tx
-        .select({
-          deliveredAt: hubOutbox.deliveredAt,
-          refusedAt: hubOutbox.refusedAt,
-          lastCode: hubOutbox.lastCode,
-        })
+    return settle(kind, await runtime.outbox.enqueue(write));
+  }
+
+  /**
+   * A row already written — by `send`, or by `upload.ts` for a file — and whether the hub took it.
+   */
+  async function settle(kind: WriteKind, id: string): Promise<McpCallResult> {
+    const sending = () =>
+      resultOf({
+        kind,
+        sent: false,
+        sending: true,
+        note: toolResultText(HUB_UPLOAD_SENDING),
+      });
+    await Promise.race([
+      runtime.outbox.sweep(kind === "upload" ? "uploads" : "writes"),
+      sleep(HUB_WRITE_WAIT_MS),
+    ]);
+    const columns = {
+      deliveredAt: hubOutbox.deliveredAt,
+      refusedAt: hubOutbox.refusedAt,
+      lastCode: hubOutbox.lastCode,
+    };
+    let row:
+      | {
+          deliveredAt: Date | null;
+          refusedAt: Date | null;
+          lastCode: string | null;
+        }
+      | undefined;
+    if (kind === "upload") {
+      // Not waited for: an upload's attempt is bounded by the file, not by five seconds
+      // (`http.ts`, half an hour on a slow line), and the Bot's turn must not stand behind it.
+      // Held by an attempt, the row is said as on its way with no answer yet — neither kept nor
+      // sent, since the hub may still refuse it.
+      [row] = await runtime.database
+        .select(columns)
         .from(hubOutbox)
         .where(eq(hubOutbox.id, id))
-        .for("update"),
-    );
+        .for("update", { skipLocked: true });
+      if (!row) {
+        // Skipped, or answered between the two reads: the row as it stands now says which.
+        [row] = await runtime.database
+          .select(columns)
+          .from(hubOutbox)
+          .where(eq(hubOutbox.id, id));
+        if (row && !row.deliveredAt && !row.refusedAt) return sending();
+      }
+    } else {
+      // FOR UPDATE: an attempt still on its way holds this row's lock for its one request, and read
+      // past it the row looks unsent — the Bot would be told "kept" and then the hub might refuse
+      // it. Waiting for that lock waits out the attempt, which the hub client bounds at five
+      // seconds, and the Bot gets the hub's answer. In a transaction, so that wait sits on a
+      // connection of its own (`db/client.ts`) and not on one the plain queries share.
+      [row] = await runtime.database.transaction((tx) =>
+        tx
+          .select(columns)
+          .from(hubOutbox)
+          .where(eq(hubOutbox.id, id))
+          .for("update"),
+      );
+    }
     if (row?.refusedAt) refuse(row.lastCode ?? HUB_FACTS.forbidden);
     if (row?.deliveredAt) return resultOf({ kind, sent: true });
     // Met just now: the outbox keeps the row (a 401 ends nothing) and has told the line.
     if (row?.lastCode === HUB_FACTS.passRefused || runtime.passRefused?.()) {
       refuse(HUB_FACTS.passRefused);
     }
+    // An upload kept for anything but the hub being away — behind another upload in its lane, a
+    // hub that asked for it again, its computer for a moment — is on its way, not "unreachable".
+    if (kind === "upload" && row && row.lastCode !== HUB_FACTS.unreachable) {
+      return sending();
+    }
     return resultOf({ kind, sent: false, note: toolResultText(HUB_QUEUED) });
+  }
+
+  /**
+   * A file from the Bot's folder: its read judged by the gateway under the run's scope, then a row
+   * that holds where it is and which bytes were judged (`upload.ts`). The write itself was judged
+   * before this, as every hub write is (`plugins/call.ts`).
+   */
+  async function upload(
+    args: Record<string, unknown>,
+    origin: HubOutboxWrite["origin"],
+    caller: { botId?: string; actor: HubUploadActor | null },
+  ): Promise<McpCallResult> {
+    if (!runtime.uploads || !caller.botId || !caller.actor) {
+      return refuse("laf:computer_unreachable");
+    }
+    if (runtime.passRefused?.()) refuse(HUB_FACTS.passRefused);
+    const name = text(args, "name");
+    const folder = text(args, "folder");
+    let queued: { queued: string } | { answer: unknown };
+    try {
+      queued = await runtime.uploads.uploadToHub({
+        path: needed(args, "path"),
+        botId: caller.botId,
+        actor: caller.actor,
+        ...(name ? { name } : {}),
+        ...(folder ? { folder } : {}),
+        origin,
+        ...(caller.actor.runId ? { runId: caller.actor.runId } : {}),
+      });
+    } catch (error) {
+      if (error instanceof HubUploadRefused) refuse(error.code);
+      throw error;
+    }
+    if (!("queued" in queued)) return refuse(ARGUMENTS_INVALID);
+    return settle("upload", queued.queued);
   }
 
   async function write(
     args: Record<string, unknown>,
     origin: "chat" | "job",
-    botId: string,
+    caller: { botId?: string; actor: HubUploadActor | null },
   ): Promise<McpCallResult> {
     const kind = args.kind as WriteKind;
     switch (kind) {
@@ -568,7 +687,7 @@ export function createHubToolTransport(
               text(args, "evidence") ?? "",
               HUB_MEMORY_EXCERPT_MAX,
             ),
-            from: { kind: origin, id: botId },
+            from: { kind: origin, id: caller.botId ?? BOT_UNNAMED },
           }),
           origin,
         });
@@ -583,6 +702,8 @@ export function createHubToolTransport(
           }),
           origin,
         });
+      case "upload":
+        return upload(args, origin, caller);
     }
     return refuse(ARGUMENTS_INVALID);
   }
@@ -601,9 +722,17 @@ export function createHubToolTransport(
       // transport is a door of its own and refuses what it was never meant to send.
       checkHubArgs(toolName, args);
       const origin = originOf(connection.drawnOn);
-      return toolName === "read"
-        ? read(args, origin)
-        : write(args, origin, connection.botId ?? BOT_UNNAMED);
+      if (toolName === "read") return read(args, origin);
+      return write(args, origin, {
+        ...(connection.botId ? { botId: connection.botId } : {}),
+        actor: connection.actorId
+          ? {
+              id: connection.actorId,
+              ...(connection.threadId ? { threadId: connection.threadId } : {}),
+              ...(connection.runId ? { runId: connection.runId } : {}),
+            }
+          : null,
+      });
     },
   };
 }
