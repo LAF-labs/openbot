@@ -3286,8 +3286,6 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * not as kept — with no row when it was known before (hub-tools.test.ts), the row waiting when the
  * hub's 401 came during the write (hub-tools.integration.test.ts).
  *
- * the hub, and no hub tool without the pass (hub-tools-head.test.ts, 3). 4747 and 28.
- *
  * RAISED 2026-10-17 FOR 라피 TAKING THE TASKS GIVEN TO IT: `server` by twenty-one (to 4796) — the
  * pickup against an in-memory board that keeps the hub's claim rules (hub-task-pickup.test.ts, 16:
  * taken, run once and moved with its note; blocked on a yes; not somebody else's; two VMs racing;
@@ -3327,8 +3325,11 @@ const GROUPS: readonly {
    * RAISED 2026-10-18 FOR A WRITE WHOSE ANSWER IS STILL ON ITS WAY, from 4960 to 4961: one in
    * `hub-tools.integration.test.ts` — the hub's answer held past the write's wait and then a 404,
    * and the Bot is told the 404, not "kept". 4960 and 1.
+   *
+   * RAISED 2026-10-18 FOR 라피 TAKING THE TASKS GIVEN TO IT, from 4961 to 4984: the task pickup's
+   * twenty-three (21 and its Bugbot round's 2, noted above the list). 4961 and 23.
    */
-  { name: "server", floor: 4961, roots: ["server"] },
+  { name: "server", floor: 4984, roots: ["server"] },
   { name: "app", floor: 2570, roots: ["app"] },
   {
     name: "agent-computer",
