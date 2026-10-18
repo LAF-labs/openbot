@@ -16,6 +16,7 @@ import {
   HUB_HEADERS,
   HUB_PREFIX,
 } from "../../../shared/hub/protocol";
+import { HUB_TASK_NOT_YOURS } from "./wire";
 
 export type HubAnswer<T> =
   | { ok: true; status: number; body: T }
@@ -90,13 +91,23 @@ export type HubHttpOptions = {
   sleep?: (milliseconds: number) => Promise<void>;
 };
 
+/**
+ * The 403s this VM acts on by their own name. Every other 403 is `laf:hub_forbidden`: a refusal the
+ * VM has no different answer for, which is what a caller that only knows the facts can read.
+ */
+const NAMED_FORBIDDEN: ReadonlySet<string> = new Set([HUB_TASK_NOT_YOURS]);
+
 /** What a status the hub answered with says, as a fact. */
 export function factOfStatus(status: number, body: unknown): string {
+  const code = (body as { code?: unknown } | null)?.code;
   if (status === 401) return HUB_FACTS.passRefused;
-  if (status === 403) return HUB_FACTS.forbidden;
+  if (status === 403) {
+    return typeof code === "string" && NAMED_FORBIDDEN.has(code)
+      ? code
+      : HUB_FACTS.forbidden;
+  }
   if (status === 404) return HUB_FACTS.notFound;
   if (status >= 500) return HUB_FACTS.unreachable;
-  const code = (body as { code?: unknown } | null)?.code;
   return typeof code === "string" && code.startsWith("laf:")
     ? code
     : HUB_FACTS.forbidden;

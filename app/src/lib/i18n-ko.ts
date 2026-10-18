@@ -2557,6 +2557,8 @@ export const ko: Record<string, string> = {
     "이 일감에서만 허용했어요. 업무판의 할 일로 돌아가서 다시 시작해요.",
   "Allowed for this task. It was already moved on the board, so it stays where it is.":
     "이 일감에서만 허용했어요. 업무판에서 이미 옮겨져 있어서 그대로 두었어요.",
+  "Allowed for this task. On the board it now waits for another member's OK, so it stays where it is.":
+    "이 일감에서만 허용했어요. 업무판에서는 지금 다른 사람의 허락을 기다리고 있어서 그대로 두었어요.",
   "Allowed for this task. The board could not be reached, so move it back to to-do there.":
     "이 일감에서만 허용했어요. 업무판에 닿지 못했으니 거기서 할 일로 옮겨 주세요.",
   "Nothing in this task is waiting for your OK any more.":

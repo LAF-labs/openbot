@@ -39,7 +39,7 @@ export function boardTaskAllowanceQueryOptions(taskId: string) {
 export type BoardTaskAllowed = {
   ok: true;
   topic: string;
-  board: "queued" | "not_blocked" | "unreachable";
+  board: "queued" | "not_blocked" | "not_yours" | "unreachable";
 };
 
 export async function allowBoardTask(
@@ -89,6 +89,10 @@ export function allowedLine(board: BoardTaskAllowed["board"]): string {
     case "not_blocked":
       return t(
         "Allowed for this task. It was already moved on the board, so it stays where it is.",
+      );
+    case "not_yours":
+      return t(
+        "Allowed for this task. On the board it now waits for another member's OK, so it stays where it is.",
       );
     default:
       return t(

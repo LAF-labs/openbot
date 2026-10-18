@@ -41,6 +41,7 @@ describe("a board task's conversation", () => {
   test("after the press, says what became of the board", () => {
     expect(allowedLine("queued")).toContain("goes back to the board");
     expect(allowedLine("not_blocked")).toContain("already moved");
+    expect(allowedLine("not_yours")).toContain("another member's OK");
     expect(allowedLine("unreachable")).toContain("could not be reached");
   });
 

@@ -81,6 +81,23 @@ describe("the hub's HTTP door", () => {
     expect(waits).toEqual([]);
   });
 
+  test("a 403 keeps its own name only where this VM acts on it", async () => {
+    const { http } = harness([
+      json(403, { ok: false, code: "laf:task_not_yours" }),
+      json(403, { ok: false, code: "laf:task_done_by_person" }),
+    ]);
+    expect(await http.request({ path: "/tasks/t1/approvals" })).toEqual({
+      ok: false,
+      status: 403,
+      code: "laf:task_not_yours",
+    });
+    expect(await http.request({ path: "/tasks/t1" })).toEqual({
+      ok: false,
+      status: 403,
+      code: "laf:hub_forbidden",
+    });
+  });
+
   test("another 4xx keeps the hub's own code and is not retried", async () => {
     const { http, calls } = harness([
       json(400, { ok: false, code: "laf:request_invalid" }),

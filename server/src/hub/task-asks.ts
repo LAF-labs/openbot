@@ -36,6 +36,7 @@ import { taskThreadOf } from "./task-run";
 import {
   HUB_TASK_APPROVAL_PATH,
   HUB_TASK_NOT_BLOCKED,
+  HUB_TASK_NOT_YOURS,
   taskApprovalBody,
 } from "./wire";
 
@@ -141,6 +142,8 @@ export const TASK_ALLOW_CODES = {
   notYours: "laf:task_not_yours",
 } as const;
 
+type BoardOutcome = "queued" | "not_blocked" | "not_yours" | "unreachable";
+
 export type AllowTaskResult =
   | {
       ok: true;
@@ -148,10 +151,11 @@ export type AllowTaskResult =
       allowance: string;
       /**
        * What became of the board: the task back in `todo`, or that move on its way through the
-       * outbox (`queued`); a task a person had already moved (`not_blocked`); or a board that did
-       * not take it and will not (`unreachable`: no hub, or the hub refused it).
+       * outbox (`queued`); a task a person had already moved (`not_blocked`); a task blocked since
+       * by another member's 라피, whose yes it waits for now (`not_yours`); or a board that did not
+       * take it and will not (`unreachable`: no hub, or the hub refused it).
        */
-      board: "queued" | "not_blocked" | "unreachable";
+      board: BoardOutcome;
     }
   | { ok: false; code: string };
 
@@ -237,7 +241,7 @@ async function tellTheBoard(
   hub: { http: HubHttp; outbox: Pick<HubOutbox, "enqueue"> },
   taskId: string,
   topic: string,
-): Promise<"queued" | "not_blocked" | "unreachable"> {
+): Promise<BoardOutcome> {
   try {
     const request = {
       method: "POST" as const,
@@ -251,6 +255,7 @@ async function tellTheBoard(
     });
     if (answer.ok) return "queued";
     if (answer.code === HUB_TASK_NOT_BLOCKED) return "not_blocked";
+    if (answer.code === HUB_TASK_NOT_YOURS) return "not_yours";
     if (answer.code === HUB_FACTS.unreachable) {
       await hub.outbox.enqueue(request);
       return "queued";

@@ -610,6 +610,38 @@ describe("a board task stopped for a yes, and the yes for that task only", () =>
     expect(hub.tasks.get(away)?.stage).toBe("todo");
   });
 
+  test("a task another member's 라피 blocked since is said as such, and not sent again", async () => {
+    const who = await person();
+    const hub = fakeTaskHub();
+    const http = hub.as(ME);
+    const outbox = directOutbox(http);
+    const id = taskId();
+    hub.add({
+      id,
+      assignee: "bot:m_other",
+      stage: "blocked",
+      blockedBy: "m_other",
+    });
+    await asks.record({
+      taskId: id,
+      runId: randomUUID(),
+      botId: who.botId,
+      rule: RULE,
+      scope: SCOPE,
+      subject: ORDER,
+      topic: "browser/activate@shop.example.test",
+    });
+    expect(
+      await allowForTask(
+        { database, asks, standing, hub: { http, outbox } },
+        who.actor,
+        id,
+      ),
+    ).toMatchObject({ ok: true, board: "not_yours" });
+    expect(hub.tasks.get(id)?.stage).toBe("blocked");
+    expect(outbox.sent).toEqual([]);
+  });
+
   test("somebody who does not own the Bot cannot say yes for it", async () => {
     const who = await person();
     const other = await person();

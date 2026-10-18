@@ -120,7 +120,7 @@ export function fakeTaskHub() {
           return no(400, "laf:request_invalid");
         }
         if (task.stage !== "blocked") return no(409, "laf:task_not_blocked");
-        if (task.blockedBy !== as) return no(403, "laf:hub_forbidden");
+        if (task.blockedBy !== as) return no(403, "laf:task_not_yours");
         task.stage = "todo";
         task.blockedBy = null;
         task.version += 1;

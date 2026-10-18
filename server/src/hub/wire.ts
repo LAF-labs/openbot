@@ -573,3 +573,10 @@ export const taskApprovalBody = (input: { topic: string }) => ({
 
 /** The hub's answer when the task is no longer waiting on a yes. */
 export const HUB_TASK_NOT_BLOCKED = "laf:task_not_blocked";
+
+/**
+ * The hub's 403 when the yes is not this member's to give: the task was blocked by another member's
+ * 라피 run since (#267's `HUB_TASK_FACTS.notYours`). Kept by name through `http.ts`, which reads any
+ * other 403 as `laf:hub_forbidden`.
+ */
+export const HUB_TASK_NOT_YOURS = "laf:task_not_yours";
