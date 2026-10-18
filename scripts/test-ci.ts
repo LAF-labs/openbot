@@ -3396,7 +3396,12 @@ const GROUPS: readonly {
    * 2 (a change of origins ending the unopened leases on the dropped one, so it neither opens nor
    * holds the login; an open refused for a lease whose origin the login no longer lists).
    */
-  { name: "hub", floor: 247, roots: ["hub"] },
+  /*
+   * RAISED 2026-10-18 FOR A LOGIN TURNED ONE-VM-AT-A-TIME, from 247 to 250: vault.test.ts 3 (turning
+   * `concurrent` off keeping the lease opened first and ending the others; with none opened, keeping
+   * the lease taken first; an open waiting for a change of the login's rules under way).
+   */
+  { name: "hub", floor: 250, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

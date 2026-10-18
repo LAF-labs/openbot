@@ -441,6 +441,111 @@ describe("leasing and opening", () => {
     expect(row?.openedAt).toBeNull();
   });
 
+  test("turning concurrent off keeps the lease opened first and ends the others", async () => {
+    await store("flip-1", { concurrent: true });
+    await grant("flip-1", ["a", "b", "c"]);
+    const forA = await lease("a", "flip-1");
+    const forC = await lease("c", "flip-1");
+    expect([forA.status, forC.status]).toEqual([200, 200]);
+    const openedA = await call("a", "POST", "/flip-1/open", {
+      lease: leaseOf(forA),
+    });
+    expect(openedA.status).toBe(200);
+    expect(
+      (
+        await call("admin", "PUT", "/flip-1", {
+          label: "Wing flip-1",
+          origins: [SITE],
+          concurrent: false,
+        })
+      ).status,
+    ).toBe(200);
+    // Status and code one by one: a diff of a body that held the values would print them.
+    const openedC = await call("c", "POST", "/flip-1/open", {
+      lease: leaseOf(forC),
+    });
+    expect(openedC.status).toBe(409);
+    expect(openedC.body.code).toBe("laf:vault_lease_invalid");
+    expect(JSON.stringify(openedC.body).includes(PASSWORD)).toBe(false);
+    const renewC = await call("c", "POST", "/flip-1/lease", {
+      origin: SITE,
+      lease: leaseOf(forC),
+    });
+    expect(renewC.status).toBe(409);
+    const left = await hub.database
+      .select({
+        memberId: hubVaultLeases.memberId,
+        exclusive: hubVaultLeases.exclusive,
+      })
+      .from(hubVaultLeases)
+      .where(eq(hubVaultLeases.loginId, "flip-1"));
+    expect(left).toEqual([{ memberId: ids.a, exclusive: true }]);
+    const third = await lease("b", "flip-1");
+    expect(third.status).toBe(409);
+    expect(third.body.code).toBe("laf:vault_busy");
+    expect((third.body.busy as { member: string }).member).toBe(ids.a);
+  });
+
+  test("turning concurrent off with nothing opened keeps the lease taken first", async () => {
+    await store("flip-2", { concurrent: true });
+    await grant("flip-2", ["a", "c"]);
+    const forA = await lease("a", "flip-2");
+    offsetMs = 1_000;
+    try {
+      const forC = await lease("c", "flip-2");
+      expect([forA.status, forC.status]).toEqual([200, 200]);
+      expect(
+        (
+          await call("admin", "PUT", "/flip-2", {
+            label: "Wing flip-2",
+            origins: [SITE],
+            concurrent: false,
+          })
+        ).status,
+      ).toBe(200);
+      const openedC = await call("c", "POST", "/flip-2/open", {
+        lease: leaseOf(forC),
+      });
+      expect(openedC.status).toBe(409);
+      expect(openedC.body.code).toBe("laf:vault_lease_invalid");
+      expect(JSON.stringify(openedC.body).includes(PASSWORD)).toBe(false);
+      const openedA = await call("a", "POST", "/flip-2/open", {
+        lease: leaseOf(forA),
+      });
+      expect(openedA.status).toBe(200);
+      expect(openedA.body.password === PASSWORD).toBe(true);
+    } finally {
+      offsetMs = 0;
+    }
+  });
+
+  test("an open waits for a change of the login's rules that is under way", async () => {
+    await store("lock-1");
+    await grant("lock-1", ["a"]);
+    const held = await lease("a", "lock-1");
+    expect(held.status).toBe(200);
+    let opening: ReturnType<typeof call> | undefined;
+    // What `PUT grants` does when it takes a member off, with the open asked in the middle of it.
+    await hub.database.transaction(async (tx) => {
+      await tx
+        .select({ id: hubVaultLogins.id })
+        .from(hubVaultLogins)
+        .where(eq(hubVaultLogins.id, "lock-1"))
+        .for("update");
+      opening = call("a", "POST", "/lock-1/open", { lease: leaseOf(held) });
+      await Bun.sleep(300);
+      await tx
+        .delete(hubVaultGrants)
+        .where(eq(hubVaultGrants.loginId, "lock-1"));
+      await tx
+        .delete(hubVaultLeases)
+        .where(eq(hubVaultLeases.loginId, "lock-1"));
+    });
+    const opened = await (opening as ReturnType<typeof call>);
+    expect(opened.status).toBe(403);
+    expect(JSON.stringify(opened.body).includes(PASSWORD)).toBe(false);
+  });
+
   test("a verified VM is counted, and only the caller's own VM can be named", async () => {
     await store("device-1");
     await grant("device-1", ["a", "c"]);
