@@ -325,6 +325,10 @@ export function createActs(deps: {
      * server does on the whole of a file outside the computer — the company hub's upload
      * (`hub/upload.ts`) — so a file no rule would let the Bot read is not taken out another way.
      * Answers the path as judged, which is the one the bytes came from.
+     *
+     * NEVER A QUESTION. Nothing waits on one here — the upload's tool call is not a gateway call
+     * the turn could carry on with an answer — so a rule that asks refuses it (`laf:would_ask`)
+     * instead of buzzing the person about a card whose yes would do nothing.
      */
     async readWholeFile(
       computerId: string,
@@ -338,7 +342,7 @@ export function createActs(deps: {
         "computer_read_file",
         botId,
         actor,
-        { filePath: input.path },
+        { filePath: input.path, askNobody: true },
         (_judged, judgedPath) => {
           path = judgedPath ?? input.path;
           return as(computerId, botId).fileBytes(path);

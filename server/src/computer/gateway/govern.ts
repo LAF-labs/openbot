@@ -220,6 +220,8 @@ export function createGovern(options: {
        * being made that means anything.
        */
       approvalId?: string;
+      /** Nobody can be asked about this act: a question it would open refuses it (`settle.ts`). */
+      askNobody?: boolean;
     },
     /**
      * The action itself, handed the role and name the policy judged the ref as — from this server's
@@ -737,6 +739,7 @@ export function createGovern(options: {
           : {}),
         ...(actor.runId ? { runId: actor.runId } : {}),
         policyVerdict: decision,
+        ...(subject.askNobody ? { askNobody: true } : {}),
         ...(gate && riskFacts
           ? {
               highRisk: () =>

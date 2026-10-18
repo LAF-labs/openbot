@@ -350,7 +350,13 @@ export type FactCode =
    * for a path a Bot may not name, said here before anything is sent, because no rule can be
    * asked about a path with two readings.
    */
-  | "laf:file_path_refused";
+  | "laf:file_path_refused"
+  /**
+   * A rule asks a person about this, and the act is one nobody can be asked about: work this
+   * server does outside a turn's tool call, whose answer nothing would carry on (`settle.ts`,
+   * `askNobody`). Refused, and no question opened.
+   */
+  | "laf:would_ask";
 
 /**
  * String helpers, registered as CEL globals.

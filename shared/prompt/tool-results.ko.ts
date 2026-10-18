@@ -467,6 +467,10 @@ export const TOOL_RESULT_KO: Record<string, string> = {
   "laf:declined_recently":
     "이 사람이 그것을 이미 거부했고, 그 답이 아직 유효하다. 다시 묻지 마라. 다른 일을 하거나, 거부하셔서 막혔다고 말해라.",
 
+  // 물어볼 수 없는 일에 묻는 규칙이 걸린 것(`server/src/computer/settle.ts`, askNobody). 질문은 열리지 않았다.
+  "laf:would_ask":
+    "그 일은 먼저 물어보는 규칙이 있는데, 이 방법으로는 물어볼 수 없어 하지 않았다. 같은 것을 다시 부르지 말고, 직접 해 달라고 말해라.",
+
   "laf:use_request_secret":
     "비밀번호 칸이라 네가 값을 넣을 수 없다. 값을 어디서든 알아내려 하지 말고, computer_request_secret으로 이 사람이 직접 입력하게 해라.",
 
