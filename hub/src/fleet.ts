@@ -18,6 +18,7 @@ import { hubMembers, hubWorkspace } from "./db/schema";
 import { emitEvent, type Listeners } from "./events";
 import { type Answer, IDEMPOTENCY_KEY_SHAPE, onceFor } from "./idempotency";
 import { leaveEveryRoom } from "./rooms";
+import { leaveEveryTask } from "./tasks";
 
 /**
  * The registry's door: laf-control tells the hub who its members are.
@@ -231,6 +232,7 @@ async function putMember(
       })
       .where(eq(hubMembers.id, existing.id));
     await leaveEveryRoom(tx, existing.id, FLEET_MEMBER);
+    await leaveEveryTask(tx, existing.id, FLEET_MEMBER);
     const seq = await emitEvent(tx, {
       type: "member.changed",
       refId: existing.id,

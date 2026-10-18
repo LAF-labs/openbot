@@ -37,12 +37,13 @@ const cho = {
 };
 let annId = "";
 let benId = "";
+let choId = "";
 
 beforeAll(async () => {
   hub = await startTestHub();
   annId = (await putMember(hub, ann)).id;
   benId = (await putMember(hub, ben)).id;
-  await putMember(hub, cho);
+  choId = (await putMember(hub, cho)).id;
 });
 afterAll(() => hub.stop());
 
@@ -177,6 +178,52 @@ describe("checkout", () => {
     const taken = await checkout(ben.pass, task.id, "run-alive");
     expect(taken.status).toBe(200);
     expect((await row(task.id)).checkout_run_id).toBe("run-alive");
+  });
+
+  test("a 라피's or a job's task is put in doing only by its run's checkout, never by a person's hand", async () => {
+    const made = await call(ann.pass, "POST", "/tasks", {
+      title: "By hand",
+      visibility: "company",
+      stage: "doing",
+      assignee: `bot:${benId}`,
+    });
+    expect(made.status).toBe(400);
+    expect(made.body.field).toBe("stage");
+    const job = await call(ann.pass, "POST", "/tasks", {
+      title: "A job's",
+      visibility: "company",
+      stage: "doing",
+      assignee: "job:nightly",
+    });
+    expect(job.body.field).toBe("stage");
+
+    const task = await newTask(ann.pass, { assignee: `bot:${benId}` });
+    const moved = await call(ann.pass, "PATCH", `/tasks/${task.id}`, {
+      version: task.version,
+      stage: "doing",
+    });
+    expect(moved.status).toBe(400);
+    expect(moved.body.field).toBe("stage");
+    expect((await row(task.id)).stage).toBe("todo");
+
+    // A person's own task in doing is that person at work, and giving it to a 라피 as it stands
+    // would leave it where no run takes it.
+    const own = await newTask(ann.pass, {
+      stage: "doing",
+      assignee: `m:${annId}`,
+    });
+    expect(own.stage).toBe("doing");
+    const handed = await call(ann.pass, "PATCH", `/tasks/${own.id}`, {
+      version: own.version,
+      assignee: `bot:${annId}`,
+    });
+    expect(handed.status).toBe(400);
+    expect(handed.body.field).toBe("stage");
+
+    // The way in that is left: its run takes it.
+    const taken = await checkout(ben.pass, task.id, "run-by-checkout");
+    expect(taken.status).toBe(200);
+    expect((taken.body.task as HubTask).stage).toBe("doing");
   });
 
   test("a checkout with no run id is refused before anything is written", async () => {
@@ -565,6 +612,84 @@ describe("visibility", () => {
     });
     expect(hidden.status).toBe(400);
     expect(hidden.body.field).toBe("assignee");
+  });
+});
+
+describe("who is on a task", () => {
+  test("on a members task, only its maker or an admin may give it to somebody not on it", async () => {
+    const task = await newTask(ann.pass, {
+      visibility: "members",
+      members: [benId],
+    });
+    const byViewer = await call(ben.pass, "PATCH", `/tasks/${task.id}`, {
+      version: task.version,
+      assignee: `m:${choId}`,
+    });
+    expect(byViewer.status).toBe(403);
+    expect((await call(cho.pass, "GET", `/tasks/${task.id}`)).status).toBe(404);
+    // Somebody already on it may be given it by anybody who sees it.
+    const toBen = await call(ben.pass, "PATCH", `/tasks/${task.id}`, {
+      version: task.version,
+      assignee: `bot:${benId}`,
+    });
+    expect(toBen.status).toBe(200);
+    const byMaker = await call(ann.pass, "PATCH", `/tasks/${task.id}`, {
+      version: (toBen.body.task as HubTask).version,
+      assignee: `m:${choId}`,
+    });
+    expect(byMaker.status).toBe(200);
+    expect((byMaker.body.task as HubTask).members.sort()).toEqual(
+      [annId, benId, choId].sort(),
+    );
+    expect((await call(cho.pass, "GET", `/tasks/${task.id}`)).status).toBe(200);
+  });
+
+  test("leaving the company takes them off every task; an edit does not put them back, nor does coming back", async () => {
+    const dee = {
+      email: "dee@example.com",
+      vmOrigin: "https://dee.example",
+      pass: newPass(),
+    };
+    const deeId = (await putMember(hub, dee)).id;
+    // One she made, and one she is given: an edit re-adds a maker and an assignee.
+    const hers = await newTask(dee.pass, {
+      visibility: "members",
+      members: [annId],
+    });
+    const given = await newTask(ann.pass, {
+      visibility: "members",
+      assignee: `m:${deeId}`,
+    });
+    expect(given.members.sort()).toEqual([annId, deeId].sort());
+
+    const since = await headSeq();
+    await putMember(hub, { ...dee, state: "left" });
+    for (const task of [hers, given]) {
+      const read = await call(ann.pass, "GET", `/tasks/${task.id}`);
+      expect((read.body.task as HubTask).members).toEqual([annId]);
+      const edited = await call(ann.pass, "PATCH", `/tasks/${task.id}`, {
+        version: (read.body.task as HubTask).version,
+        title: "Edited after she left",
+      });
+      expect(edited.status).toBe(200);
+      expect((edited.body.task as HubTask).members).toEqual([annId]);
+    }
+    // Those still on them hear it, so their boards redraw the members.
+    const heard = (await sync(ann.pass, since)).events
+      .filter((event) => event.type === "task.changed")
+      .map((event) => event.refId);
+    expect(heard).toContain(hers.id);
+    expect(heard).toContain(given.id);
+
+    const back = { ...dee, pass: newPass() };
+    expect((await putMember(hub, back)).id).toBe(deeId);
+    for (const task of [hers, given]) {
+      expect((await call(back.pass, "GET", `/tasks/${task.id}`)).status).toBe(
+        404,
+      );
+    }
+    const listed = (await call(back.pass, "GET", "/tasks")).body as HubTaskList;
+    expect(listed.tasks.map((task) => task.id)).not.toContain(hers.id);
   });
 });
 
