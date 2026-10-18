@@ -5,7 +5,7 @@ import { readHubConfig } from "./config";
 import { createHubDatabase, migrateHub } from "./db/client";
 import { createBlobMirror } from "./files/mirror";
 import { sweepIdempotency } from "./idempotency";
-import { serveUploads } from "./uploads";
+import { closeUploads, serveUploads } from "./uploads";
 
 const log = createLogger("hub");
 reportCrashes(log);
@@ -79,14 +79,14 @@ log.info("boot", {
 });
 
 // An upgrade stops this container. The VMs are told the hub is going away (1001) and reconnect to
-// the next process with their cursors; what was in flight is given a few seconds. Bounded, because
-// Bun 1.3.14's `stop` can wait forever on a socket it closed itself (hub/tests/support/hub.ts).
+// the next process with their cursors; what was in flight, an upload on its own listener too, is
+// given a few seconds. Bounded, because Bun 1.3.14's `stop` can wait forever on a socket it closed
+// itself (hub/tests/support/hub.ts).
 process.on("SIGTERM", () => {
   clearInterval(sweep);
   listeners.closeAll(1001, "laf:hub_stopping");
-  uploads.close();
   void Promise.race([
-    Promise.all([server.stop(), mirror?.stop()]),
+    Promise.all([server.stop(), mirror?.stop(), closeUploads(uploads)]),
     Bun.sleep(5_000),
   ])
     .then(() => database.close())

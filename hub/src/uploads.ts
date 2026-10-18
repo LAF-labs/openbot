@@ -102,3 +102,13 @@ export function serveUploads(options: {
     });
   });
 }
+
+/**
+ * Stops taking connections, and resolves once the uploads already in flight have been answered — so
+ * a stopping hub waits for an upload it is writing instead of closing the database under it.
+ */
+export function closeUploads(server: Server): Promise<void> {
+  return new Promise((resolve) => {
+    server.close(() => resolve());
+  });
+}

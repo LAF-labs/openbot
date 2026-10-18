@@ -122,7 +122,7 @@ export async function startTestHub(
   };
 }
 
-function adminOptions(source: URL) {
+export function adminOptions(source: URL) {
   return {
     host: source.hostname,
     port: Number(source.port || 5432),
