@@ -381,13 +381,22 @@ export type HubBudgetScope = "workspace" | `job:${string}` | `task:${string}`;
 export const HUB_BUDGET_PATHS = {
   /** `POST {runId, scopes, amount}` — ok, or 409 `laf:budget_reached {scope}`. */
   reserve: "/budget/reserve",
-  /** `POST {runId, actual}` — idempotent; a settle with no reservation is taken and recorded. */
+  /**
+   * `POST {runId, actual, scopes}` — idempotent; a settle with no reservation is taken and recorded
+   * against `scopes` (the reservation's), which the hub reads only then.
+   */
   settle: "/budget/settle",
 } as const;
 
 export const HUB_BUDGET_CODES = {
   /** A scope's day is spent. The run does not start, and is not asked again. */
   reached: "laf:budget_reached",
+  /**
+   * This VM's own fact, not the hub's: the hub answered the reservation with a refusal other than
+   * `reached` — a scope this member may not count against, a pass it no longer takes. The run does
+   * not start (`budget.ts`); the hub's code is in the log line.
+   */
+  refused: "laf:budget_refused",
 } as const;
 
 /**
@@ -403,12 +412,17 @@ export const budgetReserveBody = (input: {
 }) => ({ runId: input.runId, scopes: [...input.scopes], amount: input.amount });
 
 /** What the run cost, to the dollar's sixth place: the provider's figure, never rounded up. */
-export const budgetSettleBody = (input: { runId: string; actual: number }) => ({
+export const budgetSettleBody = (input: {
+  runId: string;
+  actual: number;
+  scopes: readonly HubBudgetScope[];
+}) => ({
   runId: input.runId,
   actual:
     Number.isFinite(input.actual) && input.actual > 0
       ? Math.round(input.actual * 1e6) / 1e6
       : 0,
+  scopes: [...input.scopes],
 });
 
 export const HUB_JOB_PATHS = {

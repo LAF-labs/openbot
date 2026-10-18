@@ -2487,6 +2487,8 @@ export const ko: Record<string, string> = {
     "오늘 무료 체험에서 쓸 수 있는 양을 다 썼어요. 내일 0시(한국 시간)부터 다시 쓸 수 있어요.",
   "Your company's budget for today is used up, so this did not start. It opens again tomorrow.":
     "회사에서 정한 오늘 예산을 다 써서 시작하지 않았어요. 내일 다시 쓸 수 있어요.",
+  "The company server did not let this start.":
+    "회사 서버가 허락하지 않아서 시작하지 않았어요.",
   // 회사 — 회사 허브에 붙은 VM의 설정 한 줄과, 허브가 알린 사실의 문장(server/src/hub/).
   "Company: {name} · {state}": "회사: {name} · {state}",
   "Company · {state}": "회사 · {state}",

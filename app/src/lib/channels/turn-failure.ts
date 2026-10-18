@@ -28,6 +28,7 @@ export const TURN_FAILURE_CODES = [
   "laf:turn_bot_dropped",
   "laf:turn_budget_spent",
   "laf:turn_company_budget_reached",
+  "laf:turn_company_refused",
   "laf:turn_daily_budget_reached",
   "laf:turn_failed",
   "laf:turn_interrupted",
@@ -135,6 +136,12 @@ export const TURN_FAILURE_SENTENCES: Record<string, string> = {
    */
   "laf:turn_company_budget_reached":
     "Your company's budget for today is used up, so this did not start. It opens again tomorrow.",
+  /*
+   * The company hub said no to the run for another reason — the sub-Bot was taken off or moved to
+   * somebody else, the task is gone, this computer is no longer let in. Nothing was asked.
+   */
+  "laf:turn_company_refused":
+    "The company server did not let this start.",
   "laf:turn_failed": "No answer came back.",
   /*
    * The server restarted while this ran. Not a fault of the model's and not the person's: the run
@@ -274,6 +281,7 @@ function classifyLive(reported: unknown): TurnFailureCode {
   if (said.includes("laf:budget_reached")) {
     return "laf:turn_company_budget_reached";
   }
+  if (said.includes("laf:budget_refused")) return "laf:turn_company_refused";
   // The stall guard sends its fact now; the two substrings are the English sentence it sent before.
   if (
     said.includes("laf:agent_stalled") ||

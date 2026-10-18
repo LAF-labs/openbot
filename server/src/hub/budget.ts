@@ -6,9 +6,9 @@
  * day (`usage/daily-budget.ts`), the deployment key's own daily limit at the provider. The hub holds
  * no model key and sees two numbers per run: what was set aside before it started, and what it cost.
  *
- * BEFORE: `POST /budget/reserve {runId, scopes, amount: 0.2}`. A `laf:budget_reached` is the one
- * answer that stops the run, before anything is asked of the model. AFTER: `POST /budget/settle
- * {runId, actual}` through the outbox, so a hub that is down, or a process that dies a second after
+ * BEFORE: `POST /budget/reserve {runId, scopes, amount: 0.2}`. Any refusal stops the run, before
+ * anything is asked of the model. AFTER: `POST /budget/settle {runId, actual, scopes}` through the
+ * outbox, so a hub that is down, or a process that dies a second after
  * the run, loses no settle — the row is offered again at boot, every five minutes, and when the line
  * comes back. The hub takes a settle twice as once, and a settle with no reservation as a record.
  *
@@ -18,14 +18,18 @@
  * already spend alone. Failing closed would turn a hub upgrade at seven in the morning into every
  * member's morning routine not running, and a company's whole board not moving — the failure this
  * product is least allowed to have, for a number the hub catches up on through the settle anyway.
- * The same reading `usage/daily-budget.ts` makes of a trail it cannot read: only a count may say the
- * day is spent. So only the hub's own `laf:budget_reached` refuses; unreachable, a refused pass, a
- * hub too old to know the route, anything else — the run goes ahead, and the line says why.
+ *
+ * A HUB THAT ANSWERS "NO" STOPS IT, whatever the reason. Only silence is the outage above; a refusal
+ * is the hub saying something about this run, and it is refused whole before any limit is read — a
+ * job that was deleted or moved to another member (403), a task this member no longer sees (404), a
+ * pass the hub no longer takes. Going ahead on any of those would run the company's work past its
+ * day with nobody counting it (`laf:budget_refused`, the hub's own code in the log line).
  *
  * ONE ATTEMPT, FIVE SECONDS AT MOST. A reservation is asked once (`retry: false`): the run is
  * waiting on it, and retrying a hub that is down for fifteen seconds before going ahead anyway would
  * only make every run that much later.
  */
+import { HUB_FACTS } from "../../../shared/hub/protocol";
 import { log } from "../log";
 import type { HubHttp } from "./http";
 import type { HubOutbox } from "./outbox";
@@ -44,8 +48,14 @@ export type BudgetOrigin = "job" | "room" | "chat";
 export type BudgetVerdict =
   /** Go. `reserved` is false where the hub did not answer and the run goes ahead on the VM's guards. */
   | { go: true; reserved: boolean }
-  /** The company's day for one of the scopes is spent. Nothing is asked of the model. */
-  | { go: false; code: typeof HUB_BUDGET_CODES.reached };
+  /**
+   * Stop: the company's day for one of the scopes is spent (`reached`), or the hub refused the run
+   * for another reason (`refused`). Nothing is asked of the model.
+   */
+  | {
+      go: false;
+      code: typeof HUB_BUDGET_CODES.reached | typeof HUB_BUDGET_CODES.refused;
+    };
 
 export type RunBudget = {
   reserve(input: {
@@ -55,28 +65,35 @@ export type RunBudget = {
     origin: BudgetOrigin;
   }): Promise<BudgetVerdict>;
   /** What the run cost, sent through the outbox. Never throws: a lost settle is a log line. */
-  settle(input: { runId: string; actual: number }): Promise<void>;
+  settle(input: {
+    runId: string;
+    actual: number;
+    /** The reservation's own, so a run the hub never heard about counts against them too. */
+    scopes: readonly HubBudgetScope[];
+  }): Promise<void>;
 };
+
+/** The workspace first and always, then the run's own, once each. */
+function withWorkspace(scopes: readonly HubBudgetScope[]): HubBudgetScope[] {
+  return ["workspace", ...scopes.filter((scope) => scope !== "workspace")];
+}
 
 export function createRunBudget(input: {
   http: HubHttp;
   outbox: Pick<HubOutbox, "enqueue">;
-  /** True while the hub refuses this VM's pass: nothing is asked, and the run goes ahead. */
+  /** True while the hub refuses this VM's pass: nothing is asked, and the run does not start. */
   passRefused?: () => boolean;
 }): RunBudget {
   return {
     async reserve({ runId, scopes, origin }) {
       if (input.passRefused?.()) {
-        log.info("hub_budget_open", {
+        log.warn("hub_budget_refused", {
           run: runId,
-          code: "laf:hub_pass_refused",
+          code: HUB_FACTS.passRefused,
         });
-        return { go: true, reserved: false };
+        return { go: false, code: HUB_BUDGET_CODES.refused };
       }
-      const named: HubBudgetScope[] = [
-        "workspace",
-        ...scopes.filter((scope) => scope !== "workspace"),
-      ];
+      const named = withWorkspace(scopes);
       const answer = await input.http.request({
         method: "POST",
         path: HUB_BUDGET_PATHS.reserve,
@@ -96,16 +113,24 @@ export function createRunBudget(input: {
         log.info("hub_budget_reached", { run: runId });
         return { go: false, code: HUB_BUDGET_CODES.reached };
       }
-      log.warn("hub_budget_open", { run: runId, code: answer.code });
-      return { go: true, reserved: false };
+      if (answer.code === HUB_FACTS.unreachable) {
+        log.warn("hub_budget_open", { run: runId, code: answer.code });
+        return { go: true, reserved: false };
+      }
+      log.warn("hub_budget_refused", { run: runId, code: answer.code });
+      return { go: false, code: HUB_BUDGET_CODES.refused };
     },
 
-    async settle({ runId, actual }) {
+    async settle({ runId, actual, scopes }) {
       await input.outbox
         .enqueue({
           method: "POST",
           path: HUB_BUDGET_PATHS.settle,
-          body: budgetSettleBody({ runId, actual }),
+          body: budgetSettleBody({
+            runId,
+            actual,
+            scopes: withWorkspace(scopes),
+          }),
           origin: "job",
           runId,
         })

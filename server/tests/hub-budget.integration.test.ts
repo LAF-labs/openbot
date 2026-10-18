@@ -238,7 +238,13 @@ describe("a routine on a company's VM", () => {
       .from(hubOutbox)
       .where(eq(hubOutbox.id, row.id));
     expect(kept?.deliveredAt).toBeNull();
-    expect(kept?.body).toEqual({ runId, actual: 0.007123 });
+    // With the reservation's scopes: had the reservation never reached the hub, the job's day
+    // would still count this run.
+    expect(kept?.body).toEqual({
+      runId,
+      actual: 0.007123,
+      scopes: ["workspace", "job:job_morning"],
+    });
 
     // Back: the same row, the same key, delivered.
     up = true;
@@ -280,7 +286,38 @@ describe("a routine on a company's VM", () => {
     const settled = hub.seen.find(
       (request) => request.path === "/budget/settle",
     );
-    expect(settled?.body).toMatchObject({ actual: 0.007123 });
+    expect(settled?.body).toEqual({
+      runId,
+      actual: 0.007123,
+      scopes: ["workspace"],
+    });
+  });
+
+  test("a sub-Bot whose job the hub refuses — deleted, or moved to somebody else — does not run past the company's day", async () => {
+    // The hub checks a reservation's scopes before any limit (`hub/src/budget.ts`): a job this
+    // member's VM no longer runs is a 403, whatever is left of the day.
+    const forbidden: HubAnswer<unknown> = {
+      ok: false,
+      status: 403,
+      code: "laf:hub_forbidden",
+    };
+    const hub = scriptedHub((request) =>
+      request.path === "/budget/reserve" ? forbidden : took,
+    );
+    const outbox = createHubOutbox({ database, http: hub.http });
+    const fired = await fireOnce({
+      budget: createRunBudget({ http: hub.http, outbox }),
+      jobOf: async () => "job_gone",
+    });
+    expect(fired.asked.count).toBe(0);
+    expect(fired.run).toEqual({ error: "laf:budget_refused", status: "error" });
+    expect(classifyTurnFailure(fired.run?.error ?? null)).toBe(
+      "laf:turn_company_refused",
+    );
+    // Nothing set aside, nothing spent: no settle.
+    expect(hub.seen.map((request) => request.path)).toEqual([
+      "/budget/reserve",
+    ]);
   });
 
   test("not attached to a company: runs as it always did", async () => {

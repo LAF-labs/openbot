@@ -52,7 +52,7 @@ import { turnFailureOf } from "../turns/engine";
 import type { RunBudget } from "./budget";
 import type { TaskAsks } from "./task-asks";
 import type { TaskRun, TaskRunOutcome, UnreportedRun } from "./task-pickup";
-import type { HubTaskView } from "./wire";
+import type { HubBudgetScope, HubTaskView } from "./wire";
 
 /** The conversation a task is worked in. */
 export const taskThreadOf = (taskId: string) => `task:${taskId}`;
@@ -272,12 +272,9 @@ export function createTaskRun(deps: TaskRunDeps): TaskRun {
      * After the ledger row, so the refused run is in the task's conversation with its fact, and
      * before the lane and the model: a refused run sends nothing to the model.
      */
+    const scopes: HubBudgetScope[] = [`task:${task.id}`];
     const verdict = deps.budget
-      ? await deps.budget.reserve({
-          runId,
-          scopes: [`task:${task.id}`],
-          origin: "job",
-        })
+      ? await deps.budget.reserve({ runId, scopes, origin: "job" })
       : null;
     try {
       if (verdict && !verdict.go) {
@@ -418,7 +415,11 @@ export function createTaskRun(deps: TaskRunDeps): TaskRun {
     // What it cost, to the hub's ledger through the outbox — also where the hub did not answer the
     // reservation. A refused run spent nothing and set nothing aside.
     if (deps.budget && verdict?.go) {
-      await deps.budget.settle({ runId, actual: meter.read().costUsd });
+      await deps.budget.settle({
+        runId,
+        actual: meter.read().costUsd,
+        scopes,
+      });
     }
     return outcome;
   };

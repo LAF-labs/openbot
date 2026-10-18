@@ -5,9 +5,9 @@ import type { HubOutboxWrite } from "../src/hub/outbox";
 import { budgetSettleBody } from "../src/hub/wire";
 
 /**
- * What the company's budget answers a run, by what the hub said. Only the hub's own
- * `laf:budget_reached` stops a run; every other answer — no answer, a refused pass, a hub too old to
- * know the route — lets it go on the VM's own guards (`budget.ts`, fail-open).
+ * What the company's budget answers a run, by what the hub said. Only a hub that does not answer
+ * lets a run go on the VM's own guards (`budget.ts`, fail-open); every answer that is a refusal —
+ * the day spent, a job deleted or moved away, a task gone, a refused pass — stops it.
  */
 
 function hubAnswering(answer: HubAnswer<unknown>) {
@@ -51,14 +51,19 @@ describe("the company's budget, before a run", () => {
       { go: true, reserved: false },
     ],
     [
-      "the hub does not know the route",
+      "a task this member no longer sees",
       { ok: false, status: 404, code: "laf:hub_not_found" },
-      { go: true, reserved: false },
+      { go: false, code: "laf:budget_refused" },
     ],
     [
-      "the hub refused something else",
+      "a job deleted, or moved to another member",
       { ok: false, status: 403, code: "laf:hub_forbidden" },
-      { go: true, reserved: false },
+      { go: false, code: "laf:budget_refused" },
+    ],
+    [
+      "a body the hub would not take",
+      { ok: false, status: 400, code: "laf:request_invalid" },
+      { go: false, code: "laf:budget_refused" },
     ],
   ] as const)("%s", async (_name, answer, verdict) => {
     const hub = hubAnswering(answer as HubAnswer<unknown>);
@@ -84,7 +89,7 @@ describe("the company's budget, before a run", () => {
     ]);
   });
 
-  test("with the pass refused, nothing is asked and the run goes on", async () => {
+  test("with the pass refused, nothing is asked and the run does not start", async () => {
     const hub = hubAnswering({ ok: true, status: 200, body: {} });
     const budget = createRunBudget({
       http: hub.http,
@@ -93,27 +98,45 @@ describe("the company's budget, before a run", () => {
     });
     expect(
       await budget.reserve({ runId: "run-2", scopes: [], origin: "job" }),
-    ).toEqual({ go: true, reserved: false });
+    ).toEqual({ go: false, code: "laf:budget_refused" });
     expect(hub.seen).toEqual([]);
   });
 
-  test("the settle is a row in the outbox, the cost to the sixth place and never below nothing", async () => {
+  test("the settle is a row in the outbox, with the run's scopes, the cost to the sixth place and never below nothing", async () => {
     const box = outbox();
     const budget = createRunBudget({
       http: hubAnswering({ ok: true, status: 200, body: {} }).http,
       outbox: box,
     });
-    await budget.settle({ runId: "run-3", actual: 0.01234567 });
+    await budget.settle({
+      runId: "run-3",
+      actual: 0.01234567,
+      scopes: ["job:j1"],
+    });
     expect(box.written).toEqual([
       {
         method: "POST",
         path: "/budget/settle",
-        body: { runId: "run-3", actual: 0.012346 },
+        // The scopes ride along: a run whose reservation never reached the hub is counted against
+        // its job's or task's day too, not only the workspace's.
+        body: {
+          runId: "run-3",
+          actual: 0.012346,
+          scopes: ["workspace", "job:j1"],
+        },
         origin: "job",
         runId: "run-3",
       },
     ]);
-    expect(budgetSettleBody({ runId: "r", actual: -4 }).actual).toBe(0);
-    expect(budgetSettleBody({ runId: "r", actual: Number.NaN }).actual).toBe(0);
+    expect(
+      budgetSettleBody({ runId: "r", actual: -4, scopes: ["workspace"] }).actual,
+    ).toBe(0);
+    expect(
+      budgetSettleBody({
+        runId: "r",
+        actual: Number.NaN,
+        scopes: ["workspace"],
+      }).actual,
+    ).toBe(0);
   });
 });

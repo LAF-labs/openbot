@@ -380,12 +380,9 @@ async function executeNow(
    * ledger row — so the run that was refused is a run in the conversation, with the fact that
    * stopped it — and before anything reaches the model: a refused run sends no request at all.
    */
+  const scopes = options.budget ? await jobScopeOf(options, row) : [];
   const verdict = options.budget
-    ? await options.budget.reserve({
-        runId,
-        scopes: await jobScopeOf(options, row),
-        origin: "job",
-      })
+    ? await options.budget.reserve({ runId, scopes, origin: "job" })
     : null;
   const attempt: Attempt =
     verdict && !verdict.go
@@ -454,7 +451,11 @@ async function executeNow(
   // What it cost, to the hub's ledger through the outbox — also where the hub did not answer the
   // reservation, so its day catches up. A refused run spent nothing and set nothing aside.
   if (options.budget && verdict?.go) {
-    await options.budget.settle({ runId, actual: meter.read().costUsd });
+    await options.budget.settle({
+      runId,
+      actual: meter.read().costUsd,
+      scopes,
+    });
   }
 }
 

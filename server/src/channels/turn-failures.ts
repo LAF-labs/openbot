@@ -91,6 +91,12 @@ export const TURN_FAILURE_CODES = {
    * fault: an admin's limit, which opens again the next day.
    */
   companyBudgetReached: "laf:turn_company_budget_reached",
+  /**
+   * The hub refused the run for another reason before it started (`hub/budget.ts`,
+   * `laf:budget_refused`): a sub-Bot taken off the register or moved to somebody else, a task this
+   * member no longer sees, a pass it no longer takes. The model was never asked.
+   */
+  companyRefused: "laf:turn_company_refused",
 } as const;
 
 export type TurnFailureCode =
@@ -170,6 +176,9 @@ export function classifyTurnFailure(error: string | null): TurnFailureCode {
   // The hub's refusal (`hub/budget.ts`). Not a substring of the trial's code above, nor it of this.
   if (said.includes("laf:budget_reached")) {
     return TURN_FAILURE_CODES.companyBudgetReached;
+  }
+  if (said.includes("laf:budget_refused")) {
+    return TURN_FAILURE_CODES.companyRefused;
   }
 
   /*

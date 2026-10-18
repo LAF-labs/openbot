@@ -62,4 +62,10 @@ describe("the company's day, spent", () => {
       "laf:turn_daily_budget_reached",
     );
   });
+
+  test("a refusal from the company server reads as its own failure, not the day's", () => {
+    expect(liveTurnFailureCode("laf:budget_refused")).toBe(
+      "laf:turn_company_refused",
+    );
+  });
 });
