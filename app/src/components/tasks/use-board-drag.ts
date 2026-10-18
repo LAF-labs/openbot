@@ -73,9 +73,13 @@ export function useBoardDrag(input: {
   onDrop: (taskId: string, target: DropTarget) => void;
   /** Whether this card may be dragged now (not while its last move is still on its way). */
   canDrag: (taskId: string) => boolean;
+  /** Whether this card may be put in this column: one that would always be refused is no target. */
+  canDropIn: (taskId: string, stage: TaskStage) => boolean;
 }) {
   const session = useRef<Session | null>(null);
   const swallowClick = useRef(false);
+  /** A press is open (`session` holds it): what the window's listeners below are on for. */
+  const [isPressOpen, setPressOpen] = useState(false);
   /** The card being dragged and where it would land: what the board draws differently. */
   const [drag, setDrag] = useState<{
     taskId: string;
@@ -94,6 +98,7 @@ export function useBoardDrag(input: {
     const current = session.current;
     session.current = null;
     if (!current) return;
+    setPressOpen(false);
     if (current.isDragging) {
       // The click this release makes, if it makes one, comes before any timer: swallowed, then
       // forgotten, so the next Enter on a card is not.
@@ -155,13 +160,47 @@ export function useBoardDrag(input: {
       isCancelled: false,
       target: null,
     };
+    setPressOpen(true);
     // The grip: no text selection, no scroll starting under the finger.
     if (isGrip) event.preventDefault();
   };
 
+  /*
+   * A press ends wherever its pointer is let go. The card hears the release only once it holds the
+   * pointer, which it takes when the press becomes a drag, or while the pointer is over a card. A
+   * press whose first move already left the card (a flick, a press at its edge), let go over the
+   * column, left the press open: the next hover over any card, no button held, dragged the first
+   * card, and the next click dropped it there — a move nobody made. So while a press is open the
+   * window hears its release too, and a move with no button held ends it as well. Neither drops the
+   * card: a release the card did not hear is not a drop the person aimed.
+   *
+   * The same for a card taken off the page mid-drag (a colleague's move or a run's checkout put it
+   * in another column): the browser says its capture is lost at the document, which no card hears.
+   * Only that one — a finger's grip handing its capture to the card is not the drag ending.
+   */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `end(false)` reads the session's ref and React's setters, the same in every render; the listeners are for as long as the press is open
+  useEffect(() => {
+    if (!isPressOpen) return;
+    const handleRelease = (event: globalThis.PointerEvent) => {
+      if (session.current?.pointerId !== event.pointerId) return;
+      if (event.type === "lostpointercapture" && event.target !== document)
+        return;
+      end(false);
+    };
+    const kinds = ["pointerup", "pointercancel", "lostpointercapture"] as const;
+    for (const kind of kinds) window.addEventListener(kind, handleRelease);
+    return () => {
+      for (const kind of kinds) window.removeEventListener(kind, handleRelease);
+    };
+  }, [isPressOpen]);
+
   const handlePointerMove = (event: PointerEvent<HTMLElement>) => {
     const current = session.current;
     if (!current || current.pointerId !== event.pointerId) return;
+    if (event.buttons === 0) {
+      end(false);
+      return;
+    }
     if (current.isCancelled) return;
     if (!current.isDragging) {
       const moved = Math.hypot(
@@ -189,7 +228,9 @@ export function useBoardDrag(input: {
       if (event.clientX > box.right - EDGE_PX)
         scroller.scrollLeft += EDGE_STEP_PX;
     }
-    const target = targetAt(event.clientX, event.clientY, current.taskId);
+    const under = targetAt(event.clientX, event.clientY, current.taskId);
+    const target =
+      under && input.canDropIn(current.taskId, under.stage) ? under : null;
     if (!sameTarget(target, current.target) || drag === null) {
       current.target = target;
       setDrag({ taskId: current.taskId, target });

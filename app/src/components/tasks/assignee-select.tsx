@@ -25,6 +25,7 @@ export function AssigneeSelect({
   members,
   jobs,
   disabled,
+  canGive = () => true,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -32,10 +33,13 @@ export function AssigneeSelect({
   members: readonly CompanyMember[] | undefined;
   jobs: readonly JobChoice[] | undefined;
   disabled?: boolean;
+  /** Whether the task may be given to this choice as it stands; a choice that may not is not offered. */
+  canGive?: (choice: string) => boolean;
 }) {
   const context = { meId, members, jobs };
   const label = (choice: string) =>
     assigneeLabel(choice === NOBODY ? null : choice, context);
+  const routines = (jobs ?? []).filter((job) => canGive(`job:${job.id}`));
   const people = [
     ...(members ?? []).filter((member) => member.id === meId),
     ...(members ?? []).filter((member) => member.id !== meId),
@@ -57,7 +61,7 @@ export function AssigneeSelect({
       </SelectTrigger>
       <SelectContent>
         <SelectItem value={NOBODY}>{label(NOBODY)}</SelectItem>
-        {meId ? (
+        {meId && canGive(`bot:${meId}`) ? (
           <SelectItem
             data-assignee-option={`bot:${meId}`}
             value={`bot:${meId}`}
@@ -79,10 +83,10 @@ export function AssigneeSelect({
             ))}
           </SelectGroup>
         ) : null}
-        {jobs && jobs.length > 0 ? (
+        {routines.length > 0 ? (
           <SelectGroup>
             <SelectLabel>{t("My routines")}</SelectLabel>
-            {jobs.map((job) => (
+            {routines.map((job) => (
               <SelectItem
                 data-assignee-option={`job:${job.id}`}
                 key={job.id}

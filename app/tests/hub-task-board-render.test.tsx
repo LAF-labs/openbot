@@ -136,3 +136,102 @@ describe("회사 draws one part at a time", () => {
     RENDER_TIMEOUT_MS,
   );
 });
+
+describe("a press ends wherever it is let go", () => {
+  /*
+   * The card hears a release only once it holds the pointer, or while the pointer is over it. A
+   * press whose first move had already left the card, let go over the column, stayed open: the next
+   * hover over any card dragged the first one, and the next click dropped it there.
+   */
+  test(
+    "a flick off the card let go over the column leaves no drag for the next press",
+    async () => {
+      const { strayPress } = await rendered();
+      expect(strayPress.error).toBeUndefined();
+      expect(strayPress.ghostWhileHeld).toBe(false);
+      expect(strayPress.patches).toEqual([]);
+    },
+    RENDER_TIMEOUT_MS,
+  );
+
+  test(
+    "a flick let go outside the window leaves no drag for the next hover and click",
+    async () => {
+      const { lostRelease } = await rendered();
+      expect(lostRelease.error).toBeUndefined();
+      expect(lostRelease.ghostOnHover).toBe(false);
+      expect(lostRelease.patches).toEqual([]);
+    },
+    RENDER_TIMEOUT_MS,
+  );
+
+  test(
+    "a card taken off the page mid-drag ends the drag, and nothing moves later",
+    async () => {
+      const { unmounted } = await rendered();
+      expect(unmounted.error).toBeUndefined();
+      expect(unmounted.wasDragging).toBe(true);
+      // A finger's grip handing its capture to the card is not the drag ending; the card's loss is.
+      expect(unmounted.ghostAfterHandOver).toBe(true);
+      expect(unmounted.ghostAfterLost).toBe(false);
+      expect(unmounted.ghostOnHover).toBe(false);
+      expect(unmounted.patches).toEqual([]);
+    },
+    RENDER_TIMEOUT_MS,
+  );
+});
+
+describe("the board offers only what the hub takes", () => {
+  /*
+   * A task given to a 라피 or a routine enters 하는 중 only when its run takes it; the hub refuses a
+   * person putting it there, every time. Offered, it came back with no reason.
+   */
+  test(
+    "a 라피's card is not offered 하는 중, by its menu or as a place to drop it; a person's is",
+    async () => {
+      const { runCard } = await rendered();
+      expect(runCard.error).toBeUndefined();
+      expect(runCard.menu).toEqual(["review", "blocked", "done", "up", "down"]);
+      expect(runCard.lineForRun).toBe(false);
+      expect(runCard.lineForPerson).toBe(true);
+      expect(runCard.patches).toEqual([
+        {
+          path: "/api/hub/tasks/t_b",
+          body: { version: 1, stage: "doing", rank: 20 },
+        },
+      ]);
+    },
+    RENDER_TIMEOUT_MS,
+  );
+
+  test(
+    "a refused move puts back its own card alone, and says which part was refused",
+    async () => {
+      const { refusedAlone } = await rendered();
+      expect(refusedAlone.error).toBeUndefined();
+      // B's move, taken while A's was on its way, stays where the hub put it.
+      expect(refusedAlone.columns).toEqual({ t_a: "todo", t_b: "review" });
+      expect(refusedAlone.notice).toBe(
+        "A task for a Lafi or a routine moves to Doing when it starts on it.",
+      );
+    },
+    RENDER_TIMEOUT_MS,
+  );
+});
+
+describe("who does it, as the hub would take it", () => {
+  /*
+   * A task a person holds in 하는 중 handed to a 라피 or a routine is refused by the hub every time:
+   * nothing takes it there but its run's own checkout.
+   */
+  test(
+    "a task a person is doing is not offered to a 라피 or a routine; the same task to do is",
+    async () => {
+      const { choices } = await rendered();
+      expect(choices.error).toBeUndefined();
+      expect(choices.doing).toEqual([]);
+      expect(choices.todo).toEqual(["bot:m_a", "job:rt_1"]);
+    },
+    RENDER_TIMEOUT_MS,
+  );
+});

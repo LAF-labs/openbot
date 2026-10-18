@@ -118,18 +118,67 @@ export const taskDetailQueryOptions = (taskId: string) =>
       )) as { task: CompanyTask; notes: CompanyTaskNote[] },
   });
 
-/** A write with the press's own key, so a press retried after a dropped answer is one write. */
+/** A refused write, with the field the hub (or this VM's door) named in refusing it. */
+export class TaskRefusedError extends RequestRefusedError {
+  readonly field: string | null;
+
+  constructor(status: number, code: string | null, field: string | null) {
+    super(t("That did not go through. Try again."), status, code);
+    this.name = "TaskRefusedError";
+    this.field = field;
+  }
+}
+
+/**
+ * A write with the press's own key, so a press retried after a dropped answer is one write. Its
+ * refusal keeps the field it names, which is what lets the board say which part was refused.
+ */
 export async function taskWrite(
   path: string,
   method: "POST" | "PATCH",
   body: unknown,
   key: string,
 ): Promise<unknown> {
-  return requestOrRefusal(path, {
+  const response = await fetch(path, {
+    credentials: "include",
     method,
     headers: { "content-type": "application/json", "idempotency-key": key },
     body: JSON.stringify(body),
   });
+  const answer = (await response.json().catch(() => null)) as Record<
+    string,
+    unknown
+  > | null;
+  if (!response.ok) {
+    throw new TaskRefusedError(
+      response.status,
+      typeof answer?.code === "string" && answer.code ? answer.code : null,
+      typeof answer?.field === "string" ? answer.field : null,
+    );
+  }
+  return answer;
+}
+
+/** A task given to a 라피 or a routine is worked by a run; one given to a person, by that person. */
+export const isWorkedByRun = (assignee: string | null) =>
+  assignee !== null && !assignee.startsWith("m:");
+
+/**
+ * Whether a person may put this task in `stage` with `assignee` (its own unless given). A task a run
+ * works enters 하는 중 only when its run takes it, so the hub refuses a person putting it there, or
+ * handing a task that sits in 하는 중 with no run on it to a 라피 or a routine. The board does not
+ * offer what the hub always refuses.
+ */
+export function personMayPlace(
+  task: Pick<CompanyTask, "checkout" | "assignee">,
+  stage: TaskStage,
+  assignee: string | null = task.assignee,
+): boolean {
+  return !(
+    stage === "doing" &&
+    task.checkout === null &&
+    isWorkedByRun(assignee)
+  );
 }
 
 export type Columns = Record<TaskStage, CompanyTask[]>;
@@ -331,16 +380,24 @@ function actionWord(intent: string): string {
 
 /**
  * A note as a person reads it. A 라피's coded note (`laf:task_…`, from the VM that ran the task)
- * becomes a sentence; a person's note, or a 라피's plain one, is its own text.
+ * becomes a sentence; a person's note, or a 라피's plain one, is its own text — a person who types
+ * `laf:task_ran` sees what they typed, not a 라피's sentence under their name.
  */
-export function taskNoteText(note: { text: string }): {
+export function taskNoteText(note: {
+  text: string;
+  by: string;
+  runId?: string | null;
+}): {
   text: string;
   /** The run the note is about, for the link to its conversation. */
   runId: string | null;
   /** Whether a person is needed to go on. */
   isStop: boolean;
 } {
-  const match = /^(laf:task_[a-z_]+)(?:\s+(.*))?$/.exec(note.text.trim());
+  const isRun = note.by.startsWith("bot:") || Boolean(note.runId);
+  const match = isRun
+    ? /^(laf:task_[a-z_]+)(?:\s+(.*))?$/.exec(note.text.trim())
+    : null;
   if (!match) return { text: note.text, runId: null, isStop: false };
   const fields = fieldsOf(match[2] ?? "");
   const runId = fields.run ?? null;
@@ -402,9 +459,43 @@ export function taskFactText(code: string | null): string | null {
   }
 }
 
+/** What a refusal that names a field says about it, or null where the field adds nothing. */
+function refusedFieldText(
+  code: string | null,
+  field: string | null,
+): string | null {
+  if (code === "laf:hub_forbidden") {
+    // `laf:task_not_your_run` on the hub: a run works with its owner's logins, from its own words.
+    return field === "assignee" || field === "title" || field === "description"
+      ? t("Only its own person gives a Lafi work or changes what it was asked.")
+      : null;
+  }
+  if (code !== "laf:request_invalid") return null;
+  switch (field) {
+    case "stage":
+      return t(
+        "A task for a Lafi or a routine moves to Doing when it starts on it.",
+      );
+    case "assignee":
+      return t("This task can't be given to them now.");
+    case "title":
+      return t("The title is empty or too long.");
+    case "note":
+    case "text":
+      return t("The note is empty or too long.");
+    default:
+      return null;
+  }
+}
+
 export function taskFailureText(error: unknown): string {
   const code = error instanceof RequestRefusedError ? error.code : null;
-  return taskFactText(code) ?? t("That did not go through. Try again.");
+  const field = error instanceof TaskRefusedError ? error.field : null;
+  return (
+    refusedFieldText(code, field) ??
+    taskFactText(code) ??
+    t("That did not go through. Try again.")
+  );
 }
 
 /** The conversation a task was worked in on this VM, when this VM's 라피 worked it. */

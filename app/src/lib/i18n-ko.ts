@@ -2569,6 +2569,14 @@ export const ko: Record<string, string> = {
   "Somebody changed this task just now. The board is up to date again.":
     "방금 다른 사람이 이 업무를 바꿨어요. 업무판을 새로 불러왔어요.",
   "Only a person can mark a task done.": "끝은 사람만 정할 수 있어요.",
+  "Only its own person gives a Lafi work or changes what it was asked.":
+    "라피에게 일을 맡기거나 맡긴 내용을 고치는 건 그 라피의 주인만 할 수 있어요.",
+  "A task for a Lafi or a routine moves to Doing when it starts on it.":
+    "라피나 루틴에게 맡긴 업무는 시작하면 저절로 하는 중으로 옮겨져요.",
+  "This task can't be given to them now.":
+    "지금은 이 업무를 그쪽에 맡길 수 없어요.",
+  "The title is empty or too long.": "제목이 비어 있거나 너무 길어요.",
+  "The note is empty or too long.": "메모가 비어 있거나 너무 길어요.",
   "Lafi finished in {n} steps. Have a look.":
     "라피가 {n}단계로 마쳤어요. 확인해 주세요.",
   "Lafi finished. Have a look.": "라피가 마쳤어요. 확인해 주세요.",

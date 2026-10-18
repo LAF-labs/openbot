@@ -44,6 +44,49 @@ export type TaskBoardShown = {
   newTask: Scenario<{ writes: { key: string | null; body: unknown }[] }>;
   /** A note refused twice, then its words edited: the key each POST carried. */
   note: Scenario<{ writes: { key: string | null; body: unknown }[] }>;
+  /**
+   * A press on A whose first move is already off it and whose release is over the column (a
+   * flick), then a press on the column moved over B with the button held, then a click on B.
+   */
+  strayPress: Scenario<{
+    ghostWhileHeld: boolean;
+    patches: { path: string; body: unknown }[];
+  }>;
+  /**
+   * The same flick let go outside the window, so no release reaches the page; then a hover over B
+   * with no button held, and a click on B.
+   */
+  lostRelease: Scenario<{
+    ghostOnHover: boolean;
+    patches: { path: string; body: unknown }[];
+  }>;
+  /** A drag whose card was taken off the page mid-drag (moved to another column by a refetch). */
+  unmounted: Scenario<{
+    wasDragging: boolean;
+    /** Whether the copy still followed the pointer after a grip handed its capture on (a finger's). */
+    ghostAfterHandOver: boolean;
+    /** Whether the copy still followed the pointer once the card's capture was lost. */
+    ghostAfterLost: boolean;
+    ghostOnHover: boolean;
+    patches: { path: string; body: unknown }[];
+  }>;
+  /** A 라피's card and a person's card, each dragged over 하는 중 and let go there; A's menu. */
+  runCard: Scenario<{
+    menu: string[];
+    lineForRun: boolean;
+    lineForPerson: boolean;
+    patches: { path: string; body: unknown }[];
+  }>;
+  /** A's move refused after B's move was taken, before the board is read again. */
+  refusedAlone: Scenario<{
+    columns: Record<string, string | null>;
+    notice: string | null;
+  }>;
+  /**
+   * Who-does-it choices in a task's window: for a task a person holds in 하는 중 (no run on it),
+   * and for the same task in 할 일.
+   */
+  choices: Scenario<{ doing: string[]; todo: string[] }>;
   /** 회사 at an address that names 업무판 and a tab: which parts are drawn. */
   company: Scenario<{
     onTasks: { board: boolean; files: boolean };
@@ -67,6 +110,7 @@ const { QueryClient, QueryClientProvider } = await import(
 );
 const { RouterProvider } = await import("@tanstack/react-router");
 const { TaskBoard } = await import("../../src/components/tasks/task-board");
+const { taskKeys } = await import("../../src/lib/hub/tasks");
 
 const card: CompanyTask = {
   id: "t_a",
@@ -93,8 +137,19 @@ type Handler = (
   init: RequestInit | undefined,
 ) => Promise<Response | undefined> | Response | undefined;
 
+const second: CompanyTask = {
+  ...card,
+  id: "t_b",
+  title: "재고 확인",
+  rank: 20,
+};
+
 /** A board alone, under a router, with `handler` answering first and the board's reads after it. */
-async function board(handler: Handler, openTask?: string) {
+async function board(
+  handler: Handler,
+  openTask?: string,
+  tasks: CompanyTask[] = [card],
+) {
   globalThis.fetch = stubFetch(async (url, init) => {
     const path = String(url);
     const answered = await handler(path, init);
@@ -103,7 +158,7 @@ async function board(handler: Handler, openTask?: string) {
       return json({ task: card, notes: [] });
     }
     if (path.startsWith("/api/hub/tasks")) {
-      return json({ tasks: [card], next: null });
+      return json({ tasks, next: null });
     }
     if (path.startsWith("/api/routines")) return json({ routines: [] });
     if (path.startsWith("/api/channels")) return json({ channels: [] });
@@ -119,7 +174,61 @@ async function board(handler: Handler, openTask?: string) {
   ));
   const view = await mount(<RouterProvider router={router} />);
   await view.settle(60);
-  return { view, router };
+  return { view, router, client };
+}
+
+/** A mouse's pointer event at a point, on `target`: a button held from the press to the release. */
+function pointerOn(
+  target: EventTarget,
+  type: string,
+  x: number,
+  y: number,
+  held = type !== "pointerup",
+) {
+  return act(async () => {
+    target.dispatchEvent(
+      new PointerEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        buttons: held ? 1 : 0,
+        pointerId: 1,
+        pointerType: "mouse",
+        clientX: x,
+        clientY: y,
+      }),
+    );
+  });
+}
+
+const cardOn = (host: HTMLElement, id: string) => {
+  const found = host.querySelector<HTMLElement>(`[data-task-card="${id}"]`);
+  if (!found) throw new Error(`no card ${id} on the board`);
+  return found;
+};
+
+const columnOn = (host: HTMLElement, stage: string) => {
+  const found = host.querySelector<HTMLElement>(
+    `[data-task-column="${stage}"]`,
+  );
+  if (!found) throw new Error(`no column ${stage}`);
+  return found;
+};
+
+/** The copy that follows the pointer is a card with no `data-task-card` of its own. */
+const ghostDrawn = () =>
+  document.querySelector("[data-task-stage]:not([data-task-card])") !== null;
+
+/** Every PATCH the board sent, answered as the hub would take it. */
+function patchesTaken() {
+  const patches: { path: string; body: unknown }[] = [];
+  const handler: Handler = (path, init) => {
+    if (init?.method !== "PATCH") return undefined;
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    patches.push({ path, body });
+    return json({ task: { ...card, ...body, version: 2 } });
+  };
+  return { patches, handler };
 }
 
 /** One scenario, its board taken down and `fetch` given back whatever happened. */
@@ -216,23 +325,7 @@ const escaped = await run(
     );
     if (!cardElement) throw new Error("no card on the board");
     const pointer = (type: string, x: number, y: number) =>
-      act(async () => {
-        cardElement.dispatchEvent(
-          new PointerEvent(type, {
-            bubbles: true,
-            cancelable: true,
-            button: 0,
-            pointerId: 1,
-            pointerType: "mouse",
-            clientX: x,
-            clientY: y,
-          }),
-        );
-      });
-    // The copy that follows the pointer is a card with no `data-task-card` of its own.
-    const ghostDrawn = () =>
-      document.querySelector("[data-task-stage]:not([data-task-card])") !==
-      null;
+      pointerOn(cardElement, type, x, y);
 
     await pointer("pointerdown", 10, 10);
     await pointer("pointermove", 40, 40);
@@ -365,7 +458,273 @@ const company = await run(
   },
 );
 
-const shown: TaskBoardShown = { pending, escaped, newTask, note, company };
+/** Pressed on A; its first move is already past A's edge, over the column. */
+async function flickOffA(host: HTMLElement) {
+  const column = columnOn(host, "todo");
+  await pointerOn(cardOn(host, "t_a"), "pointerdown", 10, 10);
+  await pointerOn(column, "pointermove", 10, 200);
+  return column;
+}
+
+/** A click on B: what a person does next, which must not drop A anywhere. */
+async function clickB(host: HTMLElement) {
+  const other = cardOn(host, "t_b");
+  await pointerOn(other, "pointerdown", 40, 60);
+  await pointerOn(other, "pointerup", 40, 60);
+}
+
+const strayPress = await run(
+  { ghostWhileHeld: false, patches: [] },
+  async () => {
+    const { patches, handler } = patchesTaken();
+    const { view } = await board(handler, undefined, [card, second]);
+    const column = await flickOffA(view.host);
+    await pointerOn(column, "pointerup", 10, 200);
+    await view.settle();
+    // A press on the column, which no card hears, moved over B with the button held.
+    await pointerOn(column, "pointerdown", 10, 220);
+    const other = cardOn(view.host, "t_b");
+    await pointerOn(other, "pointermove", 30, 30);
+    await pointerOn(other, "pointermove", 40, 60);
+    await view.settle();
+    const ghostWhileHeld = ghostDrawn();
+    await pointerOn(other, "pointerup", 40, 60);
+    await clickB(view.host);
+    await view.settle(60);
+    return { ghostWhileHeld, patches };
+  },
+);
+
+const lostRelease = await run(
+  { ghostOnHover: false, patches: [] },
+  async () => {
+    const { patches, handler } = patchesTaken();
+    const { view } = await board(handler, undefined, [card, second]);
+    await flickOffA(view.host);
+    await view.settle();
+    const other = cardOn(view.host, "t_b");
+    await pointerOn(other, "pointermove", 30, 30, false);
+    await pointerOn(other, "pointermove", 40, 60, false);
+    await view.settle();
+    const ghostOnHover = ghostDrawn();
+    await clickB(view.host);
+    await view.settle(60);
+    return { ghostOnHover, patches };
+  },
+);
+
+const unmounted = await run(
+  {
+    wasDragging: false,
+    ghostAfterHandOver: false,
+    ghostAfterLost: false,
+    ghostOnHover: false,
+    patches: [],
+  },
+  async () => {
+    const { patches, handler } = patchesTaken();
+    const { view, client } = await board(handler, undefined, [card, second]);
+    const dragged = cardOn(view.host, "t_a");
+    await pointerOn(dragged, "pointerdown", 10, 10);
+    await pointerOn(dragged, "pointermove", 40, 40);
+    await view.settle();
+    const wasDragging = ghostDrawn();
+    // What a finger's grip says when the card takes its capture: not the drag ending.
+    const grip = dragged.querySelector("[data-task-grip]");
+    if (!grip) throw new Error("no grip on the card");
+    await act(async () => {
+      grip.dispatchEvent(
+        new PointerEvent("lostpointercapture", { bubbles: true, pointerId: 1 }),
+      );
+    });
+    await view.settle();
+    const ghostAfterHandOver = ghostDrawn();
+    // A colleague's move, read in mid-drag: A is drawn in 검토, its element taken off the page.
+    await act(async () => {
+      client.setQueryData<CompanyTask[]>(taskKeys.board, (tasks) =>
+        tasks?.map((one) =>
+          one.id === "t_a" ? { ...one, stage: "review", version: 2 } : one,
+        ),
+      );
+    });
+    await view.settle();
+    // As Chrome says it: the capture is lost at the document, which no card hears.
+    await act(async () => {
+      document.dispatchEvent(
+        new PointerEvent("lostpointercapture", { bubbles: true, pointerId: 1 }),
+      );
+    });
+    await view.settle();
+    const ghostAfterLost = ghostDrawn();
+    await pointerOn(columnOn(view.host, "todo"), "pointerup", 40, 200);
+    await view.settle();
+    const other = cardOn(view.host, "t_b");
+    await pointerOn(other, "pointermove", 40, 60, false);
+    await view.settle();
+    const ghostOnHover = ghostDrawn();
+    await pointerOn(other, "pointerdown", 40, 60);
+    await pointerOn(other, "pointerup", 40, 60);
+    await view.settle(60);
+    return {
+      wasDragging,
+      ghostAfterHandOver,
+      ghostAfterLost,
+      ghostOnHover,
+      patches,
+    };
+  },
+);
+
+const runCard = await run(
+  { menu: [], lineForRun: false, lineForPerson: false, patches: [] },
+  async () => {
+    const { patches, handler } = patchesTaken();
+    const lafis: CompanyTask = { ...card, assignee: "bot:m_a" };
+    const { view } = await board(handler, undefined, [lafis, second]);
+    const trigger = cardOn(view.host, "t_a").querySelector<HTMLElement>(
+      "[data-task-menu]",
+    );
+    if (!trigger) throw new Error("no menu on the card");
+    await view.press(trigger);
+    const menu = [
+      ...document.querySelectorAll<HTMLElement>("[data-task-move]"),
+    ].map((item) => item.dataset.taskMove ?? "");
+    await act(async () => {
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+    await view.settle();
+    // What is under the pointer is 하는 중's column, wherever it is.
+    const doing = columnOn(view.host, "doing");
+    const realElementFromPoint = document.elementFromPoint;
+    document.elementFromPoint = () => doing;
+    const lineAfterDragging = async (id: string) => {
+      const dragged = cardOn(view.host, id);
+      await pointerOn(dragged, "pointerdown", 10, 10);
+      await pointerOn(dragged, "pointermove", 300, 40);
+      await pointerOn(dragged, "pointermove", 310, 40);
+      await view.settle();
+      const line = doing.querySelector("[data-task-drop-line]") !== null;
+      await pointerOn(dragged, "pointerup", 310, 40);
+      await view.settle(60);
+      return line;
+    };
+    try {
+      const lineForRun = await lineAfterDragging("t_a");
+      const lineForPerson = await lineAfterDragging("t_b");
+      return { menu, lineForRun, lineForPerson, patches };
+    } finally {
+      document.elementFromPoint = realElementFromPoint;
+    }
+  },
+);
+
+const refusedAlone = await run(
+  { columns: { t_a: null, t_b: null }, notice: null },
+  async () => {
+    let refuse: (() => void) | undefined;
+    let reads = 0;
+    const { view } = await board(
+      async (path, init) => {
+        if (init?.method === "PATCH" && path === "/api/hub/tasks/t_a") {
+          await new Promise<void>((resolve) => {
+            refuse = resolve;
+          });
+          return json(
+            { ok: false, code: "laf:request_invalid", field: "stage" },
+            400,
+          );
+        }
+        if (init?.method === "PATCH" && path === "/api/hub/tasks/t_b") {
+          return json({ task: { ...second, stage: "review", version: 2 } });
+        }
+        // After the first read, the board's next read stays on its way: what shows is the cache.
+        if (path.startsWith("/api/hub/tasks?")) {
+          reads += 1;
+          if (reads > 1) return new Promise<Response>(() => {});
+        }
+        return undefined;
+      },
+      undefined,
+      [card, second],
+    );
+    const moveBy = async (id: string, stage: string) => {
+      const trigger = cardOn(view.host, id).querySelector<HTMLElement>(
+        "[data-task-menu]",
+      );
+      if (!trigger) throw new Error("no menu on the card");
+      await view.press(trigger);
+      const item = document.querySelector<HTMLElement>(
+        `[data-task-move="${stage}"]`,
+      );
+      if (!item) throw new Error(`no ${stage} in the menu`);
+      await view.press(item);
+      await view.settle(60);
+    };
+    await moveBy("t_a", "blocked");
+    await moveBy("t_b", "review");
+    refuse?.();
+    await view.settle(60);
+    const columnOf = (id: string) =>
+      view.host
+        .querySelector(`[data-task-card="${id}"]`)
+        ?.closest<HTMLElement>("[data-task-column]")?.dataset.taskColumn ??
+      null;
+    return {
+      columns: { t_a: columnOf("t_a"), t_b: columnOf("t_b") },
+      notice:
+        view.host.querySelector<HTMLElement>("[data-task-notice]")
+          ?.textContent ?? null,
+    };
+  },
+);
+
+const choices = await run({ doing: [], todo: [] }, async () => {
+  const choicesFor = async (stage: CompanyTask["stage"]) => {
+    const held: CompanyTask = { ...card, stage, assignee: "m:m_a" };
+    const { view } = await board(
+      (path) => {
+        if (path.startsWith("/api/hub/tasks/t_a")) {
+          return json({ task: held, notes: [] });
+        }
+        if (path.startsWith("/api/routines")) {
+          return json({ routines: [{ id: "rt_1", name: "아침 매출 확인" }] });
+        }
+        return undefined;
+      },
+      card.id,
+      [held],
+    );
+    const trigger = document.querySelector<HTMLElement>(
+      "[data-task-detail] [data-task-assignee]",
+    );
+    if (!trigger) throw new Error("no who-does-it in the task's window");
+    await view.press(trigger);
+    await view.settle(60);
+    const offered = [
+      ...document.querySelectorAll<HTMLElement>("[data-assignee-option]"),
+    ].map((option) => option.dataset.assigneeOption ?? "");
+    await unmountAll();
+    document.body.innerHTML = "";
+    return offered;
+  };
+  return { doing: await choicesFor("doing"), todo: await choicesFor("todo") };
+});
+
+const shown: TaskBoardShown = {
+  pending,
+  escaped,
+  newTask,
+  note,
+  company,
+  strayPress,
+  lostRelease,
+  unmounted,
+  runCard,
+  refusedAlone,
+  choices,
+};
 console.log(`TASK_BOARD ${JSON.stringify(shown)}`);
 clearTimeout(timer);
 process.exit(0);

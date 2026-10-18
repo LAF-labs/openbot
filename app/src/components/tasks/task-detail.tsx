@@ -22,6 +22,7 @@ import {
 } from "@/lib/hub/company";
 import {
   type JobChoice,
+  personMayPlace,
   stageLabel,
   taskConversationOf,
   taskDetailQueryOptions,
@@ -112,6 +113,15 @@ export function TaskDetail({
                   {t("Who does it")}
                 </span>
                 <AssigneeSelect
+                  // A task in 하는 중 that no run holds is a person at work on it: the hub refuses
+                  // handing it to a 라피 or a routine as it stands, so neither is offered.
+                  canGive={(choice) =>
+                    personMayPlace(
+                      detail.data.task,
+                      detail.data.task.stage,
+                      choice,
+                    )
+                  }
                   disabled={reassign.isPending}
                   jobs={jobs}
                   meId={meId}

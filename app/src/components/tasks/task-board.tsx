@@ -10,6 +10,7 @@ import {
   columnsOf,
   type JobChoice,
   movedLocally,
+  personMayPlace,
   stageLabel,
   stepTask,
   placeTask,
@@ -95,11 +96,9 @@ export function TaskBoard({
     onMutate: async (input) => {
       setPending((before) => [...before, input.task.id]);
       await queryClient.cancelQueries({ queryKey: taskKeys.board });
-      const before = queryClient.getQueryData<CompanyTask[]>(taskKeys.board);
       queryClient.setQueryData<CompanyTask[]>(taskKeys.board, (tasks) =>
         tasks ? movedLocally(tasks, input.task.id, input.place) : tasks,
       );
-      return { before };
     },
     onSuccess: (answer) => {
       const next = (answer as { task?: CompanyTask } | null)?.task;
@@ -108,10 +107,17 @@ export function TaskBoard({
         tasks?.map((task) => (task.id === next.id ? next : task)),
       );
     },
-    onError: (error, _input, context) => {
+    onError: (error, input) => {
       const code = error instanceof RequestRefusedError ? error.code : null;
-      if (code !== "laf:task_stale" && context?.before) {
-        queryClient.setQueryData(taskKeys.board, context.before);
+      /*
+       * Only the refused card goes back, as it was when it was moved. The whole board as it was then
+       * would also undo another card's move that the hub took in the meantime, until the read below
+       * came back.
+       */
+      if (code !== "laf:task_stale") {
+        queryClient.setQueryData<CompanyTask[]>(taskKeys.board, (tasks) =>
+          tasks?.map((task) => (task.id === input.task.id ? input.task : task)),
+        );
       }
       setNotice(taskFailureText(error));
       void queryClient.invalidateQueries({ queryKey: taskKeys.board });
@@ -140,6 +146,10 @@ export function TaskBoard({
   const { drag, cardHandlers, isClick } = useBoardDrag({
     board: () => root.current,
     canDrag: (taskId) => !pending.includes(taskId),
+    canDropIn: (taskId, stage) => {
+      const task = board.data?.find((one) => one.id === taskId);
+      return task ? personMayPlace(task, stage) : false;
+    },
     onDrop: (taskId, target) =>
       moveTo(
         taskId,

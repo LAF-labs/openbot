@@ -19,6 +19,7 @@ import { focusRingBare } from "@/components/ui/focus";
 import { t } from "@/lib/i18n";
 import {
   type CompanyTask,
+  personMayPlace,
   stageLabel,
   TASK_STAGES,
   type TaskStage,
@@ -115,18 +116,18 @@ export function TaskCard({
               <DropdownMenuLabel className="px-1.5 py-1 text-muted-foreground text-xs">
                 {t("Move to")}
               </DropdownMenuLabel>
-              {TASK_STAGES.filter((stage) => stage !== task.stage).map(
-                (stage) => (
-                  <DropdownMenuItem
-                    data-task-move={stage}
-                    disabled={isPending}
-                    key={stage}
-                    onClick={() => onStep?.(stage)}
-                  >
-                    {stageLabel(stage)}
-                  </DropdownMenuItem>
-                ),
-              )}
+              {TASK_STAGES.filter(
+                (stage) => stage !== task.stage && personMayPlace(task, stage),
+              ).map((stage) => (
+                <DropdownMenuItem
+                  data-task-move={stage}
+                  disabled={isPending}
+                  key={stage}
+                  onClick={() => onStep?.(stage)}
+                >
+                  {stageLabel(stage)}
+                </DropdownMenuItem>
+              ))}
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem

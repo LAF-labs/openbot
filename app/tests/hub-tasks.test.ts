@@ -6,11 +6,14 @@ import {
   columnsOf,
   dropIndex,
   movedLocally,
+  personMayPlace,
   placeTask,
   rankBetween,
+  TaskRefusedError,
   stepTask,
   taskConversationOf,
   taskFactText,
+  taskFailureText,
   taskNoteText,
 } from "../src/lib/hub/tasks";
 import { ko } from "../src/lib/i18n-ko";
@@ -138,9 +141,13 @@ describe("the menu's steps", () => {
   });
 });
 
+/** Who wrote a note: a member's 라피, and the member. */
+const LAFI = "bot:m_a";
+const PERSON = "m:m_a";
+
 describe("a 라피's notes, in Korean and never as codes", () => {
   const said = (text: string) => {
-    const note = taskNoteText({ text });
+    const note = taskNoteText({ text, by: PERSON });
     return { ...note, ko: ko[note.text] ?? null };
   };
 
@@ -169,7 +176,7 @@ describe("a 라피's notes, in Korean and never as codes", () => {
     ["laf:task_run_stopped run:run_1", "Lafi's work was stopped.", true],
     ["laf:task_something_new run:run_1", "A note from Lafi", false],
   ])("%s", (text, key, isStop) => {
-    const note = taskNoteText({ text });
+    const note = taskNoteText({ text, by: LAFI });
     // Tests run in English: the sentence is the key, filled in, and the key has its Korean.
     expect(note.text).toBe(key.replace("{n}", "3"));
     expect(ko[key]).toBeString();
@@ -180,6 +187,7 @@ describe("a 라피's notes, in Korean and never as codes", () => {
 
   test("a needs-approval note names the site and the action in words", () => {
     const note = taskNoteText({
+      by: LAFI,
       text: "laf:task_needs_approval run:run_9 topic:browser/activate@smartstore.naver.com",
     });
     expect(note.text).toBe(
@@ -192,6 +200,7 @@ describe("a 라피's notes, in Korean and never as codes", () => {
   test("a needs-approval note about a connected service names the service", () => {
     expect(
       taskNoteText({
+        by: LAFI,
         text: "laf:task_needs_approval run:r topic:tool/tool@gmail/send_email",
       }).text,
     ).toBe("Lafi is waiting for an OK: Do something on gmail");
@@ -200,6 +209,86 @@ describe("a 라피's notes, in Korean and never as codes", () => {
   test("a person's note is its own words", () => {
     expect(said("거래처에 전화했어요").text).toBe("거래처에 전화했어요");
     expect(said("거래처에 전화했어요").runId).toBeNull();
+  });
+
+  test("a person's note that starts like a code is still that person's words", () => {
+    const text = "laf:task_ran 다 했어요";
+    expect(taskNoteText({ text, by: PERSON })).toEqual({
+      text,
+      runId: null,
+      isStop: false,
+    });
+    expect(taskNoteText({ text, by: LAFI }).text).toBe(
+      "Lafi finished. Have a look.",
+    );
+  });
+});
+
+describe("what a person may put where", () => {
+  const held = { runId: "run_1", by: "m_a", until: "2026-10-17T00:05:00.000Z" };
+  test.each([
+    ["a 라피's task into doing", null, "bot:m_a", "doing", false],
+    ["a routine's task into doing", null, "job:rt_1", "doing", false],
+    [
+      "a 라피's task its run holds, kept in doing",
+      held,
+      "bot:m_a",
+      "doing",
+      true,
+    ],
+    ["a 라피's task into review", null, "bot:m_a", "review", true],
+    ["a person's task into doing", null, "m:m_b", "doing", true],
+    ["nobody's task into doing", null, null, "doing", true],
+  ] as const)("%s", (_, checkout, assignee, stage, may) => {
+    expect(personMayPlace({ checkout, assignee }, stage)).toBe(may);
+  });
+
+  test("a task a person holds in doing is not handed to a 라피 or a routine, but to a person", () => {
+    const doing = { checkout: null, assignee: "m:m_a" };
+    expect(personMayPlace(doing, "doing", "bot:m_a")).toBe(false);
+    expect(personMayPlace(doing, "doing", "job:rt_1")).toBe(false);
+    expect(personMayPlace(doing, "doing", "m:m_b")).toBe(true);
+    expect(personMayPlace(doing, "todo", "bot:m_a")).toBe(true);
+  });
+});
+
+describe("a refusal says which part was refused", () => {
+  test.each([
+    [
+      403,
+      "laf:hub_forbidden",
+      "assignee",
+      "Only its own person gives a Lafi work or changes what it was asked.",
+    ],
+    [
+      403,
+      "laf:hub_forbidden",
+      "title",
+      "Only its own person gives a Lafi work or changes what it was asked.",
+    ],
+    [
+      400,
+      "laf:request_invalid",
+      "stage",
+      "A task for a Lafi or a routine moves to Doing when it starts on it.",
+    ],
+    [
+      400,
+      "laf:request_invalid",
+      "assignee",
+      "This task can't be given to them now.",
+    ],
+    [400, "laf:request_invalid", "rank", "That could not be sent as it is."],
+    [
+      409,
+      "laf:task_stale",
+      null,
+      "Somebody changed this task just now. The board is up to date again.",
+    ],
+  ] as const)("%p %s %p", (status, code, field, words) => {
+    const said = taskFailureText(new TaskRefusedError(status, code, field));
+    expect(said).toBe(words);
+    expect(ko[words]).toBeString();
   });
 });
 
