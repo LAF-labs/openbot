@@ -3307,8 +3307,12 @@ const GROUPS: readonly {
    * bounds on a slug, a title, mentions and a memory line refused before a row, a Korean slug let
    * through) and four in `hub-tools.integration.test.ts` against the real hub (a proposal with its
    * evidence id, a 20,000-character skill, search and a file read on, a post read back). 4927 and 11.
+   *
+   * RAISED 2026-10-18 FOR A WRITE WHOSE ANSWER IS STILL ON ITS WAY, from 4960 to 4961: one in
+   * `hub-tools.integration.test.ts` — the hub's answer held past the write's wait and then a 404,
+   * and the Bot is told the 404, not "kept". 4960 and 1.
    */
-  { name: "server", floor: 4960, roots: ["server"] },
+  { name: "server", floor: 4961, roots: ["server"] },
   { name: "app", floor: 2570, roots: ["app"] },
   {
     name: "agent-computer",
