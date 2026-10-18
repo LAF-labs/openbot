@@ -3326,8 +3326,13 @@ const GROUPS: readonly {
    * 4966: one in `day-epochs.test.ts` — a day summary a leave cannot keep is one gap line over its
    * days, the same line the second time. The leave's own checks grew inside the serialisation
    * test, which is one test. 4965 and 1.
+   *
+   * RAISED 2026-10-18 FOR WHAT A LEAVE STILL MISSED, from 4966 to 4971: five in
+   * `hub-leave.integration.test.ts` — a line remembered on the message after a hub answer, a
+   * context that could not be saved (twice: drawing the lines out, and the new epoch), a
+   * delegation made after a hub answer, and a VM moved to another hub. 4966 and 5.
    */
-  { name: "server", floor: 4966, roots: ["server"] },
+  { name: "server", floor: 4971, roots: ["server"] },
   { name: "app", floor: 2570, roots: ["app"] },
   {
     name: "agent-computer",
@@ -3376,8 +3381,13 @@ const GROUPS: readonly {
      * RAISED 2026-10-16 FOR A CALL'S SHARE, IN AND OUT, from 685 to 688: three more in
      * `core-share.test.ts` — a step stretched as far as the server said it waits, never further,
      * and a machine that cannot be read saying nothing.
+     *
+     * RAISED 2026-10-18 FOR A LOGIN KEPT UNDER A PATH, from 699 to 708: nine in
+     * `forget-cookies.test.ts` — which cookies a forget of an origin takes (seven hosts and
+     * domains, and a secure cookie over http), and a real Chromium signed out of a `Path=/app`
+     * session. 699 and 9.
      */
-    floor: 699,
+    floor: 708,
     roots: ["agent-computer"],
     processes: 1,
   },
