@@ -123,7 +123,10 @@ export function dollars(
     throw new Invalid(field);
   if (value < range.min || value > range.max) throw new Invalid(field);
   if (value === 0 && !range.zero) throw new Invalid(field);
-  return value.toFixed(6);
+  const written = value.toFixed(6);
+  // Under half a microdollar `toFixed` writes zero, which every limit admits: a positive amount
+  // is written as the smallest one instead, so a reservation meets the gate and a spend is counted.
+  return value > 0 && Number(written) === 0 ? "0.000001" : written;
 }
 
 /** A `numeric` as the wire carries it. */
