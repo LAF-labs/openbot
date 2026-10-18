@@ -233,9 +233,11 @@ export async function allowForTask(
  * The task back to waiting, with the member's one note (`POST /tasks/:id/approvals`). Never throws:
  * the yes already stands on this VM.
  *
- * Asked directly, so a task a person already moved on is said as such (`laf:task_not_blocked`). A
- * hub that does not answer gets the same request through the outbox, which offers it until the hub
- * takes it — still guarded by the hub's own `blocked` check when it lands.
+ * Asked directly, once, so a task a person already moved on is said as such
+ * (`laf:task_not_blocked`) and the person waits five seconds at most. A hub that does not answer
+ * gets the same request through the outbox, which offers it until the hub takes it — UNDER THE SAME
+ * KEY: a direct try the hub applied and whose answer was lost is answered again, not applied again
+ * to a task that may have been blocked since on something else.
  */
 async function tellTheBoard(
   hub: { http: HubHttp; outbox: Pick<HubOutbox, "enqueue"> },
@@ -249,15 +251,17 @@ async function tellTheBoard(
       body: taskApprovalBody({ topic }),
       origin: "person" as const,
     };
+    const idempotencyKey = `approval-${randomUUID()}`;
     const answer = await hub.http.request({
       ...request,
-      idempotencyKey: `approval-${randomUUID()}`,
+      idempotencyKey,
+      retry: false,
     });
     if (answer.ok) return "queued";
     if (answer.code === HUB_TASK_NOT_BLOCKED) return "not_blocked";
     if (answer.code === HUB_TASK_NOT_YOURS) return "not_yours";
     if (answer.code === HUB_FACTS.unreachable) {
-      await hub.outbox.enqueue(request);
+      await hub.outbox.enqueue({ ...request, idempotencyKey });
       return "queued";
     }
     log.warn("hub_task_allow_not_told", { task: taskId, code: answer.code });

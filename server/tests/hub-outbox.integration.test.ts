@@ -118,6 +118,24 @@ describe("the hub outbox", () => {
     expect(hub.seen).toHaveLength(5);
   });
 
+  test("a write a direct try already sent goes under that try's key", async () => {
+    const hub = scriptedHub(() => took);
+    const outbox = createHubOutbox({ database, http: hub.http });
+    const key = `approval-${crypto.randomUUID()}`;
+    const id = await outbox.enqueue({
+      method: "POST",
+      path: "/tasks/t1/approvals",
+      body: { topic: "browser/activate@shop.example.test" },
+      origin: "person",
+      idempotencyKey: key,
+    });
+    made.push(id);
+    await outbox.sweep();
+    expect(id).toBe(key);
+    expect(hub.seen.map((request) => request.idempotencyKey)).toEqual([key]);
+    expect((await rowOf(id))?.deliveredAt).not.toBeNull();
+  });
+
   test("a refusal ends the row and is never sent again", async () => {
     const hub = scriptedHub(() => ({
       ok: false,

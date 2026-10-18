@@ -38,6 +38,12 @@ export type HubOutboxWrite = {
   body?: Record<string, unknown>;
   origin: "chat" | "room" | "job" | "person";
   runId?: string | null;
+  /**
+   * The key a direct attempt at the same write already used, when there was one. The row takes it
+   * as its id, so the hub answers the outbox's copy with the first attempt's answer — a direct try
+   * the hub applied but whose answer never came back is not applied a second time.
+   */
+  idempotencyKey?: string;
 };
 
 export type HubSweep = { delivered: number; refused: number; kept: number };
@@ -199,7 +205,7 @@ export function createHubOutbox(input: {
 
   return {
     async enqueue(write) {
-      const id = randomUUID();
+      const id = write.idempotencyKey ?? randomUUID();
       await database.insert(hubOutbox).values({
         id,
         method: write.method,

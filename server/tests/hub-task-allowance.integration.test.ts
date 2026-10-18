@@ -610,6 +610,91 @@ describe("a board task stopped for a yes, and the yes for that task only", () =>
     expect(hub.tasks.get(away)?.stage).toBe("todo");
   });
 
+  test("a yes the hub applied but never answered is not applied again by the outbox's copy", async () => {
+    const who = await person();
+    const hub = fakeTaskHub();
+    const board = hub.as(ME);
+    // The hub's idempotency (`hub/src/idempotency.ts`): one key, one write, its answer replayed.
+    const answered = new Map<string, HubAnswer<unknown>>();
+    const once: HubHttp = {
+      async request<T>(request: HubRequest) {
+        const key = request.idempotencyKey;
+        const kept = key ? answered.get(key) : undefined;
+        if (kept) return kept as HubAnswer<T>;
+        const answer = await board.request<T>(request);
+        if (key) answered.set(key, answer);
+        return answer;
+      },
+      socket: board.socket,
+    };
+    const id = taskId();
+    hub.add({ id, assignee: `bot:${ME}`, stage: "blocked", blockedBy: ME });
+    await asks.record({
+      taskId: id,
+      runId: randomUUID(),
+      botId: who.botId,
+      rule: RULE,
+      scope: SCOPE,
+      subject: ORDER,
+      topic: "browser/activate@shop.example.test",
+    });
+    // The direct try lands and the answer is lost (the hub hangs past the timeout). In the
+    // meantime the task runs again and blocks on something else.
+    const direct: HubRequest[] = [];
+    const hanging: HubHttp = {
+      async request<T>(request: HubRequest) {
+        direct.push(request);
+        await once.request(request);
+        const task = hub.tasks.get(id);
+        if (task) {
+          task.stage = "blocked";
+          task.blockedBy = ME;
+          task.notes.push({
+            by: `bot:${ME}`,
+            text: "laf:task_needs_approval run:r2 topic:browser/type@bank.example.test",
+            runId: "r2",
+          });
+        }
+        return {
+          ok: false,
+          status: null,
+          code: "laf:hub_unreachable",
+        } as HubAnswer<T>;
+      },
+      socket: board.socket,
+    };
+    // The outbox's copy, sent under the key its row carries — the given one, or a new one.
+    const outbox = {
+      sent: [] as HubOutboxWrite[],
+      async enqueue(write: HubOutboxWrite) {
+        outbox.sent.push(write);
+        await once.request({
+          method: write.method,
+          path: write.path,
+          ...(write.body ? { body: write.body } : {}),
+          idempotencyKey: write.idempotencyKey ?? randomUUID(),
+        });
+        return randomUUID();
+      },
+    };
+    expect(
+      await allowForTask(
+        { database, asks, standing, hub: { http: hanging, outbox } },
+        who.actor,
+        id,
+      ),
+    ).toMatchObject({ ok: true, board: "queued" });
+    // Asked once, and the person waited one attempt at most.
+    expect(direct).toHaveLength(1);
+    expect(direct[0]?.retry).toBe(false);
+    // The copy is the same write: the task blocked since stays blocked, its newest note its own.
+    expect(outbox.sent[0]?.idempotencyKey).toBe(direct[0]?.idempotencyKey);
+    expect(hub.tasks.get(id)?.stage).toBe("blocked");
+    expect(hub.tasks.get(id)?.notes.at(-1)?.text).toContain(
+      "topic:browser/type@bank.example.test",
+    );
+  });
+
   test("a task another member's 라피 blocked since is said as such, and not sent again", async () => {
     const who = await person();
     const hub = fakeTaskHub();
