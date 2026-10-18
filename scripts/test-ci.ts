@@ -3285,6 +3285,19 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `server` by two more (to 4883 on top of 4881): a write meeting a refused pass is said as that,
  * not as kept — with no row when it was known before (hub-tools.test.ts), the row waiting when the
  * hub's 401 came during the write (hub-tools.integration.test.ts).
+ *
+ * RAISED 2026-10-17 FOR 업무판, THE COMPANY'S TASK BOARD: `server` by twenty (to 4789) — its doors
+ * against a fake hub (hub-routes-ui-tasks.test.ts: four doors answering "no company" unasked, the
+ * board read once with the pass and only its named query fields, three bad queries and a climbing
+ * id refused unsent, a new task as the person with only the board's fields, five bad fields refused,
+ * a move with its version and no run, a move with no version refused, a stale move's 409 kept, a
+ * refused pass a 502, a note as the person); `app` by forty-four (to 2608): the columns, the rank
+ * between neighbours and the menu's steps, every note code in words, who a task is given to, the
+ * task frames (hub-tasks.test.ts, 34), and the room's working line (hub-room-working.test.ts, 10).
+ *
+ * RAISED 2026-10-18 FOR 업무판'S SECOND REVIEW: `app` by four (to 2619) — a drag put back with Escape
+ * leaving the next click to open its task, a new task's and a note's key following what is written,
+ * and 회사 drawing no other part under the board (hub-task-board-render.test.tsx).
  */
 const GROUPS: readonly {
   name: string;
@@ -3311,9 +3324,18 @@ const GROUPS: readonly {
    * RAISED 2026-10-18 FOR A WRITE WHOSE ANSWER IS STILL ON ITS WAY, from 4960 to 4961: one in
    * `hub-tools.integration.test.ts` — the hub's answer held past the write's wait and then a 404,
    * and the Bot is told the 404, not "kept". 4960 and 1.
+   *
+   * RAISED 2026-10-18 FOR 업무판'S REVIEW (server 4981 to 4985, app 2619 to 2641). Server, in
+   * `hub-routes-ui-tasks.test.ts`: a colleague's 라피 given work refused unsent on a new task and a
+   * move, nobody's before `/me` answers, and a refusal keeping the hub's field (4). App:
+   * `hub-tasks.test.ts` 14 (where a person may put a run's task, six and one, a refusal's words for
+   * six fields and codes, a person's note that looks like a code); `hub-task-board-render.test.tsx`
+   * 6 (a press let go over the column, one let go outside the window, a card taken off mid-drag, a
+   * 라피's card and 하는 중, a refused move putting back its own card, who a held task is offered
+   * to); `hub-room-working.test.ts` 2 (a question's age on the server's clock).
    */
-  { name: "server", floor: 4961, roots: ["server"] },
-  { name: "app", floor: 2570, roots: ["app"] },
+  { name: "server", floor: 4985, roots: ["server"] },
+  { name: "app", floor: 2641, roots: ["app"] },
   {
     name: "agent-computer",
     /*
@@ -3452,7 +3474,12 @@ const GROUPS: readonly {
    * reservation under half a microdollar written as one and refused by a full day; an actual under
    * half a microdollar counted as one, reserved or not).
    */
-  { name: "hub", floor: 342, roots: ["hub"] },
+  /*
+   * RAISED 2026-10-18 FOR A RUN'S WORK BEING ITS OWN PERSON'S, from 342 to 345: tasks.test.ts 3 (only a
+   * 라피's own person gives it a task, new or existing; the words of a task given to a 라피 and to a
+   * routine are its owner's alone).
+   */
+  { name: "hub", floor: 345, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */

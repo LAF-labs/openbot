@@ -12,6 +12,7 @@ import {
   ItemTitle,
 } from "@/components/ui/item";
 import { Separator } from "@/components/ui/separator";
+import { RoomWorkingLine } from "./room-working-line";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -28,6 +29,7 @@ import {
   roomColleagues,
   type WriteKey,
 } from "@/lib/hub/company";
+import { asksLafi, LAFI_MENTION } from "@/lib/hub/room-working";
 import { t } from "@/lib/i18n";
 import { isImeKey } from "@/lib/ime";
 import { cn } from "@/lib/utils";
@@ -240,7 +242,7 @@ function OpenRoom({
   rosterPending: boolean;
 }) {
   const messages = useQuery(companyMessagesQueryOptions(roomId));
-  const newest = messages.data?.at(-1)?.seq ?? 0;
+  const newest = messages.data?.messages.at(-1)?.seq ?? 0;
   const scroller = useRef<HTMLDivElement>(null);
 
   // To the newest whenever one arrives — this person's own or a colleague's.
@@ -283,12 +285,12 @@ function OpenRoom({
           <p className="text-muted-foreground text-sm">
             {companyFailureText(messages.error)}
           </p>
-        ) : messages.data.length === 0 ? (
+        ) : messages.data.messages.length === 0 ? (
           <p className="m-auto text-muted-foreground text-sm">
             {t("No messages yet.")}
           </p>
         ) : (
-          messages.data.map((message) => (
+          messages.data.messages.map((message) => (
             <RoomMessage
               key={message.seq}
               meId={meId}
@@ -299,6 +301,13 @@ function OpenRoom({
         )}
       </div>
 
+      <RoomWorkingLine
+        lines={messages.data?.messages}
+        meId={meId}
+        members={members}
+        roomId={roomId}
+        skewMs={messages.data?.skewMs ?? 0}
+      />
       <RoomComposer roomId={roomId} />
     </div>
   );
@@ -364,7 +373,8 @@ function RoomComposer({ roomId }: { roomId: string }) {
       return companyWrite(
         `/api/hub/rooms/${encodeURIComponent(roomId)}/messages`,
         "POST",
-        { text: written },
+        // "@라피" asks the writer's own 라피, which answers from their VM (#259).
+        { text: written, mentions: asksLafi(written) ? [LAFI_MENTION] : [] },
         held.current.key,
       );
     },

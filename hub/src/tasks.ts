@@ -182,6 +182,25 @@ function assigneeOf(value: unknown): HubTaskAssignee | null {
 const workedByRun = (assignee: string | null) =>
   assignee !== null && !assignee.startsWith("m:");
 
+/**
+ * The member whose VM works this task with that member's own permissions: `bot:<m>` is m's 라피, a
+ * `job:` is a routine of whoever gave it. Null for a person's task, or nobody's.
+ */
+function runOwner(
+  assignee: string | null,
+  assignedBy: string | null,
+): string | null {
+  if (assignee === null || assignee.startsWith("m:")) return null;
+  return assignee.startsWith("bot:")
+    ? assignee.slice("bot:".length)
+    : assignedBy;
+}
+
+const notYourRun = (field: string): Answer => ({
+  status: 403,
+  body: { ok: false, code: HUB_TASK_FACTS.notYourRun, field },
+});
+
 /** The member an assignee names, or null for a job. */
 function assigneeMember(assignee: string | null): string | null {
   const match = assignee ? ASSIGNEE_SHAPE.exec(assignee) : null;
@@ -582,6 +601,18 @@ export function taskRoutes(options: TaskRouteOptions) {
         throw new Invalid("members");
       const assignee =
         body.assignee === undefined ? null : assigneeOf(body.assignee);
+      // Work for a 라피 is given by its own person, whose VM runs it with their permissions.
+      const owner = runOwner(assignee, self.id);
+      if (owner !== null && owner !== self.id) {
+        await recordAudit(tx, {
+          action: "task.created",
+          member: self.id,
+          vmOrigin: self.vmOrigin,
+          runId,
+          outcome: HUB_TASK_FACTS.notYourRun,
+        });
+        return notYourRun("assignee");
+      }
       if (stage === "doing" && workedByRun(assignee))
         throw new Invalid("stage");
       const assigned = assigneeMember(assignee);
@@ -807,6 +838,27 @@ export function taskRoutes(options: TaskRouteOptions) {
             : assigneeOf(body.assignee);
       const reassigned = assignee !== row.assignee;
       if (reassigned) fields.push("assignee");
+      /*
+       * A run works on its owner's VM with its owner's permissions, from the task's own words. So
+       * only that owner gives a 라피 work, and while a run of somebody else's has the task its
+       * title and description are theirs alone: anybody who sees it may still note it, move it, or
+       * give it to a person.
+       */
+      const owner = reassigned
+        ? runOwner(assignee, self.id)
+        : runOwner(row.assignee, row.assignedBy);
+      const reworded =
+        body.title !== undefined || body.description !== undefined;
+      if (owner !== null && owner !== self.id && (reassigned || reworded)) {
+        await audit(HUB_TASK_FACTS.notYourRun);
+        return notYourRun(
+          reassigned
+            ? "assignee"
+            : body.title !== undefined
+              ? "title"
+              : "description",
+        );
+      }
       // A claim outlives an edit only while the task stays in `doing`, so this is "nobody holds it".
       if (
         stage === "doing" &&

@@ -145,7 +145,7 @@ describe("checkout", () => {
   });
 
   test("a task assigned to somebody is theirs to take; another member's run is refused", async () => {
-    const task = await newTask(ann.pass, { assignee: `bot:${benId}` });
+    const task = await newTask(ben.pass, { assignee: `bot:${benId}` });
     expect((await checkout(ann.pass, task.id, "run-not-mine")).status).toBe(
       409,
     );
@@ -181,7 +181,7 @@ describe("checkout", () => {
   });
 
   test("a 라피's or a job's task is put in doing only by its run's checkout, never by a person's hand", async () => {
-    const made = await call(ann.pass, "POST", "/tasks", {
+    const made = await call(ben.pass, "POST", "/tasks", {
       title: "By hand",
       visibility: "company",
       stage: "doing",
@@ -197,7 +197,7 @@ describe("checkout", () => {
     });
     expect(job.body.field).toBe("stage");
 
-    const task = await newTask(ann.pass, { assignee: `bot:${benId}` });
+    const task = await newTask(ben.pass, { assignee: `bot:${benId}` });
     const moved = await call(ann.pass, "PATCH", `/tasks/${task.id}`, {
       version: task.version,
       stage: "doing",
@@ -517,6 +517,101 @@ describe("a person's edit", () => {
   });
 });
 
+describe("a run's work is its own person's to give", () => {
+  /*
+   * A 라피 (`bot:<m>`) or a routine (`job:`, its giver's) works on its owner's VM with its owner's
+   * saved logins, from the task's own words. Somebody else may not give it work, nor change the
+   * words it works from.
+   */
+  test("only a 라피's own person gives it a task, new or existing", async () => {
+    const since = await headSeq();
+    const made = await call(ann.pass, "POST", "/tasks", {
+      title: "For Ben's Lafi",
+      visibility: "company",
+      assignee: `bot:${benId}`,
+    });
+    expect(made.status).toBe(403);
+    expect(made.body).toEqual({
+      ok: false,
+      code: "laf:task_not_your_run",
+      field: "assignee",
+    });
+    const heard = (await sync(ben.pass, since)).events.filter(
+      (event) => event.type === "task.assigned",
+    );
+    expect(heard).toEqual([]);
+
+    const task = await newTask(ann.pass, { assignee: `m:${benId}` });
+    const handed = await call(ann.pass, "PATCH", `/tasks/${task.id}`, {
+      version: task.version,
+      assignee: `bot:${benId}`,
+    });
+    expect(handed.status).toBe(403);
+    expect(handed.body.code).toBe("laf:task_not_your_run");
+    const kept = (await call(ann.pass, "GET", `/tasks/${task.id}`))
+      .body as unknown as HubTaskDetail;
+    expect(kept.task.assignee).toBe(`m:${benId}`);
+    expect(kept.task.version).toBe(task.version);
+
+    const own = await call(ben.pass, "PATCH", `/tasks/${task.id}`, {
+      version: task.version,
+      assignee: `bot:${benId}`,
+    });
+    expect(own.status).toBe(200);
+    expect((own.body.task as HubTask).assignedBy).toBe(benId);
+  });
+
+  test.each([
+    ["a 라피", "bot"],
+    ["a routine", "job"],
+  ])(
+    "the words of a task given to %s are its owner's alone; anybody may still note it, move it or give it to a person",
+    async (_, kind) => {
+      const task = await newTask(ann.pass, {
+        title: "Ann's words",
+        description: "As Ann wrote it",
+        assignee: kind === "bot" ? `bot:${annId}` : "job:nightly",
+      });
+      for (const edit of [
+        { title: "Ben's words" },
+        { description: "As Ben wrote it" },
+      ]) {
+        const reply = await call(ben.pass, "PATCH", `/tasks/${task.id}`, {
+          version: task.version,
+          ...edit,
+        });
+        expect(reply.status).toBe(403);
+        expect(reply.body.code).toBe("laf:task_not_your_run");
+      }
+      const unchanged = (await call(ben.pass, "GET", `/tasks/${task.id}`))
+        .body as unknown as HubTaskDetail;
+      expect(unchanged.task.title).toBe("Ann's words");
+      expect(unchanged.task.description).toBe("As Ann wrote it");
+      expect(unchanged.task.version).toBe(task.version);
+
+      const moved = await call(ben.pass, "PATCH", `/tasks/${task.id}`, {
+        version: task.version,
+        stage: "blocked",
+        note: "Waiting on the supplier",
+      });
+      expect(moved.status).toBe(200);
+      const own = await call(ann.pass, "PATCH", `/tasks/${task.id}`, {
+        version: (moved.body.task as HubTask).version,
+        title: "Ann's new words",
+      });
+      expect(own.status).toBe(200);
+      expect((own.body.task as HubTask).title).toBe("Ann's new words");
+      const toBen = await call(ben.pass, "PATCH", `/tasks/${task.id}`, {
+        version: (own.body.task as HubTask).version,
+        assignee: `m:${benId}`,
+        title: "Ben's, now",
+      });
+      expect(toBen.status).toBe(200);
+      expect((toBen.body.task as HubTask).title).toBe("Ben's, now");
+    },
+  );
+});
+
 describe("visibility", () => {
   test("a task kept to its maker is not listed, read, noted or taken by anybody else", async () => {
     const mine = await newTask(ann.pass, { visibility: "me" });
@@ -597,7 +692,7 @@ describe("visibility", () => {
     const since = await headSeq();
     const task = await newTask(ann.pass, {
       visibility: "company",
-      assignee: `bot:${benId}`,
+      assignee: `m:${benId}`,
     });
     const assigned = async (pass: string) =>
       (await sync(pass, since)).events.filter(
