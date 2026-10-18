@@ -324,6 +324,7 @@
   "hub/tests/search.test.ts",
   "hub/tests/skills.test.ts",
   "hub/tests/sync.test.ts",
+  "hub/tests/tasks.test.ts",
   "hub/tests/uploads.test.ts",
   "hub/tests/visibility-property.test.ts",
   "server/tests/account-lifecycle.integration.test.ts",
