@@ -3452,7 +3452,7 @@ const GROUPS: readonly {
    * reservation under half a microdollar written as one and refused by a full day; an actual under
    * half a microdollar counted as one, reserved or not).
    */
-  { name: "hub", floor: 268, roots: ["hub"] },
+  { name: "hub", floor: 342, roots: ["hub"] },
 ];
 
 /** The file names Bun itself treats as tests, so discovery here and discovery there agree. */
