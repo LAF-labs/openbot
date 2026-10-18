@@ -26,11 +26,14 @@ export function RoomWorkingLine({
   lines,
   meId,
   members,
+  skewMs,
 }: {
   roomId: string;
   lines: readonly RoomLine[] | undefined;
   meId: string | undefined;
   members: readonly CompanyMember[] | undefined;
+  /** How far this browser's clock runs ahead of the server's (`serverSkewMs`). */
+  skewMs: number;
 }) {
   const minute = useNow();
   const [now, setNow] = useState<number | null>(null);
@@ -38,7 +41,8 @@ export function RoomWorkingLine({
   const channels = useQuery(channelListQueryOptions());
   const myRoomRun = working.data?.some((run) => run.origin === "room") === true;
   const options = { me: meId, myRoomRun };
-  const clock = now ?? minute.getTime();
+  // The messages' times are the hub's: their age is read on the server's clock, not this browser's.
+  const clock = (now ?? minute.getTime()) - skewMs;
   const shown = workingInRoom(lines ?? [], clock, options);
   const next = nextWorkingChange(lines ?? [], shown, options);
 
@@ -53,10 +57,10 @@ export function RoomWorkingLine({
     if (next === null) return;
     const timer = setTimeout(
       () => setNow(Date.now()),
-      Math.max(0, next - Date.now()),
+      Math.max(0, next + skewMs - Date.now()),
     );
     return () => clearTimeout(timer);
-  }, [next]);
+  }, [next, skewMs]);
 
   if (shown.length === 0) return null;
   const isMineAsked = shown.some(({ member }) => member === meId);

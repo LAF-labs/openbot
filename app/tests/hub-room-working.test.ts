@@ -6,6 +6,7 @@ import {
   ROOM_WORKING_SHOWN_MS,
   type RoomLine,
   roomConversationOf,
+  serverSkewMs,
   workingInRoom,
 } from "../src/lib/hub/room-working";
 
@@ -126,5 +127,32 @@ describe("asking from the box", () => {
     ];
     expect(roomConversationOf("r_1", channels)?.id).toBe("room_r_1_agent_9");
     expect(roomConversationOf("r_2", channels)).toBeUndefined();
+  });
+});
+
+describe("a question's age, on the server's clock", () => {
+  /*
+   * A message's time is the hub's. Read against a browser clock three minutes ahead, a question
+   * asked a moment ago was already older than two minutes, and the line never showed.
+   */
+  const AHEAD = 3 * 60_000;
+
+  test("the skew is the browser's clock less the server's `Date`, and nothing without one", () => {
+    const serverAt = T0 + 1_000;
+    const header = new Date(serverAt).toUTCString();
+    expect(serverSkewMs(header, serverAt + AHEAD)).toBe(AHEAD);
+    expect(serverSkewMs(header, serverAt - AHEAD)).toBe(-AHEAD);
+    expect(serverSkewMs(null, serverAt)).toBe(0);
+    expect(serverSkewMs("not a date", serverAt)).toBe(0);
+  });
+
+  test("a question asked a second ago shows on a browser three minutes ahead", () => {
+    const browserNow = T0 + 1_000 + AHEAD;
+    const skew = serverSkewMs(new Date(T0 + 1_000).toUTCString(), browserNow);
+    expect(workingInRoom([ask], browserNow - skew)).toEqual([
+      { member: "m_b", seq: 3 },
+    ]);
+    // Read on the browser's own clock, it is gone: the skew is what keeps it.
+    expect(workingInRoom([ask], browserNow)).toEqual([]);
   });
 });

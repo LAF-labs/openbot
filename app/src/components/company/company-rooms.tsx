@@ -242,7 +242,7 @@ function OpenRoom({
   rosterPending: boolean;
 }) {
   const messages = useQuery(companyMessagesQueryOptions(roomId));
-  const newest = messages.data?.at(-1)?.seq ?? 0;
+  const newest = messages.data?.messages.at(-1)?.seq ?? 0;
   const scroller = useRef<HTMLDivElement>(null);
 
   // To the newest whenever one arrives — this person's own or a colleague's.
@@ -285,12 +285,12 @@ function OpenRoom({
           <p className="text-muted-foreground text-sm">
             {companyFailureText(messages.error)}
           </p>
-        ) : messages.data.length === 0 ? (
+        ) : messages.data.messages.length === 0 ? (
           <p className="m-auto text-muted-foreground text-sm">
             {t("No messages yet.")}
           </p>
         ) : (
-          messages.data.map((message) => (
+          messages.data.messages.map((message) => (
             <RoomMessage
               key={message.seq}
               meId={meId}
@@ -302,10 +302,11 @@ function OpenRoom({
       </div>
 
       <RoomWorkingLine
-        lines={messages.data}
+        lines={messages.data?.messages}
         meId={meId}
         members={members}
         roomId={roomId}
+        skewMs={messages.data?.skewMs ?? 0}
       />
       <RoomComposer roomId={roomId} />
     </div>

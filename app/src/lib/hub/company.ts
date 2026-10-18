@@ -12,7 +12,12 @@
 import { queryOptions } from "@tanstack/react-query";
 import { HUB_UPLOAD_FILE_MAX_BYTES } from "@shared/hub/upload";
 import { t } from "@/lib/i18n";
-import { RequestRefusedError, requestOrRefusal } from "@/lib/refusals";
+import {
+  RequestRefusedError,
+  refusedRequest,
+  requestOrRefusal,
+} from "@/lib/refusals";
+import { serverSkewMs } from "./room-working";
 import { hubFactText, hubKeys } from "./status";
 
 export type HubRole = "owner" | "admin" | "member";
@@ -204,16 +209,36 @@ export const companyRoomsQueryOptions = () =>
 /** The newest page of a room, oldest first. Older pages are not offered yet. */
 export const ROOM_PAGE = 100;
 
+/**
+ * A room's newest page, and how far this browser's clock runs ahead of the server's (`skewMs`, from
+ * the answer's `Date`). A message's time is the hub's clock; "how long ago" read against a browser
+ * clock that is minutes off is minutes wrong, so the room's working line reads it against the
+ * server's.
+ */
 export const companyMessagesQueryOptions = (roomId: string) =>
   queryOptions({
     retry: RETRIES,
     queryKey: companyKeys.messages(roomId),
-    queryFn: async () =>
-      (
-        await read<{ messages: CompanyMessage[]; more: boolean }>(
-          `/api/hub/rooms/${encodeURIComponent(roomId)}/messages?limit=${ROOM_PAGE}`,
-        )
-      ).messages,
+    queryFn: async (): Promise<{
+      messages: CompanyMessage[];
+      skewMs: number;
+    }> => {
+      const response = await fetch(
+        `/api/hub/rooms/${encodeURIComponent(roomId)}/messages?limit=${ROOM_PAGE}`,
+        { credentials: "include" },
+      );
+      if (!response.ok) {
+        throw await refusedRequest(
+          response,
+          t("That did not go through. Try again."),
+        );
+      }
+      const body = (await response.json()) as { messages: CompanyMessage[] };
+      return {
+        messages: body.messages,
+        skewMs: serverSkewMs(response.headers.get("date"), Date.now()),
+      };
+    },
   });
 
 export const companyFilesQueryOptions = () =>

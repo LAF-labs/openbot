@@ -107,6 +107,20 @@ export function nextWorkingChange(
   return soonest;
 }
 
+/**
+ * How far this browser's clock runs ahead of the server's, from an answer's `Date` header read at
+ * `receivedAt` (whole seconds, so off by under one); 0 when there is none to read. The hub and this
+ * VM are servers that keep their clocks; a person's computer may be minutes off, and a question's
+ * age read against it would hide the line (ahead) or hold it (behind).
+ */
+export function serverSkewMs(
+  dateHeader: string | null,
+  receivedAt: number,
+): number {
+  const server = dateHeader ? Date.parse(dateHeader) : Number.NaN;
+  return Number.isNaN(server) ? 0 : receivedAt - server;
+}
+
 /** Whether a message as written asks the writer's own 라피: it says "@라피". */
 export function asksLafi(text: string): boolean {
   return text.includes("@라피");
