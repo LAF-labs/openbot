@@ -189,7 +189,7 @@ type StandingAllowance = {
    * For good, or for one conversation. The list says which, because the two are not the same
    * decision: one stands until it is taken back, the other for a day and only in its thread.
    */
-  tier: "always" | "thread" | "task" | "day";
+  tier: "always" | "thread" | "task" | "day" | "board_task";
   threadId?: string;
   /** When a conversation's allowance runs out on its own. Absent on the standing kind. */
   expiresAt?: string;
@@ -856,6 +856,16 @@ function BoundariesPage() {
                             ),
                           })
                         : t("For one conversation only")}
+                    </span>
+                  ) : null}
+                  {allowance.tier === "board_task" && allowance.expiresAt ? (
+                    <span className="text-muted-foreground text-xs">
+                      {t("For one company board task only, until {when}", {
+                        when: new Date(allowance.expiresAt).toLocaleString(
+                          activeLocale,
+                          { dateStyle: "short", timeStyle: "short" },
+                        ),
+                      })}
                     </span>
                   ) : null}
                   {(allowance.tier === "task" || allowance.tier === "day") &&

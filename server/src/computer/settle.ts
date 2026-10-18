@@ -28,6 +28,7 @@ import type {
   CallPreview,
   PendingApproval,
 } from "./approvals";
+import { topicOf } from "./ask-topic";
 import type { ReviewSubject, ReviewVerdict } from "./auto-review";
 import type { HighRiskVerdict } from "./high-risk";
 import type { ActionPolicy, FactCode, PolicyDecision } from "./policy";
@@ -74,6 +75,12 @@ export type SettleInput = {
    * work outside any — a routine — where neither applies.
    */
   threadId?: string | undefined;
+  /**
+   * The board task a run is working — its conversation, `task:<id>` — where the action is a step of
+   * one (`ActionActor.boardTaskThreadId`). What a "이 일감에서는 해도 돼" allowance answers for,
+   * together with the topic this step works out of the subject. Absent everywhere else.
+   */
+  boardTaskThreadId?: string | undefined;
   /**
    * The conversation step the action came from — thread and tool call — where the surface named
    * one. Goes on a question whatever `settleWithoutAsking` says, unlike `threadId` above: it is where
@@ -247,6 +254,16 @@ export async function settle(
     presented?.ok || !input.highRisk ? undefined : await input.highRisk();
   const escalated = risk?.escalate === true;
 
+  /*
+   * THE BOARD TASK AND THE TOPIC IN FRONT OF IT, worked out here from the subject — the same facts,
+   * by the same function, that the stop's note on the board was written from — so an allowance a
+   * person gave for "this kind of action, here, in this task" answers for exactly that.
+   */
+  const boardTask =
+    mayStand && input.boardTaskThreadId && !presented?.ok
+      ? { threadId: input.boardTaskThreadId, topic: topicOf(input.subject) }
+      : undefined;
+
   const already =
     presented?.ok || !mayStand || escalated
       ? null
@@ -254,7 +271,7 @@ export async function settle(
           input.botId,
           input.rule,
           scopeKeyOf(input.allowance),
-          { threadId: input.threadId, taskId },
+          { threadId: input.threadId, taskId, boardTask },
         )) ?? null);
 
   /*

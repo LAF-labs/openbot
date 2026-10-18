@@ -12,6 +12,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { BoardTaskNotice } from "@/components/channels/board-task-notice";
 import { CarryOnNotice } from "@/components/channels/carry-on-notice";
 import type { RetriedMessage } from "@/components/channels/chat-transcript";
 import {
@@ -73,6 +74,7 @@ import { holdChat } from "@/lib/copilot/held-chats";
 import { taskStopOf } from "@/lib/copilot/stranded-steps";
 import { useToolsSettled } from "@/lib/copilot/tools-settled";
 import { isProject } from "@/lib/channels/projects";
+import { boardTaskIdOf } from "@/lib/hub/board-task";
 import { t } from "@/lib/i18n";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
 import type { ReadLine } from "@/lib/read-line";
@@ -285,6 +287,8 @@ export function ServerChannelChat({
    * coming back from another place is handed the one they left, with what it holds.
    */
   const [store] = useState(() => threadFor(channel.threadId));
+  // A task from the company board, worked in its own conversation (`task:<id>`).
+  const boardTaskId = boardTaskIdOf(channel.threadId);
   const thread = useSyncExternalStore(store.subscribe, store.snapshot);
   /** The conversation was already here when this screen mounted: they came back to it. */
   const [isResumed] = useState(() => store.snapshot().loaded);
@@ -1491,16 +1495,21 @@ export function ServerChannelChat({
             messages={drawn}
             notice={
               channel.active ? (
-                <CarryOnNotice
-                  busy={busy}
-                  checked={thread.loaded}
-                  onCarryOn={() => {
-                    void say(
-                      t("Please carry on with the task you were doing."),
-                    );
-                  }}
-                  stop={taskStop}
-                />
+                <>
+                  {boardTaskId ? (
+                    <BoardTaskNotice taskId={boardTaskId} />
+                  ) : null}
+                  <CarryOnNotice
+                    busy={busy}
+                    checked={thread.loaded}
+                    onCarryOn={() => {
+                      void say(
+                        t("Please carry on with the task you were doing."),
+                      );
+                    }}
+                    stop={taskStop}
+                  />
+                </>
               ) : (
                 <p className="pb-2 text-sm text-muted-foreground" role="status">
                   {t(

@@ -9,8 +9,11 @@ import {
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
+import type { AskSubject } from "../../computer/approvals";
+import { agents } from "./core";
 // NOT drizzle's `jsonb`; see ./json.ts.
 import { jsonb } from "./json";
+import { lafRoutines } from "./laf";
 
 /**
  * How far this VM has read the company hub's events (`server/src/hub/link.ts`). One row.
@@ -79,3 +82,56 @@ export const hubOutbox = pgTable(
       .where(sql`${table.deliveredAt} is null and ${table.refusedAt} is null`),
   ],
 );
+
+/**
+ * The last stop of a board task's run for a person's yes (`server/src/hub/task-asks.ts`): what kind
+ * of action, where, and the rule and scope that stopped it — what "이 일감에서는 해도 돼" is an answer
+ * to. One row per task, replaced by the task's next stop.
+ *
+ * In Postgres because the answer comes when the person next looks, which may be the next morning
+ * and after a restart; and on the VM, because the approval is judged here and nowhere else — the
+ * hub's board holds only the topic. The button's grant is made from this row, never from a request:
+ * a body that named a rule or a scope could widen the boundary past what the person was shown.
+ */
+export const hubTaskAsks = pgTable("hub_task_asks", {
+  /** The hub's task id. */
+  taskId: text("task_id").primaryKey(),
+  /** The run that stopped, as the ledger and the task's note name it. */
+  runId: text("run_id").notNull(),
+  /** Cascade: an allowance for a Bot that is gone has nobody to answer for. */
+  botId: text("bot_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  /** The expression that asked; empty where a floor asked. */
+  rule: text("rule").notNull(),
+  scopeKind: text("scope_kind").notNull(),
+  scopeValue: text("scope_value").notNull(),
+  /** What the Bot was about to do, in facts — the subject an allowance keeps. */
+  subject: jsonb("subject").$type<AskSubject>(),
+  /** Kind of action and where (`computer/ask-topic.ts`): what the note said, what the yes covers. */
+  topic: text("topic").notNull(),
+  askedAt: timestamp("asked_at", { withTimezone: true }).notNull().defaultNow(),
+  /** When the person answered, and who. Null while it waits. */
+  grantedAt: timestamp("granted_at", { withTimezone: true }),
+  grantedBy: text("granted_by"),
+});
+
+/**
+ * Which routine on this VM is a sub-Bot on the company hub, and under which job id
+ * (`server/src/hub/jobs.ts`). The hub's register holds the name, the two members and the schedule
+ * line; what the routine is told stays here, in `laf_routines`.
+ *
+ * In Postgres because the job's own day is counted on every run (`job:<id>` on the ledger), and a
+ * restart must not quietly run a sub-Bot as a plain routine. Cascade: a routine deleted here is no
+ * sub-Bot of this VM's any more.
+ */
+export const hubJobRoutines = pgTable("hub_job_routines", {
+  jobId: text("job_id").primaryKey(),
+  routineId: text("routine_id")
+    .notNull()
+    .unique()
+    .references(() => lafRoutines.id, { onDelete: "cascade" }),
+  registeredAt: timestamp("registered_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});

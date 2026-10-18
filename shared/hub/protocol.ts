@@ -104,6 +104,9 @@ export type HubMemberState = "active" | "left";
  *   the register holds no content.
  * - `job.moved`: a sub-Bot's runner changed (its owner was handed on). `refId` is the job id. Seen
  *   by the old runner, whose VM drops the job, and the new one, whose VM picks it up.
+ * - `task.approval_granted`: a person let a blocked task go on past the one kind of action it
+ *   stopped on (`POST /tasks/:id/approvals`). `refId` is the task id, `actor` who said yes, `at`
+ *   when. The topic is in the note the yes leaves on the task. Seen by whoever can see the task.
  */
 export const HUB_EVENT_TYPES = [
   "member.changed",
@@ -120,6 +123,7 @@ export const HUB_EVENT_TYPES = [
   "budget.reached",
   "job.changed",
   "job.moved",
+  "task.approval_granted",
 ] as const;
 export type HubEventType = (typeof HUB_EVENT_TYPES)[number];
 
