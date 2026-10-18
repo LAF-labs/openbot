@@ -91,7 +91,10 @@ const HUB_FILE_TEXT_DEFAULT = 8_000;
 export const HUB_ROOM_LINES = 30;
 /** A team memory line, as the hub design bounds it (§9.2). */
 export const HUB_MEMORY_LINE_MAX = 400;
-/** How long a write waits for the hub to take it before the Bot is told it is kept. */
+/**
+ * How long a write waits for the sweep before its row is read — and the read then waits out an
+ * attempt still on its way (`send`), so this is never where an answer is cut off.
+ */
 export const HUB_WRITE_WAIT_MS = 3_000;
 
 /** What the Bot reads the company as, in each result: the same word the context layer files it under. */
@@ -513,14 +516,22 @@ export function createHubToolTransport(
     if (runtime.passRefused?.()) refuse(HUB_FACTS.passRefused);
     const id = await runtime.outbox.enqueue(write);
     await Promise.race([runtime.outbox.sweep(), sleep(HUB_WRITE_WAIT_MS)]);
-    const [row] = await runtime.database
-      .select({
-        deliveredAt: hubOutbox.deliveredAt,
-        refusedAt: hubOutbox.refusedAt,
-        lastCode: hubOutbox.lastCode,
-      })
-      .from(hubOutbox)
-      .where(eq(hubOutbox.id, id));
+    // FOR UPDATE: an attempt still on its way holds this row's lock for its one request, and read
+    // past it the row looks unsent — the Bot would be told "kept" and then the hub might refuse it.
+    // Waiting for that lock waits out the attempt, which the hub client bounds at five seconds, and
+    // the Bot gets the hub's answer. In a transaction, so that wait sits on a connection of its own
+    // (`db/client.ts`) and not on one the plain queries share.
+    const [row] = await runtime.database.transaction((tx) =>
+      tx
+        .select({
+          deliveredAt: hubOutbox.deliveredAt,
+          refusedAt: hubOutbox.refusedAt,
+          lastCode: hubOutbox.lastCode,
+        })
+        .from(hubOutbox)
+        .where(eq(hubOutbox.id, id))
+        .for("update"),
+    );
     if (row?.refusedAt) refuse(row.lastCode ?? HUB_FACTS.forbidden);
     if (row?.deliveredAt) return resultOf({ kind, sent: true });
     // Met just now: the outbox keeps the row (a 401 ends nothing) and has told the line.

@@ -7,7 +7,7 @@ import {
   test,
 } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { inArray } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 import { put } from "../../hub/tests/support/files";
 import {
   newPass,
@@ -106,6 +106,15 @@ async function rowOf(id: string) {
   return row;
 }
 
+/** A query of this database blocked on a row lock — the tool's read, waiting out an attempt. */
+async function somebodyWaitsOnALock() {
+  const rows = (await database.execute(sql`
+    select 1 from pg_stat_activity
+    where datname = current_database() and wait_event_type = 'Lock'
+  `)) as unknown as unknown[];
+  return rows.length > 0;
+}
+
 describe("writing to the company hub", () => {
   test("a post goes as this person's 라피, once, with the row's id as its key", async () => {
     const { tools } = hubAnswering(() => took);
@@ -194,6 +203,57 @@ describe("writing to the company hub", () => {
     expect(sent[0]?.method).toBe("PUT");
     expect(sent[0]?.path).toBe("/skills/weekly-report");
     expect((await rowOf(made[0] ?? ""))?.refusedAt).not.toBeNull();
+    await outbox.sweep();
+    expect(sent).toHaveLength(1);
+  });
+
+  test("a write whose answer is still on its way when the wait ends gets the hub's answer, not kept", async () => {
+    let asked = () => {};
+    const inFlight = new Promise<void>((resolve) => {
+      asked = resolve;
+    });
+    let answer = (_answer: HubAnswer<unknown>) => {};
+    const http: HubHttp = {
+      request(request) {
+        sent.push(request);
+        asked();
+        return new Promise((resolve) => {
+          answer = resolve as never;
+        });
+      },
+      socket: () => ({ url: "ws://unused", headers: {} }),
+    };
+    const outbox = createHubOutbox({ database, http, sleep: async () => {} });
+    const tools = createHubToolTransport({
+      http,
+      outbox,
+      database,
+      // The wait ends the moment the attempt is out, with the hub's answer still held.
+      sleep: () => inFlight,
+    });
+    let settled = false;
+    const outcome = tools
+      .callTool(chat, "write", {
+        kind: "post",
+        room: "r_gone",
+        text: "내일 회의는 10시예요.",
+      })
+      .then(
+        (result) => ({ said: JSON.parse(result.text) }),
+        (error) => ({ code: (error as PluginRefusedError).code }),
+      )
+      .finally(() => {
+        settled = true;
+      });
+    await inFlight;
+    // The hub answers only once the tool has read the row: waiting on its lock, or done without.
+    while (!settled && !(await somebodyWaitsOnALock())) await Bun.sleep(5);
+    answer({ ok: false, status: 404, code: "laf:hub_not_found" });
+
+    expect(await outcome).toEqual({ code: "laf:hub_not_found" });
+    const row = await rowOf(sent[0]?.idempotencyKey ?? "");
+    expect(row?.refusedAt).not.toBeNull();
+    // Its sweep ended here, so it cannot take the next test's row to a hub that never answers.
     await outbox.sweep();
     expect(sent).toHaveLength(1);
   });
