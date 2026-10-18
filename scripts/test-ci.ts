@@ -3341,8 +3341,8 @@ const GROUPS: readonly {
    * RAISED 2026-10-18 FOR 라피 TAKING THE TASKS GIVEN TO IT, from 4961 to 4984: the task pickup's
    * twenty-three (21 and its Bugbot round's 2, noted above the list). 4961 and 23.
    */
-  { name: "server", floor: 4984, roots: ["server"] },
-  { name: "app", floor: 2570, roots: ["app"] },
+  { name: "server", floor: 5011, roots: ["server"] },
+  { name: "app", floor: 2576, roots: ["app"] },
   {
     name: "agent-computer",
     /*
