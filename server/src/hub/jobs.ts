@@ -327,7 +327,8 @@ export function createHubJobs(options: HubJobsOptions): HubJobs {
       const definition = await definitionOf(database, routineId);
       if (!definition) return { ok: false, code: "laf:routine_not_found" };
       // A sub-Bot that could never be handed on is not registered as one.
-      if (!fitsHandoff(definition)) return { ok: false, code: HUB_JOB_TOO_LARGE };
+      if (!fitsHandoff(definition))
+        return { ok: false, code: HUB_JOB_TOO_LARGE };
       const jobId = (await jobOf(routineId)) ?? randomUUID();
       const answer = await http.request({
         method: "PUT",

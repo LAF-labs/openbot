@@ -129,7 +129,8 @@ describe("the company's budget, before a run", () => {
       },
     ]);
     expect(
-      budgetSettleBody({ runId: "r", actual: -4, scopes: ["workspace"] }).actual,
+      budgetSettleBody({ runId: "r", actual: -4, scopes: ["workspace"] })
+        .actual,
     ).toBe(0);
     expect(
       budgetSettleBody({

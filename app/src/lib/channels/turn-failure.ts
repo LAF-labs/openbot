@@ -140,8 +140,7 @@ export const TURN_FAILURE_SENTENCES: Record<string, string> = {
    * The company hub said no to the run for another reason — the sub-Bot was taken off or moved to
    * somebody else, the task is gone, this computer is no longer let in. Nothing was asked.
    */
-  "laf:turn_company_refused":
-    "The company server did not let this start.",
+  "laf:turn_company_refused": "The company server did not let this start.",
   "laf:turn_failed": "No answer came back.",
   /*
    * The server restarted while this ran. Not a fault of the model's and not the person's: the run

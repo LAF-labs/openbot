@@ -32,9 +32,9 @@ describe("a routine handed over by a company member", () => {
     expect(handedOver({ ...base, enabled: true, pausedReason: null })).toBe(
       false,
     );
-    expect(handedOver({ ...base, enabled: false, pausedReason: "unread" })).toBe(
-      false,
-    );
+    expect(
+      handedOver({ ...base, enabled: false, pausedReason: "unread" }),
+    ).toBe(false);
   });
 
   test("names who it came from once the roster is there, and says the switch is theirs", () => {
