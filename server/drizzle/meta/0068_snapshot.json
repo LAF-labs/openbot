@@ -4972,6 +4972,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "handed_by": {
+          "name": "handed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},

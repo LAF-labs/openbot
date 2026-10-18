@@ -4,7 +4,11 @@ import { eq } from "drizzle-orm";
 import { createDatabase } from "../src/db/client";
 import { agents, hubJobRoutines, lafRoutines, users } from "../src/db/schema";
 import type { HubAnswer, HubHttp, HubRequest } from "../src/hub/http";
-import { createHubJobs, scheduleLine } from "../src/hub/jobs";
+import {
+  createHubJobs,
+  installHandedOver,
+  scheduleLine,
+} from "../src/hub/jobs";
 import type { HubOutboxWrite } from "../src/hub/outbox";
 import type { JobDefinition } from "../src/hub/wire";
 import { mine } from "../src/routines/ownership";
@@ -62,7 +66,10 @@ function register() {
       schedule: string | null;
     }
   >();
-  const handoffs = new Map<string, { to: string; definition: JobDefinition }>();
+  const handoffs = new Map<
+    string,
+    { from: string; to: string; definition: JobDefinition }
+  >();
   const seen: (HubRequest & { as: string })[] = [];
   const ok = (body: unknown) =>
     ({ ok: true, status: 200, body }) as HubAnswer<never>;
@@ -76,10 +83,10 @@ function register() {
       if (!id) return ok({ ok: true, jobs: [...jobs.values()] });
       if (rest === "handoff") {
         if (method === "PUT") {
-          handoffs.set(
-            id,
-            request.body as { to: string; definition: JobDefinition },
-          );
+          handoffs.set(id, {
+            ...(request.body as { to: string; definition: JobDefinition }),
+            from: member,
+          });
           return ok({ ok: true });
         }
         const held = handoffs.get(id);
@@ -313,6 +320,101 @@ describe("a routine as the company's sub-Bot", () => {
         .filter((row) => row.id === heard.id || row.id === away.id)
         .map((row) => row.enabled),
     ).toEqual([true, true]);
+  });
+
+  test("handed to another member: made on their VM switched off, marked as from the old runner, and run on schedule only once they turn it on", async () => {
+    const hub = register();
+    const httpA = hub.as("m_a");
+    const old = createHubJobs({
+      database,
+      http: httpA,
+      outbox: directOutbox(httpA),
+      memberId: () => "m_a",
+      mine: (actor, id) => mine(database, actor, id),
+      install: async () => {
+        throw new Error("not this VM's to install");
+      },
+    });
+    const made = await routine(`매출 정리 ${suite}-5`);
+    const registered = await old.register(AUTHOR, made.id);
+    if (!registered.ok) throw new Error(registered.code);
+    const jobId = registered.jobId;
+
+    // B's VM, on a clock of its own in the past, so no other suite's routine is due on it. Every
+    // run it starts asks for the Bot, which is what is counted.
+    let clock = new Date("2026-10-01T00:00:00Z"); // Thursday, 09:00 in Seoul
+    const asked = { count: 0 };
+    const routinesB = createRoutineService({
+      database,
+      resolveAgents: async () => {
+        asked.count += 1;
+        return {};
+      },
+      now: () => clock,
+    });
+    const httpB = hub.as("m_b");
+    const fresh = createHubJobs({
+      database,
+      http: httpB,
+      outbox: directOutbox(httpB),
+      memberId: () => "m_b",
+      mine: (actor, id) => mine(database, actor, id),
+      // The install main.ts uses, with this test's person and Bot standing in for B's.
+      install: installHandedOver({
+        routines: routinesB,
+        owner: async () => ({ actor: AUTHOR, botId: BOT }),
+      }),
+    });
+    const job = hub.jobs.get(jobId);
+    if (!job) throw new Error("not registered");
+    hub.jobs.set(jobId, { ...job, owner: "m_b", runner: "m_b" });
+    old.heard({ type: "job.moved", refId: jobId });
+    await old.idle();
+    fresh.heard({ type: "job.moved", refId: jobId });
+    await fresh.idle();
+
+    const [link] = await database
+      .select()
+      .from(hubJobRoutines)
+      .where(eq(hubJobRoutines.jobId, jobId));
+    if (!link) throw new Error("not taken over");
+    expect(link.handedBy).toBe("m_a");
+    const read = async () => {
+      const [row] = await database
+        .select({
+          enabled: lafRoutines.enabled,
+          pausedReason: lafRoutines.pausedReason,
+          instruction: lafRoutines.instruction,
+        })
+        .from(lafRoutines)
+        .where(eq(lafRoutines.id, link.routineId));
+      return row;
+    };
+    expect(await read()).toEqual({
+      enabled: false,
+      pausedReason: "handed_over",
+      instruction: "매일 아침 어제 매출을 정리해서 알려줘",
+    });
+    // The person's list says who it came from.
+    const listed = (await routinesB.list(AUTHOR)).find(
+      (row) => row.id === link.routineId,
+    );
+    expect(listed).toMatchObject({
+      enabled: false,
+      pausedReason: "handed_over",
+      handedBy: "m_a",
+    });
+
+    // Its time comes (Friday 07:30 in Seoul) and goes: nothing runs.
+    clock = new Date("2026-10-01T23:00:00Z");
+    expect(await routinesB.tick()).toBe(0);
+    expect(asked.count).toBe(0);
+
+    // Its person turns it on: the reason is gone, and at its next time (Monday 07:30) it runs.
+    const on = await routinesB.setEnabled(AUTHOR, link.routineId, true);
+    expect(on).toMatchObject({ enabled: true, pausedReason: null });
+    clock = new Date("2026-10-04T23:00:00Z");
+    expect(await routinesB.tick()).toBe(1);
   });
 
   test("the schedule line says when, in the register's words", () => {

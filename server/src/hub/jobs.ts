@@ -10,8 +10,9 @@
  * WHEN THE OWNER CHANGES the hub says `job.moved` to the old runner and the new one.
  * - The old VM turns its copy off first — so the two VMs never both run it — and hands the
  *   definition on, then forgets the job.
- * - The new VM takes the definition, makes the routine for its own person and 라피, and from then
- *   on the job is its.
+ * - The new VM takes the definition and makes the routine for its own person and 라피 — switched
+ *   off, marked as handed over by the old runner, until that person turns it on
+ *   (`installHandedOver`). From then on the job is its.
  *
  * HOW THE DEFINITION TRAVELS, given that the register holds none. From the old runner's VM, through
  * a one-time handoff on the hub (`PUT /jobs/:id/handoff {to, definition}`), sent through the outbox
@@ -39,6 +40,7 @@ import type { Database } from "../db/client";
 import { hubJobRoutines, lafRoutines } from "../db/schema";
 import { log } from "../log";
 import { scheduleOf } from "../routines/schedule";
+import type { RoutineService } from "../routines/service";
 import type { HubHttp } from "./http";
 import type { HubFrame } from "./link";
 import type { HubOutbox } from "./outbox";
@@ -78,10 +80,51 @@ export type HubJobsOptions = {
   memberId: () => string | null;
   /** Whether the routine is this actor's to register (`routines/ownership.ts`, `mine`). Throws if not. */
   mine: (actor: AgentActor, routineId: string) => Promise<unknown>;
-  /** Make the routine on this VM, for its person and their 라피. Answers its id. */
+  /**
+   * Make the routine on this VM, for its person and their 라피, switched off until they turn it on
+   * (`installHandedOver`). Answers its id.
+   */
   install: (definition: JobDefinition) => Promise<string>;
   now?: () => Date;
 };
+
+/**
+ * A sub-Bot handed to this person, made as their routine for their 라피 — SWITCHED OFF, paused as
+ * `handed_over`, and run only once they turn it on themselves. Actions run on the requester's VM
+ * with that person's permissions: the instruction is another member's words, and it must not start
+ * using this person's logins and files on a schedule nobody here agreed to. Their switch is the
+ * agreement (`setRoutineEnabled`, which clears the reason).
+ */
+export function installHandedOver(deps: {
+  routines: Pick<RoutineService, "create">;
+  /** This deployment's person and their 라피 (`deploymentBot`). */
+  owner: () => Promise<{ actor: AgentActor; botId: string } | null>;
+}): HubJobsOptions["install"] {
+  return async (definition) => {
+    const who = await deps.owner();
+    if (!who) throw new Error("laf:bot_not_found");
+    const made = await deps.routines.create(who.actor, {
+      agentId: who.botId,
+      name: definition.name,
+      instruction: definition.instruction,
+      ...(definition.summary ? { summary: definition.summary } : {}),
+      schedule:
+        definition.schedule.kind === "interval"
+          ? definition.schedule
+          : {
+              kind: "daily",
+              time: definition.schedule.time,
+              timeZone: definition.schedule.timeZone,
+              ...(definition.schedule.days
+                ? { days: definition.schedule.days }
+                : {}),
+            },
+      delivery: definition.delivery,
+      handedOver: true,
+    });
+    return made.id;
+  };
+}
 
 /** The schedule as one line for the register: when it runs, never what it does. */
 export function scheduleLine(definition: JobDefinition["schedule"]): string {
@@ -197,8 +240,8 @@ export function createHubJobs(options: HubJobsOptions): HubJobs {
       path: HUB_JOB_PATHS.handoff(jobId),
       retry: false,
     });
-    const definition = answer.ok ? readJobHandoff(answer.body) : null;
-    if (!definition) {
+    const handoff = answer.ok ? readJobHandoff(answer.body) : null;
+    if (!handoff) {
       // Not there yet: looked for again at the next `job.changed` and the next reconnect.
       log.info("hub_job_handoff_waiting", {
         job: jobId,
@@ -206,10 +249,10 @@ export function createHubJobs(options: HubJobsOptions): HubJobs {
       });
       return;
     }
-    const routineId = await options.install(definition);
+    const routineId = await options.install(handoff.definition);
     await database
       .insert(hubJobRoutines)
-      .values({ jobId, routineId })
+      .values({ jobId, routineId, handedBy: handoff.from })
       .onConflictDoNothing();
     await options.outbox.enqueue({
       method: "DELETE",

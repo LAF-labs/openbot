@@ -935,6 +935,11 @@ export const ko: Record<string, string> = {
     "계속 돌리기를 누르면 앞으로는 결과를 안 보셔도 멈추지 않아요.",
   "Paused — its results went unread for a while":
     "결과를 한동안 안 보셔서 멈췄어요",
+  // 회사 동료가 넘겨준 루틴: 꺼진 채로 만들어지고, 받은 사람이 켜야 돈다(server/src/hub/jobs.ts).
+  "{name} handed this to you. It runs once you turn it on.":
+    "{name}에게서 넘겨받은 루틴이에요. 켜야 돌아가요.",
+  "Handed to you by a company member. It runs once you turn it on.":
+    "회사 동료에게서 넘겨받은 루틴이에요. 켜야 돌아가요.",
   "Keep running even if unread": "안 읽어도 계속 돌리기",
   "Paused {count} routines — their results went unread for a while.":
     "결과를 한동안 보지 않으셔서 루틴 {count}개를 멈췄어요.",

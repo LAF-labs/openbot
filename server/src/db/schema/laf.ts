@@ -471,9 +471,10 @@ export const lafRoutines = pgTable("laf_routines", {
   /**
    * Why the routine is off, when it was not its person's switch that turned it off. Null otherwise.
    *
-   * `unread` is the one reason today (`routines/unread.ts`): its results piled up in its Bot's
-   * conversation for a week with nobody opening it, so it stopped spending the day's allowance on
-   * answers nobody reads. Text rather than an enum for the reason `laf_notifications.kind` gives —
+   * `unread` (`routines/unread.ts`): its results piled up in its Bot's conversation for a week with
+   * nobody opening it, so it stopped spending the day's allowance on answers nobody reads.
+   * `handed_over` (`hub/jobs.ts`): a company sub-Bot another member handed to this person, made off
+   * so it runs only once they turn it on. Text rather than an enum for the reason `laf_notifications.kind` gives —
    * a new reason is a line of TypeScript, not a migration. Cleared by any switch a person presses,
    * on or off: the decision is theirs again from then on.
    */
@@ -527,8 +528,11 @@ export const lafRoutines = pgTable("laf_routines", {
     .defaultNow(),
 });
 
-/** Why a routine is off when its person did not turn it off. See `laf_routines.paused_reason`. */
-export type RoutinePauseReason = "unread";
+/**
+ * Why a routine is off when its person did not turn it off. See `laf_routines.paused_reason`.
+ * `handed_over`: a company sub-Bot another member handed to this one, made off (`hub/jobs.ts`).
+ */
+export type RoutinePauseReason = "unread" | "handed_over";
 
 /** Where a routine's result goes. See `laf_routines.delivery`. */
 export type RoutineDelivery = "chat" | "feed";

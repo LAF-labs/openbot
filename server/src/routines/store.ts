@@ -8,6 +8,7 @@ import {
 } from "../auth/guards";
 import type { Database } from "../db/client";
 import {
+  hubJobRoutines,
   lafRoutineRuns,
   lafRoutines,
   type RoutineDelivery,
@@ -57,6 +58,13 @@ export type RoutineInput = {
    * Absent is the conversation, as every routine was.
    */
   delivery?: RoutineDelivery;
+  /**
+   * Made from a company sub-Bot another member's VM handed to this one (`hub/jobs.ts`): made switched
+   * off, `paused_reason = 'handed_over'`, and run only once its person turns it on — somebody else's
+   * instruction does not run with this person's logins and files until they say so. Only the
+   * handoff sets it; the create route does not read it out of a body.
+   */
+  handedOver?: boolean;
 };
 
 /**
@@ -358,7 +366,9 @@ async function insertRoutine(
       instruction: made.instruction,
       summary: summaryOf(input.summary),
       ...scheduleColumns(schedule, at),
-      enabled: true,
+      ...(input.handedOver
+        ? { enabled: false, pausedReason: "handed_over" as const, pausedAt: at }
+        : { enabled: true }),
       createdById: actor.id,
       createdByRole: actor.role,
       suggestionKey: input.suggestionKey ?? null,
@@ -505,8 +515,14 @@ function sameSchedule(a: StoredSchedule, b: StoredSchedule): boolean {
 
 export async function listRoutines(store: RoutineStore, actor: AgentActor) {
   const rows = await store.database
-    .select(publishedColumns)
+    .select({
+      ...publishedColumns,
+      // The company member who handed this routine here, as a sub-Bot (`hub/jobs.ts`). An id: the
+      // screen names them from the company's member list.
+      handedBy: hubJobRoutines.handedBy,
+    })
     .from(lafRoutines)
+    .leftJoin(hubJobRoutines, eq(hubJobRoutines.routineId, lafRoutines.id))
     .where(scopeOf(store.database, actor))
     .orderBy(desc(lafRoutines.createdAt));
   return rows.map(publishedRoutine);

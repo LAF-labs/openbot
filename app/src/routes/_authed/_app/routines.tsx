@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/tooltip";
 import { dayKeys } from "@/lib/agents/day";
 import { agentListQueryOptions } from "@/lib/agents/queries";
+import { companyMembersQueryOptions } from "@/lib/hub/company";
 import { activeLocale, t } from "@/lib/i18n";
 import { josa } from "@/lib/josa";
 import { readLineOf } from "@/lib/read-line";
@@ -59,6 +60,7 @@ import {
   scheduleLabel,
   whenLabel,
 } from "@/lib/routines/queries";
+import { handedOver, handedOverLine } from "@/lib/routines/handed-over";
 import { pausedForUnread, UNREAD_PAUSE_SENTENCES } from "@/lib/routines/unread";
 import { useNow } from "@/lib/use-now";
 
@@ -147,6 +149,19 @@ function RunHistory({ routineId }: { routineId: string }) {
         </ul>
       ) : null}
     </>
+  );
+}
+
+/**
+ * Who handed this routine here, and that it runs once this person turns it on. The company's roster
+ * is asked only by a row that needs a name from it.
+ */
+function HandedOverLine({ routine }: { routine: Routine }) {
+  const members = useQuery(companyMembersQueryOptions());
+  return (
+    <span className="text-muted-foreground text-xs" data-routine-handed-over>
+      {handedOverLine(routine, members.data)}
+    </span>
   );
 }
 
@@ -280,6 +295,7 @@ function RoutineRow({
               {t(UNREAD_PAUSE_SENTENCES.row)}
             </span>
           ) : null}
+          {handedOver(routine) ? <HandedOverLine routine={routine} /> : null}
         </button>
         <div className="flex shrink-0 items-center gap-1">
           {/*

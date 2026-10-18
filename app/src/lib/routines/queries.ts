@@ -28,9 +28,13 @@ export type Routine = {
   nextRunAt: string;
   /**
    * Why it is off when its person did not turn it off: `unread`, when its results piled up unread
-   * for a week (`server/src/routines/unread.ts`). Null otherwise. See `lib/routines/unread.ts`.
+   * for a week (`server/src/routines/unread.ts`), see `lib/routines/unread.ts`; `handed_over`, a
+   * company sub-Bot another member handed here, made off (`server/src/hub/jobs.ts`), see
+   * `lib/routines/handed-over.ts`. Null otherwise.
    */
-  pausedReason?: "unread" | null;
+  pausedReason?: "unread" | "handed_over" | null;
+  /** The company member who handed it here, as a sub-Bot. Null for one made here. */
+  handedBy?: string | null;
   pausedAt?: string | null;
   /** The person's 계속 돌리기: never paused for going unread. */
   keepRunning?: boolean;

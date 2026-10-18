@@ -134,4 +134,10 @@ export const hubJobRoutines = pgTable("hub_job_routines", {
   registeredAt: timestamp("registered_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+  /**
+   * The hub member whose VM handed this sub-Bot here (`takeOver`), or null for one registered on
+   * this VM. A routine handed over is made switched off, and runs only once its new person turns it
+   * on: somebody else's instruction does not run with this person's logins until they say so.
+   */
+  handedBy: text("handed_by"),
 });

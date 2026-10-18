@@ -114,7 +114,12 @@ import { createLiveScreen, type SocketData } from "./live-screen";
 import { users } from "./db/schema";
 import { createHubRuntime } from "./hub";
 import { createRunBudget } from "./hub/budget";
-import { createHubJobs, type HubJobs, hearJobFrame } from "./hub/jobs";
+import {
+  createHubJobs,
+  type HubJobs,
+  hearJobFrame,
+  installHandedOver,
+} from "./hub/jobs";
 import { createTaskAsks } from "./hub/task-asks";
 import {
   createTaskPickup,
@@ -1031,7 +1036,8 @@ const routineService = createRoutineService({
 
 /*
  * The routines registered as the company's sub-Bots (`hub/jobs.ts`): a moved one is turned off here
- * and handed on, and one moved to this member is made here from its handoff.
+ * and handed on, and one moved to this member is made here from its handoff — switched off, until
+ * this person turns it on.
  */
 if (hubRuntime) {
   hubJobs = createHubJobs({
@@ -1040,29 +1046,10 @@ if (hubRuntime) {
     outbox: hubRuntime.outbox,
     memberId: () => hubRuntime.link.me()?.member.id ?? null,
     mine: (actor, routineId) => mine(database, actor, routineId),
-    install: async (definition) => {
-      const who = await deploymentBot(database);
-      if (!who) throw new Error("laf:bot_not_found");
-      const made = await routineService.create(who.actor, {
-        agentId: who.botId,
-        name: definition.name,
-        instruction: definition.instruction,
-        ...(definition.summary ? { summary: definition.summary } : {}),
-        schedule:
-          definition.schedule.kind === "interval"
-            ? definition.schedule
-            : {
-                kind: "daily",
-                time: definition.schedule.time,
-                timeZone: definition.schedule.timeZone,
-                ...(definition.schedule.days
-                  ? { days: definition.schedule.days }
-                  : {}),
-              },
-        delivery: definition.delivery,
-      });
-      return made.id;
-    },
+    install: installHandedOver({
+      routines: routineService,
+      owner: () => deploymentBot(database),
+    }),
   });
 }
 

@@ -487,12 +487,19 @@ export const jobHandoffBody = (input: {
   definition: JobDefinition;
 }) => ({ to: input.to, definition: input.definition });
 
-export function readJobHandoff(body: unknown): JobDefinition | null {
+/** `GET /jobs/:id/handoff`: the definition, and the member whose VM handed it on (`from`). */
+export function readJobHandoff(
+  body: unknown,
+): { from: string | null; definition: JobDefinition } | null {
   const held =
     isObject(body) && isObject(body.handoff) ? body.handoff : (body ?? null);
-  const definition =
-    isObject(held) && isObject(held.definition) ? held.definition : null;
-  if (!definition) return null;
+  if (!isObject(held)) return null;
+  const definition = readJobDefinition(held.definition);
+  return definition ? { from: str(held.from), definition } : null;
+}
+
+function readJobDefinition(definition: unknown): JobDefinition | null {
+  if (!isObject(definition)) return null;
   const name = str(definition.name);
   const instruction = str(definition.instruction);
   const schedule = isObject(definition.schedule) ? definition.schedule : null;

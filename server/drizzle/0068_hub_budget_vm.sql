@@ -2,6 +2,7 @@ CREATE TABLE "hub_job_routines" (
 	"job_id" text PRIMARY KEY NOT NULL,
 	"routine_id" text NOT NULL,
 	"registered_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"handed_by" text,
 	CONSTRAINT "hub_job_routines_routine_id_unique" UNIQUE("routine_id")
 );
 --> statement-breakpoint
