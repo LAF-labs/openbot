@@ -27,7 +27,7 @@
  * during the turn (`mcp__hub__write`), its last words are not posted again.
  */
 import type { Message } from "@ag-ui/client";
-import { and, asc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, gte, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   HUB_ROOM_LIMITS,
   type HubEvent,
@@ -52,7 +52,7 @@ import {
 } from "../db/schema";
 import { describeFailure } from "../failure-text";
 import { log } from "../log";
-import { messagesFor } from "../runner/thread-store";
+import { parseMessage } from "../runner/thread-store";
 import { CHAT_TURN_TIMEOUT_MS, type TurnEngine } from "../turns/engine";
 import type { TurnHub, TurnStatus } from "../turns/hub";
 import type { HubHttp } from "./http";
@@ -217,10 +217,13 @@ export function createRoomAnswers(deps: RoomAnswersDeps) {
     return rooms?.find((room) => room.id === roomId)?.name || roomId;
   };
 
-  /** Whether the conversation already holds this question: the line heard it again. */
-  const filed = async (threadId: string, id: string): Promise<boolean> => {
+  /** Where the conversation holds this question; null when it does not yet. */
+  const filedAt = async (
+    threadId: string,
+    id: string,
+  ): Promise<number | null> => {
     const [row] = await deps.database
-      .select({ one: sql<number>`1` })
+      .select({ seq: lafThreadMessages.seq })
       .from(lafThreadMessages)
       .where(
         and(
@@ -229,7 +232,34 @@ export function createRoomAnswers(deps: RoomAnswersDeps) {
         ),
       )
       .limit(1);
-    return row !== undefined;
+    return row?.seq ?? null;
+  };
+
+  /**
+   * The conversation from the question on: the turn whole. Not a tail of the thread — a turn's own
+   * steps and the delegated runs' (`lafDelegated`) are stored on it too, and a long one pushes the
+   * question out of any fixed window, which would leave nothing to post.
+   */
+  const fromQuestion = async (
+    threadId: string,
+    id: string,
+  ): Promise<Message[]> => {
+    const at = await filedAt(threadId, id);
+    if (at === null) return [];
+    const rows = await deps.database
+      .select({ message: lafThreadMessages.message })
+      .from(lafThreadMessages)
+      .where(
+        and(
+          eq(lafThreadMessages.threadId, threadId),
+          gte(lafThreadMessages.seq, at),
+        ),
+      )
+      .orderBy(asc(lafThreadMessages.seq));
+    return rows.flatMap((row) => {
+      const message = parseMessage(row.message);
+      return message ? [message] : [];
+    });
   };
 
   /**
@@ -327,7 +357,7 @@ export function createRoomAnswers(deps: RoomAnswersDeps) {
       opened.set(key, conversation);
     }
     const questionId = roomQuestionId(roomId, seq);
-    if (await filed(conversation.threadId, questionId)) {
+    if ((await filedAt(conversation.threadId, questionId)) !== null) {
       log.info("room_answer_already", { room: roomId, seq });
       return;
     }
@@ -348,9 +378,7 @@ export function createRoomAnswers(deps: RoomAnswersDeps) {
       return;
     }
     const { text, postedItself } = answerOf(
-      await messagesFor(deps.database, conversation.threadId, {
-        last: 400,
-      }),
+      await fromQuestion(conversation.threadId, questionId),
       questionId,
       roomId,
     );

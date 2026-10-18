@@ -106,7 +106,12 @@ const event = (type: string, extra: Record<string, unknown> = {}) =>
  */
 function scriptedBot(
   answer: string,
-  options: { call?: { name: string; args: string }; fails?: boolean } = {},
+  options: {
+    call?: { name: string; args: string };
+    fails?: boolean;
+    /** Steps a delegated run leaves on the thread before the answer (`lafDelegated`). */
+    delegatedSteps?: number;
+  } = {},
 ) {
   const bot = {
     messages: [] as Message[],
@@ -172,6 +177,14 @@ function scriptedBot(
           ],
         } as Message);
       } else {
+        for (let step = 0; step < (options.delegatedSteps ?? 0); step += 1) {
+          bot.messages.push({
+            id: `step-${randomUUID()}`,
+            role: "assistant",
+            content: `페이지 ${step}`,
+            lafDelegated: "call-browse",
+          } as Message);
+        }
         emit(event("TEXT_MESSAGE_START", { messageId: id, role: "assistant" }));
         emit(event("TEXT_MESSAGE_CONTENT", { messageId: id, delta: answer }));
         bot.messages.push({ id, role: "assistant", content: answer });
@@ -503,6 +516,24 @@ describe("a person's @라피 in a team room", () => {
     expect(calls.map((call) => call.name)).toEqual([READ, WRITE]);
     expect(bot.runs).toBe(2);
     expect(hub.posted).toEqual([]);
+  });
+
+  test("a turn long enough to push the question out of any window still posts its last words", async () => {
+    const room = roomOf();
+    // More rows after the question than a 400-row tail of the thread held.
+    const bot = scriptedBot("다 찾아봤어요.", { delegatedSteps: 420 });
+    const { settled, mention, hub, thread } = answering({
+      room,
+      bot,
+      lines: [line(1, `m:${MEMBER}`, "@라피 찾아봐 줘", ["lafi"])],
+    });
+    mention(1);
+    await settled();
+    expect(((await thread()) ?? []).length).toBeGreaterThan(400);
+    expect(hub.posted).toHaveLength(1);
+    expect(hub.posted[0]).toMatchObject({
+      body: { text: "다 찾아봤어요.", mentions: [], as: "bot" },
+    });
   });
 
   test("a turn that fails posts nothing to the room", async () => {

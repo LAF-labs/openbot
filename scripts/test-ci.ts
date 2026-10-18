@@ -3296,6 +3296,10 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * nothing (hub-link.integration.test.ts, 1). 4775 and 28. `app` by five (to 2548): the room's words
  * for who wrote what and whose 라피 is working, and the room's conversation found and named
  * (hub-rooms.test.ts). 2543 and 5.
+ *
+ * RAISED 2026-10-18 FOR A LONG ROOM TURN: `server` by one (to 4910) — a turn whose steps push the
+ * question past a fixed tail of the thread still posts its last words
+ * (room-answers.integration.test.ts). 4909 and 1.
  */
 const GROUPS: readonly {
   name: string;
