@@ -17,11 +17,14 @@ import {
   companyFailureText,
   companyFilesQueryOptions,
   companyKeys,
+  fileIdentity,
+  keyFor,
   memberName,
   refusalBeforeTeamUpload,
   sizeLabel,
   teamFileAddress,
   uploadTeamFile,
+  type WriteKey,
 } from "@/lib/hub/company";
 import { t } from "@/lib/i18n";
 
@@ -41,10 +44,17 @@ export function CompanyFiles({
   const files = useQuery(companyFilesQueryOptions());
   const picker = useRef<HTMLInputElement>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
+  // The same file picked again after a dropped answer goes up with the same key: one file at the hub.
+  const held = useRef<WriteKey | null>(null);
   const upload = useMutation({
-    mutationFn: (file: File) => uploadTeamFile(file, crypto.randomUUID()),
-    onSuccess: () =>
-      void queryClient.invalidateQueries({ queryKey: companyKeys.files }),
+    mutationFn: (file: File) => {
+      held.current = keyFor(held.current, fileIdentity(file));
+      return uploadTeamFile(file, held.current.key);
+    },
+    onSuccess: () => {
+      held.current = null;
+      void queryClient.invalidateQueries({ queryKey: companyKeys.files });
+    },
   });
 
   const handlePick = (file: File | undefined) => {

@@ -3,9 +3,12 @@ import {
   authorOf,
   companyFactText,
   companyKeys,
+  fileIdentity,
   hubKeysForFrame,
+  keyFor,
   memberName,
   refusalBeforeTeamUpload,
+  roomColleagues,
   sizeLabel,
   teamUploadBody,
 } from "../src/lib/hub/company";
@@ -78,6 +81,49 @@ describe("whose a message is", () => {
     });
     expect(authorOf("m:m_gone", members).name).toBe("A former member");
     expect(memberName("m_b", members)).toBe("A member");
+  });
+
+  test("before the roster arrives nobody is taken for somebody who left", () => {
+    expect(memberName("m_a", undefined)).toBe("Company member");
+    expect(authorOf("bot:m_a", undefined).name).toBe("Company member's Bot");
+  });
+});
+
+describe("a new room's colleagues", () => {
+  test("are everyone but this person", () => {
+    expect(roomColleagues(members, "m_a").map((one) => one.id)).toEqual([
+      "m_b",
+    ]);
+  });
+
+  test("are nobody until it is known who this person is", () => {
+    expect(roomColleagues(members, undefined)).toEqual([]);
+    expect(roomColleagues(undefined, "m_a")).toEqual([]);
+  });
+});
+
+describe("a write pressed again", () => {
+  let minted = 0;
+  const mint = () => `k_${++minted}`;
+
+  test("keeps its key while it is the same thing", () => {
+    const first = keyFor(null, "room:영업", mint);
+    expect(keyFor(first, "room:영업", mint).key).toBe(first.key);
+  });
+
+  test("gets a new key when it is something else, or after it went through", () => {
+    const first = keyFor(null, "room:영업", mint);
+    expect(keyFor(first, "room:회계", mint).key).not.toBe(first.key);
+    expect(keyFor(null, "room:영업", mint).key).not.toBe(first.key);
+  });
+
+  test("a file is the same pick by its name, size and last change", () => {
+    const one = { name: "3월 매출.csv", size: 9, lastModified: 1 };
+    expect(fileIdentity({ ...one })).toBe(fileIdentity(one));
+    expect(fileIdentity({ ...one, lastModified: 2 })).not.toBe(
+      fileIdentity(one),
+    );
+    expect(fileIdentity({ ...one, size: 10 })).not.toBe(fileIdentity(one));
   });
 });
 
