@@ -278,6 +278,13 @@ export function jobRoutes(options: JobRouteOptions) {
           : [row];
       if (!next) throw new Error("hub_jobs update returned nothing");
       let seq: number | undefined;
+      // Task rows before the event lock, as every transaction takes them (job row, task rows,
+      // `emitEvent`'s lock): a report, an approval, a release or the sweep holds a task row and then
+      // emits, so a move that emitted first and then reached for that row deadlocked with it.
+      if (runner !== row.runner) {
+        await noteJobMove(tx, id, row.runner, runner);
+        await freeMovedJobClaims(tx, id, row.runner, self.id);
+      }
       if (fields.length > 0) {
         seq = await emitEvent(tx, {
           type: "job.changed",
@@ -285,8 +292,6 @@ export function jobRoutes(options: JobRouteOptions) {
           actor: self.id,
         });
         if (runner !== row.runner) {
-          await noteJobMove(tx, id, row.runner, runner);
-          await freeMovedJobClaims(tx, id, row.runner, self.id);
           seq = await emitEvent(tx, {
             type: "job.moved",
             refId: id,

@@ -139,6 +139,9 @@ const mayWork = (member: string) =>
  * old runner, took the task for it, and the move's `freeMovedJobClaims` — which had already run —
  * never freed it: the old VM's run was refused at its first beat and the new runner was kept out
  * for the lock's length.
+ *
+ * LOCK ORDER, for every transaction here and in `jobs.ts`: a job's row, then task rows, then
+ * `emitEvent`'s lock. Taken in another order, two of them wait on each other and one is a 500.
  */
 async function holdJobOf(tx: HubTransaction, taskId: string): Promise<void> {
   await tx
@@ -161,6 +164,8 @@ async function holdJobOf(tx: HubTransaction, taskId: string): Promise<void> {
  * `todo` too. Its yes could only be said by the old runner and kept on the old VM, which no longer
  * runs the job, while the new runner was refused (`laf:task_not_yours`); and a block has no lock
  * to run out. The new runner's run meets the action afresh and stops on it with an ask of its own.
+ *
+ * It locks task rows, so the move calls it before its first `emitEvent` (the order at `holdJobOf`).
  */
 export async function freeMovedJobClaims(
   tx: HubTransaction,

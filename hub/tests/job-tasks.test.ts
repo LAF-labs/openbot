@@ -242,3 +242,21 @@ test("a task the old runner's run stopped on goes back to the board when the job
   expect(late.body.code).toBe("laf:task_not_blocked");
   expect((await checkout(dan.pass, task.id, "run-dan")).status).toBe(200);
 });
+
+test("a move and a run's report on one of the job's tasks at once both go through, with no deadlock", async () => {
+  const task = await jobTask(ben, ann, "j-crossing");
+  expect((await checkout(ben.pass, task.id, "run-crossing")).status).toBe(200);
+  let move: Promise<Reply> | undefined;
+  await hub.database.transaction(async (tx) => {
+    // A report, an approval, a release or the sweep: the task's row first, then the event lock.
+    await tx.execute(
+      sql`select id from hub_tasks where id = ${task.id} for update`,
+    );
+    move = call(ben.pass, "PUT", "/jobs/j-crossing", { owner: danId });
+    await someoneWaits();
+    await emitEvent(tx, { type: "task.changed", refId: task.id, actor: benId });
+  });
+  const moved = await move;
+  expect(moved?.status).toBe(200);
+  expect((moved?.body.job as { runner: string }).runner).toBe(danId);
+});
