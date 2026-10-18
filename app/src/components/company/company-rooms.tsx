@@ -348,24 +348,29 @@ function timeOf(at: string): string {
 /**
  * The box a person writes in. Enter sends, Shift+Enter is a new line, and an Enter that finishes a
  * Korean syllable is the syllable's (`lib/ime.ts`). What was written stays in the box until the hub
- * has taken it, so a failed send loses nothing; the key is made once per message, so pressing
- * again after a dropped answer is the same message.
+ * has taken it, so a failed send loses nothing; the key follows the words (`keyFor`), so pressing
+ * again after a dropped answer is the same message and an edit is a new one.
  */
 function RoomComposer({ roomId }: { roomId: string }) {
   const queryClient = useQueryClient();
   const [text, setText] = useState("");
-  const [key, setKey] = useState(() => crypto.randomUUID());
+  const held = useRef<WriteKey | null>(null);
   const send = useMutation({
-    mutationFn: (written: string) =>
-      companyWrite(
+    mutationFn: (written: string) => {
+      // The same words again keep their key, so a retry after a dropped answer is one message;
+      // edited words are another message and get a key of their own, or the hub would answer
+      // the retry with the first write and the new text would never post.
+      held.current = keyFor(held.current, written);
+      return companyWrite(
         `/api/hub/rooms/${encodeURIComponent(roomId)}/messages`,
         "POST",
         { text: written },
-        key,
-      ),
+        held.current.key,
+      );
+    },
     onSuccess: () => {
       setText("");
-      setKey(crypto.randomUUID());
+      held.current = null;
       void queryClient.invalidateQueries({
         queryKey: companyKeys.messages(roomId),
       });
