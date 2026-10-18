@@ -170,6 +170,7 @@ function task(title: string) {
     description: null,
     stage: "doing",
     assignee: "bot:m_me",
+    assignedBy: "m_me",
     version: 2,
     checkout: null,
   };

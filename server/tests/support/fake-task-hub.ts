@@ -17,6 +17,7 @@ export type FakeTask = {
   description: string | null;
   stage: "todo" | "doing" | "review" | "blocked" | "done";
   assignee: string | null;
+  assignedBy: string | null;
   version: number;
   checkout: { runId: string; by: string; until: number } | null;
   notes: { by: string; text: string; runId: string | null }[];
@@ -141,6 +142,8 @@ export function fakeTaskHub() {
     },
     add(task: Partial<FakeTask> & { id: string; assignee: string | null }) {
       const made: FakeTask = {
+        // Given by the member whose 라피 or self it names, unless the test says who.
+        assignedBy: task.assignee?.replace(/^(bot|m):/, "") ?? null,
         title: "오늘 날씨 요약해서 메모로 남겨줘",
         description: null,
         stage: "todo",

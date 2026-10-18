@@ -37,6 +37,10 @@
  * or the sweep's, is such an event. So the task is read again once its run is over, lost or not:
  * what was missed while it ran is seen then, not at the next time the line drops.
  *
+ * ONLY WHAT THIS MEMBER GAVE IT. A task is this VM's when it names this member's 라피 AND this member
+ * gave it (`assignedBy`): a run acts on this person's VM with this person's grants, logins and
+ * tools, so it takes this person's word only. A task another member gave this 라피 is left as it is.
+ *
  * A CRASH IS THE HUB'S TO CLEAN UP. A process that dies holding a task stops beating; the hub's
  * sweep frees the claim within a minute of it running out and says so (`task.changed`), and the
  * board read at the next boot finds it waiting. A claim is never taken back from a run this process
@@ -247,9 +251,10 @@ export function createTaskPickup(options: TaskPickupOptions): TaskPickup {
     return false;
   };
 
-  /** Whether the task is this 라피's and waiting to be taken. */
+  /** Whether the task is this 라피's, given by this member, and waiting to be taken. */
   const waiting = (task: HubTaskView, me: string) =>
     task.assignee === `bot:${me}` &&
+    task.assignedBy === me &&
     task.stage === "todo" &&
     task.checkout === null &&
     (leftAt.get(task.id) ?? -1) < task.version;

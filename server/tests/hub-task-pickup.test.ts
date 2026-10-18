@@ -368,6 +368,30 @@ describe("a task given to this member's 라피", () => {
     ]);
   });
 
+  test("a task another member gave this 라피 is left as it is; one this member gave it is taken", async () => {
+    const hub = fakeTaskHub();
+    hub.add({ id: "t_13", assignee: `bot:${ME}`, assignedBy: "m_other" });
+    hub.add({ id: "t_14", assignee: `bot:${ME}`, assignedBy: ME });
+    const { run, started } = scripted({ kind: "done", steps: 1 });
+    const pickup = createTaskPickup({
+      http: hub.as(ME),
+      memberId: () => ME,
+      run,
+      newRunId: runIds,
+    });
+
+    await pickup.scan();
+    pickup.heard({ type: "task.assigned", refId: "t_13" });
+    await pickup.idle();
+
+    expect(started.map((one) => one.split(":")[0])).toEqual(["t_14"]);
+    expect(hub.tasks.get("t_13")?.stage).toBe("todo");
+    expect(hub.tasks.get("t_13")?.notes).toEqual([]);
+    expect(
+      hub.requests.some((request) => request.path === "/tasks/t_13/checkout"),
+    ).toBe(false);
+  });
+
   test("a task this process let go of itself is not taken again on the event its release raised", async () => {
     const hub = fakeTaskHub();
     hub.add({ id: "t_9", assignee: `bot:${ME}` });

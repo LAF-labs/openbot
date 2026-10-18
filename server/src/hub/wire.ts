@@ -316,6 +316,8 @@ export type HubTaskView = {
   description: string | null;
   stage: string;
   assignee: string | null;
+  /** The member who gave it to its assignee: a 라피 takes only what its own member gave it. */
+  assignedBy: string | null;
   /** Moves with every write, the sweep's included. */
   version: number;
   checkout: { runId: string; by: string } | null;
@@ -336,6 +338,7 @@ const readTask = (task: Record<string, unknown>): HubTaskView | null => {
     description: str(task.description),
     stage,
     assignee: str(task.assignee),
+    assignedBy: str(task.assignedBy),
     version,
     checkout: held && runId ? { runId, by: str(held.by) ?? "" } : null,
   };
