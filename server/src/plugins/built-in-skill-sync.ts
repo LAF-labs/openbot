@@ -71,7 +71,10 @@ export type BuiltInSkillStore = Pick<
 export type BuiltInSkillsRuntime = {
   /** Rows written, rows removed, and every Bot handed the skills that are new here. Never throws. */
   reconcile: (store: BuiltInSkillStore, by: string) => Promise<void>;
-  /** A Bot that has just been made holds every built-in skill. Never throws. */
+  /**
+   * A Bot that has just been made holds every built-in skill — its pack's too, reconciled now that
+   * the Bot is there. Never throws.
+   */
   offerTo: (
     store: BuiltInSkillStore,
     botId: string,
@@ -177,8 +180,12 @@ export function createBuiltInSkills(input: {
   }
 
   async function offerTo(store: BuiltInSkillStore, botId: string, by: string) {
+    // Reconciled first, because which pack is carried follows who owns the live Bots: a boot with
+    // no Bot carried none, and the person's kind has not changed since, so without this the Bot
+    // they make next would wait for a restart or a kind edit to get its pack.
+    await reconcile(store, by);
     try {
-      // Before the first reconcile: the rows this deployment already marks as the package's.
+      // A reconcile that did not land: the rows this deployment already marks as the package's.
       const slugs =
         ours ??
         (await store.listSkills())
