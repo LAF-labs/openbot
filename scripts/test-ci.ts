@@ -3271,6 +3271,10 @@ const MANIFEST = resolve(projectRoot, "scripts/test-manifest.json");
  * `app` by twenty-one (to 2564): which reads a hub frame makes stale, whose a message is, the facts
  * in Korean, and a team file's body (hub-company.test.ts); and `hub` by two (to 48): the roster to
  * any member and behind the pass (members.test.ts).
+ *
+ * RAISED 2026-10-18 FOR 회사'S FIRST REVIEW: `app` by six (to 2570) — nobody taken for a colleague
+ * who left before the roster arrives, a new room's colleagues never this person and nobody until
+ * this person is known, and a room or file pressed again keeping its key (hub-company.test.ts).
  */
 const GROUPS: readonly {
   name: string;
