@@ -67,7 +67,7 @@ async function refusal(work: Promise<unknown>): Promise<string> {
 }
 
 describe("reading the company hub", () => {
-  test("search asks POST /search once, as a chat, and hands back the hits", async () => {
+  test("search asks POST /search once, as a chat, with only what the hub reads, and hands back the hits", async () => {
     const hub = scripted(() => ({
       ok: true,
       hits: [
@@ -95,7 +95,8 @@ describe("reading the company hub", () => {
       {
         method: "POST",
         path: "/search",
-        body: { q: "견적", kinds: ["file"], limit: HUB_SEARCH_LIMIT },
+        // The hub searches its files alone and reads no `kinds` (`hub/src/search.ts`).
+        body: { q: "견적", limit: HUB_SEARCH_LIMIT },
         origin: "chat",
         retry: false,
       },
@@ -132,6 +133,45 @@ describe("reading the company hub", () => {
     expect(read.from).toBe(16_000);
     expect(read.next).toBe(24_000);
     expect(read.text).toHaveLength(8_000);
+  });
+
+  test("next counts characters as the hub does, so an emoji does not move the reader past text", async () => {
+    // 8,000 characters at the hub are 16,000 code units here; `from` at the hub is characters.
+    const hub = scripted(() => ({ text: "😀".repeat(8_000), truncated: true }));
+    const result = await transport(hub.http).callTool(chat, "read", {
+      kind: "file",
+      id: "f_1",
+      from: 100,
+    });
+    const read = JSON.parse(result.text);
+    expect(read.text).toBe("😀".repeat(8_000));
+    expect(read.next).toBe(8_100);
+  });
+
+  test("a skill too long for one result keeps its JSON whole and says how much of it is shown", async () => {
+    const instructions = `${"첫 줄\n".repeat(4_000)}끝`;
+    const hub = scripted(() => ({
+      ok: true,
+      skill: {
+        slug: "weekly-report",
+        title: "주간 보고",
+        summary: "금요일 정리",
+        instructions,
+      },
+    }));
+    const result = await transport(hub.http).callTool(chat, "read", {
+      kind: "skill",
+      id: "weekly-report",
+    });
+    expect(result.text.length).toBeLessThanOrEqual(MAX_RESULT_CHARS);
+    const read = JSON.parse(result.text);
+    expect(read.skill.slug).toBe("weekly-report");
+    expect(read.skill.title).toBe("주간 보고");
+    expect(instructions.startsWith(read.skill.instructions)).toBe(true);
+    expect(read.total).toBe(instructions.length);
+    expect(read.shown).toBe(read.skill.instructions.length);
+    expect(read.shown).toBeLessThan(read.total);
+    expect(result.truncated).toBe(true);
   });
 
   test("the last range of a file has no next", async () => {
@@ -289,6 +329,40 @@ describe("what is refused before anybody is asked", () => {
       { kind: "skill", id: "Not A Slug", title: "t", instructions: "i" },
       "laf:tool_arguments_invalid",
     ],
+    // The hub's own bounds (`hub/src/skills.ts`, `rooms.ts`, `memory.ts`): refused here, never a row.
+    [
+      "write",
+      { kind: "skill", id: "report-", title: "t", instructions: "i" },
+      "laf:tool_arguments_invalid",
+    ],
+    [
+      "write",
+      {
+        kind: "skill",
+        id: "weekly-report",
+        title: "가".repeat(121),
+        instructions: "i",
+      },
+      "laf:tool_arguments_invalid",
+    ],
+    [
+      "write",
+      {
+        kind: "post",
+        room: "r_1",
+        text: "다들 봐 주세요",
+        mentions: Array.from({ length: 21 }, (_, at) => `m_${at}`),
+      },
+      "laf:tool_arguments_invalid",
+    ],
+    [
+      "write",
+      {
+        kind: "propose_memory",
+        content: "우리 팀은 금요일에 정산한다.\n둘째 줄",
+      },
+      "laf:tool_arguments_invalid",
+    ],
   ])("%s %j → %s", (tool, args, code) => {
     let thrown: unknown = null;
     try {
@@ -318,6 +392,11 @@ describe("what is refused before anybody is asked", () => {
         title: "주간 보고",
         instructions: "…",
       },
+    ],
+    // A skill named in Korean, as the VM's own skills may be and the hub takes.
+    [
+      "write",
+      { kind: "skill", id: "주간-보고", title: "주간 보고", instructions: "…" },
     ],
   ])("%s %j is let through", (tool, args) => {
     expect(() => checkHubArgs(tool, args)).not.toThrow();

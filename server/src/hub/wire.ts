@@ -1,11 +1,10 @@
 /**
  * What 라피's two hub tools ask the company hub, and how they read what it answers — the one place.
  *
- * THE HUB'S FEATURE ROUTES ARE BEING WRITTEN BESIDE THIS (files and search, rooms, skills and team
- * memory), each in a pull request of its own against the hub. This module is written against the
- * design's message formats and the rooms pull request's types; where a route lands with another
- * path or another field, the change is here and nowhere else — the tools (`tools.ts`) never spell a
- * path or read a hub body themselves.
+ * WRITTEN AGAINST THE HUB'S OWN ROUTES (`hub/src`: files and search, rooms, skills, team memory),
+ * and proven against them: `hub-tools.integration.test.ts` runs both tools against the real hub.
+ * A route that changes path or field is changed here and nowhere else — the tools (`tools.ts`)
+ * never spell a path or read a hub body themselves.
  *
  * READ LENIENTLY, SHAPED STRICTLY. A hub one protocol version ahead may add fields; they are left
  * out of what the Bot reads, so a field the Bot has never been told about does not appear in a
@@ -17,7 +16,10 @@
 const segment = (value: string) => encodeURIComponent(value);
 
 export const HUB_TOOL_PATHS = {
-  /** `POST /search {q, kinds?, limit}` — a read, sent as a POST because it carries a body. */
+  /**
+   * `POST /search {q, limit}` — a read, sent as a POST because it carries a body. The hub searches
+   * its files and nothing else (`hub/src/search.ts`): every hit is a file, and it takes no `kinds`.
+   */
   search: "/search",
   /** `GET /files/:id/text?from=&limit=` — the file's extracted text, a range of it. */
   fileText: (id: string, from: number, limit: number) =>
@@ -27,6 +29,7 @@ export const HUB_TOOL_PATHS = {
   /** Confirmed lines only: the hub never lists a proposal here. */
   memory: "/memory",
   memoryProposals: "/memory/proposals",
+  /** `GET /members` (`HubMemberList`): who is in the company, by id, name and role. */
   members: "/members",
   rooms: "/rooms",
   /** No `since` and no `before` is the newest page — what a 라피 reads before it answers. */
@@ -34,10 +37,6 @@ export const HUB_TOOL_PATHS = {
     `/rooms/${segment(id)}/messages?limit=${limit}`,
   roomPost: (id: string) => `/rooms/${segment(id)}/messages`,
 } as const;
-
-/** The kinds a search may be narrowed to, as the hub names them. */
-export const HUB_SEARCH_KINDS = ["file", "skill", "room", "memory"] as const;
-export type HubSearchKind = (typeof HUB_SEARCH_KINDS)[number];
 
 /**
  * Where in its source a hit was found, as the hub sends it (`shared/hub/protocol.ts`): the folder,
@@ -77,13 +76,8 @@ export type HubRoomLine = {
 
 /* ── request bodies ────────────────────────────────────────────────────────────────────────── */
 
-export const searchBody = (input: {
-  q: string;
-  kinds: readonly HubSearchKind[];
-  limit: number;
-}) => ({
+export const searchBody = (input: { q: string; limit: number }) => ({
   q: input.q,
-  ...(input.kinds.length > 0 ? { kinds: [...input.kinds] } : {}),
   limit: input.limit,
 });
 
@@ -98,13 +92,22 @@ export const roomPostBody = (input: { text: string; mentions: string[] }) => ({
   as: "bot" as const,
 });
 
-/** A line put up for the team to confirm, with where it came from. */
+/**
+ * A line put up for the team to confirm, with where it came from: the kind of run (`chat` or
+ * `job`), the Bot it was said to, and the person's words. The hub refuses an evidence without a
+ * non-empty string id (`hub/src/memory.ts`), and an id of `null` made every proposal a refusal.
+ */
 export const memoryProposalBody = (input: {
   content: string;
   evidence: string;
+  from: { kind: "chat" | "job"; id: string };
 }) => ({
   content: input.content,
-  evidence: { kind: "chat", id: null, excerpt: input.evidence },
+  evidence: {
+    kind: input.from.kind,
+    id: input.from.id,
+    excerpt: input.evidence,
+  },
 });
 
 export const skillBody = (input: {
