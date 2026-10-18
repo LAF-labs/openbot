@@ -50,12 +50,12 @@ import type { PartnerToolSpec } from "../plugins/partner-tools";
 import { PluginRefusedError } from "../plugins/store";
 import type { DrawnOn, VendorTransport } from "../plugins/transport";
 import type { HubHttp } from "./http";
+import type { HubOutbox, HubOutboxWrite } from "./outbox";
 import {
   type HubUploadActor,
   HubUploadRefused,
   type HubUploads,
 } from "./upload";
-import type { HubOutbox, HubOutboxWrite } from "./outbox";
 import {
   HUB_TOOL_PATHS,
   memoryProposalBody,
@@ -224,6 +224,8 @@ function refuse(code: string): never {
 const ARGUMENTS_INVALID = "laf:tool_arguments_invalid";
 const HUB_UNREADABLE = "laf:hub_unreadable";
 const HUB_QUEUED = "laf:hub_queued";
+/** An upload whose attempt is still on its way when the write's wait ends. */
+export const HUB_UPLOAD_SENDING = "laf:hub_upload_sending";
 export const MEMORY_NOT_PROPOSED = "laf:memory_not_proposed";
 
 const text = (args: Record<string, unknown>, name: string): string | null => {
@@ -555,22 +557,57 @@ export function createHubToolTransport(
    */
   async function settle(kind: WriteKind, id: string): Promise<McpCallResult> {
     await Promise.race([runtime.outbox.sweep(), sleep(HUB_WRITE_WAIT_MS)]);
-    // FOR UPDATE: an attempt still on its way holds this row's lock for its one request, and read
-    // past it the row looks unsent — the Bot would be told "kept" and then the hub might refuse it.
-    // Waiting for that lock waits out the attempt, which the hub client bounds at five seconds, and
-    // the Bot gets the hub's answer. In a transaction, so that wait sits on a connection of its own
-    // (`db/client.ts`) and not on one the plain queries share.
-    const [row] = await runtime.database.transaction((tx) =>
-      tx
-        .select({
-          deliveredAt: hubOutbox.deliveredAt,
-          refusedAt: hubOutbox.refusedAt,
-          lastCode: hubOutbox.lastCode,
-        })
+    const columns = {
+      deliveredAt: hubOutbox.deliveredAt,
+      refusedAt: hubOutbox.refusedAt,
+      lastCode: hubOutbox.lastCode,
+    };
+    let row:
+      | {
+          deliveredAt: Date | null;
+          refusedAt: Date | null;
+          lastCode: string | null;
+        }
+      | undefined;
+    if (kind === "upload") {
+      // Not waited for: an upload's attempt is bounded by the file, not by five seconds
+      // (`http.ts`, half an hour on a slow line), and the Bot's turn must not stand behind it.
+      // Held by an attempt, the row is said as on its way with no answer yet — neither kept nor
+      // sent, since the hub may still refuse it.
+      [row] = await runtime.database
+        .select(columns)
         .from(hubOutbox)
         .where(eq(hubOutbox.id, id))
-        .for("update"),
-    );
+        .for("update", { skipLocked: true });
+      if (!row) {
+        // Skipped, or answered between the two reads: the row as it stands now says which.
+        [row] = await runtime.database
+          .select(columns)
+          .from(hubOutbox)
+          .where(eq(hubOutbox.id, id));
+        if (row && !row.deliveredAt && !row.refusedAt) {
+          return resultOf({
+            kind,
+            sent: false,
+            sending: true,
+            note: toolResultText(HUB_UPLOAD_SENDING),
+          });
+        }
+      }
+    } else {
+      // FOR UPDATE: an attempt still on its way holds this row's lock for its one request, and read
+      // past it the row looks unsent — the Bot would be told "kept" and then the hub might refuse
+      // it. Waiting for that lock waits out the attempt, which the hub client bounds at five
+      // seconds, and the Bot gets the hub's answer. In a transaction, so that wait sits on a
+      // connection of its own (`db/client.ts`) and not on one the plain queries share.
+      [row] = await runtime.database.transaction((tx) =>
+        tx
+          .select(columns)
+          .from(hubOutbox)
+          .where(eq(hubOutbox.id, id))
+          .for("update"),
+      );
+    }
     if (row?.refusedAt) refuse(row.lastCode ?? HUB_FACTS.forbidden);
     if (row?.deliveredAt) return resultOf({ kind, sent: true });
     // Met just now: the outbox keeps the row (a 401 ends nothing) and has told the line.

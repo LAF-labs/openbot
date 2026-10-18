@@ -1048,6 +1048,8 @@ export const TOOL_RESULT_KO: Record<string, string> = {
   "laf:hub_queued":
     "회사 서버에 지금 닿지 않아, 보낼 것을 이 컴퓨터에 두었다. 연결이 돌아오면 저절로 간다. 같은 것을 다시 보내지 마라 — 두 번 간다. 아직 가지 않았고 연결되면 간다고 말해라.",
   // upload: 판정한 파일과 보낸 파일이 같아야 간다(`server/src/hub/upload.ts`).
+  "laf:hub_upload_sending":
+    "파일을 회사 서버로 보내는 중이고 회사 서버가 아직 답하지 않았다. 같은 파일을 다시 올리지 마라 — 두 번 간다. 올라갔다거나 못 올라갔다고 말하지 말고, 보내는 중이라고만 말해라.",
   "laf:hub_upload_changed":
     "올리려던 파일이 그사이 바뀌어서 올리지 않았다. 지금의 파일을 올릴지 물어보고, 그렇다고 하면 upload를 한 번 다시 해라.",
   "laf:hub_upload_gone":

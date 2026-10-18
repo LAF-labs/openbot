@@ -1,6 +1,7 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { inArray } from "drizzle-orm";
 import { MAIN_SCOPE } from "../../shared/file-scope";
+import { toolResultText } from "../../shared/prompt/tool-results.ko";
 import {
   ComputerUnavailableError,
   FILE_NOT_FOUND,
@@ -10,7 +11,7 @@ import { createDatabase } from "../src/db/client";
 import { hubOutbox } from "../src/db/schema";
 import type { HubAnswer, HubHttp, HubUploadRequest } from "../src/hub/http";
 import { createHubOutbox, type HubOutbox } from "../src/hub/outbox";
-import { createHubToolTransport } from "../src/hub/tools";
+import { createHubToolTransport, HUB_UPLOAD_SENDING } from "../src/hub/tools";
 import {
   createHubUploads,
   HUB_UPLOAD_CHANGED,
@@ -54,7 +55,15 @@ const down: HubAnswer<unknown> = {
   code: "laf:hub_unreachable",
 };
 
-function stack(files: Map<string, Uint8Array>) {
+function stack(
+  files: Map<string, Uint8Array>,
+  options: {
+    /** Holds the hub's answer to an upload: told when it is out, answering when `answer` does. */
+    held?: { asked: () => void; answer: Promise<void> };
+    /** The write's wait; by default one that never ends. */
+    sleep?: () => Promise<void>;
+  } = {},
+) {
   let up = true;
   const sent: Sent[] = [];
   const posts: string[] = [];
@@ -75,6 +84,10 @@ function stack(files: Map<string, Uint8Array>) {
         names: [...form.keys()],
         text: form.get("text") === null ? null : String(form.get("text")),
       });
+      if (options.held) {
+        options.held.asked();
+        await options.held.answer;
+      }
       return {
         ok: true,
         status: 200,
@@ -119,7 +132,7 @@ function stack(files: Map<string, Uint8Array>) {
     database,
     uploads,
     // Never resolves: the answer must come from the sweep having finished, not from a timer.
-    sleep: () => new Promise<void>(() => {}),
+    sleep: options.sleep ?? (() => new Promise<void>(() => {})),
   });
   return {
     tools,
@@ -171,6 +184,46 @@ describe("라피 uploads a file from its folder", () => {
     expect(row?.deliveredAt).toBeInstanceOf(Date);
     // The row holds where the file is, never its bytes or its words.
     expect(JSON.stringify(row?.body)).not.toContain("푸른솔");
+  });
+
+  test("an upload still on its way when the wait ends is said as on its way, and the Bot is not held behind it", async () => {
+    let asked = () => {};
+    const inFlight = new Promise<void>((resolve) => {
+      asked = resolve;
+    });
+    let answer = () => {};
+    const held = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    const s = stack(new Map([["거래처.txt", NOTE]]), {
+      held: { asked, answer: held },
+      // The wait ends the moment the upload is out, with the hub's answer still held.
+      sleep: () => inFlight,
+    });
+    // Read with a lock that waits, this call stands behind the held answer and never returns.
+    const result = await s.tools.callTool(chat, "write", {
+      kind: "upload",
+      path: "거래처.txt",
+    });
+    expect(JSON.parse(result.text)).toEqual({
+      source: "회사",
+      kind: "upload",
+      sent: false,
+      sending: true,
+      note: toolResultText(HUB_UPLOAD_SENDING),
+    });
+    expect(s.sent).toHaveLength(1);
+    const id = made[0] as string;
+    expect((await rowOf(id))?.deliveredAt).toBeNull();
+
+    answer();
+    // The sweep the write started is the one running: asked again, the outbox hands back that
+    // same sweep, so this waits for the attempt to write the hub's answer — and for the sweep to
+    // end, so it takes no row of the next test's.
+    expect(await s.outbox.sweep()).toMatchObject({ delivered: 1, refused: 0 });
+    const row = await rowOf(id);
+    expect(row?.deliveredAt).toBeInstanceOf(Date);
+    expect(row?.refusedAt).toBeNull();
   });
 
   test("a hub that is down keeps the row; back, the file goes once with the same key", async () => {
