@@ -3340,9 +3340,16 @@ const GROUPS: readonly {
    *
    * RAISED 2026-10-18 FOR 라피 TAKING THE TASKS GIVEN TO IT, from 4961 to 4984: the task pickup's
    * twenty-three (21 and its Bugbot round's 2, noted above the list). 4961 and 23.
+   *
+   * RAISED 2026-10-18 FOR THE COMPANY BUDGET'S REVIEW ROUND, from 5011 to 5023: a refusal stops a run
+   * (2: a verdict case, a routine on a refused job), a job taken off the register, a handoff made
+   * off on the new VM, a definition too big to hand on (3, `hub-jobs`), a stale stop closed, a lost
+   * answer not applied twice, the board's "not yours" (3, `hub-task-allowance`), a topic cut to 200
+   * (2), a named 403 (1, `hub-http`), the outbox under a given key (1). 5011 and 12. The app's, from
+   * 2576 to 2579: the refused run's words (1) and the handed-over routine's line (2).
    */
-  { name: "server", floor: 5011, roots: ["server"] },
-  { name: "app", floor: 2576, roots: ["app"] },
+  { name: "server", floor: 5023, roots: ["server"] },
+  { name: "app", floor: 2579, roots: ["app"] },
   {
     name: "agent-computer",
     /*
