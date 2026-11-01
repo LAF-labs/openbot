@@ -44,9 +44,9 @@
     "eval:from-failures": "bun --env-file=.env scripts/eval-from-failures.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.15",
-    "@types/bun": "^1.4.2",
-    "knip": "6.39.0",
+    "@biomejs/biome": "^2.6.3",
+    "@types/bun": "^1.4.4",
+    "knip": "6.43.0",
     "roughjs": "^4.6.6",
     "typescript": "^5.9.3",
     "yaml": "^2.9.1"
