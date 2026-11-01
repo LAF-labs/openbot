@@ -10,8 +10,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "drizzle-orm": "^0.45.3",
-    "hono": "^4.13.13",
+    "drizzle-orm": "^0.45.4",
+    "hono": "^4.13.14",
     "postgres": "^3.4.9"
   },
   "devDependencies": {
