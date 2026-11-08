@@ -15,9 +15,9 @@
 # itself `HeadlessChrome` in the brand list of every request. browser-launch.ts asks for
 # `channel: "chromium"` — the full build in its new headless mode — so that is the directory
 # copied, and the shell is not: a launch that fell back to it would be the old tell, in silence.
-FROM mcr.microsoft.com/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f AS browsers
+FROM mcr.microsoft.com/playwright:v1.65.0-noble@sha256:6e3fb709361521eb27161606e6da6d2674e5e89fa16516cb37d6fdd91372273d AS browsers
 
-FROM ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
+FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
 
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8 PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 ARG DEBIAN_FRONTEND=noninteractive
